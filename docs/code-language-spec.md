@@ -1,7 +1,7 @@
 # Code Language Specification (Living Draft)
 
-Version: 0.6  
-Last updated: 2026-02-07 19:50 UTC
+Version: 0.8  
+Last updated: 2026-02-08
 
 ## 1. Goals and Design
 - `Code` is a general-purpose language.
@@ -21,7 +21,9 @@ print("hello, world");
 ```
 
 - Console application entry point:
-  - `main` is used for terminal-executed console apps.
+  - `main` is optional.
+  - `main` is used for terminal-executed console apps that take command-line arguments.
+  - A file can execute without `main` when no command-line parameters are required.
   - Signature:
 
 ```code
@@ -36,14 +38,17 @@ function main(string[] arguments) {
 }
 ```
 
-## 3. Statements and Delimiters
+## 3. Lexical Rules, Statements, and Delimiters
+- Identifiers must start with a letter or `_`.
+- After the first character, identifiers may contain letters, digits, and `_`.
+- Keywords are inferred from the syntax definition; an explicit full keyword table is deferred.
 - Semicolons are required.
-- Compiler may inject missing semicolons when placement is unambiguous.
+- Semicolon injection will exist in the future, but exact insertion rules are deferred.
 
 ## 4. Type System (Current Decisions)
 - Type annotations are required.
 - No implicit omission of variable types.
-- Uninitialized variables are not allowed.
+- Local variables may be declared without initializer, but must be definitely assigned before first read.
 - Primitive numeric families:
   - `integer`: signed integer
   - `whole`: unsigned integer
@@ -55,6 +60,8 @@ function main(string[] arguments) {
   - `whole`: `whole8`, `whole16`, `whole32`, `whole64`
   - `real`: `real16`, `real32`, `real64`
 - Unsized `integer`, `whole`, and `real` default bit width is runtime-chosen (typically 64-bit).
+- Type conversions are generally explicit.
+- Lossless numeric promotions are allowed by convention.
 
 Examples:
 
@@ -67,9 +74,30 @@ whole8 red = 255;
 boolean flag = false;
 ```
 
-## 5. Nullability
-- `null` is currently undecided.
-- Current direction: likely no `null` in the language.
+Definite assignment examples:
+
+```code
+integer x;
+x = 1;
+print(x);
+```
+
+```code
+integer y = 1;
+print(y);
+```
+
+## 5. Nullability and Optionals
+- `null` is not part of the language model.
+- Absence is represented with `optional<T>`.
+- Optionals expose `hasValue` for presence checks.
+
+```code
+optional<integer> maybeCount = getCount();
+if maybeCount.hasValue then {
+  // use value
+}
+```
 
 ## 6. Functions
 - Declaration syntax:
@@ -166,6 +194,9 @@ if a > 0 and b > 0 then {
 }
 ```
 
+- Operator precedence and associativity follow conventional modern-language behavior.
+- A formal precedence table is deferred.
+
 ## 8. Collections (Observed)
 - Generic array type syntax: `array<Type>`.
 - Array literal syntax uses braces.
@@ -186,7 +217,13 @@ array<integer> otherNumbers = new array<integer>(10);
 - Interface fulfillment maps interface signatures to object methods via `interfaceMethod(parameterTypes...) via ObjectName.methodName;`.
 - Mapping includes parameter types/signature to support overload resolution.
 - The mapped object method must have a compatible signature.
-- Object fields are required to be initialized in constructor execution.
+- Constructor overloading is supported.
+- Object fields must be initialized either:
+  - at field declaration, or
+  - during constructor execution.
+- `record` is a type like `object`, but passed by value.
+- `object` instances are passed by reference.
+- For remaining categories, reference/value behavior follows common C# conventions (provisional).
 
 Interface example:
 
@@ -213,6 +250,14 @@ object Person implements Methodable {
 }
 ```
 
+Object field default example:
+
+```code
+object Counter {
+  integer count = 0;
+}
+```
+
 Interface implementation blocks:
 
 ```code
@@ -228,8 +273,10 @@ Person instance = new Person("Ada");
 ```
 
 ## 10. Member Access and Visibility
-- Members default to `public`.
-- `private` modifier is supported.
+- Supported access modifiers: `public`, `package`, `private`.
+- Default member visibility is `package`.
+- `static` members are supported.
+- `constant` fields are supported.
 - Field access allows both unqualified and `this.`-qualified forms.
 - If a local variable shadows a field, unqualified access resolves to the local variable.
 - Use `this.fieldName` to reference the shadowed member field.
@@ -248,11 +295,15 @@ function method(string name) {
   - Alias form: `import sourceName as localName from "FilePath";`
 - `RuntimeLibrary`-style identifiers represent built-in package namespaces.
 - String-path imports resolve relative to the file containing the `import`.
+- Source file extension is `.code`.
+- Package declaration syntax: `package Name;`.
+- Conventional ordering places `package Name;` immediately after imports.
 
 ```code
 import identifier from RuntimeLibrary;
 import anotherIdentifier from "FilePath";
 import exportedFunction as errorExample from "PathToExampleAbove";
+package ExamplePackage;
 ```
 
 ## 12. Exports
@@ -268,13 +319,23 @@ export function<fallible<real>> exportedFunction(real value) {
 ## 13. Error Model (Observed)
 - `fallible<T>` represents a value that may fail.
 - Functions may return `fallible<T>`.
-- Call-site error handling uses `on error`.
+- Built-in `error` shape contains:
+  - `type`
+  - `message`
+  - `stacktrace`
+- Call-site error handling uses `on error` (chosen syntax).
 - The implicit `error` object is available in `on error` scope.
 - When converting `fallible<T>` to `T` via `on error`, the handler must terminate with either `yield <T>` or `panic(...)`.
+- In functions returning `fallible<T>`, `on error` may explicitly propagate the current error:
+  - `... on error return error;`
+- Error transformation is supported:
+  - `... on error return new error(string type, string message);`
 - Supported handling patterns:
   - `on error { ... }` block form
   - `on error yield fallbackValue`
   - `on error panic("message {error}")`
+  - `on error return error`
+  - `on error return new error(type, message)`
 - A fallible result can be kept unhandled by assigning it to `fallible<T>`.
 
 ```code
@@ -288,6 +349,21 @@ real result2 = errorExample(0) on error yield 0;
 fallible<real> pending = errorExample(0);
 
 real result3 = errorExample(0) on error panic("Error message {error}");
+```
+
+```code
+function<fallible<real>> run(string input, real count) {
+  real parsed = parseReal(input) on error return error;
+  return divide(parsed, count);
+}
+```
+
+```code
+function<fallible<real>> runWithTypedError(string input, real count) {
+  real parsed = parseReal(input)
+    on error return new error("ParseError", "Could not parse '{input}'");
+  return divide(parsed, count);
+}
 ```
 
 ## 14. Comments
@@ -310,10 +386,10 @@ real result3 = errorExample(0) on error panic("Error message {error}");
   - `"hello {arguments[1]}"`
 
 ## 16. Open Questions
-- Is `main` required only for executable targets, or for all programs?
 - Exact interpolation grammar (expressions allowed vs identifiers only).
 - Exact numeric literal rules (digit separators, bases, suffixes).
-- `null` alternative strategy (option types, default initialization rules, etc.).
-- Should there be additional `fallible<T>` ergonomics (for composing/transforming errors as data) beyond `on error`?
-- Package/module system details beyond relative string-path imports and built-in namespaces.
-- Definite-assignment rule detail: must initialization happen at declaration, or is assignment-before-first-use sufficient?
+- Exact cast syntax and the precise lossless-promotion matrix.
+- Exact overload tie-breaker rules when multiple overloads are otherwise compatible.
+- Optional value access after `hasValue` check (property vs unwrap syntax and flow narrowing details).
+- Module/package lookup details beyond `.code` extension and relative paths.
+- Exact `stacktrace` capture semantics and formatting.

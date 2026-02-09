@@ -1,139 +1,148 @@
-# `fallible<T>` Ergonomics Exploration
+# Error Hooks Exploration
 
 ## Goal
-Compare syntax strategies for handling errors as data while preserving Code's priorities:
-- clarity over brevity
-- predictable behavior for new developers
-- explicit control at error boundaries
+Design the cleanest possible error-as-data flow for Code without adding shorthand operators prematurely.
 
-## Baseline (Current Spec)
-Current behavior is explicit at call sites:
+Decision status:
+- Hook keyword is currently fixed as `on error`.
 
-```code
-real value = parseReal(text) on error yield 0;
-real ratio = divide(value, count) on error panic("Division failed: {error}");
-fallible<real> pending = parseReal(text);
-```
+Constraints:
+- Keep behavior explicit for beginners.
+- Keep propagation readable in multi-step workflows.
+- Keep one consistent model across functions, methods, and modules.
 
-This is clear and beginner-friendly, but verbose in multi-step workflows.
-
-## Strategy A: Keep Baseline Only
-No new syntax; use only `on error`.
-
-Example (parse -> compute):
+## Current Baseline
+Current draft behavior already supports:
 
 ```code
 real parsed = parseReal(input) on error yield 0;
-real output = compute(parsed) on error yield 0;
-print(output);
+real value = parseReal(input) on error panic("Could not parse: {error}");
+fallible<real> pending = parseReal(input);
 ```
 
-Common use-cases:
-- CLI utilities with obvious fallback values.
-- Teaching explicit handling at every risky call.
-
-Tradeoffs:
-- Most explicit.
-- Repetitive in deep call chains.
-
-## Strategy B: Add Propagation Operator (`?`)
-Allow fast propagation when the current function returns `fallible<T>`.
-
-Proposed rule:
-- `expr?` unwraps success value.
-- On failure, returns error from current function immediately.
-
-Example (parse -> compute):
+And now propagation from inside a `fallible<T>` function:
 
 ```code
 function<fallible<real>> run(string input, real count) {
-  real parsed = parseReal(input)?;
-  real output = divide(parsed, count)?;
-  return output;
+  real parsed = parseReal(input) on error return error;
+  return divide(parsed, count);
 }
 ```
 
-Call-site boundary stays explicit:
+Error transformation is also supported:
 
 ```code
-real result = run(text, 2) on error yield 0;
+function<fallible<real>> run2(string input, real count) {
+  real parsed = parseReal(input)
+    on error return new error("ParseError", "Could not parse '{input}'");
+  return divide(parsed, count);
+}
 ```
 
-Common use-cases:
-- Service/business logic with several fallible steps.
-- Library code that propagates errors upward.
+## What High-Quality Languages Do Well
+Notable patterns from languages commonly praised for error handling:
 
-Tradeoffs:
-- Large readability gain in pipelines.
-- Introduces one compact operator to teach.
+- Rust:
+  - Typed `Result<T, E>`.
+  - `?` operator for early return on error.
+  - Strong compiler checks make flows explicit.
+- Go:
+  - Explicit `error` return values.
+  - Straightforward `if err != nil` handling.
+  - Very readable, but can be repetitive.
+- Zig:
+  - Error unions (`T!E`) and `try/catch`.
+  - Explicit recovery (`catch`) or propagation (`try`) with low ceremony.
+- Elixir:
+  - Tagged tuples (`{:ok, value}`, `{:error, reason}`).
+  - Pattern matching drives explicit control flow.
+  - Consistent "errors are values" discipline.
+- OCaml:
+  - `result` type plus composition helpers (`map`, `bind`).
+  - Clean typed pipelines for transformation-heavy code.
 
-## Strategy C: Add Combinators (`map`, `then`, `mapError`)
-Keep data-flow functional and chainable.
+Shared themes:
+- Errors are typed data.
+- Propagation is easy.
+- Boundary handling stays explicit.
 
-Possible API shape:
-- `map` transforms success value.
-- `then` chains to next fallible operation.
-- `mapError` rewrites error payload.
+## Hook Syntax Candidates (No Shorthand Operator)
+All candidates preserve your new valid pattern concept: explicit propagation from hook site.
 
-Example (parse -> compute):
-
+### Candidate A: Keep `on error` (minimal change)
 ```code
-fallible<real> result =
-  parseReal(input)
-    .then(function<fallible<real>>(real v) { return divide(v, count); })
-    .map(function<real>(real q) { return q * 100; });
-
-real output = result on error yield 0;
+real parsed = parseReal(input) on error return error;
+real output = divide(parsed, count) on error yield 0;
 ```
 
-Common use-cases:
-- Reusable error pipelines.
-- Rich error decoration before boundary handling.
+Pros:
+- Already in the spec.
+- Reads naturally.
+- Minimal grammar churn.
 
-Tradeoffs:
-- Powerful and composable.
-- Higher conceptual cost for beginners.
+Cons:
+- Slightly phrase-heavy when repeated.
 
-## Strategy D: Structured Match (`when success` / `when error`)
-Add pattern-style branching for fallible values.
+### Candidate B: `catch error` (familiar to many developers)
+```code
+real parsed = parseReal(input) catch error return error;
+real output = divide(parsed, count) catch error yield 0;
+```
 
-Example:
+Pros:
+- Familiar from many ecosystems.
+- Explicit error hook noun (`error`) stays visible.
+
+Cons:
+- Can be confused with statement-level `try/catch`.
+
+### Candidate C: `handle error` (most explicit English)
+```code
+real parsed = parseReal(input) handle error return error;
+real output = divide(parsed, count) handle error yield 0;
+```
+
+Pros:
+- Very clear for beginners.
+- Reads like an intent statement.
+
+Cons:
+- Longer syntax.
+
+### Candidate D: Hook block form for complex handlers
+Keep a single keyword but make block form first-class:
 
 ```code
-fallible<real> parsed = parseReal(input);
-real output = when parsed {
-  success(real value) then value;
-  error(e) then {
-    print("Parse failed: {e}");
-    0;
-  }
+real parsed = parseReal(input) on error {
+  log("Parse failed: {error}");
+  return error;
 };
 ```
 
-Common use-cases:
-- UI/controller layers where success/error paths are both substantial.
-- Cases where both branches need clear local logic.
+Pros:
+- Scales to richer recovery logic.
+- Maintains one concept (`on error`) in all forms.
 
-Tradeoffs:
-- Very explicit branch semantics.
-- More syntax surface than `on error`.
+Cons:
+- Requires explicit terminal action rules (`yield`, `return error`, or `panic`).
 
-## Recommendation
-Best balance for Code: **Strategy B (Propagation `?`) + current `on error` boundary syntax**.
+## Suggested Direction
+Most aligned with Code's clarity goal:
+- Keep `on error` for now.
+- Expand legal terminal actions in handler blocks to:
+  - `yield <value>`
+  - `panic(...)`
+  - `return error` (inside `fallible<T>` functions)
 
-Why:
-- Keeps top-level handling explicit (`on error ...`).
-- Reduces noise in internal logic.
-- Easy mental model: `?` means "return error now if failed."
+This gives strong semantics now without adding shorthand operators.
 
-## Suggested Minimal Spec Additions (if Strategy B chosen)
-1. `expr?` allowed only inside functions returning `fallible<U>`.
-2. `expr?` requires `expr` type `fallible<T>` and evaluates to `T`.
-3. On error, function returns that error immediately.
-4. `on error` remains the required explicit conversion from `fallible<T>` to `T`.
-5. `yield` inside `fallible<T>` functions returns a success value of `T`.
+## Open Design Checks
+1. Should block handlers support `return <newError>` for explicit transformation?
+2. Should `error` have a concrete base type in the language spec?
+3. Should any expression support hooks, or only `fallible<T>` expressions?
+4. Should handler blocks be required to end in one terminal action?
 
-## Decision Prompts
-1. Do you want to add `?` now, or keep baseline-only first?
-2. If `?` is added, should it work in constructors/methods the same as functions?
-3. Do you want combinators (`map`, `then`) in v1, or defer to runtime libraries later?
+## Next Prompt
+Should block handlers support explicit transformed returns too?
+1. `on error return new error("Type", "Message")` only
+2. Generic `on error return <errorExpression>`

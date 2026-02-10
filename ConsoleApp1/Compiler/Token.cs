@@ -13,6 +13,7 @@ enum TokenType
     LessEqual, GreaterEqual,
 
     Identifier, Number,
+    True, False,
 
     Integer, Whole, Real, Boolean,
     If, Then, Else,

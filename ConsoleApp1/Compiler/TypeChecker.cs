@@ -136,8 +136,12 @@ sealed class TypeChecker
     {
         switch (expr)
         {
-            case Literal:
-                return TypeSymbol.Integer; // all numeric literals treated as integer for now
+            case Literal lit:
+                return lit.Value switch
+                {
+                    bool => TypeSymbol.Boolean,
+                    _ => TypeSymbol.Integer // numeric literals as integer for now
+                };
             case Variable v:
                 return env.Lookup(v.Name);
             case Assign a:

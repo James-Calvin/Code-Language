@@ -7,6 +7,7 @@ Legend: [x] implemented (prototype), [~] planned/next, [ ] deferred/open
 - [x] Variables, assignments, blocks
 - [x] Arithmetic and comparisons
 - [x] Logical `and` / `or` / `not` (short-circuit)
+- [x] Boolean literals `true` / `false`
 - [x] Control flow: `if ... then ... else`, `while ... then ...`, `for` (counted)
 - [x] `foreach` lowered to a 0..N-1 loop over an integer bound
 - [x] Function declarations and calls (CALL/RET), untyped parameters

@@ -323,6 +323,8 @@ sealed class Parser
     private Expr Primary()
     {
         if (Match(TokenType.Number)) return new Literal(Previous().Literal);
+        if (Match(TokenType.True)) return new Literal(true);
+        if (Match(TokenType.False)) return new Literal(false);
         if (Match(TokenType.Identifier))
         {
             Token name = Previous();

@@ -1,0 +1,5 @@
+boolean ok = true;
+boolean bad = false;
+if ok and not bad then print 1; 
+else print 0;
+

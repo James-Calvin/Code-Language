@@ -429,5 +429,10 @@ function<fallible<real>> runWithTypedError(string input, real count) {
   - Escape literal braces with `\{` and `\}`.
   - Nested string literals inside an interpolation are disallowed to keep parsing simple.
 
-## 16. Open Questions
+## 16. Literals
+- Numeric: see numeric literal rules above.
+- Boolean: `true` and `false`.
+- Strings: quoted with interpolation as above.
+
+## 17. Open Questions
 - Future package search paths beyond project `lib/` (configuration format, stdlib layout).

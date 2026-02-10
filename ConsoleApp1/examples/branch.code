@@ -1,0 +1,10 @@
+integer value = 10;
+integer threshold = 5;
+integer result;
+if value > threshold then {
+  result = 1;
+} else {
+  result = 0;
+}
+print result;
+

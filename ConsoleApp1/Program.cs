@@ -1,143 +1,131 @@
 using System;
-using System.Buffers.Binary;
-using System.Collections.Generic;
+using System.IO;
+using ConsoleApp1.Compiler;
 
-// Minimal stack-based bytecode VM for experimenting with the Code language.
+namespace ConsoleApp1;
 
-enum OpCode : byte
+internal static class Program
 {
-    PushConst = 0x01,
-    Add = 0x02,
-    Sub = 0x03,
-    Mul = 0x04,
-    Div = 0x05,
-    Print = 0x06,
-    Halt = 0xFF
-}
-
-sealed class Vm
-{
-    private readonly byte[] _code;
-    private readonly Stack<double> _stack = new();
-    private int _ip;
-
-    public Vm(byte[] code)
+    public static void Main(string[] args)
     {
-        _code = code;
+        string? disasmPath = null;
+        string? bytecodePath = null;
+        string? codePath = null;
+        string? outPath = null;
+        bool skipTests = false;
+        bool compileOnly = false;
+
+        for (int i = 0; i < args.Length; i++)
+        {
+            switch (args[i])
+            {
+                case "--disasm":
+                    if (i + 1 >= args.Length) Fail("Usage: --disasm <file.bytecode>");
+                    disasmPath = args[++i];
+                    break;
+                case "--out":
+                    if (i + 1 >= args.Length) Fail("Usage: --out <output.bytecode>");
+                    outPath = args[++i];
+                    break;
+                case "--skip-tests":
+                    skipTests = true;
+                    break;
+                case "--compile-only":
+                    compileOnly = true;
+                    break;
+                default:
+                    if (args[i].EndsWith(".bytecode", StringComparison.OrdinalIgnoreCase))
+                        bytecodePath = args[i];
+                    else if (args[i].EndsWith(".code", StringComparison.OrdinalIgnoreCase))
+                        codePath = args[i];
+                    else
+                        Fail($"Unrecognized argument '{args[i]}'");
+                    break;
+            }
+        }
+
+        if (disasmPath != null)
+        {
+            var bytes = File.ReadAllBytes(disasmPath);
+            Console.Write(Disassembler.Disassemble(bytes));
+            return;
+        }
+
+        if (codePath != null)
+        {
+            string outputPath = outPath ?? Path.ChangeExtension(codePath, ".bytecode");
+            CompileToFile(codePath, outputPath);
+            if (!compileOnly)
+                RunBytecode(outputPath);
+            return;
+        }
+
+        if (bytecodePath != null)
+        {
+            RunBytecode(bytecodePath);
+            return;
+        }
+
+        if (!skipTests)
+            TestHarness.RunAll();
+
+        Console.WriteLine();
+        Console.WriteLine("Demo: (2 + 3) * 4");
+        var program = BytecodeBuilder.New()
+            .PushInt(2).PushInt(3).Add()
+            .PushInt(4).Mul()
+            .Print().Halt()
+            .ToArray();
+        new Vm(program).Run();
     }
 
-    public void Run()
+    private static void CompileToFile(string sourcePath, string outputPath)
     {
-        while (true)
+        try
         {
-            if (_ip >= _code.Length)
-                throw new InvalidOperationException("Execution fell off the end of the program.");
-
-            var op = (OpCode)_code[_ip++];
-
-            switch (op)
-            {
-                case OpCode.PushConst:
-                    EnsureBytes(4);
-                    int value = BinaryPrimitives.ReadInt32LittleEndian(_code.AsSpan(_ip, 4));
-                    _ip += 4;
-                    _stack.Push(value);
-                    break;
-
-                case OpCode.Add:
-                    BinaryOp((a, b) => a + b);
-                    break;
-
-                case OpCode.Sub:
-                    BinaryOp((a, b) => a - b);
-                    break;
-
-                case OpCode.Mul:
-                    BinaryOp((a, b) => a * b);
-                    break;
-
-                case OpCode.Div:
-                    BinaryOp((a, b) =>
-                    {
-                        if (b == 0)
-                            throw new DivideByZeroException("Division by zero in bytecode.");
-                        return a / b;
-                    });
-                    break;
-
-                case OpCode.Print:
-                    Console.WriteLine(Pop());
-                    break;
-
-                case OpCode.Halt:
-                    return;
-
-                default:
-                    throw new InvalidOperationException($"Unknown opcode {(byte)op} at {_ip - 1}");
-            }
+            var source = File.ReadAllText(sourcePath);
+            var lexer = new Lexer(source);
+            var tokens = lexer.ScanTokens();
+            var parser = new Parser(tokens);
+            var ast = parser.Parse();
+            var generator = new CodeGenerator();
+            var bytes = generator.Generate(ast);
+            File.WriteAllBytes(outputPath, bytes);
+            Console.WriteLine($"Compiled {sourcePath} -> {outputPath}");
+        }
+        catch (CompilerException ce)
+        {
+            Console.Error.WriteLine($"{sourcePath}:{ce.Line}:{ce.Column}: error: {ce.Message}");
+            Environment.Exit(1);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"Compile failed: {ex.Message}");
+            Environment.Exit(1);
         }
     }
 
-    private void BinaryOp(Func<double, double, double> op)
+    private static void RunBytecode(string path)
     {
-        double b = Pop();
-        double a = Pop();
-        _stack.Push(op(a, b));
+        if (!path.EndsWith(".bytecode", StringComparison.OrdinalIgnoreCase))
+        {
+            Console.Error.WriteLine("Expected a .bytecode file.");
+            Environment.Exit(1);
+        }
+        if (!File.Exists(path))
+        {
+            Console.Error.WriteLine($"Bytecode file not found: {path}");
+            Environment.Exit(1);
+        }
+
+        var bytes = File.ReadAllBytes(path);
+        var vm = new Vm(bytes);
+        vm.Run();
     }
 
-    private double Pop()
+    private static void Fail(string message)
     {
-        if (_stack.Count == 0)
-            throw new InvalidOperationException($"Stack underflow at {_ip - 1}");
-        return _stack.Pop();
-    }
-
-    private void EnsureBytes(int count)
-    {
-        if (_ip + count > _code.Length)
-            throw new InvalidOperationException("Unexpected end of bytecode while reading operand.");
-    }
-}
-
-sealed class BytecodeBuilder
-{
-    private readonly List<byte> _bytes = new();
-
-    public static BytecodeBuilder New() => new BytecodeBuilder();
-
-    public BytecodeBuilder PushInt(int value)
-    {
-        _bytes.Add((byte)OpCode.PushConst);
-        _bytes.AddRange(BitConverter.GetBytes(value));
-        return this;
-    }
-
-    public BytecodeBuilder Add() { _bytes.Add((byte)OpCode.Add); return this; }
-    public BytecodeBuilder Sub() { _bytes.Add((byte)OpCode.Sub); return this; }
-    public BytecodeBuilder Mul() { _bytes.Add((byte)OpCode.Mul); return this; }
-    public BytecodeBuilder Div() { _bytes.Add((byte)OpCode.Div); return this; }
-    public BytecodeBuilder Print() { _bytes.Add((byte)OpCode.Print); return this; }
-    public BytecodeBuilder Halt() { _bytes.Add((byte)OpCode.Halt); return this; }
-
-    public byte[] ToArray() => _bytes.ToArray();
-}
-
-static class Program
-{
-    // Demo program: computes (2 + 3) * 4 and prints 20.
-    public static void Main()
-    {
-        var program = BytecodeBuilder.New()
-            .PushInt(2)
-            .PushInt(3)
-            .Add()
-            .PushInt(4)
-            .Mul()
-            .Print()
-            .Halt()
-            .ToArray();
-
-        Console.WriteLine("Running bytecode: (2 + 3) * 4");
-        new Vm(program).Run();
+        Console.Error.WriteLine(message);
+        Environment.Exit(1);
     }
 }

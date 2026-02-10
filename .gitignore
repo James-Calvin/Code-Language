@@ -19,6 +19,9 @@
 .idea/
 *.DotSettings.user
 
+# Bytecode outputs
+*.bytecode
+
 # Logs
 *.log
 

@@ -1,0 +1,9 @@
+integer limit = 5;
+integer index = 0;
+integer sum = 0;
+while index < limit then {
+  sum = sum + index;
+  index = index + 1;
+}
+print sum;
+

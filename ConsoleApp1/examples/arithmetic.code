@@ -1,0 +1,7 @@
+integer a = 2 + 3 * 4;
+print(a);
+integer b = a - 5;
+print(b);
+integer c = (a + b) * 2;
+print c;
+

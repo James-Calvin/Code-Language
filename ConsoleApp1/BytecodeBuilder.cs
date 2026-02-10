@@ -10,34 +10,52 @@ sealed class BytecodeBuilder
     private readonly List<byte> _bytes = new();
     private readonly Dictionary<string, int> _labels = new(StringComparer.Ordinal);
     private readonly List<(int position, string label)> _fixups = new();
+    private readonly List<(int ip, int line, int column)> _debug = new();
+    private int _currentLine;
+    private int _currentColumn;
 
     public static BytecodeBuilder New() => new();
 
+    public void SetDebugLocation(int line, int column)
+    {
+        _currentLine = line;
+        _currentColumn = column;
+    }
+
+    private void RecordDebug()
+    {
+        if (_currentLine <= 0) return;
+        int ip = BytecodeFormat.HeaderSize + _bytes.Count;
+        _debug.Add((ip, _currentLine, _currentColumn));
+    }
+
     public BytecodeBuilder PushInt(int value)
     {
+        RecordDebug();
         _bytes.Add((byte)OpCode.PushConst);
         _bytes.AddRange(BitConverter.GetBytes(value));
         return this;
     }
 
-    public BytecodeBuilder Add() { _bytes.Add((byte)OpCode.Add); return this; }
-    public BytecodeBuilder Sub() { _bytes.Add((byte)OpCode.Sub); return this; }
-    public BytecodeBuilder Mul() { _bytes.Add((byte)OpCode.Mul); return this; }
-    public BytecodeBuilder Div() { _bytes.Add((byte)OpCode.Div); return this; }
-    public BytecodeBuilder Print() { _bytes.Add((byte)OpCode.Print); return this; }
-    public BytecodeBuilder Dup() { _bytes.Add((byte)OpCode.Dup); return this; }
-    public BytecodeBuilder Swap() { _bytes.Add((byte)OpCode.Swap); return this; }
-    public BytecodeBuilder Pop() { _bytes.Add((byte)OpCode.Pop); return this; }
+    public BytecodeBuilder Add() { RecordDebug(); _bytes.Add((byte)OpCode.Add); return this; }
+    public BytecodeBuilder Sub() { RecordDebug(); _bytes.Add((byte)OpCode.Sub); return this; }
+    public BytecodeBuilder Mul() { RecordDebug(); _bytes.Add((byte)OpCode.Mul); return this; }
+    public BytecodeBuilder Div() { RecordDebug(); _bytes.Add((byte)OpCode.Div); return this; }
+    public BytecodeBuilder Print() { RecordDebug(); _bytes.Add((byte)OpCode.Print); return this; }
+    public BytecodeBuilder Dup() { RecordDebug(); _bytes.Add((byte)OpCode.Dup); return this; }
+    public BytecodeBuilder Swap() { RecordDebug(); _bytes.Add((byte)OpCode.Swap); return this; }
+    public BytecodeBuilder Pop() { RecordDebug(); _bytes.Add((byte)OpCode.Pop); return this; }
     public BytecodeBuilder Jump(string label) => AddJump(OpCode.Jump, label);
     public BytecodeBuilder JumpIfZero(string label) => AddJump(OpCode.JumpIfZero, label);
     public BytecodeBuilder JumpIfNotZero(string label) => AddJump(OpCode.JumpIfNotZero, label);
     public BytecodeBuilder Load(int slot) => AddSlot(OpCode.Load, slot);
     public BytecodeBuilder Store(int slot) => AddSlot(OpCode.Store, slot);
-    public BytecodeBuilder Eq() { _bytes.Add((byte)OpCode.Eq); return this; }
-    public BytecodeBuilder Lt() { _bytes.Add((byte)OpCode.Lt); return this; }
-    public BytecodeBuilder Gt() { _bytes.Add((byte)OpCode.Gt); return this; }
+    public BytecodeBuilder Eq() { RecordDebug(); _bytes.Add((byte)OpCode.Eq); return this; }
+    public BytecodeBuilder Lt() { RecordDebug(); _bytes.Add((byte)OpCode.Lt); return this; }
+    public BytecodeBuilder Gt() { RecordDebug(); _bytes.Add((byte)OpCode.Gt); return this; }
     public BytecodeBuilder PushString(string value)
     {
+        RecordDebug();
         _bytes.Add((byte)OpCode.PushString);
         var utf8 = System.Text.Encoding.UTF8.GetBytes(value);
         _bytes.AddRange(BitConverter.GetBytes(utf8.Length));
@@ -46,6 +64,7 @@ sealed class BytecodeBuilder
     }
     public BytecodeBuilder Call(string label, int argCount, int localCount)
     {
+        RecordDebug();
         _bytes.Add((byte)OpCode.Call);
         _fixups.Add((_bytes.Count, label));
         _bytes.AddRange(new byte[4]); // target placeholder
@@ -53,13 +72,13 @@ sealed class BytecodeBuilder
         _bytes.AddRange(BitConverter.GetBytes(localCount));
         return this;
     }
-    public BytecodeBuilder Ret() { _bytes.Add((byte)OpCode.Ret); return this; }
+    public BytecodeBuilder Ret() { RecordDebug(); _bytes.Add((byte)OpCode.Ret); return this; }
     public BytecodeBuilder Label(string name)
     {
         _labels[name] = _bytes.Count + BytecodeFormat.HeaderSize;
         return this;
     }
-    public BytecodeBuilder Halt() { _bytes.Add((byte)OpCode.Halt); return this; }
+    public BytecodeBuilder Halt() { RecordDebug(); _bytes.Add((byte)OpCode.Halt); return this; }
 
     public byte[] ToArray()
     {
@@ -74,14 +93,26 @@ sealed class BytecodeBuilder
             Array.Copy(bytes, 0, body, position, 4);
         }
 
-        var result = new byte[BytecodeFormat.HeaderSize + body.Length];
-        BytecodeFormat.WriteHeader(result.AsSpan(0, BytecodeFormat.HeaderSize));
+        int codeSize = body.Length;
+        int debugBytes = _debug.Count * BytecodeFormat.DebugEntrySize;
+        var result = new byte[BytecodeFormat.HeaderSize + codeSize + debugBytes];
+        BytecodeFormat.WriteHeader(result.AsSpan(0, BytecodeFormat.HeaderSize), codeSize, _debug.Count);
         Array.Copy(body, 0, result, BytecodeFormat.HeaderSize, body.Length);
+
+        int offset = BytecodeFormat.HeaderSize + codeSize;
+        foreach (var entry in _debug)
+        {
+            BitConverter.GetBytes(entry.ip).CopyTo(result, offset);
+            BitConverter.GetBytes(entry.line).CopyTo(result, offset + 4);
+            BitConverter.GetBytes(entry.column).CopyTo(result, offset + 8);
+            offset += BytecodeFormat.DebugEntrySize;
+        }
         return result;
     }
 
     private BytecodeBuilder AddJump(OpCode op, string label)
     {
+        RecordDebug();
         _bytes.Add((byte)op);
         int operandPos = _bytes.Count;
         _fixups.Add((operandPos, label));
@@ -91,6 +122,7 @@ sealed class BytecodeBuilder
 
     private BytecodeBuilder AddSlot(OpCode op, int slot)
     {
+        RecordDebug();
         _bytes.Add((byte)op);
         _bytes.AddRange(BitConverter.GetBytes(slot));
         return this;

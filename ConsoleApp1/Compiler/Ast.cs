@@ -22,13 +22,17 @@ sealed class Unary : Expr
 sealed class Literal : Expr
 {
     public object? Value { get; }
-    public Literal(object? value) { Value = value; }
+    public int Line { get; }
+    public int Column { get; }
+    public Literal(object? value, int line, int column) { Value = value; Line = line; Column = column; }
 }
 
 sealed class InterpString : Expr
 {
     public IReadOnlyList<object> Parts { get; } // string segments or Expr
-    public InterpString(IReadOnlyList<object> parts) { Parts = parts; }
+    public int Line { get; }
+    public int Column { get; }
+    public InterpString(IReadOnlyList<object> parts, int line, int column) { Parts = parts; Line = line; Column = column; }
 }
 
 sealed class Variable : Expr

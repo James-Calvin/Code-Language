@@ -138,6 +138,21 @@ internal static class Program
         {
             vm.Run();
         }
+        catch (VmRuntimeException vex)
+        {
+            Console.Error.WriteLine($"Runtime error: {vex.Message}");
+            PrintRuntimeLocation(path, vex.Line, vex.Column);
+            if (vex.CallStack.Length > 0)
+            {
+                Console.Error.WriteLine("Stack trace (most recent call first):");
+                foreach (var frame in vex.CallStack)
+                {
+                    var locText = FormatLocation(path, frame.Line, frame.Column);
+                    Console.Error.WriteLine($"  at ip {frame.Ip}{locText}");
+                }
+            }
+            Environment.Exit(1);
+        }
         catch (Exception ex)
         {
             Console.Error.WriteLine($"Runtime error: {ex.Message}");
@@ -160,5 +175,28 @@ internal static class Program
         {
             Console.WriteLine($"{t.Line}:{t.Column} {t.Type} '{t.Lexeme}'");
         }
+    }
+
+    private static void PrintRuntimeLocation(string bytecodePath, int line, int column)
+    {
+        if (line <= 0 || column <= 0) return;
+        string sourcePath = Path.ChangeExtension(bytecodePath, ".code");
+        if (File.Exists(sourcePath))
+        {
+            var source = File.ReadAllText(sourcePath);
+            DiagnosticPrinter.PrintSnippet(sourcePath, source, line, column);
+        }
+        else
+        {
+            Console.Error.WriteLine($"  at {sourcePath}:{line}:{column}");
+        }
+    }
+
+    private static string FormatLocation(string bytecodePath, int line, int column)
+    {
+        if (line <= 0 || column <= 0) return string.Empty;
+        string sourcePath = Path.ChangeExtension(bytecodePath, ".code");
+        string displayPath = File.Exists(sourcePath) ? sourcePath : Path.GetFileName(sourcePath);
+        return $" ({displayPath}:{line}:{column})";
     }
 }

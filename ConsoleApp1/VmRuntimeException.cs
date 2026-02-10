@@ -5,12 +5,18 @@ namespace ConsoleApp1;
 sealed class VmRuntimeException : Exception
 {
     public int InstructionPointer { get; }
-    public int[] CallStack { get; }
+    public VmFrame[] CallStack { get; }
+    public int Line { get; }
+    public int Column { get; }
 
-    public VmRuntimeException(string message, int ip, int[] callStack)
+    public VmRuntimeException(string message, int ip, VmFrame[] callStack, int line, int column)
         : base(message)
     {
         InstructionPointer = ip;
         CallStack = callStack;
+        Line = line;
+        Column = column;
     }
 }
+
+readonly record struct VmFrame(int Ip, int Line, int Column);

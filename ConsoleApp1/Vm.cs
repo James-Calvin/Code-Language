@@ -37,22 +37,35 @@ sealed class Vm
     private object[] _locals;
     private int _ip;
     private readonly TextWriter _output;
-    private readonly Stack<(int returnIp, object[] locals)> _callStack = new();
+    private readonly Stack<(int returnIp, int callIp, object[] locals)> _callStack = new();
+    private readonly Dictionary<int, (int line, int column)> _debug = new();
+    private readonly int _codeEnd;
 
     public Vm(byte[] code, TextWriter? output = null, int initialLocals = 8)
     {
-        BytecodeFormat.ValidateHeader(code);
+        var header = BytecodeFormat.ReadHeader(code);
         _code = code;
         _ip = BytecodeFormat.HeaderSize;
+        _codeEnd = BytecodeFormat.HeaderSize + header.CodeSize;
         _locals = new object[initialLocals];
         _output = output ?? Console.Out;
+
+        int debugOffset = _codeEnd;
+        for (int i = 0; i < header.DebugCount; i++)
+        {
+            int ip = BinaryPrimitives.ReadInt32LittleEndian(code.AsSpan(debugOffset, 4));
+            int line = BinaryPrimitives.ReadInt32LittleEndian(code.AsSpan(debugOffset + 4, 4));
+            int col = BinaryPrimitives.ReadInt32LittleEndian(code.AsSpan(debugOffset + 8, 4));
+            _debug[ip] = (line, col);
+            debugOffset += BytecodeFormat.DebugEntrySize;
+        }
     }
 
     public void Run()
     {
         while (true)
         {
-            if (_ip >= _code.Length)
+            if (_ip >= _codeEnd)
                 ThrowRuntime("Execution fell off the end of the program.");
 
             var op = (OpCode)_code[_ip++];
@@ -183,6 +196,7 @@ sealed class Vm
 
                 case OpCode.Call:
                 {
+                    int callIp = _ip - 1;
                     int target = ReadIntOperand();
                     int argCount = ReadIntOperand();
                     int localCount = ReadIntOperand();
@@ -193,7 +207,7 @@ sealed class Vm
                             ThrowRuntime("Stack underflow while reading args");
                         newLocals[i] = _stack.Pop();
                     }
-                    _callStack.Push((_ip, _locals));
+                    _callStack.Push((_ip, callIp, _locals));
                     _locals = newLocals;
                     _ip = target;
                     break;
@@ -215,7 +229,8 @@ sealed class Vm
                     return;
 
                 default:
-                    throw new InvalidOperationException($"Unknown opcode {(byte)op} at {_ip - 1}");
+                    ThrowRuntime($"Unknown opcode {(byte)op} at {_ip - 1}");
+                    break;
             }
         }
     }
@@ -227,25 +242,30 @@ sealed class Vm
         _stack.Push(op(a, b));
     }
 
-    private double PopAsNumber(object v) => v switch
+    private double PopAsNumber(object v)
     {
-        double d => d,
-        int i => i,
-        _ => throw new InvalidOperationException($"Expected number on stack at {_ip - 1}, found {v?.GetType().Name}")
-    };
+        switch (v)
+        {
+            case double d: return d;
+            case int i: return i;
+            default:
+                ThrowRuntime($"Expected number on stack at {_ip - 1}, found {v?.GetType().Name}");
+                return 0; // unreachable
+        }
+    }
 
     private double PopNumber()
     {
         if (_stack.Count == 0)
-            throw new InvalidOperationException($"Stack underflow at {_ip - 1}");
+            ThrowRuntime($"Stack underflow at {_ip - 1}");
         var v = _stack.Pop();
         return PopAsNumber(v);
     }
 
     private void EnsureBytes(int count)
     {
-        if (_ip + count > _code.Length)
-            throw new InvalidOperationException("Unexpected end of bytecode while reading operand.");
+        if (_ip + count > _codeEnd)
+            ThrowRuntime("Unexpected end of bytecode while reading operand.");
     }
 
     private int ReadIntOperand()
@@ -295,9 +315,24 @@ sealed class Vm
 
     private void ThrowRuntime(string message)
     {
-        var calls = new List<int>();
+        var calls = new List<VmFrame>();
         foreach (var frame in _callStack)
-            calls.Add(frame.returnIp);
-        throw new VmRuntimeException(message, _ip - 1, calls.ToArray());
+        {
+            int frameLine = -1, frameCol = -1;
+            if (_debug.TryGetValue(frame.callIp, out var locFrame))
+            {
+                frameLine = locFrame.line;
+                frameCol = locFrame.column;
+            }
+            calls.Add(new VmFrame(frame.callIp, frameLine, frameCol));
+        }
+        int faultIp = _ip - 1;
+        int faultLine = -1, faultCol = -1;
+        if (_debug.TryGetValue(faultIp, out var loc))
+        {
+            faultLine = loc.line;
+            faultCol = loc.column;
+        }
+        throw new VmRuntimeException(message, faultIp, calls.ToArray(), faultLine, faultCol);
     }
 }

@@ -169,7 +169,9 @@ sealed class Parser
             Consume(TokenType.Semicolon, "Expect ';' after for initializer.");
         }
 
-        Expr condition = Check(TokenType.Semicolon) ? new Literal(1) : Expression();
+        Expr condition = Check(TokenType.Semicolon)
+            ? new Literal(1, Peek().Line, Peek().Column)
+            : Expression();
         Consume(TokenType.Semicolon, "Expect ';' after for condition.");
 
         Expr? increment = null;
@@ -322,10 +324,10 @@ sealed class Parser
 
     private Expr Primary()
     {
-        if (Match(TokenType.Number)) return new Literal(Previous().Literal);
-        if (Match(TokenType.True)) return new Literal(true);
-        if (Match(TokenType.False)) return new Literal(false);
-        if (Match(TokenType.String)) return ParseStringLiteral(Previous().Literal?.ToString() ?? "");
+        if (Match(TokenType.Number)) return new Literal(Previous().Literal, Previous().Line, Previous().Column);
+        if (Match(TokenType.True)) return new Literal(true, Previous().Line, Previous().Column);
+        if (Match(TokenType.False)) return new Literal(false, Previous().Line, Previous().Column);
+        if (Match(TokenType.String)) return ParseStringLiteral(Previous(), Previous().Literal?.ToString() ?? "");
         if (Match(TokenType.Identifier))
         {
             Token name = Previous();
@@ -407,10 +409,10 @@ sealed class Parser
         return new CompilerException(message, token.Line, token.Column);
     }
 
-    private Expr ParseStringLiteral(string raw)
+    private Expr ParseStringLiteral(Token stringToken, string raw)
     {
         if (!raw.Contains("{"))
-            return new Literal(raw);
+            return new Literal(raw, stringToken.Line, stringToken.Column);
 
         var parts = new List<object>();
         int i = 0;
@@ -428,15 +430,15 @@ sealed class Parser
             }
             int close = raw.IndexOf('}', brace + 1);
             if (close == -1)
-                throw new CompilerException("Unterminated interpolation in string literal", Previous().Line, Previous().Column);
+                throw new CompilerException("Unterminated interpolation in string literal", stringToken.Line, stringToken.Column);
             string exprText = raw.Substring(brace + 1, close - brace - 1).Trim();
             if (string.IsNullOrEmpty(exprText))
-                throw new CompilerException("Empty interpolation expression", Previous().Line, Previous().Column);
+                throw new CompilerException("Empty interpolation expression", stringToken.Line, stringToken.Column);
             // For MVP, allow identifier or numeric literal as interpolation expression.
-            parts.Add(ParseInlineExpression(exprText, Previous().Line, Previous().Column));
+            parts.Add(ParseInlineExpression(exprText, stringToken.Line, stringToken.Column));
             i = close + 1;
         }
-        return new InterpString(parts);
+        return new InterpString(parts, stringToken.Line, stringToken.Column);
     }
 
     private Expr ParseInlineExpression(string text, int line, int col)
@@ -484,9 +486,9 @@ sealed class Parser
 
         Expr ParsePrimary()
         {
-            if (MatchInline(TokenType.Number)) return new Literal(PrevInline().Literal);
-            if (MatchInline(TokenType.True)) return new Literal(true);
-            if (MatchInline(TokenType.False)) return new Literal(false);
+            if (MatchInline(TokenType.Number)) { var t = PrevInline(); return new Literal(t.Literal, t.Line, t.Column); }
+            if (MatchInline(TokenType.True)) { var t = PrevInline(); return new Literal(true, t.Line, t.Column); }
+            if (MatchInline(TokenType.False)) { var t = PrevInline(); return new Literal(false, t.Line, t.Column); }
             if (MatchInline(TokenType.Identifier)) return new Variable(PrevInline());
             if (MatchInline(TokenType.LeftParen))
             {

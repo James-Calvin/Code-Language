@@ -9,6 +9,7 @@ sealed class CodeGenerator
     private Dictionary<string, int> _locals = new(StringComparer.Ordinal);
     private int _localCount;
     private readonly Dictionary<string, (string Label, int ParamCount, int LocalCount)> _functions = new(StringComparer.Ordinal);
+    private int _labelCounter;
 
     public byte[] Generate(IList<Stmt> statements)
     {
@@ -49,6 +50,9 @@ sealed class CodeGenerator
         return _builder.ToArray();
     }
 
+    private void SetLoc(Token token) => _builder.SetDebugLocation(token.Line, token.Column);
+    private void SetLoc(int line, int column) => _builder.SetDebugLocation(line, column);
+
     private void EmitFunction(FunctionDecl fn)
     {
         string label = _functions[fn.Name.Lexeme].Label;
@@ -77,6 +81,7 @@ sealed class CodeGenerator
         switch (stmt)
         {
             case VarDecl v:
+                SetLoc(v.Name);
                 int slot = GetOrAllocate(v.Name.Lexeme);
                 if (v.Initializer is not null)
                 {
@@ -86,6 +91,7 @@ sealed class CodeGenerator
                 {
                     _builder.PushInt(0); // default
                 }
+                SetLoc(v.Name);
                 _builder.Store(slot);
                 break;
 
@@ -154,6 +160,7 @@ sealed class CodeGenerator
 
             case ForeachStmt fe:
                 {
+                    SetLoc(fe.Iterator);
                     int endSlot = AllocateTemp();
                     int idxSlot = AllocateTemp();
                     int iterSlot = GetOrAllocate(fe.Iterator.Lexeme);
@@ -200,27 +207,33 @@ sealed class CodeGenerator
         switch (expr)
         {
             case Literal lit:
+                SetLoc(lit.Line, lit.Column);
                 _builder.PushInt(Convert.ToInt32(lit.Value ?? 0));
                 break;
 
             case InterpString istr:
+                SetLoc(istr.Line, istr.Column);
                 EmitInterpolatedString(istr);
                 break;
 
             case Variable v:
+                SetLoc(v.Name);
                 _builder.Load(GetSlot(v.Name));
                 break;
 
             case Assign a:
                 Emit(a.Value);
+                SetLoc(a.Name);
                 _builder.Store(GetSlot(a.Name));
                 break;
 
             case Call call:
+                SetLoc(call.Callee);
                 EmitCall(call);
                 break;
 
             case Unary u:
+                SetLoc(u.Operator);
                 Emit(u.Right);
                 if (u.Operator.Type == TokenType.Minus)
                 {
@@ -248,14 +261,17 @@ sealed class CodeGenerator
             case Binary b:
                 if (b.Operator.Type == TokenType.And)
                 {
+                    SetLoc(b.Operator);
                     EmitLogicalAnd(b);
                     break;
                 }
                 if (b.Operator.Type == TokenType.Or)
                 {
+                    SetLoc(b.Operator);
                     EmitLogicalOr(b);
                     break;
                 }
+                SetLoc(b.Operator);
                 Emit(b.Left);
                 Emit(b.Right);
                 switch (b.Operator.Type)
@@ -315,7 +331,6 @@ sealed class CodeGenerator
         return slot;
     }
 
-    private int _labelCounter;
     private string NewLabel(string prefix) => $"{prefix}_{_labelCounter++}";
 
     private void EmitLogicalOr(Binary b)

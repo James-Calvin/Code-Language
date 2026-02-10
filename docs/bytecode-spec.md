@@ -1,11 +1,11 @@
 # Bytecode Specification (draft)
 
-Version: 0.3 (2026-02-10)
+Version: 0.4 (2026-02-10)
 
 ## File format
-- Header: "CODE" ASCII (4 bytes) + version byte (currently 0x01).
+- Header: "CODE" ASCII (4 bytes) + version byte (0x02) + int32 codeSize + int32 debugCount.
 - Encoding: little-endian integers.
-- Programs are linear byte streams of opcodes and operands after the header.
+- Layout: header, then `codeSize` bytes of opcodes/operands, followed by `debugCount` debug entries (ip, line, column; each int32).
 - Produced files should use the `.bytecode` extension.
 
 ## Stack conventions
@@ -46,3 +46,4 @@ Version: 0.3 (2026-02-10)
 - All operands are 4-byte little-endian offsets/indices.
 - Comparisons return 1.0 for true, 0.0 for false.
 - Locals array grows dynamically when STORE/LOAD targets exceed current length.
+- Debug entries map instruction pointer offsets (absolute byte positions) back to source line/column for runtime stack traces; entries are optional per instruction but recorded when available.

@@ -92,9 +92,9 @@ internal static class Program
 
     private static void CompileToFile(string sourcePath, string outputPath)
     {
+        var source = File.ReadAllText(sourcePath);
         try
         {
-            var source = File.ReadAllText(sourcePath);
             var lexer = new Lexer(source);
             var tokens = lexer.ScanTokens();
             var parser = new Parser(tokens);
@@ -109,6 +109,7 @@ internal static class Program
         catch (CompilerException ce)
         {
             Console.Error.WriteLine($"{sourcePath}:{ce.Line}:{ce.Column}: error: {ce.Message}");
+            DiagnosticPrinter.PrintSnippet(sourcePath, source, ce.Line, ce.Column);
             Environment.Exit(1);
         }
         catch (Exception ex)
@@ -133,7 +134,15 @@ internal static class Program
 
         var bytes = File.ReadAllBytes(path);
         var vm = new Vm(bytes);
-        vm.Run();
+        try
+        {
+            vm.Run();
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"Runtime error: {ex.Message}");
+            Environment.Exit(1);
+        }
     }
 
     private static void Fail(string message)

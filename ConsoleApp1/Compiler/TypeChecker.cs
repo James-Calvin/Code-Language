@@ -56,10 +56,12 @@ sealed class TypeChecker
             var pType = MapType(param.TypeToken!);
             env.Define(param.Name.Lexeme, pType, param.Name.Line, param.Name.Column);
         }
-        CheckStmt(fn.Body, env, retType);
+        bool allPathsReturn = CheckStmt(fn.Body, env, retType);
+        if (!allPathsReturn)
+            throw new CompilerException($"Function '{fn.Name.Lexeme}' may not return a value on all paths", fn.Name.Line, fn.Name.Column);
     }
 
-    private void CheckStmt(Stmt stmt, TypeEnvironment env, TypeSymbol? currentReturn)
+    private bool CheckStmt(Stmt stmt, TypeEnvironment env, TypeSymbol? currentReturn)
     {
         switch (stmt)
         {
@@ -71,29 +73,34 @@ sealed class TypeChecker
                     RequireAssignable(t, init, v.TypeToken.Line, v.TypeToken.Column, "Initializer type mismatch");
                 }
                 env.Define(v.Name.Lexeme, t, v.Name.Line, v.Name.Column);
-                break;
+                return false;
 
             case ExprStmt e:
                 CheckExpr(e.Expression, env, currentReturn);
-                break;
+                return false;
 
             case Block b:
                 env = env.CreateChild();
-                foreach (var s in b.Statements) CheckStmt(s, env, currentReturn);
-                break;
+                bool returned = false;
+                foreach (var s in b.Statements)
+                {
+                    returned |= CheckStmt(s, env, currentReturn);
+                    if (returned) break;
+                }
+                return returned;
 
             case IfStmt i:
                 var cond = CheckExpr(i.Condition, env, currentReturn);
                 Require(cond == TypeSymbol.Boolean, i.Condition, "Condition must be boolean");
-                CheckStmt(i.ThenBranch, env.CreateChild(), currentReturn);
-                if (i.ElseBranch is not null) CheckStmt(i.ElseBranch, env.CreateChild(), currentReturn);
-                break;
+                bool thenRet = CheckStmt(i.ThenBranch, env.CreateChild(), currentReturn);
+                bool elseRet = i.ElseBranch is not null && CheckStmt(i.ElseBranch, env.CreateChild(), currentReturn);
+                return thenRet && (i.ElseBranch is null ? false : elseRet);
 
             case WhileStmt w:
                 var cType = CheckExpr(w.Condition, env, currentReturn);
                 Require(cType == TypeSymbol.Boolean, w.Condition, "Condition must be boolean");
                 CheckStmt(w.Body, env.CreateChild(), currentReturn);
-                break;
+                return false; // conservatively assume loop may not run
 
             case ForStmt f:
                 var forEnv = env.CreateChild();
@@ -102,7 +109,7 @@ sealed class TypeChecker
                 Require(condType == TypeSymbol.Boolean || IsNumeric(condType), f.Condition, "For condition must be boolean or numeric comparison");
                 if (f.Increment is not null) CheckExpr(f.Increment, forEnv, currentReturn);
                 CheckStmt(f.Body, forEnv.CreateChild(), currentReturn);
-                break;
+                return false;
 
             case ForeachStmt fe:
                 var iterType = CheckExpr(fe.Iterable, env, currentReturn);
@@ -110,22 +117,22 @@ sealed class TypeChecker
                 var feEnv = env.CreateChild();
                 feEnv.Define(fe.Iterator.Lexeme, TypeSymbol.Integer, fe.Iterator.Line, fe.Iterator.Column);
                 CheckStmt(fe.Body, feEnv, currentReturn);
-                break;
+                return false;
 
             case ReturnStmt r:
                 if (currentReturn is null)
-                    throw new CompilerException("Return outside function", r is { Value: { } val } ? val is Literal lit ? 0 : 0 : 0, 0);
+                    throw new CompilerException("Return outside function", GetStmtLine(r), GetStmtCol(r));
                 var rval = r.Value is null ? TypeSymbol.Integer : CheckExpr(r.Value, env, currentReturn);
-                RequireAssignable(currentReturn.Value, rval, r is { Value: { } vexpr } ? vexpr is Literal lit2 ? 0 : 0 : 0, r is { Value: { } vexpr2 } ? 0 : 0, "Return type mismatch");
-                break;
+                RequireAssignable(currentReturn.Value, rval, GetStmtLine(r), GetStmtCol(r), "Return type mismatch");
+                return true;
 
             case PrintStmt p:
                 CheckExpr(p.Value, env, currentReturn);
-                break;
+                return false;
 
             case FunctionDecl:
                 // handled earlier
-                break;
+                return false;
 
             default:
                 throw new CompilerException($"Unhandled statement in type checker: {stmt.GetType().Name}", 0, 0);
@@ -187,12 +194,12 @@ sealed class TypeChecker
                         if (lt == TypeSymbol.String || rt == TypeSymbol.String)
                             return TypeSymbol.String; // string concatenation
                         Require(IsNumeric(lt) && IsNumeric(rt), b.Left, "Arithmetic requires numeric");
-                        return lt; // simplistic
+                        return Promote(lt, rt);
                     case TokenType.Minus:
                     case TokenType.Star:
                     case TokenType.Slash:
                         Require(IsNumeric(lt) && IsNumeric(rt), b.Left, "Arithmetic requires numeric");
-                        return lt; // simplistic
+                        return Promote(lt, rt);
                     case TokenType.EqualEqual:
                     case TokenType.BangEqual:
                     case TokenType.Less:
@@ -220,6 +227,19 @@ sealed class TypeChecker
 
     private static bool IsNumeric(TypeSymbol t) => t is TypeSymbol.Integer or TypeSymbol.Whole or TypeSymbol.Real;
 
+    private static TypeSymbol Promote(TypeSymbol a, TypeSymbol b)
+    {
+        if (!IsNumeric(a) || !IsNumeric(b)) return TypeSymbol.Unknown;
+        int Rank(TypeSymbol t) => t switch
+        {
+            TypeSymbol.Whole => 1,
+            TypeSymbol.Integer => 2,
+            TypeSymbol.Real => 3,
+            _ => 0
+        };
+        return Rank(a) >= Rank(b) ? a : b;
+    }
+
     private static void Require(bool condition, Expr expr, string message)
     {
         if (!condition) throw new CompilerException(message, GetLine(expr), GetCol(expr));
@@ -228,7 +248,20 @@ sealed class TypeChecker
     private static void RequireAssignable(TypeSymbol target, TypeSymbol value, int line, int col, string message)
     {
         if (target == value) return;
+        if (IsNumeric(target) && IsNumeric(value) && CanWiden(value, target)) return;
         throw new CompilerException(message, line, col);
+    }
+
+    private static bool CanWiden(TypeSymbol from, TypeSymbol to)
+    {
+        int Rank(TypeSymbol t) => t switch
+        {
+            TypeSymbol.Whole => 1,
+            TypeSymbol.Integer => 2,
+            TypeSymbol.Real => 3,
+            _ => 0
+        };
+        return Rank(from) <= Rank(to) && Rank(to) > 0;
     }
 
     private static int GetLine(Expr expr) => expr switch
@@ -250,6 +283,20 @@ sealed class TypeChecker
         Call c => c.Callee.Column,
         Unary u => GetCol(u.Right),
         Binary b => GetCol(b.Left),
+        _ => 0
+    };
+
+    private static int GetStmtLine(Stmt stmt) => stmt switch
+    {
+        ReturnStmt r when r.Value is Expr e => GetLine(e),
+        ReturnStmt => 0,
+        _ => 0
+    };
+
+    private static int GetStmtCol(Stmt stmt) => stmt switch
+    {
+        ReturnStmt r when r.Value is Expr e => GetCol(e),
+        ReturnStmt => 0,
         _ => 0
     };
 

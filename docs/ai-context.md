@@ -66,8 +66,9 @@ Use this file as the first read before making changes. It summarizes intent, cur
 - Boolean `or` operator is distinct from the `optional.or(...)` helper method.
 - Tooling status (2026-02-10):
   - Bytecode VM with header validation, CALL/RET frames, locals, arithmetic/comparisons, stack ops, jumps, load/store, and PRINT.
-  - Compiler prototype (C#) supports var declarations, assignments, arithmetic, comparisons, logical and/or/not (short-circuit), if/then[/else], while, for, return, blocks, print statements, function declarations/calls (CALL/RET). Foreach parses but is not yet codegen’d.
+  - Compiler prototype (C#) supports var declarations, assignments, arithmetic, comparisons, logical and/or/not (short-circuit), if/then[/else], while, for, foreach (lowered to a 0..n-1 range loop), return, blocks, print statements, function declarations/calls (CALL/RET).
   - CLI: `compile/run/disasm`, token dump, skip-tests; bytecode uses `.bytecode` extension.
+  - Roadmap: see docs/features-roadmap.md for status by area.
 
 ## Active Open Questions (High Priority)
 - Package search beyond project `lib/` (config surface, stdlib layout).

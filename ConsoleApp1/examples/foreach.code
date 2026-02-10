@@ -1,0 +1,7 @@
+integer total = 0;
+integer n = 4;
+foreach i in n then {
+  total = total + i;
+}
+print total;
+

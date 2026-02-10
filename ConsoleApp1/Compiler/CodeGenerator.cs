@@ -153,7 +153,38 @@ sealed class CodeGenerator
                 break;
 
             case ForeachStmt fe:
-                throw new NotSupportedException("foreach not yet implemented in codegen");
+                {
+                    int endSlot = AllocateTemp();
+                    int idxSlot = AllocateTemp();
+                    int iterSlot = GetOrAllocate(fe.Iterator.Lexeme);
+
+                    Emit(fe.Iterable);
+                    _builder.Store(endSlot);
+
+                    _builder.PushInt(0);
+                    _builder.Store(idxSlot);
+
+                    string feStart = NewLabel("fe_start");
+                    string feEnd = NewLabel("fe_end");
+                    _builder.Label(feStart);
+                    _builder.Load(idxSlot);
+                    _builder.Load(endSlot);
+                    _builder.Lt();
+                    _builder.JumpIfZero(feEnd);
+
+                    _builder.Load(idxSlot);
+                    _builder.Store(iterSlot);
+
+                    Emit(fe.Body);
+
+                    _builder.Load(idxSlot);
+                    _builder.PushInt(1);
+                    _builder.Add();
+                    _builder.Store(idxSlot);
+                    _builder.Jump(feStart);
+                    _builder.Label(feEnd);
+                }
+                break;
 
             case FunctionDecl:
                 // already handled in outer pass
@@ -270,6 +301,8 @@ sealed class CodeGenerator
         _localCount = Math.Max(_localCount, slot + 1);
         return slot;
     }
+
+    private int AllocateTemp() => GetOrAllocate($"__temp{_labelCounter++}");
 
     private int GetSlot(Token name)
     {

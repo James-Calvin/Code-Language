@@ -11,6 +11,7 @@ Legend: [x] implemented (prototype), [~] planned/next, [ ] deferred/open
 - [x] `foreach` lowered to a 0..N-1 loop over an integer bound
 - [x] Function declarations and calls (CALL/RET), untyped parameters
 - [x] Return statements (implicit 0 if missing)
+- [x] Typed functions and parameter type annotations
 - [~] Stricter semicolon enforcement (parser currently tolerant)
 - [~] Arrays/collections + literals + iteration over collections
 - [ ] Structs/records beyond current object model

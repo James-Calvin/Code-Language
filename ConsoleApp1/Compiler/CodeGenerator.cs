@@ -58,7 +58,7 @@ sealed class CodeGenerator
         // Parameters occupy leading slots
         for (int i = 0; i < fn.Parameters.Count; i++)
         {
-            _locals[fn.Parameters[i].Lexeme] = i;
+            _locals[fn.Parameters[i].Name.Lexeme] = i;
             _localCount = Math.Max(_localCount, i + 1);
         }
 

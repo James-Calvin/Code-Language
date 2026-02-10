@@ -33,15 +33,31 @@ sealed class Parser
 
     private Stmt FunctionDeclaration()
     {
+        Token? returnType = null;
+        if (Match(TokenType.Less))
+        {
+            returnType = ConsumeType("Expect return type after '<'.");
+            Consume(TokenType.Greater, "Expect '>' after return type.");
+        }
+        else if (IsTypeToken(Peek()))
+        {
+            returnType = Advance();
+        }
         Token name = Consume(TokenType.Identifier, "Expect function name.");
         Consume(TokenType.LeftParen, "Expect '(' after function name.");
-        var parameters = new List<Token>();
+        var parameters = new List<Parameter>();
         if (!Check(TokenType.RightParen))
         {
             do
             {
-                parameters.Add(Consume(TokenType.Identifier, "Expect parameter name."));
-            } while (Match(TokenType.Comma)); // note: we haven't defined comma token; fallback to RightParen-only
+                Token? paramType = null;
+                if (IsTypeToken(Peek()))
+                {
+                    paramType = Advance();
+                }
+                Token paramName = Consume(TokenType.Identifier, "Expect parameter name.");
+                parameters.Add(new Parameter(paramType, paramName));
+            } while (Match(TokenType.Comma));
         }
         Consume(TokenType.RightParen, "Expect ')' after parameters.");
         Block body;
@@ -53,7 +69,7 @@ sealed class Parser
         {
             throw Error(Peek(), "Expect function body block.");
         }
-        return new FunctionDecl(name, parameters, body);
+        return new FunctionDecl(name, returnType, parameters, body);
     }
 
     private Stmt VarDeclaration(Token typeToken)
@@ -373,6 +389,15 @@ sealed class Parser
     private Token Peek() => _tokens[_current];
 
     private Token Previous() => _tokens[_current - 1];
+
+    private bool IsTypeToken(Token token) =>
+        token.Type is TokenType.Integer or TokenType.Whole or TokenType.Real or TokenType.Boolean;
+
+    private Token ConsumeType(string message)
+    {
+        if (IsTypeToken(Peek())) return Advance();
+        throw Error(Peek(), message);
+    }
 
     private Exception Error(Token token, string message)
     {

@@ -45,6 +45,8 @@ sealed class Call : Expr
     public Call(Token callee, IReadOnlyList<Expr> args) { Callee = callee; Arguments = args; }
 }
 
+sealed record Parameter(Token? TypeToken, Token Name);
+
 abstract class Stmt { }
 
 sealed class VarDecl : Stmt
@@ -126,10 +128,11 @@ sealed class ForeachStmt : Stmt
 sealed class FunctionDecl : Stmt
 {
     public Token Name { get; }
-    public IReadOnlyList<Token> Parameters { get; }
+    public Token? ReturnType { get; }
+    public IReadOnlyList<Parameter> Parameters { get; }
     public Block Body { get; }
-    public FunctionDecl(Token name, IReadOnlyList<Token> parameters, Block body)
+    public FunctionDecl(Token name, Token? returnType, IReadOnlyList<Parameter> parameters, Block body)
     {
-        Name = name; Parameters = parameters; Body = body;
+        Name = name; ReturnType = returnType; Parameters = parameters; Body = body;
     }
 }

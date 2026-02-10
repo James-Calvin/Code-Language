@@ -24,6 +24,7 @@ sealed class Lexer
         { "while", TokenType.While },
         { "return", TokenType.Return },
         { "print", TokenType.Print },
+        { "function", TokenType.Function },
         { "and", TokenType.And },
         { "or", TokenType.Or },
         { "not", TokenType.Not },
@@ -58,6 +59,7 @@ sealed class Lexer
             case ')': AddToken(TokenType.RightParen); break;
             case '{': AddToken(TokenType.LeftBrace); break;
             case '}': AddToken(TokenType.RightBrace); break;
+            case ',': AddToken(TokenType.Comma); break;
             case ';': AddToken(TokenType.Semicolon); break;
             case '+': AddToken(TokenType.Plus); break;
             case '-': AddToken(TokenType.Minus); break;

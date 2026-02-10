@@ -38,6 +38,13 @@ sealed class Assign : Expr
     public Assign(Token name, Expr value) { Name = name; Value = value; }
 }
 
+sealed class Call : Expr
+{
+    public Token Callee { get; }
+    public IReadOnlyList<Expr> Arguments { get; }
+    public Call(Token callee, IReadOnlyList<Expr> args) { Callee = callee; Arguments = args; }
+}
+
 abstract class Stmt { }
 
 sealed class VarDecl : Stmt
@@ -113,5 +120,16 @@ sealed class ForeachStmt : Stmt
     public ForeachStmt(Token iterator, Expr iterable, Stmt body)
     {
         Iterator = iterator; Iterable = iterable; Body = body;
+    }
+}
+
+sealed class FunctionDecl : Stmt
+{
+    public Token Name { get; }
+    public IReadOnlyList<Token> Parameters { get; }
+    public Block Body { get; }
+    public FunctionDecl(Token name, IReadOnlyList<Token> parameters, Block body)
+    {
+        Name = name; Parameters = parameters; Body = body;
     }
 }

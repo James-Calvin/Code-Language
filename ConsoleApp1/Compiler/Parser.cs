@@ -25,9 +25,35 @@ sealed class Parser
 
     private Stmt Declaration()
     {
+        if (Match(TokenType.Function)) return FunctionDeclaration();
         if (Match(TokenType.Integer, TokenType.Whole, TokenType.Real, TokenType.Boolean))
             return VarDeclaration(Previous());
         return Statement();
+    }
+
+    private Stmt FunctionDeclaration()
+    {
+        Token name = Consume(TokenType.Identifier, "Expect function name.");
+        Consume(TokenType.LeftParen, "Expect '(' after function name.");
+        var parameters = new List<Token>();
+        if (!Check(TokenType.RightParen))
+        {
+            do
+            {
+                parameters.Add(Consume(TokenType.Identifier, "Expect parameter name."));
+            } while (Match(TokenType.Comma)); // note: we haven't defined comma token; fallback to RightParen-only
+        }
+        Consume(TokenType.RightParen, "Expect ')' after parameters.");
+        Block body;
+        if (Match(TokenType.LeftBrace))
+        {
+            body = new Block(BlockStatements());
+        }
+        else
+        {
+            throw Error(Peek(), "Expect function body block.");
+        }
+        return new FunctionDecl(name, parameters, body);
     }
 
     private Stmt VarDeclaration(Token typeToken)
@@ -281,7 +307,24 @@ sealed class Parser
     private Expr Primary()
     {
         if (Match(TokenType.Number)) return new Literal(Previous().Literal);
-        if (Match(TokenType.Identifier)) return new Variable(Previous());
+        if (Match(TokenType.Identifier))
+        {
+            Token name = Previous();
+            if (Match(TokenType.LeftParen))
+            {
+                var args = new List<Expr>();
+                if (!Check(TokenType.RightParen))
+                {
+                    do
+                    {
+                        args.Add(Expression());
+                    } while (Match(TokenType.Comma));
+                }
+                Consume(TokenType.RightParen, "Expect ')' after arguments.");
+                return new Call(name, args);
+            }
+            return new Variable(name);
+        }
         if (Match(TokenType.LeftParen))
         {
             Expr expr = Expression();

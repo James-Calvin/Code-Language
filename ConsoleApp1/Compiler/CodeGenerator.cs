@@ -6,16 +6,70 @@ namespace ConsoleApp1.Compiler;
 sealed class CodeGenerator
 {
     private readonly BytecodeBuilder _builder = BytecodeBuilder.New();
-    private readonly Dictionary<string, int> _locals = new(StringComparer.Ordinal);
+    private Dictionary<string, int> _locals = new(StringComparer.Ordinal);
+    private int _localCount;
+    private readonly Dictionary<string, (string Label, int ParamCount, int LocalCount)> _functions = new(StringComparer.Ordinal);
 
     public byte[] Generate(IList<Stmt> statements)
     {
+        var functionDecls = new List<FunctionDecl>();
+        var topLevel = new List<Stmt>();
         foreach (var stmt in statements)
+        {
+            if (stmt is FunctionDecl fd) functionDecls.Add(fd);
+            else topLevel.Add(stmt);
+        }
+
+        string mainLabel = NewLabel("main");
+        _builder.Jump(mainLabel); // skip over function bodies
+
+        // Pre-register function labels so calls can resolve forward references
+        foreach (var fn in functionDecls)
+        {
+            string label = $"fn_{fn.Name.Lexeme}";
+            _functions[fn.Name.Lexeme] = (label, fn.Parameters.Count, 0);
+        }
+
+        // Emit functions to compute locals and bodies
+        foreach (var fn in functionDecls)
+        {
+            EmitFunction(fn);
+        }
+
+        // Top-level script body
+        _builder.Label(mainLabel);
+        PushScope();
+        foreach (var stmt in topLevel)
         {
             Emit(stmt);
         }
         _builder.Halt();
+        PopScope();
+
         return _builder.ToArray();
+    }
+
+    private void EmitFunction(FunctionDecl fn)
+    {
+        string label = _functions[fn.Name.Lexeme].Label;
+        _builder.Label(label);
+
+        PushScope();
+        // Parameters occupy leading slots
+        for (int i = 0; i < fn.Parameters.Count; i++)
+        {
+            _locals[fn.Parameters[i].Lexeme] = i;
+            _localCount = Math.Max(_localCount, i + 1);
+        }
+
+        Emit(fn.Body);
+
+        // If function body didn't end with a return, emit implicit return 0
+        _builder.PushInt(0);
+        _builder.Ret();
+
+        _functions[fn.Name.Lexeme] = (label, fn.Parameters.Count, _localCount);
+        PopScope();
     }
 
     private void Emit(Stmt stmt)
@@ -101,6 +155,10 @@ sealed class CodeGenerator
             case ForeachStmt fe:
                 throw new NotSupportedException("foreach not yet implemented in codegen");
 
+            case FunctionDecl:
+                // already handled in outer pass
+                break;
+
             default:
                 throw new NotSupportedException($"Unhandled statement type {stmt.GetType().Name}");
         }
@@ -121,6 +179,10 @@ sealed class CodeGenerator
             case Assign a:
                 Emit(a.Value);
                 _builder.Store(GetSlot(a.Name));
+                break;
+
+            case Call call:
+                EmitCall(call);
                 break;
 
             case Unary u:
@@ -205,6 +267,7 @@ sealed class CodeGenerator
         if (_locals.TryGetValue(name, out var slot)) return slot;
         slot = _locals.Count;
         _locals[name] = slot;
+        _localCount = Math.Max(_localCount, slot + 1);
         return slot;
     }
 
@@ -251,4 +314,32 @@ sealed class CodeGenerator
         // left (zero) remains on stack as the result
         _builder.Label(endLabel);
     }
+
+    private void EmitCall(Call call)
+    {
+        if (!_functions.TryGetValue(call.Callee.Lexeme, out var info))
+            throw new InvalidOperationException($"Call to undefined function '{call.Callee.Lexeme}' at line {call.Callee.Line}, col {call.Callee.Column}");
+        foreach (var arg in call.Arguments)
+        {
+            Emit(arg);
+        }
+        int localsSize = info.LocalCount > 0 ? info.LocalCount : info.ParamCount;
+        _builder.Call(info.Label, call.Arguments.Count, localsSize);
+    }
+
+    private void PushScope()
+    {
+        _scopeStack.Push((_locals, _localCount));
+        _locals = new Dictionary<string, int>(StringComparer.Ordinal);
+        _localCount = 0;
+    }
+
+    private void PopScope()
+    {
+        var prev = _scopeStack.Pop();
+        _locals = prev.locals;
+        _localCount = prev.localCount;
+    }
+
+    private readonly Stack<(Dictionary<string, int> locals, int localCount)> _scopeStack = new();
 }

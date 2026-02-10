@@ -4,6 +4,7 @@ enum TokenType
 {
     LeftParen, RightParen,
     LeftBrace, RightBrace,
+    Comma,
     Semicolon,
     Plus, Minus, Star, Slash,
     Equal, Less, Greater,
@@ -18,6 +19,7 @@ enum TokenType
     While,
     Return,
     Print,
+    Function,
     And, Or, Not,
     For, Foreach, In,
 

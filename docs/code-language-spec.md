@@ -1,7 +1,7 @@
 # Code Language Specification (Living Draft)
 
-Version: 0.8  
-Last updated: 2026-02-08
+Version: 0.9  
+Last updated: 2026-02-10
 
 ## 1. Goals and Design
 - `Code` is a general-purpose language.
@@ -60,8 +60,15 @@ function main(string[] arguments) {
   - `whole`: `whole8`, `whole16`, `whole32`, `whole64`
   - `real`: `real16`, `real32`, `real64`
 - Unsized `integer`, `whole`, and `real` default bit width is runtime-chosen (typically 64-bit).
-- Type conversions are generally explicit.
-- Lossless numeric promotions are allowed by convention.
+- Numeric literals:
+  - Decimal by default; `_` digit separators allowed between digits.
+  - Base prefixes: `0b` (binary), `0o` (octal), `0x` (hex).
+  - Sized suffixes: `i8/i16/i32/i64` for signed, `w8/w16/w32/w64` for unsigned, `r16/r32/r64` for reals.
+  - Unsuffixed literals map to unsized `integer/whole/real`; no implicit narrowing from larger/suffixed forms.
+- Conversions and promotions:
+  - Explicit casts use `as Type`.
+  - Implicit promotions only for lossless widening within a numeric family and from `integer` to `real`.
+  - No implicit sign changes (`whole` to `integer` requires `as integer`); no implicit downcasts.
 
 Examples:
 
@@ -91,6 +98,10 @@ print(y);
 - `null` is not part of the language model.
 - Absence is represented with `optional<T>`.
 - Optionals expose `hasValue` for presence checks.
+- Flow narrowing: inside `if maybe.hasValue then { ... }`, `maybe` is treated as the contained `T`; outside it remains `optional<T>`.
+- Accessors:
+  - `maybe.value` unwraps and panics if empty.
+  - `maybe.or(fallbackExpression)` returns the value or the fallback without panicking.
 
 ```code
 optional<integer> maybeCount = getCount();
@@ -123,6 +134,11 @@ function<integer> add(integer parameter1, integer parameter2) {
   return parameter1 + parameter2;
 }
 ```
+- Overload resolution:
+  - Prefer exact parameter type matches.
+  - Otherwise choose the candidate requiring the fewest implicit promotions; if tied, choose the one with the lowest-rank promotions.
+  - Non-variadic matches beat variadics when both apply.
+  - Remaining ambiguity results in a compile error (declaration order is not a tie-breaker).
 
 ## 7. Control Flow, Loops, and Operators
 - `if` uses `then`.
@@ -186,16 +202,37 @@ foreach number in numbers then {
 }
 ```
 
-- Logical conjunction uses `and`:
+- Logical operators:
+  - Conjunction uses `and`.
+  - Disjunction uses `or`.
+  - Negation uses unary `not`.
+  - `or` here is the boolean operator; it is distinct from the `optional.or(...)` helper method.
 
 ```code
 if a > 0 and b > 0 then {
   // branch
 }
+
+if a > 0 or b > 0 then {
+  // branch
+}
+
+if not isReady then {
+  panic("Not ready");
+}
 ```
 
-- Operator precedence and associativity follow conventional modern-language behavior.
-- A formal precedence table is deferred.
+- Operator precedence and associativity (aligned with C#) from highest to lowest:
+  1. Unary prefix: `+x`, `-x`, `not x`
+  2. Multiplicative: `*`, `/`, `%`
+  3. Additive: `+`, `-`
+  4. Relational: `<`, `<=`, `>`, `>=`
+  5. Equality: `==`, `!=`
+  6. Logical conjunction: `and`
+  7. Logical disjunction: `or`
+  8. Assignment: `=`
+  - Binary operators are left-associative except assignment, which is right-associative.
+  - Parentheses may be used to override precedence.
 
 ## 8. Collections (Observed)
 - Generic array type syntax: `array<Type>`.
@@ -295,6 +332,7 @@ function method(string name) {
   - Alias form: `import sourceName as localName from "FilePath";`
 - `RuntimeLibrary`-style identifiers represent built-in package namespaces.
 - String-path imports resolve relative to the file containing the `import`.
+- Import resolution order: current file directory first, then project `lib/` (configurable later). No global path search to avoid ambiguity.
 - Source file extension is `.code`.
 - Package declaration syntax: `package Name;`.
 - Conventional ordering places `package Name;` immediately after imports.
@@ -336,7 +374,9 @@ export function<fallible<real>> exportedFunction(real value) {
   - `on error panic("message {error}")`
   - `on error return error`
   - `on error return new error(type, message)`
+- Handler flexibility: `on error return <errorExpression>` is valid when the expression type is `error`.
 - A fallible result can be kept unhandled by assigning it to `fallible<T>`.
+- Stacktrace capture: on `panic` or unhandled `fallible` error, capture frames as `at function (file:line)` plus error `type` and `message`, attached to `error.stacktrace`.
 
 ```code
 real result1 = errorExample(0) on error {
@@ -384,12 +424,10 @@ function<fallible<real>> runWithTypedError(string input, real count) {
 - Supports interpolation markers with braces inside string literals, e.g.:
   - `"usage: {arguments[0]} <your name>"`
   - `"hello {arguments[1]}"`
+- Interpolation rules:
+  - Any expression valid in expression position may appear inside `{ ... }`.
+  - Escape literal braces with `\{` and `\}`.
+  - Nested string literals inside an interpolation are disallowed to keep parsing simple.
 
 ## 16. Open Questions
-- Exact interpolation grammar (expressions allowed vs identifiers only).
-- Exact numeric literal rules (digit separators, bases, suffixes).
-- Exact cast syntax and the precise lossless-promotion matrix.
-- Exact overload tie-breaker rules when multiple overloads are otherwise compatible.
-- Optional value access after `hasValue` check (property vs unwrap syntax and flow narrowing details).
-- Module/package lookup details beyond `.code` extension and relative paths.
-- Exact `stacktrace` capture semantics and formatting.
+- Future package search paths beyond project `lib/` (configuration format, stdlib layout).

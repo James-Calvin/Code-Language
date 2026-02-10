@@ -32,7 +32,8 @@ Use this file as the first read before making changes. It summarizes intent, cur
 - Identifiers: start with letter or `_`; continue with letters/digits/`_`.
 - Semicolons required (injection planned later, rules not finalized).
 - No `null`; use `optional<T>` with `hasValue`.
-- Core numerics: `integer`, `whole`, `real` with sized variants.
+- Core numerics: `integer`, `whole`, `real` with sized variants; numeric literals allow `_` separators, base prefixes `0b/0o/0x`, and sized suffixes `i8/i16/i32/i64`, `w8/w16/w32/w64`, `r16/r32/r64`; unsuffixed map to unsized types; no implicit narrowing.
+- Conversions: explicit `as Type`; implicit only for lossless widening within a family and `integer` → `real`; no implicit sign changes or downcasts.
 - Control flow: `if ... then ...`, `while`, `for`, `foreach`, `break`, `continue`.
 - Objects/interfaces:
   - `object`, `interface`, `implement Interface for Object`
@@ -55,15 +56,17 @@ Use this file as the first read before making changes. It summarizes intent, cur
     - `on error panic(...)`
     - `on error return error`
     - `on error return new error(type, message)`
+    - `on error return <errorExpression>` where the expression type is `error`
+  - stacktrace captured on `panic` or unhandled `fallible` as `at function (file:line)` with `type` and `message`
+- String interpolation: any expression inside `{ ... }`; escape braces with `\{`/`\}`; nested string literals inside an interpolation are disallowed.
+- Optionals: flow narrows inside `if opt.hasValue then`; `opt.value` panics if empty; `opt.or(fallback)` provides default.
+- Imports: resolve relative to file, then project `lib/`; `RuntimeLibrary` is stdlib namespace; no global search.
+- Overloads: exact match preferred, then fewest/lowest-rank promotions, non-variadic beats variadic; ambiguity is a compile error.
+- Precedence: C#-style ordering; unary `+ - not`, `* / %`, `+ -`, relational, equality, `and`, `or`, assignment (right-associative); parentheses override.
+- Boolean `or` operator is distinct from the `optional.or(...)` helper method.
 
 ## Active Open Questions (High Priority)
-- Interpolation grammar details.
-- Numeric literal grammar (bases, separators, suffixes).
-- Exact cast syntax + lossless promotion matrix.
-- Overload tie-breaker algorithm.
-- Optional unwrapping/narrowing after `hasValue`.
-- Module/package lookup details beyond relative `.code` paths.
-- `stacktrace` capture semantics and format.
+- Package search beyond project `lib/` (config surface, stdlib layout).
 
 ## Collaboration Norms With User
 - User drives syntax choices; agent drives question flow and spec clarity.
@@ -81,3 +84,4 @@ Use this file as the first read before making changes. It summarizes intent, cur
 
 ## Change Log
 - 2026-02-09: Created AI onboarding context; synchronized with spec v0.8 and current error-hook direction.
+- 2026-02-10: Added numeric literal rules (with `w` unsigned suffixes), conversion/promotion rules, interpolation grammar, optionals narrowing/accessors, overload resolution order, import resolution order, stacktrace capture, and error handler return flexibility; bumped spec to v0.9. Added C#-style precedence and removed semicolon-injection from open questions.

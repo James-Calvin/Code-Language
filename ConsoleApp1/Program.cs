@@ -99,6 +99,8 @@ internal static class Program
             var tokens = lexer.ScanTokens();
             var parser = new Parser(tokens);
             var ast = parser.Parse();
+            var typeChecker = new TypeChecker();
+            typeChecker.Check(ast);
             var generator = new CodeGenerator();
             var bytes = generator.Generate(ast);
             File.WriteAllBytes(outputPath, bytes);

@@ -26,24 +26,25 @@ enum OpCode : byte
     Gt = 0x11,
     Call = 0x12,
     Ret = 0x13,
+    PushString = 0x14,
     Halt = 0xFF
 }
 
 sealed class Vm
 {
     private readonly byte[] _code;
-    private readonly Stack<double> _stack = new();
-    private double[] _locals;
+    private readonly Stack<object> _stack = new();
+    private object[] _locals;
     private int _ip;
     private readonly TextWriter _output;
-    private readonly Stack<(int returnIp, double[] locals)> _callStack = new();
+    private readonly Stack<(int returnIp, object[] locals)> _callStack = new();
 
     public Vm(byte[] code, TextWriter? output = null, int initialLocals = 8)
     {
         BytecodeFormat.ValidateHeader(code);
         _code = code;
         _ip = BytecodeFormat.HeaderSize;
-        _locals = new double[initialLocals];
+        _locals = new object[initialLocals];
         _output = output ?? Console.Out;
     }
 
@@ -61,21 +62,40 @@ sealed class Vm
                 case OpCode.PushConst:
                     _stack.Push(ReadIntOperand());
                     break;
+                case OpCode.PushString:
+                {
+                    int length = ReadIntOperand();
+                    EnsureBytes(length);
+                    string s = System.Text.Encoding.UTF8.GetString(_code, _ip, length);
+                    _ip += length;
+                    _stack.Push(s);
+                    break;
+                }
 
                 case OpCode.Add:
-                    BinaryOp((a, b) => a + b);
+                {
+                    var (l, r) = PopAny2();
+                    if (l is string || r is string)
+                    {
+                        _stack.Push(string.Concat(l, r));
+                    }
+                    else
+                    {
+                        _stack.Push(PopAsNumber(r) + PopAsNumber(l)); // l,r already popped; use helper
+                    }
                     break;
+                }
 
                 case OpCode.Sub:
-                    BinaryOp((a, b) => a - b);
+                    NumericBinary((a, b) => a - b);
                     break;
 
                 case OpCode.Mul:
-                    BinaryOp((a, b) => a * b);
+                    NumericBinary((a, b) => a * b);
                     break;
 
                 case OpCode.Div:
-                    BinaryOp((a, b) =>
+                    NumericBinary((a, b) =>
                     {
                         if (b == 0)
                             throw new DivideByZeroException("Division by zero in bytecode.");
@@ -84,7 +104,10 @@ sealed class Vm
                     break;
 
                 case OpCode.Print:
-                    _output.WriteLine(Pop());
+                    if (_stack.Count == 0)
+                        throw new InvalidOperationException($"Stack underflow at {_ip - 1}");
+                    var pv = _stack.Pop();
+                    _output.WriteLine(pv);
                     break;
 
                 case OpCode.Dup:
@@ -101,7 +124,9 @@ sealed class Vm
                     break;
 
                 case OpCode.Pop:
-                    Pop();
+                    if (_stack.Count == 0)
+                        throw new InvalidOperationException($"Stack underflow at {_ip - 1}");
+                    _stack.Pop();
                     break;
 
                 case OpCode.Jump:
@@ -110,7 +135,7 @@ sealed class Vm
 
                 case OpCode.JumpIfZero:
                 {
-                    double test = Pop();
+                    double test = PopNumber();
                     int target = ReadIntOperand();
                     if (test == 0)
                         _ip = target;
@@ -119,7 +144,7 @@ sealed class Vm
 
                 case OpCode.JumpIfNotZero:
                 {
-                    double test = Pop();
+                    double test = PopNumber();
                     int target = ReadIntOperand();
                     if (test != 0)
                         _ip = target;
@@ -136,21 +161,24 @@ sealed class Vm
                 case OpCode.Store:
                 {
                     int slot = ReadIntOperand();
-                    double value = Pop();
+                    var value = _stack.Pop();
                     WriteLocal(slot, value);
                     break;
                 }
 
                 case OpCode.Eq:
-                    BinaryOp((x, y) => x == y ? 1 : 0);
+                {
+                    var (l, r) = PopAny2();
+                    _stack.Push(Equals(l, r) ? 1.0 : 0.0);
                     break;
+                }
 
                 case OpCode.Lt:
-                    BinaryOp((x, y) => x < y ? 1 : 0);
+                    NumericBinary((x, y) => x < y ? 1 : 0);
                     break;
 
                 case OpCode.Gt:
-                    BinaryOp((x, y) => x > y ? 1 : 0);
+                    NumericBinary((x, y) => x > y ? 1 : 0);
                     break;
 
                 case OpCode.Call:
@@ -158,10 +186,12 @@ sealed class Vm
                     int target = ReadIntOperand();
                     int argCount = ReadIntOperand();
                     int localCount = ReadIntOperand();
-                    var newLocals = new double[Math.Max(localCount, argCount)];
+                    var newLocals = new object[Math.Max(localCount, argCount)];
                     for (int i = argCount - 1; i >= 0; i--)
                     {
-                        newLocals[i] = Pop();
+                        if (_stack.Count == 0)
+                            throw new InvalidOperationException($"Stack underflow at {_ip - 1} while reading args");
+                        newLocals[i] = _stack.Pop();
                     }
                     _callStack.Push((_ip, _locals));
                     _locals = newLocals;
@@ -171,7 +201,7 @@ sealed class Vm
 
                 case OpCode.Ret:
                 {
-                    double retVal = Pop();
+                    var retVal = _stack.Pop();
                     if (_callStack.Count == 0)
                         return;
                     var frame = _callStack.Pop();
@@ -190,18 +220,26 @@ sealed class Vm
         }
     }
 
-    private void BinaryOp(Func<double, double, double> op)
+    private void NumericBinary(Func<double, double, double> op)
     {
-        double b = Pop();
-        double a = Pop();
+        double b = PopNumber();
+        double a = PopNumber();
         _stack.Push(op(a, b));
     }
 
-    private double Pop()
+    private double PopAsNumber(object v) => v switch
+    {
+        double d => d,
+        int i => i,
+        _ => throw new InvalidOperationException($"Expected number on stack at {_ip - 1}, found {v?.GetType().Name}")
+    };
+
+    private double PopNumber()
     {
         if (_stack.Count == 0)
             throw new InvalidOperationException($"Stack underflow at {_ip - 1}");
-        return _stack.Pop();
+        var v = _stack.Pop();
+        return PopAsNumber(v);
     }
 
     private void EnsureBytes(int count)
@@ -234,15 +272,24 @@ sealed class Vm
         }
     }
 
-    private double ReadLocal(int index)
+    private object ReadLocal(int index)
     {
         EnsureLocals(index);
         return _locals[index];
     }
 
-    private void WriteLocal(int index, double value)
+    private void WriteLocal(int index, object value)
     {
         EnsureLocals(index);
         _locals[index] = value;
+    }
+
+    private (object, object) PopAny2()
+    {
+        if (_stack.Count < 2)
+            throw new InvalidOperationException($"Stack underflow at {_ip - 1}");
+        var b = _stack.Pop();
+        var a = _stack.Pop();
+        return (a, b);
     }
 }

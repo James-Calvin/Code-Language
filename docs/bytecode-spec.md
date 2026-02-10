@@ -35,6 +35,7 @@ Version: 0.3 (2026-02-10)
 | 0x11 | GT | — | -1 | push 1 if a>b else 0 |
 | 0x12 | CALL | int32 target, int32 argc, int32 locals | -argc+1 | Pops argc args, creates frame with locals, jumps to target; pushes return value on RET |
 | 0x13 | RET | — | -1 | pop return value, restore caller frame, push return value |
+| 0x14 | PUSH_STRING | int32 length, UTF-8 bytes | +1 | Push string literal |
 | 0xFF | HALT | — | 0 | stop execution |
 
 ## Planned additions

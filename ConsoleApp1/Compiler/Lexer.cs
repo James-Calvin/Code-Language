@@ -97,6 +97,9 @@ sealed class Lexer
             case '>':
                 AddToken(Match('=') ? TokenType.GreaterEqual : TokenType.Greater);
                 break;
+            case '"':
+                StringLiteral();
+                break;
             case ' ':
             case '\r':
             case '\t':
@@ -143,6 +146,20 @@ sealed class Lexer
         if (!int.TryParse(text, out int value))
             throw Error($"Invalid integer literal '{text}'");
         AddToken(TokenType.Number, value);
+    }
+
+    private void StringLiteral()
+    {
+        while (Peek() != '"' && !IsAtEnd())
+        {
+            if (Peek() == '\n') { _line++; _col = 1; }
+            Advance();
+        }
+        if (IsAtEnd()) throw Error("Unterminated string.");
+        Advance(); // closing quote
+        string value = _source.Substring(_start + 1, (_current - 1) - (_start + 1));
+        value = value.Replace("\\\"", "\"").Replace("\\\\", "\\");
+        AddToken(TokenType.String, value);
     }
 
     private bool Match(char expected)

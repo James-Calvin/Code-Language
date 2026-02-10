@@ -6,5 +6,6 @@ enum TypeSymbol
     Whole,
     Real,
     Boolean,
+    String,
     Unknown
 }

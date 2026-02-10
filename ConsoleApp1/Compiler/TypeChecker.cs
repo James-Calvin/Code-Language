@@ -140,8 +140,15 @@ sealed class TypeChecker
                 return lit.Value switch
                 {
                     bool => TypeSymbol.Boolean,
+                    string => TypeSymbol.String,
                     _ => TypeSymbol.Integer // numeric literals as integer for now
                 };
+            case InterpString istr:
+                foreach (var part in istr.Parts)
+                {
+                    if (part is Expr e) CheckExpr(e, env, currentReturn);
+                }
+                return TypeSymbol.String;
             case Variable v:
                 return env.Lookup(v.Name);
             case Assign a:
@@ -177,6 +184,10 @@ sealed class TypeChecker
                         Require(lt == TypeSymbol.Boolean && rt == TypeSymbol.Boolean, b.Left, "Logical ops require boolean");
                         return TypeSymbol.Boolean;
                     case TokenType.Plus:
+                        if (lt == TypeSymbol.String || rt == TypeSymbol.String)
+                            return TypeSymbol.String; // string concatenation
+                        Require(IsNumeric(lt) && IsNumeric(rt), b.Left, "Arithmetic requires numeric");
+                        return lt; // simplistic
                     case TokenType.Minus:
                     case TokenType.Star:
                     case TokenType.Slash:

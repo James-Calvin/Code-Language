@@ -203,6 +203,10 @@ sealed class CodeGenerator
                 _builder.PushInt(Convert.ToInt32(lit.Value ?? 0));
                 break;
 
+            case InterpString istr:
+                EmitInterpolatedString(istr);
+                break;
+
             case Variable v:
                 _builder.Load(GetSlot(v.Name));
                 break;
@@ -358,6 +362,41 @@ sealed class CodeGenerator
         }
         int localsSize = info.LocalCount > 0 ? info.LocalCount : info.ParamCount;
         _builder.Call(info.Label, call.Arguments.Count, localsSize);
+    }
+
+    private void EmitInterpolatedString(InterpString istr)
+    {
+        bool hasAny = false;
+        foreach (var part in istr.Parts)
+        {
+            if (part is string s && s.Length == 0) continue;
+            if (part is string sPart)
+            {
+                _builder.PushString(sPart);
+            }
+            else if (part is Expr ePart)
+            {
+                Emit(ePart);
+            }
+            else
+            {
+                throw new InvalidOperationException("Unknown interpolation part");
+            }
+
+            if (!hasAny)
+            {
+                hasAny = true;
+            }
+            else
+            {
+                _builder.Add(); // string concat via Add when string present
+            }
+        }
+
+        if (!hasAny)
+        {
+            _builder.PushString(string.Empty);
+        }
     }
 
     private void PushScope()

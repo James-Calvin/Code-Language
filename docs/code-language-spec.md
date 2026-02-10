@@ -432,7 +432,7 @@ function<fallible<real>> runWithTypedError(string input, real count) {
 ## 16. Literals
 - Numeric: see numeric literal rules above.
 - Boolean: `true` and `false`.
-- Strings: quoted with interpolation as above.
+- Strings: quoted `"text"`; interpolation with `{ ... }` allowed (escape braces with `\{` and `\}`); supports concatenation via `+`. Interpolation currently supports expressions.
 
 ## 17. Open Questions
 - Future package search paths beyond project `lib/` (configuration format, stdlib layout).

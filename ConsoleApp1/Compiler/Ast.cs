@@ -25,6 +25,12 @@ sealed class Literal : Expr
     public Literal(object? value) { Value = value; }
 }
 
+sealed class InterpString : Expr
+{
+    public IReadOnlyList<object> Parts { get; } // string segments or Expr
+    public InterpString(IReadOnlyList<object> parts) { Parts = parts; }
+}
+
 sealed class Variable : Expr
 {
     public Token Name { get; }

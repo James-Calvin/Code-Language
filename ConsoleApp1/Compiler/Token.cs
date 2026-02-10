@@ -12,7 +12,7 @@ enum TokenType
     EqualEqual, BangEqual,
     LessEqual, GreaterEqual,
 
-    Identifier, Number,
+    Identifier, Number, String,
     True, False,
 
     Integer, Whole, Real, Boolean,

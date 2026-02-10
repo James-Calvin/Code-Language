@@ -325,6 +325,7 @@ sealed class Parser
         if (Match(TokenType.Number)) return new Literal(Previous().Literal);
         if (Match(TokenType.True)) return new Literal(true);
         if (Match(TokenType.False)) return new Literal(false);
+        if (Match(TokenType.String)) return ParseStringLiteral(Previous().Literal?.ToString() ?? "");
         if (Match(TokenType.Identifier))
         {
             Token name = Previous();
@@ -404,5 +405,131 @@ sealed class Parser
     private Exception Error(Token token, string message)
     {
         return new CompilerException(message, token.Line, token.Column);
+    }
+
+    private Expr ParseStringLiteral(string raw)
+    {
+        if (!raw.Contains("{"))
+            return new Literal(raw);
+
+        var parts = new List<object>();
+        int i = 0;
+        while (i < raw.Length)
+        {
+            int brace = raw.IndexOf('{', i);
+            if (brace == -1)
+            {
+                parts.Add(raw[i..]);
+                break;
+            }
+            if (brace > i)
+            {
+                parts.Add(raw[i..brace]);
+            }
+            int close = raw.IndexOf('}', brace + 1);
+            if (close == -1)
+                throw new CompilerException("Unterminated interpolation in string literal", Previous().Line, Previous().Column);
+            string exprText = raw.Substring(brace + 1, close - brace - 1).Trim();
+            if (string.IsNullOrEmpty(exprText))
+                throw new CompilerException("Empty interpolation expression", Previous().Line, Previous().Column);
+            // For MVP, allow identifier or numeric literal as interpolation expression.
+            parts.Add(ParseInlineExpression(exprText, Previous().Line, Previous().Column));
+            i = close + 1;
+        }
+        return new InterpString(parts);
+    }
+
+    private Expr ParseInlineExpression(string text, int line, int col)
+    {
+        var lexer = new Lexer(text);
+        var tokens = lexer.ScanTokens();
+        int idx = 0;
+
+        Expr ParseExpr() => ParseTerm();
+
+        Expr ParseTerm()
+        {
+            Expr expr = ParseFactor();
+            while (MatchInline(TokenType.Plus, TokenType.Minus))
+            {
+                Token op = PrevInline();
+                Expr right = ParseFactor();
+                expr = new Binary(expr, op, right);
+            }
+            return expr;
+        }
+
+        Expr ParseFactor()
+        {
+            Expr expr = ParseUnary();
+            while (MatchInline(TokenType.Star, TokenType.Slash))
+            {
+                Token op = PrevInline();
+                Expr right = ParseUnary();
+                expr = new Binary(expr, op, right);
+            }
+            return expr;
+        }
+
+        Expr ParseUnary()
+        {
+            if (MatchInline(TokenType.Minus, TokenType.Plus))
+            {
+                Token op = PrevInline();
+                Expr right = ParseUnary();
+                return new Unary(op, right);
+            }
+            return ParsePrimary();
+        }
+
+        Expr ParsePrimary()
+        {
+            if (MatchInline(TokenType.Number)) return new Literal(PrevInline().Literal);
+            if (MatchInline(TokenType.True)) return new Literal(true);
+            if (MatchInline(TokenType.False)) return new Literal(false);
+            if (MatchInline(TokenType.Identifier)) return new Variable(PrevInline());
+            if (MatchInline(TokenType.LeftParen))
+            {
+                Expr expr = ParseExpr();
+                if (!MatchInline(TokenType.RightParen))
+                    throw new CompilerException("Expect ')' in interpolation expression", line, col);
+                return expr;
+            }
+            throw new CompilerException("Invalid interpolation expression", line, col);
+        }
+
+        bool MatchInline(params TokenType[] types)
+        {
+            foreach (var t in types)
+            {
+                if (CheckInline(t)) { idx++; return true; }
+            }
+            return false;
+        }
+
+        bool CheckInline(TokenType type)
+        {
+            if (idx >= tokens.Count) return false;
+            return tokens[idx].Type == type;
+        }
+
+        Token PrevInline() => tokens[idx - 1];
+
+        Expr result = ParseExpr();
+        if (idx < tokens.Count - 1) // allow final EOF
+            throw new CompilerException("Unexpected tokens in interpolation expression", line, col);
+        return result;
+    }
+
+    private static bool IsIdentifier(string text)
+    {
+        if (string.IsNullOrEmpty(text)) return false;
+        if (!(char.IsLetter(text[0]) || text[0] == '_')) return false;
+        for (int i = 1; i < text.Length; i++)
+        {
+            char c = text[i];
+            if (!(char.IsLetterOrDigit(c) || c == '_')) return false;
+        }
+        return true;
     }
 }

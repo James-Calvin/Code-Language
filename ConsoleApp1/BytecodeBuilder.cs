@@ -36,6 +36,14 @@ sealed class BytecodeBuilder
     public BytecodeBuilder Eq() { _bytes.Add((byte)OpCode.Eq); return this; }
     public BytecodeBuilder Lt() { _bytes.Add((byte)OpCode.Lt); return this; }
     public BytecodeBuilder Gt() { _bytes.Add((byte)OpCode.Gt); return this; }
+    public BytecodeBuilder PushString(string value)
+    {
+        _bytes.Add((byte)OpCode.PushString);
+        var utf8 = System.Text.Encoding.UTF8.GetBytes(value);
+        _bytes.AddRange(BitConverter.GetBytes(utf8.Length));
+        _bytes.AddRange(utf8);
+        return this;
+    }
     public BytecodeBuilder Call(string label, int argCount, int localCount)
     {
         _bytes.Add((byte)OpCode.Call);

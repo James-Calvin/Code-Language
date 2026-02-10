@@ -80,7 +80,7 @@ sealed class Parser
         {
             initializer = Expression();
         }
-        Match(TokenType.Semicolon); // tolerate missing ';' for now
+        Consume(TokenType.Semicolon, "Expect ';' after variable declaration.");
         return new VarDecl(typeToken, name, initializer);
     }
 
@@ -100,12 +100,12 @@ sealed class Parser
             Token name = Advance();
             Advance(); // consume '='
             Expr value = Expression();
-            Match(TokenType.Semicolon);
+            Consume(TokenType.Semicolon, "Expect ';' after assignment.");
             return new ExprStmt(new Assign(name, value));
         }
 
         var expr = Expression();
-        Match(TokenType.Semicolon); // tolerate missing ';' for now
+        Consume(TokenType.Semicolon, "Expect ';' after expression.");
         return new ExprStmt(expr);
     }
 

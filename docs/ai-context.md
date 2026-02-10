@@ -64,6 +64,10 @@ Use this file as the first read before making changes. It summarizes intent, cur
 - Overloads: exact match preferred, then fewest/lowest-rank promotions, non-variadic beats variadic; ambiguity is a compile error.
 - Precedence: C#-style ordering; unary `+ - not`, `* / %`, `+ -`, relational, equality, `and`, `or`, assignment (right-associative); parentheses override.
 - Boolean `or` operator is distinct from the `optional.or(...)` helper method.
+- Tooling status (2026-02-10):
+  - Bytecode VM with header validation, CALL/RET frames, locals, arithmetic/comparisons, stack ops, jumps, load/store, and PRINT.
+  - Compiler prototype (C#) supports var declarations, assignments, arithmetic, comparisons, logical and/or/not (short-circuit), if/then[/else], while, for, return, blocks, and print statements; foreach parses but is not yet codegen’d.
+  - CLI: `compile/run/disasm`, token dump, skip-tests; bytecode uses `.bytecode` extension.
 
 ## Active Open Questions (High Priority)
 - Package search beyond project `lib/` (config surface, stdlib layout).
@@ -85,3 +89,4 @@ Use this file as the first read before making changes. It summarizes intent, cur
 ## Change Log
 - 2026-02-09: Created AI onboarding context; synchronized with spec v0.8 and current error-hook direction.
 - 2026-02-10: Added numeric literal rules (with `w` unsigned suffixes), conversion/promotion rules, interpolation grammar, optionals narrowing/accessors, overload resolution order, import resolution order, stacktrace capture, and error handler return flexibility; bumped spec to v0.9. Added C#-style precedence and removed semicolon-injection from open questions.
+- 2026-02-10: VM/bytecode evolved to header v0.3 with CALL/RET; compiler prototype added control flow, logical ops, print statement, and CLI utilities (compile/run/disasm/token dump).

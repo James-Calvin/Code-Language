@@ -36,8 +36,15 @@ sealed class CodeGenerator
                 break;
 
             case ExprStmt e:
-                Emit(e.Expression);
-                _builder.Pop();
+                if (e.Expression is Assign)
+                {
+                    Emit(e.Expression);
+                }
+                else
+                {
+                    Emit(e.Expression);
+                    _builder.Pop();
+                }
                 break;
 
             case Block b:

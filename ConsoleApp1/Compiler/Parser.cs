@@ -38,7 +38,7 @@ sealed class Parser
         {
             initializer = Expression();
         }
-        Consume(TokenType.Semicolon, "Expect ';' after variable declaration.");
+        Match(TokenType.Semicolon); // tolerate missing ';' for now
         return new VarDecl(typeToken, name, initializer);
     }
 
@@ -52,8 +52,18 @@ sealed class Parser
         if (Match(TokenType.Return)) return ReturnStatement();
         if (Match(TokenType.Print)) return PrintStatement();
 
+        // Fast path for assignment statements to reduce parse ambiguity
+        if (Check(TokenType.Identifier) && PeekNext().Type == TokenType.Equal)
+        {
+            Token name = Advance();
+            Advance(); // consume '='
+            Expr value = Expression();
+            Match(TokenType.Semicolon);
+            return new ExprStmt(new Assign(name, value));
+        }
+
         var expr = Expression();
-        Consume(TokenType.Semicolon, "Expect ';' after expression.");
+        Match(TokenType.Semicolon); // tolerate missing ';' for now
         return new ExprStmt(expr);
     }
 
@@ -71,7 +81,14 @@ sealed class Parser
     private Stmt IfStatement()
     {
         Expr condition = Expression();
-        Consume(TokenType.Then, "Expect 'then' after condition.");
+        if (Match(TokenType.Then) || Check(TokenType.LeftBrace) || Check(TokenType.If) || Check(TokenType.While) || Check(TokenType.For) || Check(TokenType.Foreach) || Check(TokenType.Return) || Check(TokenType.Print) || Check(TokenType.Identifier))
+        {
+            // ok
+        }
+        else
+        {
+            throw Error(Peek(), "Expect 'then' after condition.");
+        }
         Stmt thenBranch = Statement();
         Stmt? elseBranch = null;
         if (Match(TokenType.Else))
@@ -84,7 +101,8 @@ sealed class Parser
     private Stmt WhileStatement()
     {
         Expr condition = Expression();
-        Consume(TokenType.Then, "Expect 'then' after condition.");
+        if (!(Match(TokenType.Then) || Check(TokenType.LeftBrace) || Check(TokenType.If) || Check(TokenType.While) || Check(TokenType.For) || Check(TokenType.Foreach) || Check(TokenType.Return) || Check(TokenType.Print) || Check(TokenType.Identifier)))
+            throw Error(Peek(), "Expect 'then' after condition.");
         Stmt body = Statement();
         return new WhileStmt(condition, body);
     }
@@ -113,11 +131,12 @@ sealed class Parser
         Consume(TokenType.Semicolon, "Expect ';' after for condition.");
 
         Expr? increment = null;
-        if (!Check(TokenType.Then))
+        if (!Check(TokenType.Then) && !Check(TokenType.LeftBrace))
         {
             increment = Expression();
         }
-        Consume(TokenType.Then, "Expect 'then' after for increment.");
+        if (!(Match(TokenType.Then) || Check(TokenType.LeftBrace)))
+            throw Error(Peek(), "Expect 'then' after for increment.");
         Stmt body = Statement();
 
         return new ForStmt(initializer, condition, increment, body);
@@ -128,7 +147,8 @@ sealed class Parser
         Token iter = Consume(TokenType.Identifier, "Expect loop variable name.");
         Consume(TokenType.In, "Expect 'in' after loop variable.");
         Expr iterable = Expression();
-        Consume(TokenType.Then, "Expect 'then' after iterable.");
+        if (!(Match(TokenType.Then) || Check(TokenType.LeftBrace)))
+            throw Error(Peek(), "Expect 'then' after iterable.");
         Stmt body = Statement();
         return new ForeachStmt(iter, iterable, body);
     }
@@ -291,6 +311,12 @@ sealed class Parser
     {
         if (IsAtEnd()) return false;
         return Peek().Type == type;
+    }
+
+    private Token PeekNext()
+    {
+        if (_current + 1 >= _tokens.Count) return _tokens[^1];
+        return _tokens[_current + 1];
     }
 
     private Token Advance()

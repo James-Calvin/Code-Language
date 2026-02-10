@@ -14,6 +14,7 @@ internal static class Program
         string? outPath = null;
         bool skipTests = false;
         bool compileOnly = false;
+        string? dumpTokensPath = null;
 
         for (int i = 0; i < args.Length; i++)
         {
@@ -22,6 +23,10 @@ internal static class Program
                 case "--disasm":
                     if (i + 1 >= args.Length) Fail("Usage: --disasm <file.bytecode>");
                     disasmPath = args[++i];
+                    break;
+                case "--dump-tokens":
+                    if (i + 1 >= args.Length) Fail("Usage: --dump-tokens <file.code>");
+                    dumpTokensPath = args[++i];
                     break;
                 case "--out":
                     if (i + 1 >= args.Length) Fail("Usage: --out <output.bytecode>");
@@ -48,6 +53,12 @@ internal static class Program
         {
             var bytes = File.ReadAllBytes(disasmPath);
             Console.Write(Disassembler.Disassemble(bytes));
+            return;
+        }
+
+        if (dumpTokensPath != null)
+        {
+            DumpTokens(dumpTokensPath);
             return;
         }
 
@@ -127,5 +138,16 @@ internal static class Program
     {
         Console.Error.WriteLine(message);
         Environment.Exit(1);
+    }
+
+    private static void DumpTokens(string path)
+    {
+        var source = File.ReadAllText(path);
+        var lexer = new Lexer(source);
+        var tokens = lexer.ScanTokens();
+        foreach (var t in tokens)
+        {
+            Console.WriteLine($"{t.Line}:{t.Column} {t.Type} '{t.Lexeme}'");
+        }
     }
 }

@@ -53,7 +53,7 @@ sealed class Vm
         while (true)
         {
             if (_ip >= _code.Length)
-                throw new InvalidOperationException("Execution fell off the end of the program.");
+                ThrowRuntime("Execution fell off the end of the program.");
 
             var op = (OpCode)_code[_ip++];
 
@@ -98,14 +98,14 @@ sealed class Vm
                     NumericBinary((a, b) =>
                     {
                         if (b == 0)
-                            throw new DivideByZeroException("Division by zero in bytecode.");
+                        ThrowRuntime("Division by zero in bytecode.");
                         return a / b;
                     });
                     break;
 
                 case OpCode.Print:
                     if (_stack.Count == 0)
-                        throw new InvalidOperationException($"Stack underflow at {_ip - 1}");
+                        ThrowRuntime("Stack underflow");
                     var pv = _stack.Pop();
                     _output.WriteLine(pv);
                     break;
@@ -125,7 +125,7 @@ sealed class Vm
 
                 case OpCode.Pop:
                     if (_stack.Count == 0)
-                        throw new InvalidOperationException($"Stack underflow at {_ip - 1}");
+                        ThrowRuntime("Stack underflow");
                     _stack.Pop();
                     break;
 
@@ -190,7 +190,7 @@ sealed class Vm
                     for (int i = argCount - 1; i >= 0; i--)
                     {
                         if (_stack.Count == 0)
-                            throw new InvalidOperationException($"Stack underflow at {_ip - 1} while reading args");
+                            ThrowRuntime("Stack underflow while reading args");
                         newLocals[i] = _stack.Pop();
                     }
                     _callStack.Push((_ip, _locals));
@@ -259,13 +259,13 @@ sealed class Vm
     private void EnsureStack(int needed)
     {
         if (_stack.Count < needed)
-            throw new InvalidOperationException($"Stack underflow at {_ip - 1} (need {needed}, have {_stack.Count})");
+            ThrowRuntime($"Stack underflow (need {needed}, have {_stack.Count})");
     }
 
     private void EnsureLocals(int index)
     {
         if (index < 0)
-            throw new InvalidOperationException($"Negative local index {index} at {_ip - 1}");
+            ThrowRuntime($"Negative local index {index}");
         if (index >= _locals.Length)
         {
             Array.Resize(ref _locals, Math.Max(index + 1, _locals.Length * 2));
@@ -287,9 +287,17 @@ sealed class Vm
     private (object, object) PopAny2()
     {
         if (_stack.Count < 2)
-            throw new InvalidOperationException($"Stack underflow at {_ip - 1}");
+            ThrowRuntime($"Stack underflow (need 2, have {_stack.Count})");
         var b = _stack.Pop();
         var a = _stack.Pop();
         return (a, b);
+    }
+
+    private void ThrowRuntime(string message)
+    {
+        var calls = new List<int>();
+        foreach (var frame in _callStack)
+            calls.Add(frame.returnIp);
+        throw new VmRuntimeException(message, _ip - 1, calls.ToArray());
     }
 }

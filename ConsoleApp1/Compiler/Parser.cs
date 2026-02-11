@@ -347,21 +347,9 @@ sealed class Parser
         if (Match(TokenType.New)) return ParseNewExpression(Previous());
         if (Match(TokenType.Identifier))
         {
-            Token name = Previous();
-            if (Match(TokenType.LeftParen))
-            {
-                var args = new List<Expr>();
-                if (!Check(TokenType.RightParen))
-                {
-                    do
-                    {
-                        args.Add(Expression());
-                    } while (Match(TokenType.Comma));
-                }
-                Consume(TokenType.RightParen, "Expect ')' after arguments.");
-                return new Call(name, args);
-            }
-            return new Variable(name);
+            Expr expr = new Variable(Previous());
+            expr = FinishPostfix(expr);
+            return expr;
         }
         if (Match(TokenType.LeftParen))
         {
@@ -482,6 +470,50 @@ sealed class Parser
         Expr size = Expression();
         Consume(TokenType.RightParen, "Expect ')' after array size.");
         return new NewArrayExpr(inner, size, newTok.Line, newTok.Column);
+    }
+
+    private Expr FinishPostfix(Expr expr)
+    {
+        while (true)
+        {
+            if (Match(TokenType.LeftParen))
+            {
+                var args = new List<Expr>();
+                if (!Check(TokenType.RightParen))
+                {
+                    do
+                    {
+                        args.Add(Expression());
+                    } while (Match(TokenType.Comma));
+                }
+                Consume(TokenType.RightParen, "Expect ')' after arguments.");
+                if (expr is Variable v)
+                    expr = new Call(v.Name, args);
+                else
+                    throw Error(Peek(), "Cannot call non-variable expression");
+            }
+            else if (Match(TokenType.Dot))
+            {
+                Token dot = Previous();
+                Token prop = Consume(TokenType.Identifier, "Expect property name after '.'.");
+                if (prop.Lexeme == "length")
+                {
+                    expr = new ArrayLengthExpr(expr, dot);
+                }
+                else
+                {
+                    throw Error(prop, $"Unknown property '{prop.Lexeme}'");
+                }
+            }
+            else if (Match(TokenType.LeftBracket))
+            {
+                Expr index = Expression();
+                Consume(TokenType.RightBracket, "Expect ']' after index.");
+                expr = new ArrayIndexExpr(expr, index);
+            }
+            else break;
+        }
+        return expr;
     }
 
     private Expr ParseInlineExpression(string text, int line, int col)

@@ -55,6 +55,20 @@ sealed class NewArrayExpr : Expr
     }
 }
 
+sealed class ArrayLengthExpr : Expr
+{
+    public Expr Target { get; }
+    public Token DotToken { get; }
+    public ArrayLengthExpr(Expr target, Token dot) { Target = target; DotToken = dot; }
+}
+
+sealed class ArrayIndexExpr : Expr
+{
+    public Expr Array { get; }
+    public Expr Index { get; }
+    public ArrayIndexExpr(Expr array, Expr index) { Array = array; Index = index; }
+}
+
 sealed class Variable : Expr
 {
     public Token Name { get; }

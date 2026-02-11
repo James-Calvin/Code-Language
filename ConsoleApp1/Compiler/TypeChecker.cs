@@ -170,6 +170,17 @@ sealed class TypeChecker
                 var sizeType = CheckExpr(na.Size, env, currentReturn);
                 Require(IsNumeric(sizeType), na.Size, "Array size must be numeric");
                 return TypeSymbol.Array;
+            case ArrayLengthExpr alen:
+                var targType = CheckExpr(alen.Target, env, currentReturn);
+                Require(targType == TypeSymbol.Array, alen.Target, "'.length' is only valid on arrays");
+                return TypeSymbol.Integer;
+            case ArrayIndexExpr aidx:
+                var arrType = CheckExpr(aidx.Array, env, currentReturn);
+                Require(arrType == TypeSymbol.Array, aidx.Array, "Indexing requires an array");
+                var idxType = CheckExpr(aidx.Index, env, currentReturn);
+                Require(IsNumeric(idxType), aidx.Index, "Array index must be numeric");
+                // Element typing not tracked; default to integer
+                return TypeSymbol.Integer;
             case Variable v:
                 return env.LookupForRead(v.Name);
             case Assign a:

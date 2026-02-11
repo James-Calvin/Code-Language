@@ -53,3 +53,4 @@ Version: 0.5 (2026-02-11)
 - Comparisons return 1.0 for true, 0.0 for false; logical `and/or` short-circuit in codegen.
 - Locals array grows dynamically when STORE/LOAD targets exceed current length; functions track their max locals for CALL frame sizing.
 - Debug entries map instruction pointer offsets (absolute byte positions) back to source line/column for runtime stack traces; entries are optional per instruction but recorded when available.
+- Arrays are stored as VM-managed lists; NEW_ARRAY pops pre-pushed elements, NEW_ARRAY_N allocates default-filled arrays of length N, ARRAY_LENGTH/GET operate on them (GET pops index then array).

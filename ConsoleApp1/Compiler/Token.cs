@@ -4,7 +4,9 @@ enum TokenType
 {
     LeftParen, RightParen,
     LeftBrace, RightBrace,
+    LeftBracket, RightBracket,
     Comma,
+    Dot,
     Semicolon,
     Plus, Minus, Star, Slash,
     Equal, Less, Greater,

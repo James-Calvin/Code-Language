@@ -196,7 +196,7 @@ while value != someValue then {
 }
 ```
 
-- Arrays (current impl): array literal syntax `{a, b, c}` builds a runtime array; `foreach` can iterate arrays by element in addition to numeric bounds.
+- Arrays (current impl): array literal syntax `{a, b, c}` builds a runtime array; typed declarations `array<integer> xs = {1,2,3};`; dynamic `new array<integer>(n)` requires a size; `xs.length` yields length; `xs[index]` reads an element; `foreach` can iterate arrays by element in addition to numeric bounds.
 
 ```code
 foreach number in numbers then {
@@ -398,6 +398,7 @@ real result3 = errorExample(0) on error panic("Error message {error}");
 - Definite assignment is enforced: a local must be assigned before first read; parameters and `foreach` loop variables are treated as assigned.
 - Compile-time constant folding for literal arithmetic (`+`, `-`, `*`) and string literal concatenation reduces runtime work without changing semantics.
 - Runtime errors include line/column mapping and a bytecode call stack derived from embedded debug info in the compiled `.bytecode` file.
+- Arrays: literals `{...}` create arrays; typed declarations `array<integer> xs = {1,2,3};`; dynamic `new array<integer>(n)` requires a size; `xs.length` yields length; `foreach` iterates arrays by element.
 
 ```code
 function<fallible<real>> run(string input, real count) {

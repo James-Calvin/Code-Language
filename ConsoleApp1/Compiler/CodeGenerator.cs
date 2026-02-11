@@ -230,6 +230,15 @@ sealed class CodeGenerator
                 Emit(na.Size);
                 _builder.NewArrayN();
                 break;
+            case ArrayLengthExpr alen:
+                Emit(alen.Target);
+                _builder.ArrayLength();
+                break;
+            case ArrayIndexExpr aidx:
+                Emit(aidx.Array);
+                Emit(aidx.Index);
+                _builder.ArrayGet();
+                break;
 
             case Variable v:
                 SetLoc(v.Name);

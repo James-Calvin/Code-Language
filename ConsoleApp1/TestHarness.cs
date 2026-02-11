@@ -78,11 +78,12 @@ internal static class TestHarness
             try
             {
                 vm.Run();
-                var output = writer.ToString();
-                if (!string.Equals(output, expected, StringComparison.Ordinal))
+                var output = Normalize(writer.ToString());
+                var expectNorm = Normalize(expected);
+                if (!string.Equals(output, expectNorm, StringComparison.Ordinal))
                 {
                     failures++;
-                    Console.WriteLine($"[FAIL] {name}: expected '{Escape(expected)}' got '{Escape(output)}'");
+                    Console.WriteLine($"[FAIL] {name}: expected '{Escape(expectNorm)}' got '{Escape(output)}'");
                 }
                 else
                 {
@@ -101,8 +102,286 @@ internal static class TestHarness
             Console.WriteLine($"Tests failed: {failures}");
             Environment.Exit(1);
         }
+
+        failures += RunCompilerIntegrationTests();
+        failures += RunArithmeticFuzz();
+        failures += RunBooleanFuzz();
+        failures += RunStringConcatFuzz();
+        failures += RunLoopFuzz();
+
+        if (failures > 0)
+        {
+            Console.WriteLine($"Tests failed: {failures}");
+            Environment.Exit(1);
+        }
     }
 
     private static string Escape(string value) =>
         value.Replace("\r", "\\r").Replace("\n", "\\n");
+
+    private static int RunCompilerIntegrationTests()
+    {
+        int failures = 0;
+        var cases = new List<(string Name, string Source, string Expected)>
+        {
+            ("print-string", @"print(""hi"");", "hi\n"),
+            ("arith-assign", @"integer a = 2 + 3 * 4; print(a);", "14\n"),
+            ("function-call",
+@"function<integer> add(integer a, integer b) { return a + b; }
+print(add(2, 3));",
+             "5\n"),
+            ("while-sum",
+@"integer i = 0;
+integer sum = 0;
+while i < 4 then {
+  sum = sum + i;
+  i = i + 1;
+}
+print(sum);", "6\n"),
+            ("foreach-count",
+@"integer n = 3;
+foreach i in n then print(i);",
+ "0\n1\n2\n"),
+            ("interp-string",
+@"integer x = 3;
+print(""x={x}"");", "x=3\n")
+        };
+
+        foreach (var (name, src, expected) in cases)
+        {
+            try
+            {
+                var output = Normalize(CompileAndRun(src));
+                var expectNorm = Normalize(expected);
+                if (output != expectNorm)
+                {
+                    failures++;
+                    Console.WriteLine($"[FAIL] {name}: expected '{Escape(expectNorm)}' got '{Escape(output)}'");
+                }
+                else
+                {
+                    Console.WriteLine($"[PASS] {name}");
+                }
+            }
+            catch (Exception ex)
+            {
+                failures++;
+                Console.WriteLine($"[FAIL] {name}: threw {ex.GetType().Name} - {ex.Message}");
+            }
+        }
+
+        return failures;
+    }
+
+    private static int RunArithmeticFuzz(int iterations = 50)
+    {
+        int failures = 0;
+        var rand = new Random(12345);
+        for (int i = 0; i < iterations; i++)
+        {
+            string expr = BuildExpr(rand, depth: 0, out int expected);
+            string src = $"print({expr});";
+            try
+            {
+                var output = Normalize(CompileAndRun(src));
+                if (!int.TryParse(output.Trim(), out int got) || got != expected)
+                {
+                    failures++;
+                    Console.WriteLine($"[FAIL] fuzz#{i}: {expr} expected {expected} got '{output.Trim()}'");
+                }
+            }
+            catch (Exception ex)
+            {
+                failures++;
+                Console.WriteLine($"[FAIL] fuzz#{i}: threw {ex.GetType().Name} - {ex.Message}");
+            }
+        }
+        if (failures == 0) Console.WriteLine("[PASS] arithmetic fuzz");
+        return failures;
+    }
+
+    private static int RunBooleanFuzz(int iterations = 30)
+    {
+        int failures = 0;
+        var rand = new Random(54321);
+        for (int i = 0; i < iterations; i++)
+        {
+            string expr = BuildBoolExpr(rand, depth: 0, out bool expected);
+            string src = $"print({expr});";
+            try
+            {
+                var output = Normalize(CompileAndRun(src)).Trim();
+                if (!int.TryParse(output, out int got) || (got != 0 && got != 1) || (got == 1) != expected)
+                {
+                    failures++;
+                    Console.WriteLine($"[FAIL] bool-fuzz#{i}: {expr} expected {(expected ? 1 : 0)} got '{output}'");
+                }
+            }
+            catch (Exception ex)
+            {
+                failures++;
+                Console.WriteLine($"[FAIL] bool-fuzz#{i}: threw {ex.GetType().Name} - {ex.Message}");
+            }
+        }
+        if (failures == 0) Console.WriteLine("[PASS] boolean fuzz");
+        return failures;
+    }
+
+    private static int RunStringConcatFuzz(int iterations = 30)
+    {
+        int failures = 0;
+        var rand = new Random(22222);
+        for (int i = 0; i < iterations; i++)
+        {
+            string expr = BuildStringConcat(rand, parts: rand.Next(2, 5), out string expected);
+            string src = $"print({expr});";
+            try
+            {
+                var output = Normalize(CompileAndRun(src));
+                if (output.TrimEnd('\n') != expected)
+                {
+                    failures++;
+                    Console.WriteLine($"[FAIL] string-fuzz#{i}: {expr} expected '{Escape(expected)}' got '{Escape(output.Trim())}'");
+                }
+            }
+            catch (Exception ex)
+            {
+                failures++;
+                Console.WriteLine($"[FAIL] string-fuzz#{i}: threw {ex.GetType().Name} - {ex.Message}");
+            }
+        }
+        if (failures == 0) Console.WriteLine("[PASS] string concat fuzz");
+        return failures;
+    }
+
+    private static int RunLoopFuzz(int iterations = 20)
+    {
+        int failures = 0;
+        var rand = new Random(33333);
+        for (int i = 0; i < iterations; i++)
+        {
+            int n = rand.Next(0, 8);
+            int expected = n * (n - 1) / 2;
+            string src =
+$@"integer i = 0;
+integer sum = 0;
+while i < {n} then {{
+  sum = sum + i;
+  i = i + 1;
+}}
+print(sum);";
+            try
+            {
+                var output = Normalize(CompileAndRun(src)).Trim();
+                if (!int.TryParse(output, out int got) || got != expected)
+                {
+                    failures++;
+                    Console.WriteLine($"[FAIL] loop-fuzz#{i}: n={n} expected {expected} got '{output}'");
+                }
+            }
+            catch (Exception ex)
+            {
+                failures++;
+                Console.WriteLine($"[FAIL] loop-fuzz#{i}: threw {ex.GetType().Name} - {ex.Message}");
+            }
+        }
+        if (failures == 0) Console.WriteLine("[PASS] loop fuzz");
+        return failures;
+    }
+
+    private static string BuildExpr(Random rand, int depth, out int value)
+    {
+        if (depth > 3)
+        {
+            value = rand.Next(0, 6);
+            return value.ToString();
+        }
+        // 50% chance leaf
+        if (rand.NextDouble() < 0.5)
+        {
+            value = rand.Next(0, 6);
+            return value.ToString();
+        }
+
+        string left = BuildExpr(rand, depth + 1, out int lv);
+        string right = BuildExpr(rand, depth + 1, out int rv);
+        char op = "+-*"[rand.Next(0, 3)];
+        value = op switch
+        {
+            '+' => lv + rv,
+            '-' => lv - rv,
+            '*' => lv * rv,
+            _ => lv
+        };
+        return $"({left} {op} {right})";
+    }
+
+    private static string BuildBoolExpr(Random rand, int depth, out bool value)
+    {
+        // base: comparison between two small ints
+        if (depth > 2 || rand.NextDouble() < 0.4)
+        {
+            int a = rand.Next(0, 5);
+            int b = rand.Next(0, 5);
+            var ops = new[] { "<", ">", "==", "!=" };
+            string op = ops[rand.Next(ops.Length)];
+            value = op switch
+            {
+                "<" => a < b,
+                ">" => a > b,
+                "==" => a == b,
+                "!=" => a != b,
+                _ => false
+            };
+            return $"{a} {op} {b}";
+        }
+
+        string left = BuildBoolExpr(rand, depth + 1, out bool lv);
+        string right = BuildBoolExpr(rand, depth + 1, out bool rv);
+        var lop = rand.Next(0, 2) == 0 ? "and" : "or";
+        value = lop == "and" ? (lv && rv) : (lv || rv);
+        return $"({left} {lop} {right})";
+    }
+
+    private static string BuildStringConcat(Random rand, int parts, out string value)
+    {
+        var pieces = new List<string>();
+        var sb = new System.Text.StringBuilder();
+        for (int i = 0; i < parts; i++)
+        {
+            bool asString = (i == 0) || rand.NextDouble() < 0.6; // ensure first part is string to avoid numeric-only addition
+            if (asString)
+            {
+                char c = (char)('a' + rand.Next(0, 6));
+                pieces.Add($"\"{c}\"");
+                sb.Append(c);
+            }
+            else
+            {
+                int num = rand.Next(0, 5);
+                pieces.Add(num.ToString());
+                sb.Append(num.ToString());
+            }
+        }
+        value = sb.ToString();
+        return string.Join(" + ", pieces);
+    }
+
+    private static string CompileAndRun(string source)
+    {
+        var lexer = new Compiler.Lexer(source);
+        var tokens = lexer.ScanTokens();
+        var parser = new Compiler.Parser(tokens);
+        var ast = parser.Parse();
+        var typeChecker = new Compiler.TypeChecker();
+        typeChecker.Check(ast);
+        var generator = new Compiler.CodeGenerator();
+        var bytes = generator.Generate(ast);
+        using var sw = new StringWriter();
+        var vm = new Vm(bytes, sw);
+        vm.Run();
+        return sw.ToString();
+    }
+
+    private static string Normalize(string text) => text.Replace("\r\n", "\n");
 }

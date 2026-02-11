@@ -49,8 +49,8 @@ Legend:
 | `[~]` | Tooling/docs | Disassembler/trace polish; CLI trace flags | Medium priority |
 | `[~]` | Tooling/docs | Formatter/linter for `.code` | Medium priority |
 | `[x]` | Testing | VM harness tests | Implemented |
-| `[!]` | Testing | Compiler integration suite | High leverage |
-| `[!]` | Testing | Property/fuzz tests (parser/VM) | High leverage |
+| `[x]` | Testing | Compiler integration suite | Includes print, arithmetic, functions, loops, foreach, strings |
+| `[x]` | Testing | Property/fuzz tests (parser/VM) | Arithmetic, boolean logic, string concat, loop sums |
 
 ## Priority Rollup (benefit/effort)
 - High (`[!]`): type system/codegen polish (frame sizing, flow/return analysis), testing (integration + fuzz), typed errors/propagation, VM exceptions, formatter/trace? (see table), compiler integration tests, fuzz tests.

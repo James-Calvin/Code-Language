@@ -220,7 +220,18 @@ sealed class CodeGenerator
         {
             case Literal lit:
                 SetLoc(lit.Line, lit.Column);
-                _builder.PushInt(Convert.ToInt32(lit.Value ?? 0));
+                if (lit.Value is string s)
+                {
+                    _builder.PushString(s);
+                }
+                else if (lit.Value is bool b)
+                {
+                    _builder.PushInt(b ? 1 : 0);
+                }
+                else
+                {
+                    _builder.PushInt(Convert.ToInt32(lit.Value ?? 0));
+                }
                 break;
 
             case InterpString istr:
@@ -378,14 +389,14 @@ sealed class CodeGenerator
         string trueLabel = NewLabel("or_true");
         string endLabel = NewLabel("or_end");
 
-        _builder.Dup(); // left, left
-        _builder.JumpIfNotZero(trueLabel); // pops top copy
-        _builder.Pop(); // drop remaining left (false) before evaluating right
+        _builder.JumpIfNotZero(trueLabel); // pops left
         Emit(b.Right);
+        _builder.JumpIfNotZero(trueLabel);
+        _builder.PushInt(0);
         _builder.Jump(endLabel);
 
         _builder.Label(trueLabel);
-        // left (truthy) remains on stack
+        _builder.PushInt(1);
         _builder.Label(endLabel);
     }
 
@@ -395,14 +406,14 @@ sealed class CodeGenerator
         string falseLabel = NewLabel("and_false");
         string endLabel = NewLabel("and_end");
 
-        _builder.Dup(); // left,left
-        _builder.JumpIfZero(falseLabel); // pops top copy
-        _builder.Pop(); // remove remaining left (true path) before evaluating right
+        _builder.JumpIfZero(falseLabel); // pops left
         Emit(b.Right);
+        _builder.JumpIfZero(falseLabel);
+        _builder.PushInt(1);
         _builder.Jump(endLabel);
 
         _builder.Label(falseLabel);
-        // left (zero) remains on stack as the result
+        _builder.PushInt(0);
         _builder.Label(endLabel);
     }
 

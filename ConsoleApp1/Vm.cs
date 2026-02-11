@@ -182,7 +182,14 @@ sealed class Vm
                 case OpCode.Eq:
                 {
                     var (l, r) = PopAny2();
-                    _stack.Push(Equals(l, r) ? 1.0 : 0.0);
+                    if (IsNumber(l) && IsNumber(r))
+                    {
+                        _stack.Push(ToDouble(l) == ToDouble(r) ? 1.0 : 0.0);
+                    }
+                    else
+                    {
+                        _stack.Push(Equals(l, r) ? 1.0 : 0.0);
+                    }
                     break;
                 }
 
@@ -241,6 +248,9 @@ sealed class Vm
         double a = PopNumber();
         _stack.Push(op(a, b));
     }
+
+    private static bool IsNumber(object v) => v is int or double;
+    private static double ToDouble(object v) => v is double d ? d : Convert.ToDouble(v);
 
     private double PopAsNumber(object v)
     {

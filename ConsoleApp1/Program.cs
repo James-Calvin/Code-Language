@@ -13,6 +13,7 @@ internal static class Program
         string? codePath = null;
         string? outPath = null;
         bool skipTests = false;
+        bool runTests = false;
         bool compileOnly = false;
         string? dumpTokensPath = null;
 
@@ -35,6 +36,9 @@ internal static class Program
                 case "--skip-tests":
                     skipTests = true;
                     break;
+                case "--run-tests":
+                    runTests = true;
+                    break;
                 case "--compile-only":
                     compileOnly = true;
                     break;
@@ -47,6 +51,12 @@ internal static class Program
                         Fail($"Unrecognized argument '{args[i]}'");
                     break;
             }
+        }
+
+        if (runTests)
+        {
+            TestHarness.RunAll();
+            return;
         }
 
         if (disasmPath != null)

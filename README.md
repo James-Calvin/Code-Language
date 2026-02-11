@@ -3,7 +3,7 @@
 A tiny experimental programming language with a stack-based bytecode VM and a C# compiler pipeline. The repo contains:
 - `ConsoleApp1/` — compiler, VM, disassembler, and test harness
 - `docs/` — language spec drafts, roadmap, AI context
-- `examples/` — sample `.code` programs and their compiled `.bytecode`
+- `examples/` — sample `.code` programs
 
 ## Features (implemented)
 - Typed variables/functions; primitives: integer/whole/real, boolean, string

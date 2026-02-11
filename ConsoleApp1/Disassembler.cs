@@ -51,6 +51,7 @@ static class Disassembler
                 case OpCode.Lt:
                 case OpCode.Gt:
                 case OpCode.Ret:
+                case OpCode.ThrowError:
                 case OpCode.Halt:
                     break;
                 case OpCode.PushString:

@@ -33,6 +33,7 @@ sealed class Lexer
         { "for", TokenType.For },
         { "foreach", TokenType.Foreach },
         { "in", TokenType.In },
+        { "panic", TokenType.Panic },
     };
 
     public Lexer(string source)

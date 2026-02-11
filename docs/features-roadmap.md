@@ -26,7 +26,7 @@ Legend:
 | `[~]` | Type system | Optional/`optional<T>` semantics | Nullable/absence model not implemented |
 | `[_]` | Type system | Overload resolution rules (spec’d) | Engine not implemented |
 | `[x]` | Error model | Runtime IP + call stack + snippets | Debug-map backed |
-| `[!]` | Error model | Typed errors / exception objects in VM | High DX impact |
+| `[x]` | Error model | Typed errors / exception objects in VM | VmError objects, THROW opcode, panic statement, tests |
 | `[!]` | Error model | Propagation semantics across functions | Requires compiler/codegen rules |
 | `[_]` | Object model | Interfaces/objects/records with visibility (`public/package/private`) | Parsing/codegen/runtime not implemented |
 | `[_]` | Modules/imports | Exported declarations | Export syntax in spec; not implemented |

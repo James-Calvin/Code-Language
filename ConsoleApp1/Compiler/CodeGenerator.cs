@@ -154,6 +154,11 @@ sealed class CodeGenerator
                 _builder.Print();
                 break;
 
+            case PanicStmt p:
+                Emit(p.Value);
+                _builder.ThrowError();
+                break;
+
             case ForStmt f:
                 if (f.Initializer is not null) Emit(f.Initializer);
                 string forStart = NewLabel("for_start");

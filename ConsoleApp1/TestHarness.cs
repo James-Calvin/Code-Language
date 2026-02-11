@@ -108,6 +108,7 @@ internal static class TestHarness
         failures += RunBooleanFuzz();
         failures += RunStringConcatFuzz();
         failures += RunLoopFuzz();
+        failures += RunPanicFuzz();
 
         if (failures > 0)
         {
@@ -146,6 +147,11 @@ foreach i in n then print(i);",
 @"integer x = 3;
 print(""x={x}"");", "x=3\n")
         };
+        // Expected error cases
+        var errorCases = new List<(string Name, string Source, string ExpectedType)>
+        {
+            ("panic-basic", @"panic(""boom"");", "UserError"),
+        };
 
         foreach (var (name, src, expected) in cases)
         {
@@ -167,6 +173,20 @@ print(""x={x}"");", "x=3\n")
             {
                 failures++;
                 Console.WriteLine($"[FAIL] {name}: threw {ex.GetType().Name} - {ex.Message}");
+            }
+        }
+
+        foreach (var (name, src, expectedType) in errorCases)
+        {
+            try
+            {
+                CompileAndRunExpectError(src, expectedType);
+                Console.WriteLine($"[PASS] {name}");
+            }
+            catch (Exception ex)
+            {
+                failures++;
+                Console.WriteLine($"[FAIL] {name}: {ex.GetType().Name} - {ex.Message}");
             }
         }
 
@@ -289,6 +309,28 @@ print(sum);";
         return failures;
     }
 
+    private static int RunPanicFuzz(int iterations = 10)
+    {
+        int failures = 0;
+        var rand = new Random(44444);
+        for (int i = 0; i < iterations; i++)
+        {
+            string msg = $"boom{i}";
+            string src = $"panic(\"{msg}\");";
+            try
+            {
+                CompileAndRunExpectError(src, "UserError");
+            }
+            catch (Exception ex)
+            {
+                failures++;
+                Console.WriteLine($"[FAIL] panic-fuzz#{i}: {ex.Message}");
+            }
+        }
+        if (failures == 0) Console.WriteLine("[PASS] panic fuzz");
+        return failures;
+    }
+
     private static string BuildExpr(Random rand, int depth, out int value)
     {
         if (depth > 3)
@@ -381,6 +423,20 @@ print(sum);";
         var vm = new Vm(bytes, sw);
         vm.Run();
         return sw.ToString();
+    }
+
+    private static void CompileAndRunExpectError(string source, string expectedType)
+    {
+        try
+        {
+            CompileAndRun(source);
+            throw new Exception("Expected runtime error was not thrown");
+        }
+        catch (VmRuntimeException vex)
+        {
+            if (vex.Error.Type != expectedType)
+                throw new Exception($"Expected error type '{expectedType}' got '{vex.Error.Type}'");
+        }
     }
 
     private static string Normalize(string text) => text.Replace("\r\n", "\n");

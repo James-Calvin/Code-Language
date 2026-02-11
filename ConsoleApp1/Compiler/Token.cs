@@ -23,6 +23,7 @@ enum TokenType
     Function,
     And, Or, Not,
     For, Foreach, In,
+    Panic,
 
     Eof
 }

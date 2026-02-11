@@ -62,6 +62,12 @@ sealed class BytecodeBuilder
         _bytes.AddRange(utf8);
         return this;
     }
+    public BytecodeBuilder ThrowError()
+    {
+        RecordDebug();
+        _bytes.Add((byte)OpCode.ThrowError);
+        return this;
+    }
     public BytecodeBuilder Call(string label, int argCount, int localCount)
     {
         RecordDebug();

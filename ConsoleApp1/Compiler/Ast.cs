@@ -112,6 +112,12 @@ sealed class PrintStmt : Stmt
     public PrintStmt(Expr value) { Value = value; }
 }
 
+sealed class PanicStmt : Stmt
+{
+    public Expr Value { get; }
+    public PanicStmt(Expr value) { Value = value; }
+}
+
 sealed class ForStmt : Stmt
 {
     public Stmt? Initializer { get; }

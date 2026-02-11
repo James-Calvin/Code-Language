@@ -131,6 +131,10 @@ sealed class TypeChecker
                 CheckExpr(p.Value, env, currentReturn);
                 return false;
 
+            case PanicStmt p:
+                CheckExpr(p.Value, env, currentReturn);
+                return false;
+
             case FunctionDecl:
                 // handled earlier
                 return false;

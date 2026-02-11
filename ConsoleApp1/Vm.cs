@@ -27,6 +27,7 @@ enum OpCode : byte
     Call = 0x12,
     Ret = 0x13,
     PushString = 0x14,
+    ThrowError = 0x15,
     Halt = 0xFF
 }
 
@@ -120,7 +121,10 @@ sealed class Vm
                     if (_stack.Count == 0)
                         ThrowRuntime("Stack underflow");
                     var pv = _stack.Pop();
-                    _output.WriteLine(pv);
+                    if (pv is VmError err)
+                        _output.WriteLine(err.ToString());
+                    else
+                        _output.WriteLine(pv);
                     break;
 
                 case OpCode.Dup:
@@ -232,6 +236,15 @@ sealed class Vm
                     break;
                 }
 
+                case OpCode.ThrowError:
+                {
+                    EnsureStack(1);
+                    var msgObj = _stack.Pop();
+                    string msg = msgObj?.ToString() ?? "error";
+                    ThrowRuntime(msg, type: "UserError");
+                    break;
+                }
+
                 case OpCode.Halt:
                     return;
 
@@ -323,7 +336,7 @@ sealed class Vm
         return (a, b);
     }
 
-    private void ThrowRuntime(string message)
+    private void ThrowRuntime(string message, string type = "RuntimeError")
     {
         var calls = new List<VmFrame>();
         foreach (var frame in _callStack)
@@ -343,6 +356,7 @@ sealed class Vm
             faultLine = loc.line;
             faultCol = loc.column;
         }
-        throw new VmRuntimeException(message, faultIp, calls.ToArray(), faultLine, faultCol);
+        var error = new VmError(type, message, faultLine, faultCol, calls.ToArray());
+        throw new VmRuntimeException(message, faultIp, calls.ToArray(), faultLine, faultCol, error);
     }
 }

@@ -93,6 +93,7 @@ sealed class Parser
         if (Match(TokenType.LeftBrace)) return new Block(BlockStatements());
         if (Match(TokenType.Return)) return ReturnStatement();
         if (Match(TokenType.Print)) return PrintStatement();
+        if (Match(TokenType.Panic)) return PanicStatement();
 
         // Fast path for assignment statements to reduce parse ambiguity
         if (Check(TokenType.Identifier) && PeekNext().Type == TokenType.Equal)
@@ -203,6 +204,13 @@ sealed class Parser
         }
         Consume(TokenType.Semicolon, "Expect ';' after return value.");
         return new ReturnStmt(value);
+    }
+
+    private Stmt PanicStatement()
+    {
+        Expr value = Expression();
+        Consume(TokenType.Semicolon, "Expect ';' after panic expression.");
+        return new PanicStmt(value);
     }
 
     private Expr Expression() => Or();

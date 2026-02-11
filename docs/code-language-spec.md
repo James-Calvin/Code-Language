@@ -160,6 +160,7 @@ if myData_ < 0 then doSomething();
 ```
 
 - `while` supports single-statement and block forms.
+- `then` is mandatory after `while` conditions (and after `for`/`foreach` headers).
 
 ```code
 while count > 0 then count -= 1;

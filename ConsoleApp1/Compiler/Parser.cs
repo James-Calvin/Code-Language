@@ -123,14 +123,7 @@ sealed class Parser
     private Stmt IfStatement()
     {
         Expr condition = Expression();
-        if (Match(TokenType.Then) || Check(TokenType.LeftBrace) || Check(TokenType.If) || Check(TokenType.While) || Check(TokenType.For) || Check(TokenType.Foreach) || Check(TokenType.Return) || Check(TokenType.Print) || Check(TokenType.Identifier))
-        {
-            // ok
-        }
-        else
-        {
-            throw Error(Peek(), "Expect 'then' after condition.");
-        }
+        Consume(TokenType.Then, "Expect 'then' after condition.");
         Stmt thenBranch = Statement();
         Stmt? elseBranch = null;
         if (Match(TokenType.Else))
@@ -143,8 +136,7 @@ sealed class Parser
     private Stmt WhileStatement()
     {
         Expr condition = Expression();
-        if (!(Match(TokenType.Then) || Check(TokenType.LeftBrace) || Check(TokenType.If) || Check(TokenType.While) || Check(TokenType.For) || Check(TokenType.Foreach) || Check(TokenType.Return) || Check(TokenType.Print) || Check(TokenType.Identifier)))
-            throw Error(Peek(), "Expect 'then' after condition.");
+        Consume(TokenType.Then, "Expect 'then' after condition.");
         Stmt body = Statement();
         return new WhileStmt(condition, body);
     }
@@ -179,8 +171,7 @@ sealed class Parser
         {
             increment = Expression();
         }
-        if (!(Match(TokenType.Then) || Check(TokenType.LeftBrace)))
-            throw Error(Peek(), "Expect 'then' after for increment.");
+        Consume(TokenType.Then, "Expect 'then' after for increment.");
         Stmt body = Statement();
 
         return new ForStmt(initializer, condition, increment, body);
@@ -191,8 +182,7 @@ sealed class Parser
         Token iter = Consume(TokenType.Identifier, "Expect loop variable name.");
         Consume(TokenType.In, "Expect 'in' after loop variable.");
         Expr iterable = Expression();
-        if (!(Match(TokenType.Then) || Check(TokenType.LeftBrace)))
-            throw Error(Peek(), "Expect 'then' after iterable.");
+        Consume(TokenType.Then, "Expect 'then' after iterable.");
         Stmt body = Statement();
         return new ForeachStmt(iter, iterable, body);
     }

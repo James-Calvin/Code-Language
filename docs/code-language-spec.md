@@ -391,6 +391,11 @@ fallible<real> pending = errorExample(0);
 real result3 = errorExample(0) on error panic("Error message {error}");
 ```
 
+## 14. Compiler Behavior (current implementation)
+- Definite assignment is enforced: a local must be assigned before first read; parameters and `foreach` loop variables are treated as assigned.
+- Compile-time constant folding for literal arithmetic (`+`, `-`, `*`) and string literal concatenation reduces runtime work without changing semantics.
+- Runtime errors include line/column mapping and a bytecode call stack derived from embedded debug info in the compiled `.bytecode` file.
+
 ```code
 function<fallible<real>> run(string input, real count) {
   real parsed = parseReal(input) on error return error;

@@ -259,6 +259,19 @@ sealed class CodeGenerator
                 break;
 
             case Binary b:
+                if (TryFoldBinary(b, out var folded))
+                {
+                    SetLoc(b.Operator);
+                    if (folded is string sFold)
+                    {
+                        _builder.PushString(sFold);
+                    }
+                    else
+                    {
+                        _builder.PushInt(Convert.ToInt32(folded));
+                    }
+                    break;
+                }
                 if (b.Operator.Type == TokenType.And)
                 {
                     SetLoc(b.Operator);
@@ -365,6 +378,41 @@ sealed class CodeGenerator
         _builder.Label(falseLabel);
         // left (zero) remains on stack as the result
         _builder.Label(endLabel);
+    }
+
+    private bool TryFoldBinary(Binary b, out object result)
+    {
+        result = default!;
+        if (b.Left is Literal lLit && b.Right is Literal rLit)
+        {
+            if (lLit.Value is string ls && rLit.Value is string rs && b.Operator.Type == TokenType.Plus)
+            {
+                result = ls + rs;
+                return true;
+            }
+
+            bool IsInt(object? v, out int iv)
+            {
+                switch (v)
+                {
+                    case int i: iv = i; return true;
+                    case double d when d == Math.Truncate(d): iv = (int)d; return true;
+                    case null: iv = 0; return true;
+                    default: iv = 0; return false;
+                }
+            }
+
+            if (IsInt(lLit.Value, out var li) && IsInt(rLit.Value, out var ri))
+            {
+                switch (b.Operator.Type)
+                {
+                    case TokenType.Plus: result = li + ri; return true;
+                    case TokenType.Minus: result = li - ri; return true;
+                    case TokenType.Star: result = li * ri; return true;
+                }
+            }
+        }
+        return false;
     }
 
     private void EmitCall(Call call)

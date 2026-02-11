@@ -54,7 +54,7 @@ sealed class TypeChecker
         {
             var param = fn.Parameters[i];
             var pType = MapType(param.TypeToken!);
-            env.Define(param.Name.Lexeme, pType, param.Name.Line, param.Name.Column);
+            env.Define(param.Name.Lexeme, pType, param.Name.Line, param.Name.Column, assigned: true);
         }
         bool allPathsReturn = CheckStmt(fn.Body, env, retType);
         if (!allPathsReturn)
@@ -67,12 +67,13 @@ sealed class TypeChecker
         {
             case VarDecl v:
                 var t = MapType(v.TypeToken);
+                bool hasInit = v.Initializer is not null;
                 if (v.Initializer is not null)
                 {
                     var init = CheckExpr(v.Initializer, env, currentReturn);
                     RequireAssignable(t, init, v.TypeToken.Line, v.TypeToken.Column, "Initializer type mismatch");
                 }
-                env.Define(v.Name.Lexeme, t, v.Name.Line, v.Name.Column);
+                env.Define(v.Name.Lexeme, t, v.Name.Line, v.Name.Column, hasInit);
                 return false;
 
             case ExprStmt e:
@@ -115,7 +116,7 @@ sealed class TypeChecker
                 var iterType = CheckExpr(fe.Iterable, env, currentReturn);
                 Require(IsNumeric(iterType), fe.Iterable, "foreach iterable must be numeric (count)");
                 var feEnv = env.CreateChild();
-                feEnv.Define(fe.Iterator.Lexeme, TypeSymbol.Integer, fe.Iterator.Line, fe.Iterator.Column);
+                feEnv.Define(fe.Iterator.Lexeme, TypeSymbol.Integer, fe.Iterator.Line, fe.Iterator.Column, assigned: true);
                 CheckStmt(fe.Body, feEnv, currentReturn);
                 return false;
 
@@ -157,11 +158,12 @@ sealed class TypeChecker
                 }
                 return TypeSymbol.String;
             case Variable v:
-                return env.Lookup(v.Name);
+                return env.LookupForRead(v.Name);
             case Assign a:
                 var rhs = CheckExpr(a.Value, env, currentReturn);
-                var lhsType = env.Lookup(a.Name);
+                var lhsType = env.LookupForReadOrWrite(a.Name, requireAssigned: false);
                 RequireAssignable(lhsType, rhs, a.Name.Line, a.Name.Column, "Assignment type mismatch");
+                env.MarkAssigned(a.Name);
                 return lhsType;
             case Call c:
                 if (!_functions.TryGetValue(c.Callee.Lexeme, out var sig))
@@ -304,20 +306,53 @@ sealed class TypeChecker
 
     private sealed class TypeEnvironment
     {
-        private readonly Dictionary<string, TypeSymbol> _vars = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, VarInfo> _vars = new(StringComparer.Ordinal);
         private readonly TypeEnvironment? _parent;
         public TypeEnvironment(TypeEnvironment? parent = null) => _parent = parent;
         public TypeEnvironment CreateChild() => new(this);
-        public void Define(string name, TypeSymbol type, int line, int col)
+
+        public void Define(string name, TypeSymbol type, int line, int col, bool assigned)
         {
             if (_vars.ContainsKey(name))
                 throw new CompilerException($"'{name}' already defined in scope", line, col);
-            _vars[name] = type;
+            _vars[name] = new VarInfo(type, assigned, line, col);
         }
-        public TypeSymbol Lookup(Token name)
+
+        public TypeSymbol LookupForRead(Token name)
         {
-            if (_vars.TryGetValue(name.Lexeme, out var t)) return t;
-            return _parent?.Lookup(name) ?? throw new CompilerException($"Undefined variable '{name.Lexeme}'", name.Line, name.Column);
+            var info = Find(name);
+            if (!info.assigned)
+                throw new CompilerException($"Variable '{name.Lexeme}' is used before being assigned", name.Line, name.Column);
+            return info.type;
         }
+
+        public TypeSymbol LookupForReadOrWrite(Token name, bool requireAssigned = true)
+        {
+            var info = Find(name);
+            if (requireAssigned && !info.assigned)
+                throw new CompilerException($"Variable '{name.Lexeme}' is used before being assigned", name.Line, name.Column);
+            return info.type;
+        }
+
+        public void MarkAssigned(Token name)
+        {
+            var (env, info) = FindWithEnv(name);
+            env._vars[name.Lexeme] = info with { assigned = true };
+        }
+
+        private VarInfo Find(Token name)
+        {
+            var info = FindWithEnv(name).info;
+            return info;
+        }
+
+        private (TypeEnvironment env, VarInfo info) FindWithEnv(Token name)
+        {
+            if (_vars.TryGetValue(name.Lexeme, out var t)) return (this, t);
+            if (_parent is not null) return _parent.FindWithEnv(name);
+            throw new CompilerException($"Undefined variable '{name.Lexeme}'", name.Line, name.Column);
+        }
+
+        private record struct VarInfo(TypeSymbol type, bool assigned, int line, int col);
     }
 }

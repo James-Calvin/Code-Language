@@ -147,6 +147,12 @@ foreach i in n then print(i);",
 @"integer x = 3;
 print(""x={x}"");", "x=3\n")
         };
+        var arrayCases = new List<(string Name, string Source, string Expected)>
+        {
+            ("array-foreach", @"integer sum=0; foreach v in {1,2,3} then sum = sum + v; print(sum);", "6\n"),
+            ("typed-array-literal", @"array<integer> items = {1,2,3}; integer s=0; foreach v in items then s = s + v; print(s);", "6\n"),
+            ("new-array-sized", @"array<integer> items = new array<integer>(4); integer i = 0; while i < 4 then { i = i + 1; } print(i);", "4\n")
+        };
         // Expected error cases
         var errorCases = new List<(string Name, string Source, string ExpectedType)>
         {
@@ -154,6 +160,29 @@ print(""x={x}"");", "x=3\n")
         };
 
         foreach (var (name, src, expected) in cases)
+        {
+            try
+            {
+                var output = Normalize(CompileAndRun(src));
+                var expectNorm = Normalize(expected);
+                if (output != expectNorm)
+                {
+                    failures++;
+                    Console.WriteLine($"[FAIL] {name}: expected '{Escape(expectNorm)}' got '{Escape(output)}'");
+                }
+                else
+                {
+                    Console.WriteLine($"[PASS] {name}");
+                }
+            }
+            catch (Exception ex)
+            {
+                failures++;
+                Console.WriteLine($"[FAIL] {name}: threw {ex.GetType().Name} - {ex.Message}");
+            }
+        }
+
+        foreach (var (name, src, expected) in arrayCases)
         {
             try
             {

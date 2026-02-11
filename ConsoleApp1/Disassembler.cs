@@ -27,6 +27,7 @@ static class Disassembler
                 case OpCode.Load:
                 case OpCode.Store:
                 case OpCode.Call:
+                case OpCode.NewArray:
                     if (ip + 4 > codeEnd) throw new InvalidOperationException("Truncated operand");
                     int operand = BitConverter.ToInt32(bytes, ip);
                     ip += 4;
@@ -51,6 +52,9 @@ static class Disassembler
                 case OpCode.Lt:
                 case OpCode.Gt:
                 case OpCode.Ret:
+                case OpCode.ArrayLength:
+                case OpCode.ArrayGet:
+                case OpCode.NewArrayN:
                 case OpCode.ThrowError:
                 case OpCode.Halt:
                     break;

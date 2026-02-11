@@ -16,6 +16,7 @@ enum TokenType
     True, False,
 
     Integer, Whole, Real, Boolean,
+    Array,
     If, Then, Else,
     While,
     Return,
@@ -23,6 +24,7 @@ enum TokenType
     Function,
     And, Or, Not,
     For, Foreach, In,
+    New,
     Panic,
 
     Eof

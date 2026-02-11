@@ -7,5 +7,6 @@ enum TypeSymbol
     Real,
     Boolean,
     String,
+    Array,
     Unknown
 }

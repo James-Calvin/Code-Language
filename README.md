@@ -7,7 +7,7 @@ A tiny experimental programming language with a stack-based bytecode VM and a C#
 
 ## Features (implemented)
 - Typed variables/functions; primitives: integer/whole/real, boolean, string
-- Control flow: `if/then/else`, `while`, `for`, `foreach` (numeric bounds)
+- Control flow: `if/then/else`, `while`, `for`, `foreach` (numeric bounds and arrays)
 - Expressions: arithmetic, comparisons, logical `and/or/not`, string interpolation and concatenation
 - Functions with CALL/RET, locals, return (implicit 0)
 - Runtime diagnostics: bytecode debug map → line/column stack traces
@@ -44,6 +44,7 @@ Test harness covers VM ops, compiler integration (print, arithmetic, functions, 
 ## Project conventions
 - Source files end with `.code`; compiled bytecode uses `.bytecode`
 - Semicolons required; `then` mandatory after `if/while/for/foreach` conditions
+- Arrays: literals `{...}`, typed declarations `array<integer> xs = {1,2,3};`, dynamic `new array<integer>(n);`
 - Errors are reported with line/column and call stack when possible
 
 ## Roadmap (high level)

@@ -20,7 +20,7 @@ Legend:
 | `[x]` | Core language | `foreach` over numeric bounds | Lowered to 0..N-1 loop |
 | `[x]` | Core language | Function decls/calls, typed params/returns | CALL/RET |
 | `[x]` | Core language | Return statements (implicit 0 if missing) | Implemented |
-| `[~]` | Core language | Collections: literals + foreach over collections | Design+impl pending |
+| `[x]` | Core language | Collections: literals + foreach over collections | Array literals + array foreach + typed array declarations/new(size) |
 | `[_]` | Core language | Structs/records (user types) | Beyond current object model |
 | `[~]` | Type system | Sized numerics & literal suffixes (`i8/w8/r32` etc.) | Lexer/parser/type support pending |
 | `[~]` | Type system | Optional/`optional<T>` semantics | Nullable/absence model not implemented |

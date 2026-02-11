@@ -196,6 +196,8 @@ while value != someValue then {
 }
 ```
 
+- Arrays (current impl): array literal syntax `{a, b, c}` builds a runtime array; `foreach` can iterate arrays by element in addition to numeric bounds.
+
 ```code
 foreach number in numbers then {
   if number < 0 then break;

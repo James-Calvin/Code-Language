@@ -114,7 +114,8 @@ sealed class TypeChecker
 
             case ForeachStmt fe:
                 var iterType = CheckExpr(fe.Iterable, env, currentReturn);
-                Require(IsNumeric(iterType), fe.Iterable, "foreach iterable must be numeric (count)");
+                Require(IsNumeric(iterType) || iterType == TypeSymbol.Array, fe.Iterable, "foreach iterable must be numeric (count) or array");
+                fe.IsArray = iterType == TypeSymbol.Array;
                 var feEnv = env.CreateChild();
                 feEnv.Define(fe.Iterator.Lexeme, TypeSymbol.Integer, fe.Iterator.Line, fe.Iterator.Column, assigned: true);
                 CheckStmt(fe.Body, feEnv, currentReturn);
@@ -153,6 +154,7 @@ sealed class TypeChecker
                 {
                     bool => TypeSymbol.Boolean,
                     string => TypeSymbol.String,
+                    IList<Expr> => TypeSymbol.Array,
                     _ => TypeSymbol.Integer // numeric literals as integer for now
                 };
             case InterpString istr:
@@ -161,6 +163,13 @@ sealed class TypeChecker
                     if (part is Expr e) CheckExpr(e, env, currentReturn);
                 }
                 return TypeSymbol.String;
+            case ArrayLiteral al:
+                foreach (var e in al.Elements) CheckExpr(e, env, currentReturn);
+                return TypeSymbol.Array;
+            case NewArrayExpr na:
+                var sizeType = CheckExpr(na.Size, env, currentReturn);
+                Require(IsNumeric(sizeType), na.Size, "Array size must be numeric");
+                return TypeSymbol.Array;
             case Variable v:
                 return env.LookupForRead(v.Name);
             case Assign a:
@@ -228,6 +237,7 @@ sealed class TypeChecker
         TokenType.Whole => TypeSymbol.Whole,
         TokenType.Real => TypeSymbol.Real,
         TokenType.Boolean => TypeSymbol.Boolean,
+        TokenType.Array => TypeSymbol.Array,
         _ => TypeSymbol.Unknown
     };
 

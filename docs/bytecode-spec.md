@@ -1,6 +1,6 @@
 # Bytecode Specification (draft)
 
-Version: 0.4 (2026-02-11)
+Version: 0.5 (2026-02-11)
 
 ## File format
 - Header: "CODE" ASCII (4 bytes) + version byte (0x02) + int32 codeSize + int32 debugCount.
@@ -37,6 +37,10 @@ Version: 0.4 (2026-02-11)
 | 0x13 | RET | — | -1 | pop return value, restore caller frame, push return value |
 | 0x14 | PUSH_STRING | int32 length, UTF-8 bytes | +1 | Push string literal |
 | 0x15 | THROW_ERROR | — | -1 | pop message, raise VmError (type `UserError`) with call stack |
+| 0x16 | NEW_ARRAY | int32 count | -count+1 | Pop N values, build array (preserve order), push array |
+| 0x17 | ARRAY_LENGTH | — | 0 | pop array, push length |
+| 0x18 | ARRAY_GET | — | -1 | pop index, pop array, push element; throws on OOB |
+| 0x19 | NEW_ARRAY_N | — | -1 | pop size N, allocate array of length N filled with 0 |
 | 0xFF | HALT | — | 0 | stop execution |
 
 ## Planned additions

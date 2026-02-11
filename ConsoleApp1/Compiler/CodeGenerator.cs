@@ -175,38 +175,14 @@ sealed class CodeGenerator
             case ForeachStmt fe:
                 {
                     SetLoc(fe.Iterator);
-                    int endSlot = AllocateTemp();
-                    int idxSlot = AllocateTemp();
-                    int iterSlot = GetOrAllocate(fe.Iterator.Lexeme);
-
-                    Emit(fe.Iterable);
-                    _builder.Store(endSlot);
-
-                    _builder.PushInt(0);
-                    _builder.Store(idxSlot);
-
-                    string feStart = NewLabel("fe_start");
-                    string feEnd = NewLabel("fe_end");
-                    _builder.Label(feStart);
-                    _builder.Load(idxSlot);
-                    _builder.Load(endSlot);
-                    _builder.Lt();
-                    _builder.JumpIfZero(feEnd);
-
-                    _builder.Load(idxSlot);
-                    _builder.Store(iterSlot);
-
-                    Emit(fe.Body);
-
-                    _builder.Load(idxSlot);
-                    _builder.PushInt(1);
-                    _builder.Add();
-                    _builder.Store(idxSlot);
-                    _builder.Jump(feStart);
-                    _builder.Label(feEnd);
-
-                    ReleaseTemp(endSlot);
-                    ReleaseTemp(idxSlot);
+                    if (fe.IsArray || fe.Iterable is ArrayLiteral)
+                    {
+                        EmitArrayForeach(fe);
+                    }
+                    else
+                    {
+                        EmitNumericForeach(fe);
+                    }
                 }
                 break;
 
@@ -242,6 +218,17 @@ sealed class CodeGenerator
             case InterpString istr:
                 SetLoc(istr.Line, istr.Column);
                 EmitInterpolatedString(istr);
+                break;
+            case ArrayLiteral arr:
+                foreach (var el in arr.Elements)
+                {
+                    Emit(el);
+                }
+                _builder.NewArray(arr.Elements.Count);
+                break;
+            case NewArrayExpr na:
+                Emit(na.Size);
+                _builder.NewArrayN();
                 break;
 
             case Variable v:
@@ -420,6 +407,86 @@ sealed class CodeGenerator
         _builder.Label(falseLabel);
         _builder.PushInt(0);
         _builder.Label(endLabel);
+    }
+
+    private void EmitArrayForeach(ForeachStmt fe)
+    {
+        int lenSlot = AllocateTemp();
+        int idxSlot = AllocateTemp();
+        int arrSlot = AllocateTemp();
+        int iterSlot = GetOrAllocate(fe.Iterator.Lexeme);
+
+        Emit(fe.Iterable);
+        _builder.Store(arrSlot);
+
+        _builder.Load(arrSlot);
+        _builder.ArrayLength();
+        _builder.Store(lenSlot);
+
+        _builder.PushInt(0);
+        _builder.Store(idxSlot);
+
+        string feStart = NewLabel("fe_start");
+        string feEnd = NewLabel("fe_end");
+        _builder.Label(feStart);
+        _builder.Load(idxSlot);
+        _builder.Load(lenSlot);
+        _builder.Lt();
+        _builder.JumpIfZero(feEnd);
+
+        _builder.Load(arrSlot);
+        _builder.Load(idxSlot);
+        _builder.ArrayGet();
+        _builder.Store(iterSlot);
+
+        Emit(fe.Body);
+
+        _builder.Load(idxSlot);
+        _builder.PushInt(1);
+        _builder.Add();
+        _builder.Store(idxSlot);
+        _builder.Jump(feStart);
+        _builder.Label(feEnd);
+
+        ReleaseTemp(arrSlot);
+        ReleaseTemp(lenSlot);
+        ReleaseTemp(idxSlot);
+    }
+
+    private void EmitNumericForeach(ForeachStmt fe)
+    {
+        int endSlot = AllocateTemp();
+        int idxSlot = AllocateTemp();
+        int iterSlot = GetOrAllocate(fe.Iterator.Lexeme);
+
+        Emit(fe.Iterable);
+        _builder.Store(endSlot);
+
+        _builder.PushInt(0);
+        _builder.Store(idxSlot);
+
+        string feStart = NewLabel("fe_start");
+        string feEnd = NewLabel("fe_end");
+        _builder.Label(feStart);
+        _builder.Load(idxSlot);
+        _builder.Load(endSlot);
+        _builder.Lt();
+        _builder.JumpIfZero(feEnd);
+
+        _builder.Load(idxSlot);
+        _builder.Store(iterSlot);
+
+        Emit(fe.Body);
+
+        _builder.Load(idxSlot);
+        _builder.PushInt(1);
+        _builder.Add();
+        _builder.Store(idxSlot);
+        _builder.Jump(feStart);
+        _builder.Label(feEnd);
+
+        ReleaseTemp(endSlot);
+        ReleaseTemp(idxSlot);
     }
 
     private bool TryFoldBinary(Binary b, out object result)

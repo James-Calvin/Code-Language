@@ -28,6 +28,10 @@ enum OpCode : byte
     Ret = 0x13,
     PushString = 0x14,
     ThrowError = 0x15,
+    NewArray = 0x16,
+    ArrayLength = 0x17,
+    ArrayGet = 0x18,
+    NewArrayN = 0x19,
     Halt = 0xFF
 }
 
@@ -236,6 +240,61 @@ sealed class Vm
                     break;
                 }
 
+                case OpCode.NewArray:
+                {
+                    int count = ReadIntOperand();
+                    EnsureStack(count);
+                    var list = new List<object>(count);
+                    for (int i = 0; i < count; i++)
+                    {
+                        list.Add(_stack.Pop());
+                    }
+                    list.Reverse();
+                    _stack.Push(list);
+                    break;
+                }
+
+                case OpCode.ArrayLength:
+                {
+                    EnsureStack(1);
+                    var obj = _stack.Pop();
+                    if (obj is not List<object> arr)
+                    {
+                        throwRuntimeType("ArrayLength expects array");
+                        break;
+                    }
+                    _stack.Push(arr.Count);
+                    break;
+                }
+
+                case OpCode.ArrayGet:
+                {
+                    EnsureStack(2);
+                    double idxNum = PopNumber();
+                    var arrObj = _stack.Pop();
+                    if (arrObj is not List<object> arr)
+                    {
+                        throwRuntimeType("ArrayGet expects array");
+                        break;
+                    }
+                    int idx = (int)idxNum;
+                    if (idx < 0 || idx >= arr.Count)
+                        ThrowRuntime("Array index out of range");
+                    _stack.Push(arr[idx]);
+                    break;
+                }
+
+                case OpCode.NewArrayN:
+                {
+                    EnsureStack(1);
+                    int size = (int)PopNumber();
+                    if (size < 0) ThrowRuntime("Array size must be non-negative");
+                    var list = new List<object>(size);
+                    for (int i = 0; i < size; i++) list.Add(0);
+                    _stack.Push(list);
+                    break;
+                }
+
                 case OpCode.ThrowError:
                 {
                     EnsureStack(1);
@@ -248,11 +307,11 @@ sealed class Vm
                 case OpCode.Halt:
                     return;
 
-                default:
-                    ThrowRuntime($"Unknown opcode {(byte)op} at {_ip - 1}");
-                    break;
-            }
+            default:
+                ThrowRuntime($"Unknown opcode {(byte)op} at {_ip - 1}");
+                break;
         }
+    }
     }
 
     private void NumericBinary(Func<double, double, double> op)
@@ -264,6 +323,12 @@ sealed class Vm
 
     private static bool IsNumber(object v) => v is int or double;
     private static double ToDouble(object v) => v is double d ? d : Convert.ToDouble(v);
+
+    private object throwRuntimeType(string message)
+    {
+        ThrowRuntime(message);
+        return null!; // unreachable
+    }
 
     private double PopAsNumber(object v)
     {

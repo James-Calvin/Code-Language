@@ -26,9 +26,26 @@ sealed class Parser
     private Stmt Declaration()
     {
         if (Match(TokenType.Function)) return FunctionDeclaration();
-        if (Match(TokenType.Integer, TokenType.Whole, TokenType.Real, TokenType.Boolean))
-            return VarDeclaration(Previous());
+        if (IsTypeToken(Peek()))
+        {
+            var typeTok = ParseTypeToken();
+            return VarDeclaration(typeTok);
+        }
         return Statement();
+    }
+
+    private Token ParseTypeToken()
+    {
+        Token t = ConsumeType("Expect type.");
+        if (t.Type == TokenType.Array)
+        {
+            Consume(TokenType.Less, "Expect '<' after array.");
+            Token inner = ConsumeType("Expect element type for array.");
+            Consume(TokenType.Greater, "Expect '>' after array element type.");
+            // store inner token type in Literal for mapping
+            t = new Token(TokenType.Array, "array", inner, t.Line, t.Column);
+        }
+        return t;
     }
 
     private Stmt FunctionDeclaration()
@@ -36,12 +53,12 @@ sealed class Parser
         Token? returnType = null;
         if (Match(TokenType.Less))
         {
-            returnType = ConsumeType("Expect return type after '<'.");
+            returnType = ParseTypeToken();
             Consume(TokenType.Greater, "Expect '>' after return type.");
         }
         else if (IsTypeToken(Peek()))
         {
-            returnType = Advance();
+            returnType = ParseTypeToken();
         }
         Token name = Consume(TokenType.Identifier, "Expect function name.");
         Consume(TokenType.LeftParen, "Expect '(' after function name.");
@@ -53,7 +70,7 @@ sealed class Parser
                 Token? paramType = null;
                 if (IsTypeToken(Peek()))
                 {
-                    paramType = Advance();
+                    paramType = ParseTypeToken();
                 }
                 Token paramName = Consume(TokenType.Identifier, "Expect parameter name.");
                 parameters.Add(new Parameter(paramType, paramName));
@@ -326,6 +343,8 @@ sealed class Parser
         if (Match(TokenType.True)) return new Literal(true, Previous().Line, Previous().Column);
         if (Match(TokenType.False)) return new Literal(false, Previous().Line, Previous().Column);
         if (Match(TokenType.String)) return ParseStringLiteral(Previous(), Previous().Literal?.ToString() ?? "");
+        if (Match(TokenType.LeftBrace)) return ParseArrayLiteral(Previous());
+        if (Match(TokenType.New)) return ParseNewExpression(Previous());
         if (Match(TokenType.Identifier))
         {
             Token name = Previous();
@@ -394,7 +413,7 @@ sealed class Parser
     private Token Previous() => _tokens[_current - 1];
 
     private bool IsTypeToken(Token token) =>
-        token.Type is TokenType.Integer or TokenType.Whole or TokenType.Real or TokenType.Boolean;
+        token.Type is TokenType.Integer or TokenType.Whole or TokenType.Real or TokenType.Boolean or TokenType.Array;
 
     private Token ConsumeType(string message)
     {
@@ -437,6 +456,32 @@ sealed class Parser
             i = close + 1;
         }
         return new InterpString(parts, stringToken.Line, stringToken.Column);
+    }
+
+    private Expr ParseArrayLiteral(Token start)
+    {
+        var elements = new List<Expr>();
+        if (!Check(TokenType.RightBrace))
+        {
+            do
+            {
+                elements.Add(Expression());
+            } while (Match(TokenType.Comma));
+        }
+        Consume(TokenType.RightBrace, "Expect '}' after array literal.");
+        return new ArrayLiteral(elements, start.Line, start.Column);
+    }
+
+    private Expr ParseNewExpression(Token newTok)
+    {
+        Consume(TokenType.Array, "Expect 'array' after 'new'.");
+        Consume(TokenType.Less, "Expect '<' after array.");
+        var inner = ConsumeType("Expect element type.");
+        Consume(TokenType.Greater, "Expect '>' after element type.");
+        Consume(TokenType.LeftParen, "Expect '(' after array type.");
+        Expr size = Expression();
+        Consume(TokenType.RightParen, "Expect ')' after array size.");
+        return new NewArrayExpr(inner, size, newTok.Line, newTok.Column);
     }
 
     private Expr ParseInlineExpression(string text, int line, int col)

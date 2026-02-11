@@ -68,6 +68,35 @@ sealed class BytecodeBuilder
         _bytes.Add((byte)OpCode.ThrowError);
         return this;
     }
+
+    public BytecodeBuilder NewArray(int count)
+    {
+        RecordDebug();
+        _bytes.Add((byte)OpCode.NewArray);
+        _bytes.AddRange(BitConverter.GetBytes(count));
+        return this;
+    }
+
+    public BytecodeBuilder ArrayLength()
+    {
+        RecordDebug();
+        _bytes.Add((byte)OpCode.ArrayLength);
+        return this;
+    }
+
+    public BytecodeBuilder ArrayGet()
+    {
+        RecordDebug();
+        _bytes.Add((byte)OpCode.ArrayGet);
+        return this;
+    }
+
+    public BytecodeBuilder NewArrayN()
+    {
+        RecordDebug();
+        _bytes.Add((byte)OpCode.NewArrayN);
+        return this;
+    }
     public BytecodeBuilder Call(string label, int argCount, int localCount)
     {
         RecordDebug();

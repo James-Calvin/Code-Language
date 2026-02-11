@@ -35,6 +35,26 @@ sealed class InterpString : Expr
     public InterpString(IReadOnlyList<object> parts, int line, int column) { Parts = parts; Line = line; Column = column; }
 }
 
+sealed class ArrayLiteral : Expr
+{
+    public IReadOnlyList<Expr> Elements { get; }
+    public int Line { get; }
+    public int Column { get; }
+    public ArrayLiteral(IReadOnlyList<Expr> elements, int line, int column) { Elements = elements; Line = line; Column = column; }
+}
+
+sealed class NewArrayExpr : Expr
+{
+    public Token ElementType { get; }
+    public Expr Size { get; }
+    public int Line { get; }
+    public int Column { get; }
+    public NewArrayExpr(Token elementType, Expr size, int line, int column)
+    {
+        ElementType = elementType; Size = size; Line = line; Column = column;
+    }
+}
+
 sealed class Variable : Expr
 {
     public Token Name { get; }
@@ -135,6 +155,7 @@ sealed class ForeachStmt : Stmt
     public Token Iterator { get; }
     public Expr Iterable { get; }
     public Stmt Body { get; }
+    public bool IsArray { get; set; }
     public ForeachStmt(Token iterator, Expr iterable, Stmt body)
     {
         Iterator = iterator; Iterable = iterable; Body = body;

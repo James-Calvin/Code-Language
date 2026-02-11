@@ -18,6 +18,7 @@ sealed class Lexer
         { "whole", TokenType.Whole },
         { "real", TokenType.Real },
         { "boolean", TokenType.Boolean },
+        { "optional", TokenType.Optional },
         { "array", TokenType.Array },
         { "if", TokenType.If },
         { "then", TokenType.Then },
@@ -36,6 +37,7 @@ sealed class Lexer
         { "foreach", TokenType.Foreach },
         { "in", TokenType.In },
         { "panic", TokenType.Panic },
+        { "none", TokenType.None },
     };
 
     public Lexer(string source)

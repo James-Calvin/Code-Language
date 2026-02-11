@@ -32,6 +32,10 @@ enum OpCode : byte
     ArrayLength = 0x17,
     ArrayGet = 0x18,
     NewArrayN = 0x19,
+    OptionalNone = 0x1A,
+    OptionalHas = 0x1B,
+    OptionalValue = 0x1C,
+    OptionalOr = 0x1D,
     Halt = 0xFF
 }
 
@@ -292,6 +296,37 @@ sealed class Vm
                     var list = new List<object>(size);
                     for (int i = 0; i < size; i++) list.Add(0);
                     _stack.Push(list);
+                    break;
+                }
+
+                case OpCode.OptionalNone:
+                    _stack.Push(OptionalNone.Value);
+                    break;
+
+                case OpCode.OptionalHas:
+                {
+                    EnsureStack(1);
+                    var opt = _stack.Pop();
+                    _stack.Push(opt == OptionalNone.Value ? 0 : 1);
+                    break;
+                }
+
+                case OpCode.OptionalValue:
+                {
+                    EnsureStack(1);
+                    var opt = _stack.Pop();
+                    if (opt == OptionalNone.Value)
+                        ThrowRuntime("Optional has no value");
+                    _stack.Push(opt);
+                    break;
+                }
+
+                case OpCode.OptionalOr:
+                {
+                    EnsureStack(2);
+                    var fallback = _stack.Pop();
+                    var opt = _stack.Pop();
+                    _stack.Push(opt == OptionalNone.Value ? fallback : opt);
                     break;
                 }
 

@@ -98,7 +98,10 @@ sealed class CodeGenerator
                 }
                 else
                 {
-                    _builder.PushInt(0); // default
+                    if (v.TypeToken.Type == TokenType.Optional)
+                        _builder.PushNone();
+                    else
+                        _builder.PushInt(0); // default
                 }
                 SetLoc(v.Name);
                 _builder.Store(slot);
@@ -209,6 +212,10 @@ sealed class CodeGenerator
                 {
                     _builder.PushInt(b ? 1 : 0);
                 }
+                else if (lit.Value == OptionalNone.Value)
+                {
+                    _builder.PushNone();
+                }
                 else
                 {
                     _builder.PushInt(Convert.ToInt32(lit.Value ?? 0));
@@ -239,7 +246,19 @@ sealed class CodeGenerator
                 Emit(aidx.Index);
                 _builder.ArrayGet();
                 break;
-
+            case OptionalHasValueExpr ohv:
+                Emit(ohv.Target);
+                _builder.OptionalHas();
+                break;
+            case OptionalValueExpr oval:
+                Emit(oval.Target);
+                _builder.OptionalValue();
+                break;
+            case OptionalOrExpr oor:
+                Emit(oor.Optional);
+                Emit(oor.Fallback);
+                _builder.OptionalOr();
+                break;
             case Variable v:
                 SetLoc(v.Name);
                 _builder.Load(GetSlot(v.Name));

@@ -1,6 +1,6 @@
 # Bytecode Specification (draft)
 
-Version: 0.5 (2026-02-11)
+Version: 0.6 (2026-02-11)
 
 ## File format
 - Header: "CODE" ASCII (4 bytes) + version byte (0x02) + int32 codeSize + int32 debugCount.
@@ -41,6 +41,10 @@ Version: 0.5 (2026-02-11)
 | 0x17 | ARRAY_LENGTH | — | 0 | pop array, push length |
 | 0x18 | ARRAY_GET | — | -1 | pop index, pop array, push element; throws on OOB |
 | 0x19 | NEW_ARRAY_N | — | -1 | pop size N, allocate array of length N filled with 0 |
+| 0x1A | OPTIONAL_NONE | — | +1 | push optional-none sentinel |
+| 0x1B | OPTIONAL_HAS | — | 0 | pop optional, push 1 if present else 0 |
+| 0x1C | OPTIONAL_VALUE | — | 0 | pop optional, push value or panic if none |
+| 0x1D | OPTIONAL_OR | — | -1 | pop fallback, pop optional, push optional-or-fallback |
 | 0xFF | HALT | — | 0 | stop execution |
 
 ## Planned additions

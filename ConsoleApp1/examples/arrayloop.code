@@ -6,3 +6,10 @@ foreach item in items then {
   sum = sum + item;
 }
 print(sum);
+
+integer i = 0;
+while i < items.length then {
+  sum = sum + items[i];
+  i = i + 1;
+}
+print(sum);

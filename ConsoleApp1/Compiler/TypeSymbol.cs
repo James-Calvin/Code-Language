@@ -8,5 +8,6 @@ enum TypeSymbol
     Boolean,
     String,
     Array,
+    Optional,
     Unknown
 }

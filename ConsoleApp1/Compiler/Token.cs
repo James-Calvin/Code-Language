@@ -17,7 +17,7 @@ enum TokenType
     Identifier, Number, String,
     True, False,
 
-    Integer, Whole, Real, Boolean,
+    Integer, Whole, Real, Boolean, Optional,
     Array,
     If, Then, Else,
     While,
@@ -28,6 +28,7 @@ enum TokenType
     For, Foreach, In,
     New,
     Panic,
+    None,
 
     Eof
 }

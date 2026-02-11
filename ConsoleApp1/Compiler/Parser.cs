@@ -45,6 +45,13 @@ sealed class Parser
             // store inner token type in Literal for mapping
             t = new Token(TokenType.Array, "array", inner, t.Line, t.Column);
         }
+        else if (t.Type == TokenType.Optional)
+        {
+            Consume(TokenType.Less, "Expect '<' after optional.");
+            Token inner = ConsumeType("Expect inner type for optional.");
+            Consume(TokenType.Greater, "Expect '>' after optional inner type.");
+            t = new Token(TokenType.Optional, "optional", inner, t.Line, t.Column);
+        }
         return t;
     }
 
@@ -345,6 +352,7 @@ sealed class Parser
         if (Match(TokenType.String)) return ParseStringLiteral(Previous(), Previous().Literal?.ToString() ?? "");
         if (Match(TokenType.LeftBrace)) return ParseArrayLiteral(Previous());
         if (Match(TokenType.New)) return ParseNewExpression(Previous());
+        if (Match(TokenType.None)) return new Literal(OptionalNone.Value, Previous().Line, Previous().Column);
         if (Match(TokenType.Identifier))
         {
             Expr expr = new Variable(Previous());
@@ -401,7 +409,7 @@ sealed class Parser
     private Token Previous() => _tokens[_current - 1];
 
     private bool IsTypeToken(Token token) =>
-        token.Type is TokenType.Integer or TokenType.Whole or TokenType.Real or TokenType.Boolean or TokenType.Array;
+        token.Type is TokenType.Integer or TokenType.Whole or TokenType.Real or TokenType.Boolean or TokenType.Array or TokenType.Optional;
 
     private Token ConsumeType(string message)
     {
@@ -495,10 +503,31 @@ sealed class Parser
             else if (Match(TokenType.Dot))
             {
                 Token dot = Previous();
-                Token prop = Consume(TokenType.Identifier, "Expect property name after '.'.");
+                Token prop;
+                if (Match(TokenType.Identifier))
+                    prop = Previous();
+                else if (Match(TokenType.Or)) // allow keyword 'or' as property name
+                    prop = new Token(TokenType.Identifier, "or", null, dot.Line, dot.Column + 1);
+                else
+                    throw Error(Peek(), "Expect property name after '.'.");
                 if (prop.Lexeme == "length")
                 {
                     expr = new ArrayLengthExpr(expr, dot);
+                }
+                else if (prop.Lexeme == "hasValue")
+                {
+                    expr = new OptionalHasValueExpr(expr);
+                }
+                else if (prop.Lexeme == "value")
+                {
+                    expr = new OptionalValueExpr(expr);
+                }
+                else if (prop.Lexeme == "or")
+                {
+                    Consume(TokenType.LeftParen, "Expect '(' after '.or'.");
+                    var fb = Expression();
+                    Consume(TokenType.RightParen, "Expect ')' after fallback.");
+                    expr = new OptionalOrExpr(expr, fb);
                 }
                 else
                 {

@@ -73,7 +73,8 @@ sealed class TypeChecker
                     var init = CheckExpr(v.Initializer, env, currentReturn);
                     RequireAssignable(t, init, v.TypeToken.Line, v.TypeToken.Column, "Initializer type mismatch");
                 }
-                env.Define(v.Name.Lexeme, t, v.Name.Line, v.Name.Column, hasInit);
+                bool assignedFlag = hasInit || t == TypeSymbol.Optional;
+                env.Define(v.Name.Lexeme, t, v.Name.Line, v.Name.Column, assignedFlag);
                 return false;
 
             case ExprStmt e:
@@ -181,6 +182,16 @@ sealed class TypeChecker
                 Require(IsNumeric(idxType), aidx.Index, "Array index must be numeric");
                 // Element typing not tracked; default to integer
                 return TypeSymbol.Integer;
+            case OptionalHasValueExpr ohv:
+                CheckExpr(ohv.Target, env, currentReturn);
+                return TypeSymbol.Boolean;
+            case OptionalValueExpr oval:
+                CheckExpr(oval.Target, env, currentReturn);
+                return TypeSymbol.Unknown;
+            case OptionalOrExpr oor:
+                var fbType = CheckExpr(oor.Fallback, env, currentReturn);
+                CheckExpr(oor.Optional, env, currentReturn);
+                return fbType;
             case Variable v:
                 return env.LookupForRead(v.Name);
             case Assign a:
@@ -249,6 +260,7 @@ sealed class TypeChecker
         TokenType.Real => TypeSymbol.Real,
         TokenType.Boolean => TypeSymbol.Boolean,
         TokenType.Array => TypeSymbol.Array,
+        TokenType.Optional => TypeSymbol.Optional,
         _ => TypeSymbol.Unknown
     };
 
@@ -275,6 +287,7 @@ sealed class TypeChecker
     private static void RequireAssignable(TypeSymbol target, TypeSymbol value, int line, int col, string message)
     {
         if (target == value) return;
+        if (target == TypeSymbol.Optional) return; // allow any value into optional
         if (IsNumeric(target) && IsNumeric(value) && CanWiden(value, target)) return;
         throw new CompilerException(message, line, col);
     }

@@ -44,7 +44,8 @@ Test harness covers VM ops, compiler integration (print, arithmetic, functions, 
 ## Project conventions
 - Source files end with `.code`; compiled bytecode uses `.bytecode`
 - Semicolons required; `then` mandatory after `if/while/for/foreach` conditions
-- Arrays: literals `{...}`, typed declarations `array<integer> xs = {1,2,3};`, dynamic `new array<integer>(n);`
+- Arrays: literals `{...}`, typed declarations `array<integer> xs = {1,2,3};`, dynamic `new array<integer>(n);`, `.length`, indexing `xs[i]`
+- Optionals: `optional<T>` with `none`, `.hasValue`, `.value`, `.or(fallback)`
 - Errors are reported with line/column and call stack when possible
 
 ## Roadmap (high level)

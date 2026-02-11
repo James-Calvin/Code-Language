@@ -97,6 +97,34 @@ sealed class BytecodeBuilder
         _bytes.Add((byte)OpCode.NewArrayN);
         return this;
     }
+
+    public BytecodeBuilder OptionalHas()
+    {
+        RecordDebug();
+        _bytes.Add((byte)OpCode.OptionalHas);
+        return this;
+    }
+
+    public BytecodeBuilder OptionalValue()
+    {
+        RecordDebug();
+        _bytes.Add((byte)OpCode.OptionalValue);
+        return this;
+    }
+
+    public BytecodeBuilder OptionalOr()
+    {
+        RecordDebug();
+        _bytes.Add((byte)OpCode.OptionalOr);
+        return this;
+    }
+
+    public BytecodeBuilder PushNone()
+    {
+        RecordDebug();
+        _bytes.Add((byte)OpCode.OptionalNone);
+        return this;
+    }
     public BytecodeBuilder Call(string label, int argCount, int localCount)
     {
         RecordDebug();

@@ -1,0 +1,10 @@
+// Demonstrate optional<T> semantics
+
+optional<integer> maybeCount = none;
+print(maybeCount.hasValue);        // 0
+print(maybeCount.or(42));          // fallback 42
+
+optional<integer> actual = 7;
+print(actual.hasValue);            // 1
+print(actual.value);               // 7
+print(actual.or(99));              // 7 (ignores fallback)

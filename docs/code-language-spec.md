@@ -197,6 +197,7 @@ while value != someValue then {
 ```
 
 - Arrays (current impl): array literal syntax `{a, b, c}` builds a runtime array; typed declarations `array<integer> xs = {1,2,3};`; dynamic `new array<integer>(n)` requires a size; `xs.length` yields length; `xs[index]` reads an element; `foreach` can iterate arrays by element in addition to numeric bounds.
+- Optionals (current impl): `optional<T>` types store `none` or a value; `none` literal; `opt.hasValue` returns boolean; `opt.value` returns contained value or panics if empty; `opt.or(fallback)` returns value or fallback without panicking.
 
 ```code
 foreach number in numbers then {

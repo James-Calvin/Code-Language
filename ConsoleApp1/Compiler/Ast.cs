@@ -69,6 +69,25 @@ sealed class ArrayIndexExpr : Expr
     public ArrayIndexExpr(Expr array, Expr index) { Array = array; Index = index; }
 }
 
+sealed class OptionalOrExpr : Expr
+{
+    public Expr Optional { get; }
+    public Expr Fallback { get; }
+    public OptionalOrExpr(Expr opt, Expr fallback) { Optional = opt; Fallback = fallback; }
+}
+
+sealed class OptionalHasValueExpr : Expr
+{
+    public Expr Target { get; }
+    public OptionalHasValueExpr(Expr target) { Target = target; }
+}
+
+sealed class OptionalValueExpr : Expr
+{
+    public Expr Target { get; }
+    public OptionalValueExpr(Expr target) { Target = target; }
+}
+
 sealed class Variable : Expr
 {
     public Token Name { get; }

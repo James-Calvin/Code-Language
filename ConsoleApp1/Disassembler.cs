@@ -55,6 +55,10 @@ static class Disassembler
                 case OpCode.ArrayLength:
                 case OpCode.ArrayGet:
                 case OpCode.NewArrayN:
+                case OpCode.OptionalNone:
+                case OpCode.OptionalHas:
+                case OpCode.OptionalValue:
+                case OpCode.OptionalOr:
                 case OpCode.ThrowError:
                 case OpCode.Halt:
                     break;

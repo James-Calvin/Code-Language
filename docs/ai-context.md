@@ -64,14 +64,16 @@ Use this file as the first read before making changes. It summarizes intent, cur
 - Overloads: exact match preferred, then fewest/lowest-rank promotions, non-variadic beats variadic; ambiguity is a compile error.
 - Precedence: C#-style ordering; unary `+ - not`, `* / %`, `+ -`, relational, equality, `and`, `or`, assignment (right-associative); parentheses override.
 - Boolean `or` operator is distinct from the `optional.or(...)` helper method.
-- Tooling status (2026-02-10):
-  - Bytecode VM with header validation, CALL/RET frames, locals, arithmetic/comparisons, stack ops, jumps, load/store, and PRINT.
-  - Compiler prototype (C#) supports var declarations, assignments, arithmetic, comparisons, logical and/or/not (short-circuit), if/then[/else], while, for, foreach (lowered to a 0..n-1 range loop), return, blocks, print statements, function declarations/calls (CALL/RET).
-  - CLI: `compile/run/disasm`, token dump, skip-tests; bytecode uses `.bytecode` extension.
+- Tooling status (2026-02-11):
+  - Bytecode VM with header v0x02, CALL/RET frames, locals, arithmetic/comparisons, stack ops, jumps, load/store, PRINT, PUSH_STRING, THROW_ERROR; debug map gives line/col.
+  - Compiler prototype (C#) supports vars, assignments, arithmetic, comparisons, logical and/or/not (short-circuit), if/then[/else], while, for, foreach (0..n-1), return, blocks, print, panic, functions decl/call.
+  - CLI: compile/run/disasm, token dump, `--skip-tests`, `--run-tests`; bytecode extension `.bytecode`.
+  - Tests: harness covers VM ops, compiler integration (print, arithmetic, functions, loops, foreach, strings, panic) plus fuzz (arithmetic, boolean, string concat, loop sums, panic).
   - Roadmap: see docs/features-roadmap.md for status by area.
 
 ## Active Open Questions (High Priority)
 - Package search beyond project `lib/` (config surface, stdlib layout).
+- Mapping of error/panic objects into language-level `fallible<T>` semantics (currently VM-only panic).
 
 ## Collaboration Norms With User
 - User drives syntax choices; agent drives question flow and spec clarity.
@@ -90,4 +92,4 @@ Use this file as the first read before making changes. It summarizes intent, cur
 ## Change Log
 - 2026-02-09: Created AI onboarding context; synchronized with spec v0.8 and current error-hook direction.
 - 2026-02-10: Added numeric literal rules (with `w` unsigned suffixes), conversion/promotion rules, interpolation grammar, optionals narrowing/accessors, overload resolution order, import resolution order, stacktrace capture, and error handler return flexibility; bumped spec to v0.9. Added C#-style precedence and removed semicolon-injection from open questions.
-- 2026-02-10: VM/bytecode evolved to header v0.3 with CALL/RET; compiler prototype added control flow, logical ops, print statement, functions (decl/call), and CLI utilities (compile/run/disasm/token dump).
+- 2026-02-11: VM/bytecode v0x02 with debug map; compiler gained definite assignment, string interpolation, panic statement; VM now produces `VmError` objects; test harness expanded with integration + fuzz suites; CLI flag `--run-tests` added; README added; roadmap table with priorities.

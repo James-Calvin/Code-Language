@@ -125,6 +125,13 @@ sealed class BytecodeBuilder
         _bytes.Add((byte)OpCode.OptionalNone);
         return this;
     }
+
+    public BytecodeBuilder ArraySet()
+    {
+        RecordDebug();
+        _bytes.Add((byte)OpCode.ArraySet);
+        return this;
+    }
     public BytecodeBuilder Call(string label, int argCount, int localCount)
     {
         RecordDebug();

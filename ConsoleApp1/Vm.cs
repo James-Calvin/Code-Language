@@ -36,6 +36,7 @@ enum OpCode : byte
     OptionalHas = 0x1B,
     OptionalValue = 0x1C,
     OptionalOr = 0x1D,
+    ArraySet = 0x1E,
     Halt = 0xFF
 }
 
@@ -285,6 +286,25 @@ sealed class Vm
                     if (idx < 0 || idx >= arr.Count)
                         ThrowRuntime("Array index out of range");
                     _stack.Push(arr[idx]);
+                    break;
+                }
+
+                case OpCode.ArraySet:
+                {
+                    EnsureStack(3);
+                    var value = _stack.Pop();
+                    double idxNum = PopNumber();
+                    var arrObj = _stack.Pop();
+                    if (arrObj is not List<object> arr)
+                    {
+                        throwRuntimeType("ArraySet expects array");
+                        break;
+                    }
+                    int idx = (int)idxNum;
+                    if (idx < 0 || idx >= arr.Count)
+                        ThrowRuntime("Array index out of range");
+                    arr[idx] = value;
+                    _stack.Push(value);
                     break;
                 }
 

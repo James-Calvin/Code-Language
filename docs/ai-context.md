@@ -1,95 +1,36 @@
-# AI Context: Draive / Code Language Project
+# AI Context — Draive / Code Language
+Updated: 2026-02-11
 
-## Purpose
-This is the AI-owned, project-life context document for onboarding coding agents.
+Read this first. Update it whenever semantics or process change.
 
-Use this file as the first read before making changes. It summarizes intent, current decisions, unresolved areas, and collaboration norms.
+## Current Capability Snapshot
+- Types: integer/whole/real, boolean, string, array<T> (literals `{...}`, `new array<T>(n)`, `.length`, indexing), optional<T> (`none`, `.hasValue`, `.value`, `.or(fallback)`), typed functions.
+- Control flow: if/then[/else], while, for, foreach (numeric or array), break/continue, return (implicit 0).
+- Expressions: arithmetic, comparisons, logical and/or/not (short-circuit), assignment, function calls, string interpolation/concat.
+- Errors: `panic <expr>;` raises `UserError` with line/col + call stack (from bytecode debug map).
+- Bytecode/VM: header v0x04, spec v0.7; ops include strings, arrays (NEW_ARRAY/GET/LEN/SET/NEW_ARRAY_N), optionals (NONE/HAS/VALUE/OR), THROW_ERROR.
+- CLI flags: `--run-tests`, `--skip-tests`, `--disasm`, `--dump-tokens`, `--out`, `--compile-only`.
+- Tests: integration (core features, arrays, optionals, panic) + fuzz (arith, boolean, strings, loop sums, panic). Run `dotnet run --project ConsoleApp1/ConsoleApp1.csproj --run-tests`.
 
-## Scope
-- Project objective: design and implement a programming language named `Code`.
-- Current phase: language design/specification with examples; implementation planning follows.
-- Canonical language spec: `docs/code-language-spec.md`
-- Error design exploration: `docs/exploration.md`
+## Not Implemented (yet)
+- User-defined data: objects/records/interfaces (fields, construction, methods, visibility).
+- Modules/imports/package layout and stdlib organization.
+- Array mutation (set), typed element enforcement, constant pool, formatter/linter, REPL.
+- Typed error values / `fallible<T>` semantics wired to VM errors.
 
-## Quick Start For Agents
-1. Read this file fully.
-2. Read `docs/code-language-spec.md`.
-3. Read `docs/exploration.md` if touching error handling.
-4. Treat spec decisions as authoritative unless the user explicitly overrides.
-5. When changing semantics, update both the spec and this file in the same task.
+## Canonical Docs
+- Language spec: `docs/code-language-spec.md`
+- Bytecode spec: `docs/bytecode-spec.md`
+- Roadmap/status: `docs/features-roadmap.md`
+- Examples: `ConsoleApp1/examples/*.code`
+- README: build/run quickstart
 
-## Product Intent (Locked)
-- `Code` prioritizes clarity over brevity.
-- Syntax should be consistent and intuitive for new developers.
-- Learning outcomes should transfer to mainstream languages.
-- Object-oriented features are supported.
-- No inheritance; interfaces are used for contracts.
-
-## Current Spec Snapshot (Locked Decisions)
-- File extension: `.code`.
-- Entry point: `main` is optional; used for CLI args.
-- Type annotations are required.
-- Identifiers: start with letter or `_`; continue with letters/digits/`_`.
-- Semicolons required (injection planned later, rules not finalized).
-- No `null`; use `optional<T>` with `hasValue`.
-- Core numerics: `integer`, `whole`, `real` with sized variants; numeric literals allow `_` separators, base prefixes `0b/0o/0x`, and sized suffixes `i8/i16/i32/i64`, `w8/w16/w32/w64`, `r16/r32/r64`; unsuffixed map to unsized types; no implicit narrowing.
-- Conversions: explicit `as Type`; implicit only for lossless widening within a family and `integer` → `real`; no implicit sign changes or downcasts.
-- Control flow: `if ... then ...`, `while`, `for`, `foreach`, `break`, `continue`.
-- Objects/interfaces:
-  - `object`, `interface`, `implement Interface for Object`
-  - interface mapping via `method(signature) via Object.method`
-  - constructor overloading allowed
-- Visibility/modifiers:
-  - access: `public`, `package`, `private`
-  - default access: `package`
-  - `static` and `constant` supported
-- Value/reference model:
-  - `object` passed by reference
-  - `record` object-like but passed by value
-  - otherwise follow common C# conventions (provisional)
-- Error model:
-  - `fallible<T>`
-  - hook syntax is fixed as `on error`
-  - error shape includes `type`, `message`, `stacktrace`
-  - supported patterns include:
-    - `on error yield ...`
-    - `on error panic(...)`
-    - `on error return error` (only for fallible<T> functions)
-    - `on error return new error(type, message)` (only for fallible<T> functions)
-    - `on error return <errorExpression>` where the expression type is `error` (only for fallible<T> functions)
-  - stacktrace captured on `panic` or unhandled `fallible` as `at function (file:line)` with `type` and `message`
-- String interpolation: any expression inside `{ ... }`; escape braces with `\{`/`\}`; nested string literals inside an interpolation are disallowed.
-- Optionals: flow narrows inside `if opt.hasValue then`; `opt.value` panics if empty; `opt.or(fallback)` provides default.
-- Imports: resolve relative to file, then project `lib/`; `RuntimeLibrary` is stdlib namespace; no global search.
-- Overloads: exact match preferred, then fewest/lowest-rank promotions, non-variadic beats variadic; ambiguity is a compile error.
-- Precedence: C#-style ordering; unary `+ - not`, `* / %`, `+ -`, relational, equality, `and`, `or`, assignment (right-associative); parentheses override.
-- Boolean `or` operator is distinct from the `optional.or(...)` helper method.
-- Tooling status (2026-02-11):
-  - Bytecode VM with header v0x02, CALL/RET frames, locals, arithmetic/comparisons, stack ops, jumps, load/store, PRINT, PUSH_STRING, THROW_ERROR; debug map gives line/col.
-  - Compiler prototype (C#) supports vars, assignments, arithmetic, comparisons, logical and/or/not (short-circuit), if/then[/else], while, for, foreach (0..n-1), return, blocks, print, panic, functions decl/call.
-  - CLI: compile/run/disasm, token dump, `--skip-tests`, `--run-tests`; bytecode extension `.bytecode`.
-  - Tests: harness covers VM ops, compiler integration (print, arithmetic, functions, loops, foreach, strings, panic) plus fuzz (arithmetic, boolean, string concat, loop sums, panic).
-  - Roadmap: see docs/features-roadmap.md for status by area.
-
-## Active Open Questions (High Priority)
-- Package search beyond project `lib/` (config surface, stdlib layout).
-- Mapping of error/panic objects into language-level `fallible<T>` semantics (currently VM-only panic).
-
-## Collaboration Norms With User
-- User drives syntax choices; agent drives question flow and spec clarity.
-- Keep documentation dense and implementation-oriented.
-- Prefer concrete examples over abstract rules.
-- Preserve prior decisions; avoid silent semantic drift.
-
-## Update Protocol (AI-Owned)
-- Update this file when any of the following changes:
-  - language semantics
-  - repo structure relevant to implementation
-  - process expectations for future agents
-- Keep a short append-only change log below.
-- Timestamp entries with absolute date (`YYYY-MM-DD`).
+## Process Expectations
+- When changing semantics: update spec, roadmap, bytecode spec (if opcodes), examples, tests. Run `--run-tests`.
+- Keep examples comprehensive—add one per new feature.
+- Preserve prior decisions; ask user when unclear.
 
 ## Change Log
-- 2026-02-09: Created AI onboarding context; synchronized with spec v0.8 and current error-hook direction.
-- 2026-02-10: Added numeric literal rules (with `w` unsigned suffixes), conversion/promotion rules, interpolation grammar, optionals narrowing/accessors, overload resolution order, import resolution order, stacktrace capture, and error handler return flexibility; bumped spec to v0.9. Added C#-style precedence and removed semicolon-injection from open questions.
-- 2026-02-11: VM/bytecode v0x02 with debug map; compiler gained definite assignment, string interpolation, panic statement; VM now produces `VmError` objects; test harness expanded with integration + fuzz suites; CLI flag `--run-tests` added; README added; roadmap table with priorities.
+- 2026-02-11: Arrays (typed, length, indexing), optionals (`none`, hasValue/value/or), panic errors, expanded tests/fuzz; CLI `--run-tests`; docs/README/roadmap updated.
+- 2026-02-10: Numeric literal rules, conversions, interpolation, overload order, imports resolution, debug map; control flow/functions; CLI utilities.
+- 2026-02-09: Initial context and spec v0.8 snapshot.

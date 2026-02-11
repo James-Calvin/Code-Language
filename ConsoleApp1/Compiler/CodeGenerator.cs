@@ -269,6 +269,12 @@ sealed class CodeGenerator
                 SetLoc(a.Name);
                 _builder.Store(GetSlot(a.Name));
                 break;
+            case ArraySetExpr aset:
+                Emit(aset.Target.Array);
+                Emit(aset.Target.Index);
+                Emit(aset.Value);
+                _builder.ArraySet();
+                break;
 
             case Call call:
                 SetLoc(call.Callee);

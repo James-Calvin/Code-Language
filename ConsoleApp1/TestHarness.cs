@@ -154,6 +154,7 @@ print(""x={x}"");", "x=3\n")
             ("new-array-sized", @"array<integer> items = new array<integer>(4); integer i = 0; while i < 4 then { i = i + 1; } print(i);", "4\n"),
             ("array-length-prop", @"array<integer> items = {1,2,3,4,5}; print(items.length);", "5\n"),
             ("array-index", @"array<integer> items = {10,20,30}; print(items[0]); print(items[2]);", "10\n30\n"),
+            ("array-set", @"array<integer> items = {10,20,30}; items[1] = 99; print(items[0]); print(items[1]); print(items[2]);", "10\n99\n30\n"),
             ("optional-hasvalue", @"optional<integer> v; print(v.hasValue);", "0\n"),
             ("optional-or", @"optional<integer> v; print(v.or(42));", "42\n"),
             ("optional-some", @"optional<integer> v = 5; print(v.hasValue); print(v.value);", "1\n5\n")

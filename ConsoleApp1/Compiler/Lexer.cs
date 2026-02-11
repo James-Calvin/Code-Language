@@ -20,6 +20,7 @@ sealed class Lexer
         { "boolean", TokenType.Boolean },
         { "optional", TokenType.Optional },
         { "array", TokenType.Array },
+        { "object", TokenType.Object },
         { "if", TokenType.If },
         { "then", TokenType.Then },
         { "else", TokenType.Else },

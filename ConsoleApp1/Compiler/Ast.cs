@@ -88,6 +88,34 @@ sealed class OptionalValueExpr : Expr
     public OptionalValueExpr(Expr target) { Target = target; }
 }
 
+sealed class FieldAccessExpr : Expr
+{
+    public Expr Target { get; }
+    public Token Name { get; }
+    public FieldAccessExpr(Expr target, Token name) { Target = target; Name = name; }
+}
+
+sealed class FieldSetExpr : Expr
+{
+    public FieldAccessExpr Target { get; }
+    public Expr Value { get; }
+    public FieldSetExpr(FieldAccessExpr target, Expr value) { Target = target; Value = value; }
+}
+
+sealed class NewObjectExpr : Expr
+{
+    public Token TypeName { get; }
+    public IReadOnlyList<Expr> Arguments { get; }
+    public NewObjectExpr(Token typeName, IReadOnlyList<Expr> args) { TypeName = typeName; Arguments = args; }
+}
+
+sealed class ArraySetExpr : Expr
+{
+    public ArrayIndexExpr Target { get; }
+    public Expr Value { get; }
+    public ArraySetExpr(ArrayIndexExpr target, Expr value) { Target = target; Value = value; }
+}
+
 sealed class Variable : Expr
 {
     public Token Name { get; }
@@ -109,6 +137,8 @@ sealed class Call : Expr
 }
 
 sealed record Parameter(Token? TypeToken, Token Name);
+
+sealed record FieldDecl(Token TypeToken, Token Name);
 
 abstract class Stmt { }
 
@@ -204,5 +234,15 @@ sealed class FunctionDecl : Stmt
     public FunctionDecl(Token name, Token? returnType, IReadOnlyList<Parameter> parameters, Block body)
     {
         Name = name; ReturnType = returnType; Parameters = parameters; Body = body;
+    }
+}
+
+sealed class ObjectDecl : Stmt
+{
+    public Token Name { get; }
+    public IReadOnlyList<FieldDecl> Fields { get; }
+    public ObjectDecl(Token name, IReadOnlyList<FieldDecl> fields)
+    {
+        Name = name; Fields = fields;
     }
 }

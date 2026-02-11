@@ -18,7 +18,7 @@ enum TokenType
     True, False,
 
     Integer, Whole, Real, Boolean, Optional,
-    Array,
+    Array, Object,
     If, Then, Else,
     While,
     Return,

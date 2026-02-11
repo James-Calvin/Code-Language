@@ -26,6 +26,7 @@ sealed class Parser
     private Stmt Declaration()
     {
         if (Match(TokenType.Function)) return FunctionDeclaration();
+        if (Match(TokenType.Object)) return ObjectDeclaration();
         if (IsTypeToken(Peek()))
         {
             var typeTok = ParseTypeToken();
@@ -96,6 +97,22 @@ sealed class Parser
         return new FunctionDecl(name, returnType, parameters, body);
     }
 
+    private Stmt ObjectDeclaration()
+    {
+        Token name = Consume(TokenType.Identifier, "Expect object name.");
+        Consume(TokenType.LeftBrace, "Expect '{' after object name.");
+        var fields = new List<FieldDecl>();
+        while (!Check(TokenType.RightBrace) && !IsAtEnd())
+        {
+            var fType = ParseTypeToken();
+            Token fname = Consume(TokenType.Identifier, "Expect field name.");
+            Consume(TokenType.Semicolon, "Expect ';' after field.");
+            fields.Add(new FieldDecl(fType, fname));
+        }
+        Consume(TokenType.RightBrace, "Expect '}' after object fields.");
+        return new ObjectDecl(name, fields);
+    }
+
     private Stmt VarDeclaration(Token typeToken)
     {
         Token name = Consume(TokenType.Identifier, "Expect variable name.");
@@ -118,6 +135,7 @@ sealed class Parser
         if (Match(TokenType.Return)) return ReturnStatement();
         if (Match(TokenType.Print)) return PrintStatement();
         if (Match(TokenType.Panic)) return PanicStatement();
+        if (Match(TokenType.Object)) return ObjectDeclaration();
 
         // Fast path for assignment statements to reduce parse ambiguity
         if (Check(TokenType.Identifier) && PeekNext().Type == TokenType.Equal)
@@ -273,9 +291,9 @@ sealed class Parser
             Expr value = Assignment();
 
             if (expr is Variable variable)
-            {
                 return new Assign(variable.Name, value);
-            }
+            if (expr is ArrayIndexExpr aidx)
+                return new ArraySetExpr(aidx, value);
 
             throw Error(equals, "Invalid assignment target.");
         }

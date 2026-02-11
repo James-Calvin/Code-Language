@@ -192,6 +192,13 @@ sealed class TypeChecker
                 var fbType = CheckExpr(oor.Fallback, env, currentReturn);
                 CheckExpr(oor.Optional, env, currentReturn);
                 return fbType;
+            case ArraySetExpr aset:
+                var arrT = CheckExpr(aset.Target.Array, env, currentReturn);
+                Require(arrT == TypeSymbol.Array, aset.Target.Array, "Indexing requires an array");
+                var idxT = CheckExpr(aset.Target.Index, env, currentReturn);
+                Require(IsNumeric(idxT), aset.Target.Index, "Array index must be numeric");
+                var valT = CheckExpr(aset.Value, env, currentReturn);
+                return valT;
             case Variable v:
                 return env.LookupForRead(v.Name);
             case Assign a:

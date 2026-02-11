@@ -423,8 +423,8 @@ sealed class CodeGenerator
         {
             Emit(arg);
         }
-        int localsSize = info.LocalCount > 0 ? info.LocalCount : info.ParamCount;
-        _builder.Call(info.Label, call.Arguments.Count, localsSize);
+        int frameSize = Math.Max(info.LocalCount, info.ParamCount); // include params in frame size
+        _builder.Call(info.Label, call.Arguments.Count, frameSize);
     }
 
     private void EmitInterpolatedString(InterpString istr)

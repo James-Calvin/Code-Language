@@ -35,7 +35,7 @@ Legend:
 | `[x]` | Compiler pipeline | Codegen to VM bytecode | Implemented |
 | `[x]` | Compiler pipeline | CLI: compile/run/disasm/token-dump | Implemented |
 | `[!]` | Compiler pipeline | Type checker tightening (def-assignment done; improve return/flow) | Continue refining |
-| `[!]` | Compiler pipeline | Frame sizing/temp management | Reduce locals over-allocation |
+| `[!]` | Compiler pipeline | Frame sizing/temp management | CALL now uses precise callee frame size; temp reuse/slot tightening still pending |
 | `[~]` | Compiler pipeline | Optimizations: const fold/DCE | Initial literal fold in place |
 | `[~]` | Runtime/stdlib | Basic stdlib (IO/math/time) | Print exists; extend |
 | `[_]` | Runtime/stdlib | REPL | Future |

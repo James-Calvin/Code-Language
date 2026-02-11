@@ -22,9 +22,14 @@ Legend:
 | `[x]` | Core language | Return statements (implicit 0 if missing) | Implemented |
 | `[~]` | Core language | Collections: literals + foreach over collections | Design+impl pending |
 | `[_]` | Core language | Structs/records (user types) | Beyond current object model |
+| `[~]` | Type system | Sized numerics & literal suffixes (`i8/w8/r32` etc.) | Lexer/parser/type support pending |
+| `[~]` | Type system | Optional/`optional<T>` semantics | Nullable/absence model not implemented |
+| `[_]` | Type system | Overload resolution rules (spec’d) | Engine not implemented |
 | `[x]` | Error model | Runtime IP + call stack + snippets | Debug-map backed |
 | `[!]` | Error model | Typed errors / exception objects in VM | High DX impact |
 | `[!]` | Error model | Propagation semantics across functions | Requires compiler/codegen rules |
+| `[_]` | Object model | Interfaces/objects/records with visibility (`public/package/private`) | Parsing/codegen/runtime not implemented |
+| `[_]` | Modules/imports | Exported declarations | Export syntax in spec; not implemented |
 | `[_]` | Modules/imports | Import syntax & package declarations | Not implemented |
 | `[_]` | Modules/imports | Package search paths/stdlib layout/versioning | Deferred until core stabilizes |
 | `[x]` | Bytecode/VM | Header v0x02 + debug table | Implemented |
@@ -35,7 +40,7 @@ Legend:
 | `[x]` | Compiler pipeline | Codegen to VM bytecode | Implemented |
 | `[x]` | Compiler pipeline | CLI: compile/run/disasm/token-dump | Implemented |
 | `[!]` | Compiler pipeline | Type checker tightening (def-assignment done; improve return/flow) | Continue refining |
-| `[!]` | Compiler pipeline | Frame sizing/temp management | CALL now uses precise callee frame size; temp reuse/slot tightening still pending |
+| `[~]` | Compiler pipeline | Frame sizing/temp management | Function-local slots are unique; CALL uses precise frame size; temps reused within foreach; further temp reuse/liveness possible |
 | `[~]` | Compiler pipeline | Optimizations: const fold/DCE | Initial literal fold in place |
 | `[~]` | Runtime/stdlib | Basic stdlib (IO/math/time) | Print exists; extend |
 | `[_]` | Runtime/stdlib | REPL | Future |

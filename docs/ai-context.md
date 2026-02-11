@@ -54,9 +54,9 @@ Use this file as the first read before making changes. It summarizes intent, cur
   - supported patterns include:
     - `on error yield ...`
     - `on error panic(...)`
-    - `on error return error`
-    - `on error return new error(type, message)`
-    - `on error return <errorExpression>` where the expression type is `error`
+    - `on error return error` (only for fallible<T> functions)
+    - `on error return new error(type, message)` (only for fallible<T> functions)
+    - `on error return <errorExpression>` where the expression type is `error` (only for fallible<T> functions)
   - stacktrace captured on `panic` or unhandled `fallible` as `at function (file:line)` with `type` and `message`
 - String interpolation: any expression inside `{ ... }`; escape braces with `\{`/`\}`; nested string literals inside an interpolation are disallowed.
 - Optionals: flow narrows inside `if opt.hasValue then`; `opt.value` panics if empty; `opt.or(fallback)` provides default.

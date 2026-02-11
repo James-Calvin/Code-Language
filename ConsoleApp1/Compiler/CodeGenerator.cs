@@ -7,7 +7,11 @@ sealed class CodeGenerator
 {
     private readonly BytecodeBuilder _builder = BytecodeBuilder.New();
     private Dictionary<string, int> _locals = new(StringComparer.Ordinal);
-    private int _localCount;
+    private int _nextLocalIndex;
+    private int _functionLocalHighWater;
+    private readonly Stack<Dictionary<string, int>> _scopeStack = new();
+    private readonly Stack<int> _nextLocalStack = new();
+    private readonly List<int> _freeTemps = new();
     private readonly Dictionary<string, (string Label, int ParamCount, int LocalCount)> _functions = new(StringComparer.Ordinal);
     private int _labelCounter;
 
@@ -58,12 +62,17 @@ sealed class CodeGenerator
         string label = _functions[fn.Name.Lexeme].Label;
         _builder.Label(label);
 
+        // reset per-function allocators
+        _nextLocalIndex = 0;
+        _functionLocalHighWater = 0;
+        _freeTemps.Clear();
         PushScope();
         // Parameters occupy leading slots
         for (int i = 0; i < fn.Parameters.Count; i++)
         {
-            _locals[fn.Parameters[i].Name.Lexeme] = i;
-            _localCount = Math.Max(_localCount, i + 1);
+            var param = fn.Parameters[i];
+            _locals[param.Name.Lexeme] = _nextLocalIndex++;
+            _functionLocalHighWater = Math.Max(_functionLocalHighWater, _nextLocalIndex);
         }
 
         Emit(fn.Body);
@@ -72,7 +81,7 @@ sealed class CodeGenerator
         _builder.PushInt(0);
         _builder.Ret();
 
-        _functions[fn.Name.Lexeme] = (label, fn.Parameters.Count, _localCount);
+        _functions[fn.Name.Lexeme] = (label, fn.Parameters.Count, _functionLocalHighWater);
         PopScope();
     }
 
@@ -190,6 +199,9 @@ sealed class CodeGenerator
                     _builder.Store(idxSlot);
                     _builder.Jump(feStart);
                     _builder.Label(feEnd);
+
+                    ReleaseTemp(endSlot);
+                    ReleaseTemp(idxSlot);
                 }
                 break;
 
@@ -329,13 +341,27 @@ sealed class CodeGenerator
     private int GetOrAllocate(string name)
     {
         if (_locals.TryGetValue(name, out var slot)) return slot;
-        slot = _locals.Count;
+        slot = _nextLocalIndex++;
         _locals[name] = slot;
-        _localCount = Math.Max(_localCount, slot + 1);
+        _functionLocalHighWater = Math.Max(_functionLocalHighWater, _nextLocalIndex);
         return slot;
     }
 
-    private int AllocateTemp() => GetOrAllocate($"__temp{_labelCounter++}");
+    private int AllocateTemp()
+    {
+        if (_freeTemps.Count > 0)
+        {
+            int idx = _freeTemps[^1];
+            _freeTemps.RemoveAt(_freeTemps.Count - 1);
+            return idx;
+        }
+        return GetOrAllocate($"__temp{_labelCounter++}");
+    }
+
+    private void ReleaseTemp(int slot)
+    {
+        _freeTemps.Add(slot);
+    }
 
     private int GetSlot(Token name)
     {
@@ -464,17 +490,15 @@ sealed class CodeGenerator
 
     private void PushScope()
     {
-        _scopeStack.Push((_locals, _localCount));
+        _scopeStack.Push(_locals);
+        _nextLocalStack.Push(_nextLocalIndex);
         _locals = new Dictionary<string, int>(StringComparer.Ordinal);
-        _localCount = 0;
     }
 
     private void PopScope()
     {
-        var prev = _scopeStack.Pop();
-        _locals = prev.locals;
-        _localCount = prev.localCount;
+        _locals = _scopeStack.Pop();
+        _nextLocalIndex = _nextLocalStack.Pop();
     }
 
-    private readonly Stack<(Dictionary<string, int> locals, int localCount)> _scopeStack = new();
 }

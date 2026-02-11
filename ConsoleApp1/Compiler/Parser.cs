@@ -213,7 +213,7 @@ sealed class Parser
         return new PanicStmt(value);
     }
 
-    private Expr Expression() => Or();
+    private Expr Expression() => Assignment();
 
     private Expr Or()
     {
@@ -241,7 +241,7 @@ sealed class Parser
 
     private Expr Assignment()
     {
-        Expr expr = Equality();
+        Expr expr = Or();
 
         if (Match(TokenType.Equal))
         {

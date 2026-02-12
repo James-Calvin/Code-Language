@@ -159,10 +159,21 @@ print(""x={x}"");", "x=3\n")
             ("optional-or", @"optional<integer> v; print(v.or(42));", "42\n"),
             ("optional-some", @"optional<integer> v = 5; print(v.hasValue); print(v.value);", "1\n5\n")
         };
+        var objectSymbolCases = new List<(string Name, string Source, string Expected)>
+        {
+            ("object-decl-top-level", @"object Person { integer age; } print(""ok"");", "ok\n"),
+            ("object-forward-field-ref", @"object B { A a; } object A { integer value; } print(""ok"");", "ok\n"),
+        };
         // Expected error cases
         var errorCases = new List<(string Name, string Source, string ExpectedType)>
         {
             ("panic-basic", @"panic(""boom"");", "UserError"),
+        };
+        var compileErrorCases = new List<(string Name, string Source, string ErrorContains)>
+        {
+            ("object-duplicate-name", @"object Person { integer age; } object Person { integer score; }", "already defined"),
+            ("object-duplicate-field", @"object Person { integer age; integer age; }", "already defined"),
+            ("object-unknown-field-type", @"object Person { UnknownType data; }", "Unknown type"),
         };
 
         foreach (var (name, src, expected) in cases)
@@ -211,11 +222,48 @@ print(""x={x}"");", "x=3\n")
             }
         }
 
+        foreach (var (name, src, expected) in objectSymbolCases)
+        {
+            try
+            {
+                var output = Normalize(CompileAndRun(src));
+                var expectNorm = Normalize(expected);
+                if (output != expectNorm)
+                {
+                    failures++;
+                    Console.WriteLine($"[FAIL] {name}: expected '{Escape(expectNorm)}' got '{Escape(output)}'");
+                }
+                else
+                {
+                    Console.WriteLine($"[PASS] {name}");
+                }
+            }
+            catch (Exception ex)
+            {
+                failures++;
+                Console.WriteLine($"[FAIL] {name}: threw {ex.GetType().Name} - {ex.Message}");
+            }
+        }
+
         foreach (var (name, src, expectedType) in errorCases)
         {
             try
             {
                 CompileAndRunExpectError(src, expectedType);
+                Console.WriteLine($"[PASS] {name}");
+            }
+            catch (Exception ex)
+            {
+                failures++;
+                Console.WriteLine($"[FAIL] {name}: {ex.GetType().Name} - {ex.Message}");
+            }
+        }
+
+        foreach (var (name, src, errorContains) in compileErrorCases)
+        {
+            try
+            {
+                CompileExpectError(src, errorContains);
                 Console.WriteLine($"[PASS] {name}");
             }
             catch (Exception ex)
@@ -471,6 +519,25 @@ print(sum);";
         {
             if (vex.Error.Type != expectedType)
                 throw new Exception($"Expected error type '{expectedType}' got '{vex.Error.Type}'");
+        }
+    }
+
+    private static void CompileExpectError(string source, string expectedContains)
+    {
+        try
+        {
+            var lexer = new Compiler.Lexer(source);
+            var tokens = lexer.ScanTokens();
+            var parser = new Compiler.Parser(tokens);
+            var ast = parser.Parse();
+            var typeChecker = new Compiler.TypeChecker();
+            typeChecker.Check(ast);
+            throw new Exception("Expected compile error was not thrown");
+        }
+        catch (Compiler.CompilerException ex)
+        {
+            if (!ex.Message.Contains(expectedContains, StringComparison.Ordinal))
+                throw new Exception($"Expected compile error containing '{expectedContains}', got '{ex.Message}'");
         }
     }
 

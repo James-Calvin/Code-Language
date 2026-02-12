@@ -30,7 +30,8 @@ Legend:
 | `[x]` | Error model | Typed errors / exception objects in VM | VmError objects, THROW opcode, panic statement, tests |
 | `[!]` | Error model | Propagation semantics across functions | Requires compiler/codegen rules |
 | `[x]` | Object model | Type references in AST/type checker (`TypeRef`) for named/generic user types | Implemented; parser/type-checker now use `TypeRef` instead of token-only types |
-| `[!]` | Object model | Object symbol table pass (objects/records, fields, constructors, methods) | Permanent prerequisite; enables duplicate checks + forward refs |
+| `[x]` | Object model | Object symbol table pass (object names + fields + forward refs) | Implemented for field-only object declarations; duplicate checks + type validation in place |
+| `[!]` | Object model | Constructor/method symbol collection (signatures, overload sets, visibility) | Next symbol-table milestone once syntax lands |
 | `[!]` | Object model | VM heap object representation + opcodes (`NEW_OBJECT`, `GET_FIELD`, `SET_FIELD`) | Permanent runtime substrate for user-defined instances |
 | `[!]` | Object model | Parse + lower `new Type(...)`, `obj.field`, `obj.field = value` | Permanent surface syntax; unblocks first useful object programs |
 | `[!]` | Object model | Constructors + definite field initialization rules | Permanent safety requirement for object creation |
@@ -63,7 +64,7 @@ Legend:
 | `[x]` | Testing | VM harness tests | Implemented |
 | `[x]` | Testing | Compiler integration suite | Includes print, arithmetic, functions, loops, foreach, strings |
 | `[x]` | Testing | Property/fuzz tests (parser/VM) | Arithmetic, boolean logic, string concat, loop sums |
-| `[!]` | Testing | Object-model integration suite | Gate for object milestones (construct/field/method/record/interface) |
+| `[!]` | Testing | Object-model integration suite | Initial symbol-table coverage in place; expand for construct/field/method/record/interface runtime behavior |
 | `[~]` | Testing | Object-model fuzz/property domains | Constructor/field mutation/member access invariants |
 
 ## Priority Rollup (benefit/effort)

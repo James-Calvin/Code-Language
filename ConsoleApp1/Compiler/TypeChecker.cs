@@ -7,10 +7,38 @@ namespace ConsoleApp1.Compiler;
 sealed class TypeChecker
 {
     private readonly Dictionary<string, FunctionSignature> _functions = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, ObjectSymbol> _objects = new(StringComparer.Ordinal);
 
     public void Check(IList<Stmt> statements)
     {
-        // Collect function signatures
+        // Collect object names first to allow forward references in field types.
+        foreach (var stmt in statements)
+        {
+            if (stmt is not ObjectDecl obj)
+                continue;
+
+            if (_objects.ContainsKey(obj.Name.Lexeme))
+                throw new CompilerException($"Object '{obj.Name.Lexeme}' already defined", obj.Name.Line, obj.Name.Column);
+            _objects[obj.Name.Lexeme] = new ObjectSymbol(obj.Name, new Dictionary<string, TypeRef>(StringComparer.Ordinal));
+        }
+
+        // Validate object field declarations.
+        foreach (var stmt in statements)
+        {
+            if (stmt is not ObjectDecl obj)
+                continue;
+
+            var symbol = _objects[obj.Name.Lexeme];
+            foreach (var field in obj.Fields)
+            {
+                if (symbol.Fields.ContainsKey(field.Name.Lexeme))
+                    throw new CompilerException($"Field '{field.Name.Lexeme}' is already defined in object '{obj.Name.Lexeme}'", field.Name.Line, field.Name.Column);
+                ValidateTypeRef(field.Type);
+                symbol.Fields[field.Name.Lexeme] = field.Type;
+            }
+        }
+
+        // Collect function signatures.
         foreach (var stmt in statements)
         {
             if (stmt is FunctionDecl fn)
@@ -37,6 +65,10 @@ sealed class TypeChecker
             if (stmt is FunctionDecl fn)
             {
                 CheckFunction(fn);
+            }
+            else if (stmt is ObjectDecl)
+            {
+                // Object declarations are compile-time metadata for now.
             }
             else
             {
@@ -139,6 +171,9 @@ sealed class TypeChecker
 
             case FunctionDecl:
                 // handled earlier
+                return false;
+            case ObjectDecl:
+                // handled in symbol collection pass
                 return false;
 
             default:
@@ -260,22 +295,9 @@ sealed class TypeChecker
         }
     }
 
-    private static TypeSymbol MapType(TypeRef typeRef)
+    private TypeSymbol MapType(TypeRef typeRef)
     {
-        if (typeRef.Name == "array")
-        {
-            if (typeRef.TypeArguments.Count != 1)
-                throw new CompilerException("array<T> expects exactly one type argument", typeRef.Line, typeRef.Column);
-            return TypeSymbol.Array;
-        }
-        if (typeRef.Name == "optional")
-        {
-            if (typeRef.TypeArguments.Count != 1)
-                throw new CompilerException("optional<T> expects exactly one type argument", typeRef.Line, typeRef.Column);
-            return TypeSymbol.Optional;
-        }
-        if (typeRef.TypeArguments.Count > 0)
-            throw new CompilerException($"Type '{typeRef.Name}' does not support type arguments yet", typeRef.Line, typeRef.Column);
+        ValidateTypeRef(typeRef);
 
         return typeRef.Name switch
         {
@@ -284,8 +306,39 @@ sealed class TypeChecker
             "real" => TypeSymbol.Real,
             "boolean" => TypeSymbol.Boolean,
             "string" => TypeSymbol.String,
-            _ => throw new CompilerException($"Unknown type '{typeRef.Name}'", typeRef.Line, typeRef.Column)
+            "array" => TypeSymbol.Array,
+            "optional" => TypeSymbol.Optional,
+            _ => TypeSymbol.Object
         };
+    }
+
+    private void ValidateTypeRef(TypeRef typeRef)
+    {
+        switch (typeRef.Name)
+        {
+            case "integer":
+            case "whole":
+            case "real":
+            case "boolean":
+            case "string":
+                if (typeRef.TypeArguments.Count > 0)
+                    throw new CompilerException($"Type '{typeRef.Name}' does not accept type arguments", typeRef.Line, typeRef.Column);
+                return;
+
+            case "array":
+            case "optional":
+                if (typeRef.TypeArguments.Count != 1)
+                    throw new CompilerException($"Type '{typeRef.Name}' expects exactly one type argument", typeRef.Line, typeRef.Column);
+                ValidateTypeRef(typeRef.TypeArguments[0]);
+                return;
+
+            default:
+                if (typeRef.TypeArguments.Count > 0)
+                    throw new CompilerException($"Type '{typeRef.Name}' does not support type arguments yet", typeRef.Line, typeRef.Column);
+                if (!_objects.ContainsKey(typeRef.Name))
+                    throw new CompilerException($"Unknown type '{typeRef.Name}'", typeRef.Line, typeRef.Column);
+                return;
+        }
     }
 
     private static bool IsNumeric(TypeSymbol t) => t is TypeSymbol.Integer or TypeSymbol.Whole or TypeSymbol.Real;
@@ -365,6 +418,7 @@ sealed class TypeChecker
     };
 
     private sealed record FunctionSignature(TypeSymbol Return, IList<TypeSymbol> Params);
+    private sealed record ObjectSymbol(Token Name, Dictionary<string, TypeRef> Fields);
 
     private sealed class TypeEnvironment
     {

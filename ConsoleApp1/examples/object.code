@@ -1,0 +1,11 @@
+// Current milestone: object declarations are type-checked metadata.
+object Person {
+  integer age;
+}
+
+object Team {
+  array<integer> scores;
+  optional<Person> lead;
+}
+
+print("object symbols ok");

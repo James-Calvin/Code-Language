@@ -9,5 +9,6 @@ enum TypeSymbol
     String,
     Array,
     Optional,
+    Object,
     Unknown
 }

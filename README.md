@@ -46,6 +46,7 @@ Test harness covers VM ops, compiler integration (print, arithmetic, functions, 
 - Semicolons required; `then` mandatory after `if/while/for/foreach` conditions
 - Arrays: literals `{...}`, typed declarations `array<integer> xs = {1,2,3};`, dynamic `new array<integer>(n);`, `.length`, indexing `xs[i]`, mutation `xs[i] = value`
 - Optionals: `optional<T>` with `none`, `.hasValue`, `.value`, `.or(fallback)`
+- Object symbols: `object` field declarations are collected/type-checked (duplicate checks + forward refs); runtime instances/methods are pending
 - Errors are reported with line/column and call stack when possible
 
 ## Roadmap (high level)

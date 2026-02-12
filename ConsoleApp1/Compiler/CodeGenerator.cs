@@ -192,6 +192,9 @@ sealed class CodeGenerator
             case FunctionDecl:
                 // already handled in outer pass
                 break;
+            case ObjectDecl:
+                // object declarations are type metadata only for now
+                break;
 
             default:
                 throw new NotSupportedException($"Unhandled statement type {stmt.GetType().Name}");

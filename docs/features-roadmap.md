@@ -40,7 +40,7 @@ Legend:
 | `[~]` | Object model | `record` value semantics (copy on assignment/pass/return) | Permanent feature, follows object core |
 | `[~]` | Object model | Visibility enforcement (`public/package/private`) | Permanent; phase in from parser -> checker -> codegen |
 | `[x]` | Object model | Interfaces + `implement ... for ...` conformance checks | Compile-time interface declarations + explicit `implement Interface for Object { ... via Object.method; }` mapping with signature/return checks |
-| `[~]` | Object model | Interface dispatch lowering/runtime model | Baseline runtime dispatch implemented for interface-typed locals and calls; extend to broader interface surfaces and optimization |
+| `[~]` | Object model | Interface dispatch lowering/runtime model | Baseline runtime dispatch table opcode implemented for interface-typed locals/params/returns/fields; extend to interface collections and optimizer-grade fast paths |
 | `[_]` | Object model | Lifecycle/perf plan for heap instances (GC/ownership strategy) | Permanent runtime design decision; defer until objects are exercised |
 | `[_]` | Modules/imports | Exported declarations | Export syntax in spec; not implemented |
 | `[_]` | Modules/imports | Import syntax & package declarations | Not implemented |
@@ -64,7 +64,7 @@ Legend:
 | `[x]` | Testing | VM harness tests | Implemented |
 | `[x]` | Testing | Compiler integration suite | Includes print, arithmetic, functions, loops, foreach, strings |
 | `[x]` | Testing | Property/fuzz tests (parser/VM) | Arithmetic, boolean logic, string concat, loop sums |
-| `[!]` | Testing | Object-model integration suite | Constructor/new/field/method paths + compile-time/runtime interface diagnostics covered; expand for records and broader interface surfaces |
+| `[!]` | Testing | Object-model integration suite | Constructor/new/field/method paths + compile-time/runtime interface diagnostics (including interface-typed fields) covered; expand for records and interface collections |
 | `[~]` | Testing | Object-model fuzz/property domains | Constructor/field mutation/member access invariants |
 
 ## Priority Rollup (benefit/effort)

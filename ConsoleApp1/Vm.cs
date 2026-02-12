@@ -41,6 +41,7 @@ enum OpCode : byte
     GetField = 0x20,
     SetField = 0x21,
     GetTypeName = 0x22,
+    InterfaceCall = 0x23,
     Halt = 0xFF
 }
 
@@ -53,6 +54,7 @@ sealed class Vm
     private readonly TextWriter _output;
     private readonly Stack<(int returnIp, int callIp, object[] locals)> _callStack = new();
     private readonly Dictionary<int, (int line, int column)> _debug = new();
+    private readonly Dictionary<int, InterfaceDispatchTable> _interfaceDispatchCache = new();
     private readonly int _codeEnd;
 
     public Vm(byte[] code, TextWriter? output = null, int initialLocals = 8)
@@ -364,6 +366,53 @@ sealed class Vm
                     break;
                 }
 
+                case OpCode.InterfaceCall:
+                {
+                    int callIp = _ip - 1;
+                    if (!_interfaceDispatchCache.TryGetValue(callIp, out var dispatchTable))
+                    {
+                        dispatchTable = ReadInterfaceDispatchTable();
+                        _interfaceDispatchCache[callIp] = dispatchTable;
+                    }
+                    else
+                    {
+                        _ip = dispatchTable.NextIp;
+                    }
+
+                    EnsureStack(dispatchTable.ExplicitArgCount + 1);
+                    var args = new object[dispatchTable.ExplicitArgCount];
+                    for (int i = dispatchTable.ExplicitArgCount - 1; i >= 0; i--)
+                    {
+                        args[i] = _stack.Pop();
+                    }
+
+                    var targetValue = _stack.Pop();
+                    if (targetValue is not VmObject targetObject)
+                    {
+                        throwRuntimeType("InterfaceCall expects object target");
+                        break;
+                    }
+
+                    if (!dispatchTable.Entries.TryGetValue(targetObject.TypeName, out var targetEntry))
+                    {
+                        ThrowRuntime($"No implementation for interface call on runtime object '{targetObject.TypeName}'");
+                        break;
+                    }
+
+                    int totalArgCount = dispatchTable.ExplicitArgCount + 1; // include target as implicit this
+                    var newLocals = new object[Math.Max(targetEntry.LocalCount, totalArgCount)];
+                    newLocals[0] = targetObject;
+                    for (int i = 0; i < args.Length; i++)
+                    {
+                        newLocals[i + 1] = args[i];
+                    }
+
+                    _callStack.Push((_ip, callIp, _locals));
+                    _locals = newLocals;
+                    _ip = targetEntry.TargetIp;
+                    break;
+                }
+
                 case OpCode.NewArrayN:
                 {
                     EnsureStack(1);
@@ -544,4 +593,25 @@ sealed class Vm
         var error = new VmError(type, message, faultLine, faultCol, calls.ToArray());
         throw new VmRuntimeException(message, faultIp, calls.ToArray(), faultLine, faultCol, error);
     }
+
+    private InterfaceDispatchTable ReadInterfaceDispatchTable()
+    {
+        int explicitArgCount = ReadIntOperand();
+        int entryCount = ReadIntOperand();
+        var entries = new Dictionary<string, InterfaceDispatchEntry>(StringComparer.Ordinal);
+        for (int i = 0; i < entryCount; i++)
+        {
+            string runtimeTypeName = ReadStringOperand();
+            int targetIp = ReadIntOperand();
+            int localCount = ReadIntOperand();
+            entries[runtimeTypeName] = new InterfaceDispatchEntry(targetIp, localCount);
+        }
+        return new InterfaceDispatchTable(_ip, explicitArgCount, entries);
+    }
+
+    private sealed record InterfaceDispatchEntry(int TargetIp, int LocalCount);
+    private sealed record InterfaceDispatchTable(
+        int NextIp,
+        int ExplicitArgCount,
+        Dictionary<string, InterfaceDispatchEntry> Entries);
 }

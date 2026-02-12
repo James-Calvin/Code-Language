@@ -40,6 +40,23 @@ static class Disassembler
                         sb.AppendFormat(" argc={0} locals={1}", argc, locals);
                     }
                     break;
+                case OpCode.InterfaceCall:
+                    if (ip + 8 > codeEnd) throw new InvalidOperationException("Truncated interface call header");
+                    int explicitArgCount = BitConverter.ToInt32(bytes, ip); ip += 4;
+                    int entryCount = BitConverter.ToInt32(bytes, ip); ip += 4;
+                    sb.AppendFormat(" explicitArgs={0} entries={1}", explicitArgCount, entryCount);
+                    for (int i = 0; i < entryCount; i++)
+                    {
+                        if (ip + 4 > codeEnd) throw new InvalidOperationException("Truncated interface dispatch type length");
+                        int typeLen = BitConverter.ToInt32(bytes, ip); ip += 4;
+                        if (ip + typeLen > codeEnd) throw new InvalidOperationException("Truncated interface dispatch type");
+                        string runtimeType = Encoding.UTF8.GetString(bytes, ip, typeLen); ip += typeLen;
+                        if (ip + 8 > codeEnd) throw new InvalidOperationException("Truncated interface dispatch target/locals");
+                        int target = BitConverter.ToInt32(bytes, ip); ip += 4;
+                        int locals = BitConverter.ToInt32(bytes, ip); ip += 4;
+                        sb.AppendFormat(" [{0}->{1},locals={2}]", runtimeType, target, locals);
+                    }
+                    break;
                 case OpCode.Add:
                 case OpCode.Sub:
                 case OpCode.Mul:

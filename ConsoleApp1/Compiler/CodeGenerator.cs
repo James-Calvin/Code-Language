@@ -722,56 +722,23 @@ sealed class CodeGenerator
         if (!_interfaceDispatch.TryGetValue(dispatchKey, out var targets) || targets.Count == 0)
             throw new InvalidOperationException($"No dispatch targets for interface method '{interfaceType.Name}.{mc.MethodName.Lexeme}'");
 
-        int targetSlot = AllocateTemp();
         Emit(mc.Target);
-        _builder.Store(targetSlot);
-
-        var argSlots = new List<int>(mc.Arguments.Count);
         foreach (var arg in mc.Arguments)
         {
-            int argSlot = AllocateTemp();
             Emit(arg);
-            _builder.Store(argSlot);
-            argSlots.Add(argSlot);
         }
 
-        int typeNameSlot = AllocateTemp();
-        _builder.Load(targetSlot);
-        _builder.GetTypeName();
-        _builder.Store(typeNameSlot);
-
-        string endLabel = NewLabel("iface_call_end");
+        var entries = new List<BytecodeBuilder.InterfaceDispatchEntry>(targets.Count);
         for (int i = 0; i < targets.Count; i++)
         {
-            string nextLabel = NewLabel("iface_call_next");
             var target = targets[i];
-
-            _builder.Load(typeNameSlot);
-            _builder.PushString(target.ObjectTypeName);
-            _builder.Eq();
-            _builder.JumpIfZero(nextLabel);
-
-            _builder.Load(targetSlot);
-            for (int a = 0; a < argSlots.Count; a++)
-                _builder.Load(argSlots[a]);
-
             if (!_methods.TryGetValue(target.ObjectMethodDispatchKey, out var info))
                 throw new InvalidOperationException($"Undefined mapped method '{target.ObjectMethodDispatchKey}'");
-
             int frameSize = Math.Max(info.LocalCount, info.ParamCount);
-            _builder.Call(info.Label, info.ParamCount, frameSize);
-            _builder.Jump(endLabel);
-            _builder.Label(nextLabel);
+            entries.Add(new BytecodeBuilder.InterfaceDispatchEntry(target.ObjectTypeName, info.Label, frameSize));
         }
 
-        _builder.PushString($"No implementation for interface '{interfaceType.Name}.{mc.MethodName.Lexeme}' on runtime object");
-        _builder.ThrowError();
-        _builder.Label(endLabel);
-
-        ReleaseTemp(typeNameSlot);
-        foreach (var argSlot in argSlots)
-            ReleaseTemp(argSlot);
-        ReleaseTemp(targetSlot);
+        _builder.InterfaceCall(mc.Arguments.Count, entries);
     }
 
     private bool HasConstructors(string typeName)

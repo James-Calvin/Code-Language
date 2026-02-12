@@ -316,6 +316,30 @@ implement IText for Printer {
 }
 IText t = new Printer();
 print(t.text(3));", "v=3\n"),
+            ("interface-field-dispatch",
+@"interface IValue {
+  function<integer> read();
+}
+object One {
+  constructor() { }
+  function<integer> read() {
+    return 1;
+  }
+}
+implement IValue for One {
+  read() via One.read;
+}
+object Holder {
+  IValue current;
+  constructor(IValue initial) {
+    this.current = initial;
+  }
+  function<integer> get() {
+    return this.current.read();
+  }
+}
+Holder h = new Holder(new One());
+print(h.get());", "1\n"),
         };
         // Expected error cases
         var errorCases = new List<(string Name, string Source, string ExpectedType)>
@@ -444,6 +468,30 @@ implement IThing for Thing {
 }
 IThing t = new Thing();
 print(t.missing());", "has no matching method overload"),
+            ("interface-field-assign-non-implementer",
+@"interface IThing {
+  function<integer> id();
+}
+object Thing {
+  constructor() { }
+  function<integer> id() {
+    return 1;
+  }
+}
+object Other {
+  constructor() { }
+}
+implement IThing for Thing {
+  id() via Thing.id;
+}
+object Holder {
+  IThing current;
+  constructor(IThing initial) {
+    this.current = initial;
+  }
+}
+Holder h = new Holder(new Thing());
+h.current = new Other();", "Field assignment type mismatch"),
         };
 
         foreach (var (name, src, expected) in cases)

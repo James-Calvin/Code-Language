@@ -1,0 +1,29 @@
+interface IValue {
+  function<integer> read();
+}
+
+object One {
+  constructor() { }
+  function<integer> read() {
+    return 1;
+  }
+}
+
+implement IValue for One {
+  read() via One.read;
+}
+
+object Holder {
+  IValue current;
+
+  constructor(IValue initial) {
+    this.current = initial;
+  }
+
+  function<integer> get() {
+    return this.current.read();
+  }
+}
+
+Holder holder = new Holder(new One());
+print(holder.get());

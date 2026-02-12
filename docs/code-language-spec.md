@@ -250,8 +250,8 @@ array<integer> otherNumbers = new array<integer>(10);
 
 ## 9. Object Model and Interfaces
 - Current implementation status:
-  - Implemented: object declarations with fields/constructors/methods, `new Type(...)`, object field read/write (`obj.field`, `obj.field = value`), method calls (`obj.method(args)`), explicit interface conformance checks via `implement Interface for Object`, and interface-typed variables with runtime-dispatched interface method calls.
-  - Not yet implemented: interface-typed fields/containers, visibility enforcement, records.
+  - Implemented: object declarations with fields/constructors/methods, `new Type(...)`, object field read/write (`obj.field`, `obj.field = value`), method calls (`obj.method(args)`), explicit interface conformance checks via `implement Interface for Object`, and interface-typed locals/parameters/returns/fields with runtime-dispatched interface method calls.
+  - Not yet implemented: interface-typed collection/container surfaces, visibility enforcement, records.
 - No inheritance.
 - Contracts are declared as `interface`.
 - Concrete types are declared as `object`.
@@ -326,7 +326,7 @@ implement Methodable for Person {
 ```
 
 Current limitation:
-- Interface dispatch currently applies to interface-typed values (`InterfaceName v = new ObjectType(); v.method(...)`); broader interface usage (for example interface-typed object fields and package boundaries) is still being expanded.
+- Interface dispatch currently covers direct interface-typed values (including locals, parameters, returns, and object fields). Wider integration (arrays/containers of interfaces and package/module boundaries) is still being expanded.
 
 Instantiation:
 
@@ -424,7 +424,7 @@ real result3 = errorExample(0) on error panic("Error message {error}");
 - Object symbols are collected before function/body checking, enabling duplicate object/field checks and forward references in object field types.
 - Constructor symbols are collected and used for `new Type(...)` arity/type validation.
 - Method symbols are collected and used for `obj.method(args)` arity/type validation.
-- Interface symbols and `implement` mappings are validated, and interface-typed method calls are lowered to runtime dispatch over mapped object methods.
+- Interface symbols and `implement` mappings are validated, and interface-typed method calls are lowered to runtime dispatch tables over mapped object methods.
 - Object construction and field access lower to dedicated VM opcodes (`NEW_OBJECT`, `GET_FIELD`, `SET_FIELD`).
 - Arrays: literals `{...}` create arrays; typed declarations `array<integer> xs = {1,2,3};`; dynamic `new array<integer>(n)` requires a size; `xs.length` yields length; `foreach` iterates arrays by element.
 

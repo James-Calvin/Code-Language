@@ -7,6 +7,8 @@ namespace ConsoleApp1;
 
 sealed class BytecodeBuilder
 {
+    public readonly record struct InterfaceDispatchEntry(string RuntimeTypeName, string TargetLabel, int LocalCount);
+
     private readonly List<byte> _bytes = new();
     private readonly Dictionary<string, int> _labels = new(StringComparer.Ordinal);
     private readonly List<(int position, string label)> _fixups = new();
@@ -140,6 +142,26 @@ sealed class BytecodeBuilder
     {
         RecordDebug();
         _bytes.Add((byte)OpCode.GetTypeName);
+        return this;
+    }
+
+    public BytecodeBuilder InterfaceCall(int explicitArgCount, IReadOnlyList<InterfaceDispatchEntry> entries)
+    {
+        RecordDebug();
+        _bytes.Add((byte)OpCode.InterfaceCall);
+        _bytes.AddRange(BitConverter.GetBytes(explicitArgCount));
+        _bytes.AddRange(BitConverter.GetBytes(entries.Count));
+        foreach (var entry in entries)
+        {
+            var typeBytes = Encoding.UTF8.GetBytes(entry.RuntimeTypeName);
+            _bytes.AddRange(BitConverter.GetBytes(typeBytes.Length));
+            _bytes.AddRange(typeBytes);
+
+            int targetPos = _bytes.Count;
+            _fixups.Add((targetPos, entry.TargetLabel));
+            _bytes.AddRange(new byte[4]); // target placeholder
+            _bytes.AddRange(BitConverter.GetBytes(entry.LocalCount));
+        }
         return this;
     }
 

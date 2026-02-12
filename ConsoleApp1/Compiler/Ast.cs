@@ -284,3 +284,50 @@ sealed class MethodDecl
         Name = name; ReturnType = returnType; Parameters = parameters; Body = body;
     }
 }
+
+sealed class InterfaceDecl : Stmt
+{
+    public Token Name { get; }
+    public IReadOnlyList<InterfaceMethodDecl> Methods { get; }
+    public InterfaceDecl(Token name, IReadOnlyList<InterfaceMethodDecl> methods)
+    {
+        Name = name; Methods = methods;
+    }
+}
+
+sealed class InterfaceMethodDecl
+{
+    public Token Name { get; }
+    public TypeRef ReturnType { get; }
+    public IReadOnlyList<Parameter> Parameters { get; }
+    public InterfaceMethodDecl(Token name, TypeRef returnType, IReadOnlyList<Parameter> parameters)
+    {
+        Name = name; ReturnType = returnType; Parameters = parameters;
+    }
+}
+
+sealed class ImplementDecl : Stmt
+{
+    public Token InterfaceName { get; }
+    public Token ObjectName { get; }
+    public IReadOnlyList<ImplementMethodMap> Methods { get; }
+    public ImplementDecl(Token interfaceName, Token objectName, IReadOnlyList<ImplementMethodMap> methods)
+    {
+        InterfaceName = interfaceName; ObjectName = objectName; Methods = methods;
+    }
+}
+
+sealed class ImplementMethodMap
+{
+    public Token InterfaceMethodName { get; }
+    public IReadOnlyList<Parameter> Parameters { get; }
+    public Token ViaObjectName { get; }
+    public Token ViaMethodName { get; }
+    public ImplementMethodMap(Token interfaceMethodName, IReadOnlyList<Parameter> parameters, Token viaObjectName, Token viaMethodName)
+    {
+        InterfaceMethodName = interfaceMethodName;
+        Parameters = parameters;
+        ViaObjectName = viaObjectName;
+        ViaMethodName = viaMethodName;
+    }
+}

@@ -250,13 +250,14 @@ array<integer> otherNumbers = new array<integer>(10);
 
 ## 9. Object Model and Interfaces
 - Current implementation status:
-  - Implemented: object declarations with fields/constructors/methods, `new Type(...)`, object field read/write (`obj.field`, `obj.field = value`), and method calls (`obj.method(args)`).
-  - Not yet implemented: interfaces, visibility enforcement, records, dynamic/interface dispatch.
+  - Implemented: object declarations with fields/constructors/methods, `new Type(...)`, object field read/write (`obj.field`, `obj.field = value`), method calls (`obj.method(args)`), and explicit interface conformance checks via `implement Interface for Object`.
+  - Not yet implemented: interface-typed variables/calls, runtime interface dispatch, visibility enforcement, records.
 - No inheritance.
 - Contracts are declared as `interface`.
 - Concrete types are declared as `object`.
 - Objects can implement multiple interfaces.
 - `implement Interface for Object` is required for interface fulfillment.
+- Interface methods must declare explicit return and parameter types.
 - Methods may also be declared directly inside the `object` body.
 - Interface fulfillment maps interface signatures to object methods via `interfaceMethod(parameterTypes...) via ObjectName.methodName;`.
 - Mapping includes parameter types/signature to support overload resolution.
@@ -283,23 +284,24 @@ Interface example:
 
 ```code
 interface Methodable {
-  function method(string name);
+  function<integer> method(string name);
 }
 ```
 
 Object declaration with constructor and method:
 
 ```code
-object Person implements Methodable {
+object Person {
   string name;
 
   constructor(string name) {
     this.name = name;
   }
 
-  function method(string name) {
+  function<integer> method(string name) {
     print(name); // local variable
     print(this.name); // object field
+    return 1;
   }
 }
 ```
@@ -322,6 +324,9 @@ implement Methodable for Person {
   method(string name) via Person.method;
 }
 ```
+
+Current limitation:
+- Interface declarations are compile-time contracts only. Variables and parameters cannot yet use an interface type, and calls still target concrete object methods.
 
 Instantiation:
 

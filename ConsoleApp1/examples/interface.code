@@ -1,0 +1,16 @@
+interface Greeter {
+  function<string> greet(string name);
+}
+
+object ConsoleGreeter {
+  function<string> greet(string name) {
+    return "hello, " + name;
+  }
+}
+
+implement Greeter for ConsoleGreeter {
+  greet(string name) via ConsoleGreeter.greet;
+}
+
+ConsoleGreeter greeter = new ConsoleGreeter();
+print(greeter.greet("Code"));

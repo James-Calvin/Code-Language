@@ -322,6 +322,10 @@ sealed class CodeGenerator
             case ObjectDecl:
                 // object declarations are type metadata only for now
                 break;
+            case InterfaceDecl:
+            case ImplementDecl:
+                // interface metadata does not emit bytecode in current MVP
+                break;
 
             default:
                 throw new NotSupportedException($"Unhandled statement type {stmt.GetType().Name}");

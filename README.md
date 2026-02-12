@@ -47,9 +47,11 @@ Test harness covers VM ops, compiler integration (print, arithmetic, functions, 
 - Arrays: literals `{...}`, typed declarations `array<integer> xs = {1,2,3};`, dynamic `new array<integer>(n);`, `.length`, indexing `xs[i]`, mutation `xs[i] = value`
 - Optionals: `optional<T>` with `none`, `.hasValue`, `.value`, `.or(fallback)`
 - Objects: `object` declarations with constructors/methods, `new Type(...)`, field access/assignment (`obj.field`, `obj.field = ...`), method calls (`obj.method(...)`)
+- Interfaces: `interface` declarations + explicit `implement Interface for Object { ... via Object.method; }` conformance checks
 - Method/constructor overload resolution: compile-time signature-based dispatch (with best-match conversions)
 - Constructor rules: objects with fields must define constructors, and constructors must assign all fields
 - Errors are reported with line/column and call stack when possible
+- Interface dispatch is not implemented yet (no interface-typed vars/calls)
 
 ## Roadmap (high level)
 Active priorities: optimization of temp/liveness, collections over real data structures, modules/imports, stdlib growth, and tooling (formatter/linter). Full detail in `docs/features-roadmap.md`.

@@ -255,6 +255,27 @@ Bag b = new Bag(true);
 print(a.count);
 print(b.count);", "3\n999\n"),
         };
+        var interfaceCases = new List<(string Name, string Source, string Expected)>
+        {
+            ("interface-implement-ok",
+@"interface ICounter {
+  function<integer> read();
+}
+object Counter {
+  integer x;
+  constructor(integer v) {
+    this.x = v;
+  }
+  function<integer> read() {
+    return this.x;
+  }
+}
+implement ICounter for Counter {
+  read() via Counter.read;
+}
+Counter c = new Counter(7);
+print(c.read());", "7\n"),
+        };
         // Expected error cases
         var errorCases = new List<(string Name, string Source, string ExpectedType)>
         {
@@ -280,6 +301,76 @@ print(b.count);", "3\n999\n"),
 }
 A a = new A(0);
 print(a.f(true));", "no matching method overload"),
+            ("interface-unknown", @"implement Missing for Thing { }", "Unknown interface"),
+            ("interface-duplicate",
+@"interface IThing {
+  function<integer> id();
+}
+interface IThing {
+  function<integer> id();
+}", "already defined"),
+            ("interface-map-missing-method",
+@"interface IThing {
+  function<integer> id();
+}
+object Thing {
+  constructor() { }
+  function<integer> value() {
+    return 1;
+  }
+}
+implement IThing for Thing {
+  id() via Thing.id;
+}", "has no method"),
+            ("interface-map-return-mismatch",
+@"interface IThing {
+  function<integer> id();
+}
+object Thing {
+  constructor() { }
+  function<boolean> id() {
+    return true;
+  }
+}
+implement IThing for Thing {
+  id() via Thing.id;
+}", "return type does not satisfy interface"),
+            ("interface-map-wrong-via-object",
+@"interface IThing {
+  function<integer> id();
+}
+object Thing {
+  constructor() { }
+  function<integer> id() {
+    return 1;
+  }
+}
+object OtherThing {
+  constructor() { }
+  function<integer> id() {
+    return 2;
+  }
+}
+implement IThing for Thing {
+  id() via OtherThing.id;
+}", "cannot map via"),
+            ("interface-map-missing-required",
+@"interface IThing {
+  function<integer> id();
+  function<integer> value();
+}
+object Thing {
+  constructor() { }
+  function<integer> id() {
+    return 1;
+  }
+  function<integer> value() {
+    return 2;
+  }
+}
+implement IThing for Thing {
+  id() via Thing.id;
+}", "does not map interface method"),
         };
 
         foreach (var (name, src, expected) in cases)
@@ -329,6 +420,29 @@ print(a.f(true));", "no matching method overload"),
         }
 
         foreach (var (name, src, expected) in objectCases)
+        {
+            try
+            {
+                var output = Normalize(CompileAndRun(src));
+                var expectNorm = Normalize(expected);
+                if (output != expectNorm)
+                {
+                    failures++;
+                    Console.WriteLine($"[FAIL] {name}: expected '{Escape(expectNorm)}' got '{Escape(output)}'");
+                }
+                else
+                {
+                    Console.WriteLine($"[PASS] {name}");
+                }
+            }
+            catch (Exception ex)
+            {
+                failures++;
+                Console.WriteLine($"[FAIL] {name}: threw {ex.GetType().Name} - {ex.Message}");
+            }
+        }
+
+        foreach (var (name, src, expected) in interfaceCases)
         {
             try
             {

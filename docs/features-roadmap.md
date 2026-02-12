@@ -39,8 +39,8 @@ Legend:
 | `[x]` | Object model | Temporary method lowering (`method` -> static fn with implicit `this`) | Implemented with compile-time signature binding (no dynamic dispatch yet) |
 | `[~]` | Object model | `record` value semantics (copy on assignment/pass/return) | Permanent feature, follows object core |
 | `[~]` | Object model | Visibility enforcement (`public/package/private`) | Permanent; phase in from parser -> checker -> codegen |
-| `[_]` | Object model | Interfaces + `implement ... for ...` conformance checks | Permanent; depends on methods + type refs |
-| `[_]` | Object model | Interface dispatch lowering/runtime model | Permanent; likely vtable/itable or thunk-based |
+| `[x]` | Object model | Interfaces + `implement ... for ...` conformance checks | Compile-time interface declarations + explicit `implement Interface for Object { ... via Object.method; }` mapping with signature/return checks |
+| `[_]` | Object model | Interface dispatch lowering/runtime model | Interface-typed vars/calls and runtime dispatch remain deferred (currently object-direct method calls only) |
 | `[_]` | Object model | Lifecycle/perf plan for heap instances (GC/ownership strategy) | Permanent runtime design decision; defer until objects are exercised |
 | `[_]` | Modules/imports | Exported declarations | Export syntax in spec; not implemented |
 | `[_]` | Modules/imports | Import syntax & package declarations | Not implemented |
@@ -64,7 +64,7 @@ Legend:
 | `[x]` | Testing | VM harness tests | Implemented |
 | `[x]` | Testing | Compiler integration suite | Includes print, arithmetic, functions, loops, foreach, strings |
 | `[x]` | Testing | Property/fuzz tests (parser/VM) | Arithmetic, boolean logic, string concat, loop sums |
-| `[!]` | Testing | Object-model integration suite | Constructor/new/field/method paths + compile-time object diagnostics covered; expand for records/interfaces |
+| `[!]` | Testing | Object-model integration suite | Constructor/new/field/method paths + compile-time object/interface diagnostics covered; expand for records/interface dispatch |
 | `[~]` | Testing | Object-model fuzz/property domains | Constructor/field mutation/member access invariants |
 
 ## Priority Rollup (benefit/effort)

@@ -27,6 +27,8 @@ sealed class Parser
     {
         if (Match(TokenType.Function)) return FunctionDeclaration();
         if (Match(TokenType.Object)) return ObjectDeclaration();
+        if (Match(TokenType.Interface)) return InterfaceDeclaration();
+        if (Match(TokenType.Implement)) return ImplementDeclaration();
         if (LooksLikeTypeThenIdentifier(_current))
         {
             var typeRef = ParseTypeRef();
@@ -162,6 +164,69 @@ sealed class Parser
         }
         Consume(TokenType.RightBrace, "Expect '}' after object fields.");
         return new ObjectDecl(name, fields, constructors, methods);
+    }
+
+    private Stmt InterfaceDeclaration()
+    {
+        Token name = Consume(TokenType.Identifier, "Expect interface name.");
+        Consume(TokenType.LeftBrace, "Expect '{' after interface name.");
+        var methods = new List<InterfaceMethodDecl>();
+        while (!Check(TokenType.RightBrace) && !IsAtEnd())
+        {
+            Consume(TokenType.Function, "Expect 'function' in interface body.");
+            var sig = ParseCallableSignature("interface method");
+            if (sig.ReturnType is null)
+                throw Error(sig.Name, $"Interface method '{sig.Name.Lexeme}' must declare a return type.");
+            for (int i = 0; i < sig.Parameters.Count; i++)
+            {
+                if (sig.Parameters[i].Type is null)
+                    throw Error(sig.Parameters[i].Name, $"Interface method '{sig.Name.Lexeme}' has an untyped parameter.");
+            }
+            Consume(TokenType.Semicolon, "Expect ';' after interface method signature.");
+            methods.Add(new InterfaceMethodDecl(sig.Name, sig.ReturnType, sig.Parameters));
+        }
+        Consume(TokenType.RightBrace, "Expect '}' after interface body.");
+        return new InterfaceDecl(name, methods);
+    }
+
+    private Stmt ImplementDeclaration()
+    {
+        Token interfaceName = Consume(TokenType.Identifier, "Expect interface name after 'implement'.");
+        Consume(TokenType.For, "Expect 'for' after interface name in implement declaration.");
+        Token objectName = Consume(TokenType.Identifier, "Expect object name after 'for'.");
+        Consume(TokenType.LeftBrace, "Expect '{' after implement header.");
+        var maps = new List<ImplementMethodMap>();
+        while (!Check(TokenType.RightBrace) && !IsAtEnd())
+        {
+            maps.Add(ParseImplementMethodMap());
+        }
+        Consume(TokenType.RightBrace, "Expect '}' after implement body.");
+        return new ImplementDecl(interfaceName, objectName, maps);
+    }
+
+    private ImplementMethodMap ParseImplementMethodMap()
+    {
+        Token interfaceMethod = Consume(TokenType.Identifier, "Expect interface method name in implement mapping.");
+        Consume(TokenType.LeftParen, "Expect '(' after interface method name.");
+        var parameters = new List<Parameter>();
+        if (!Check(TokenType.RightParen))
+        {
+            do
+            {
+                TypeRef pType = ParseTypeRef();
+                Token pName = Check(TokenType.Identifier)
+                    ? Advance()
+                    : new Token(TokenType.Identifier, $"_p{parameters.Count}", null, pType.Line, pType.Column);
+                parameters.Add(new Parameter(pType, pName));
+            } while (Match(TokenType.Comma));
+        }
+        Consume(TokenType.RightParen, "Expect ')' after mapped interface method parameters.");
+        Consume(TokenType.Via, "Expect 'via' in implement mapping.");
+        Token viaObject = Consume(TokenType.Identifier, "Expect object name after 'via'.");
+        Consume(TokenType.Dot, "Expect '.' after object name in implement mapping.");
+        Token viaMethod = Consume(TokenType.Identifier, "Expect method name after '.'.");
+        Consume(TokenType.Semicolon, "Expect ';' after implement mapping.");
+        return new ImplementMethodMap(interfaceMethod, parameters, viaObject, viaMethod);
     }
 
     private Stmt VarDeclaration(TypeRef typeRef)

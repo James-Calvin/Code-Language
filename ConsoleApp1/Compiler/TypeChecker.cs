@@ -8,6 +8,7 @@ sealed class TypeChecker
 {
     private readonly Dictionary<string, FunctionSignature> _functions = new(StringComparer.Ordinal);
     private readonly Dictionary<string, ObjectSymbol> _objects = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, InterfaceSymbol> _interfaces = new(StringComparer.Ordinal);
 
     public void Check(IList<Stmt> statements)
     {
@@ -19,11 +20,56 @@ sealed class TypeChecker
 
             if (_objects.ContainsKey(obj.Name.Lexeme))
                 throw new CompilerException($"Object '{obj.Name.Lexeme}' already defined", obj.Name.Line, obj.Name.Column);
+            if (_interfaces.ContainsKey(obj.Name.Lexeme))
+                throw new CompilerException($"Type name '{obj.Name.Lexeme}' is already used by an interface", obj.Name.Line, obj.Name.Column);
             _objects[obj.Name.Lexeme] = new ObjectSymbol(
                 obj.Name,
                 new Dictionary<string, TypeRef>(StringComparer.Ordinal),
                 new List<ConstructorSignature>(),
                 new Dictionary<string, MethodSignature>(StringComparer.Ordinal));
+        }
+
+        // Collect interface names.
+        foreach (var stmt in statements)
+        {
+            if (stmt is not InterfaceDecl iface)
+                continue;
+
+            if (_interfaces.ContainsKey(iface.Name.Lexeme))
+                throw new CompilerException($"Interface '{iface.Name.Lexeme}' already defined", iface.Name.Line, iface.Name.Column);
+            if (_objects.ContainsKey(iface.Name.Lexeme))
+                throw new CompilerException($"Type name '{iface.Name.Lexeme}' is already used by an object", iface.Name.Line, iface.Name.Column);
+            _interfaces[iface.Name.Lexeme] = new InterfaceSymbol(
+                iface.Name,
+                new Dictionary<string, InterfaceMethodSignature>(StringComparer.Ordinal));
+        }
+
+        // Validate interface method declarations.
+        foreach (var stmt in statements)
+        {
+            if (stmt is not InterfaceDecl iface)
+                continue;
+
+            var ifaceSym = _interfaces[iface.Name.Lexeme];
+            foreach (var method in iface.Methods)
+            {
+                ValidateTypeRef(method.ReturnType);
+                var paramTypeRefs = new List<TypeRef>(method.Parameters.Count);
+                var paramTypes = new List<TypeSymbol>(method.Parameters.Count);
+                for (int i = 0; i < method.Parameters.Count; i++)
+                {
+                    var p = method.Parameters[i];
+                    if (p.Type is null)
+                        throw new CompilerException($"Interface method '{method.Name.Lexeme}' has untyped parameters", method.Name.Line, method.Name.Column);
+                    ValidateTypeRef(p.Type);
+                    paramTypeRefs.Add(p.Type);
+                    paramTypes.Add(MapType(p.Type));
+                }
+                string key = InterfaceMethodKey(method.Name.Lexeme, paramTypeRefs);
+                if (ifaceSym.Methods.ContainsKey(key))
+                    throw new CompilerException($"Interface method overload '{method.Name.Lexeme}' with the same signature is already defined in '{iface.Name.Lexeme}'", method.Name.Line, method.Name.Column);
+                ifaceSym.Methods[key] = new InterfaceMethodSignature(method.Name, method.ReturnType, MapType(method.ReturnType), paramTypeRefs, paramTypes, key);
+            }
         }
 
         // Validate object field declarations.
@@ -88,6 +134,64 @@ sealed class TypeChecker
             }
         }
 
+        // Validate explicit interface implementation blocks.
+        foreach (var stmt in statements)
+        {
+            if (stmt is not ImplementDecl impl)
+                continue;
+
+            if (!_interfaces.TryGetValue(impl.InterfaceName.Lexeme, out var iface))
+                throw new CompilerException($"Unknown interface '{impl.InterfaceName.Lexeme}'", impl.InterfaceName.Line, impl.InterfaceName.Column);
+            if (!_objects.TryGetValue(impl.ObjectName.Lexeme, out var obj))
+                throw new CompilerException($"Unknown object '{impl.ObjectName.Lexeme}'", impl.ObjectName.Line, impl.ObjectName.Column);
+
+            var mapped = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var map in impl.Methods)
+            {
+                if (!string.Equals(map.ViaObjectName.Lexeme, impl.ObjectName.Lexeme, StringComparison.Ordinal))
+                {
+                    throw new CompilerException(
+                        $"Implement block for '{impl.ObjectName.Lexeme}' cannot map via '{map.ViaObjectName.Lexeme}'",
+                        map.ViaObjectName.Line,
+                        map.ViaObjectName.Column);
+                }
+
+                var mapParamTypeRefs = new List<TypeRef>(map.Parameters.Count);
+                for (int i = 0; i < map.Parameters.Count; i++)
+                {
+                    var p = map.Parameters[i];
+                    if (p.Type is null)
+                        throw new CompilerException("Implementation mapping parameters must be typed", p.Name.Line, p.Name.Column);
+                    ValidateTypeRef(p.Type);
+                    mapParamTypeRefs.Add(p.Type);
+                }
+
+                string ifaceKey = InterfaceMethodKey(map.InterfaceMethodName.Lexeme, mapParamTypeRefs);
+                if (!iface.Methods.TryGetValue(ifaceKey, out var ifaceMethod))
+                    throw new CompilerException($"Interface '{iface.Name.Lexeme}' has no method '{map.InterfaceMethodName.Lexeme}' with this signature", map.InterfaceMethodName.Line, map.InterfaceMethodName.Column);
+                if (!mapped.Add(ifaceKey))
+                    throw new CompilerException($"Interface method '{map.InterfaceMethodName.Lexeme}' is mapped more than once", map.InterfaceMethodName.Line, map.InterfaceMethodName.Column);
+
+                string objectMethodKey = MethodDispatchKey(impl.ObjectName.Lexeme, map.ViaMethodName.Lexeme, mapParamTypeRefs);
+                if (!obj.Methods.TryGetValue(objectMethodKey, out var objectMethod))
+                    throw new CompilerException($"Object '{impl.ObjectName.Lexeme}' has no method '{map.ViaMethodName.Lexeme}' with this signature", map.ViaMethodName.Line, map.ViaMethodName.Column);
+
+                if (!IsCompatibleInterfaceReturn(ifaceMethod, objectMethod))
+                {
+                    throw new CompilerException(
+                        $"Method '{impl.ObjectName.Lexeme}.{map.ViaMethodName.Lexeme}' return type does not satisfy interface '{impl.InterfaceName.Lexeme}'",
+                        map.ViaMethodName.Line,
+                        map.ViaMethodName.Column);
+                }
+            }
+
+            foreach (var ifaceMethod in iface.Methods.Values)
+            {
+                if (!mapped.Contains(ifaceMethod.SignatureKey))
+                    throw new CompilerException($"Object '{impl.ObjectName.Lexeme}' does not map interface method '{ifaceMethod.Name.Lexeme}'", impl.ObjectName.Line, impl.ObjectName.Column);
+            }
+        }
+
         // Collect function signatures.
         foreach (var stmt in statements)
         {
@@ -125,9 +229,9 @@ sealed class TypeChecker
             {
                 CheckFunction(fn);
             }
-            else if (stmt is ObjectDecl)
+            else if (stmt is ObjectDecl or InterfaceDecl or ImplementDecl)
             {
-                // Object declarations are compile-time metadata for now.
+                // Declarations are compile-time metadata.
             }
             else
             {
@@ -346,6 +450,12 @@ sealed class TypeChecker
                 return false;
             case ObjectDecl:
                 // handled in symbol collection pass
+                return false;
+            case InterfaceDecl:
+                // handled in symbol collection pass
+                return false;
+            case ImplementDecl:
+                // handled in symbol validation pass
                 return false;
 
             default:
@@ -805,10 +915,35 @@ sealed class TypeChecker
         t.TypeArguments.Count == 0
             ? t.Name
             : $"{t.Name}<{string.Join(",", t.TypeArguments.Select(TypeRefKey))}>";
+    private static string InterfaceMethodKey(string methodName, IReadOnlyList<TypeRef> paramTypes) =>
+        $"{methodName}({string.Join(",", paramTypes.Select(TypeRefKey))})";
     private static string ConstructorDispatchKey(string typeName, IReadOnlyList<TypeRef> paramTypes) =>
         $"{typeName}({string.Join(",", paramTypes.Select(TypeRefKey))})";
     private static string MethodDispatchKey(string typeName, string methodName, IReadOnlyList<TypeRef> paramTypes) =>
         $"{typeName}.{methodName}({string.Join(",", paramTypes.Select(TypeRefKey))})";
+
+    private static bool IsCompatibleInterfaceReturn(InterfaceMethodSignature ifaceMethod, MethodSignature objectMethod)
+    {
+        if (ifaceMethod.ReturnType != objectMethod.ReturnType)
+            return false;
+        if (ifaceMethod.ReturnType != TypeSymbol.Object)
+            return true;
+        return SameTypeRef(ifaceMethod.ReturnTypeRef, objectMethod.ReturnTypeRef);
+    }
+
+    private static bool SameTypeRef(TypeRef a, TypeRef b)
+    {
+        if (!string.Equals(a.Name, b.Name, StringComparison.Ordinal))
+            return false;
+        if (a.TypeArguments.Count != b.TypeArguments.Count)
+            return false;
+        for (int i = 0; i < a.TypeArguments.Count; i++)
+        {
+            if (!SameTypeRef(a.TypeArguments[i], b.TypeArguments[i]))
+                return false;
+        }
+        return true;
+    }
 
     private static int GetLine(Expr expr) => expr switch
     {
@@ -864,6 +999,16 @@ sealed class TypeChecker
         string DispatchKey,
         Block Body,
         IReadOnlyList<Parameter> Parameters);
+    private sealed record InterfaceMethodSignature(
+        Token Name,
+        TypeRef ReturnTypeRef,
+        TypeSymbol ReturnType,
+        IReadOnlyList<TypeRef> ParamTypeRefs,
+        IReadOnlyList<TypeSymbol> ParamTypes,
+        string SignatureKey);
+    private sealed record InterfaceSymbol(
+        Token Name,
+        Dictionary<string, InterfaceMethodSignature> Methods);
     private sealed record ObjectSymbol(
         Token Name,
         Dictionary<string, TypeRef> Fields,

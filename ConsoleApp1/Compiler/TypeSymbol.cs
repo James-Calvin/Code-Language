@@ -10,5 +10,6 @@ enum TypeSymbol
     Array,
     Optional,
     Object,
+    Interface,
     Unknown
 }

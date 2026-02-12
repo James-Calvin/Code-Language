@@ -1,0 +1,30 @@
+interface IValue {
+  function<integer> read();
+}
+
+object One {
+  constructor() { }
+  function<integer> read() {
+    return 1;
+  }
+}
+
+object Two {
+  constructor() { }
+  function<integer> read() {
+    return 2;
+  }
+}
+
+implement IValue for One {
+  read() via One.read;
+}
+
+implement IValue for Two {
+  read() via Two.read;
+}
+
+IValue value = new One();
+print(value.read());
+value = new Two();
+print(value.read());

@@ -39,7 +39,7 @@ dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- --disasm path/to/file.byt
 ```
 dotnet run --project ConsoleApp1/ConsoleApp1.csproj --run-tests
 ```
-Test harness covers VM ops, compiler integration (print, arithmetic, functions, loops, foreach, strings, panic), and fuzz suites (arithmetic, boolean, strings, loop sums, panic).
+Test harness covers VM ops, compiler integration (print, arithmetic, functions, loops, foreach, strings, interfaces, panic), and fuzz suites (arithmetic, boolean, strings, loop sums, panic).
 
 ## Project conventions
 - Source files end with `.code`; compiled bytecode uses `.bytecode`
@@ -48,10 +48,11 @@ Test harness covers VM ops, compiler integration (print, arithmetic, functions, 
 - Optionals: `optional<T>` with `none`, `.hasValue`, `.value`, `.or(fallback)`
 - Objects: `object` declarations with constructors/methods, `new Type(...)`, field access/assignment (`obj.field`, `obj.field = ...`), method calls (`obj.method(...)`)
 - Interfaces: `interface` declarations + explicit `implement Interface for Object { ... via Object.method; }` conformance checks
+- Interface-typed local variables and runtime-dispatched interface method calls
 - Method/constructor overload resolution: compile-time signature-based dispatch (with best-match conversions)
 - Constructor rules: objects with fields must define constructors, and constructors must assign all fields
 - Errors are reported with line/column and call stack when possible
-- Interface dispatch is not implemented yet (no interface-typed vars/calls)
+- Current interface dispatch scope: interface-typed locals and calls (broader surfaces like fields/modules are still planned)
 
 ## Roadmap (high level)
 Active priorities: optimization of temp/liveness, collections over real data structures, modules/imports, stdlib growth, and tooling (formatter/linter). Full detail in `docs/features-roadmap.md`.

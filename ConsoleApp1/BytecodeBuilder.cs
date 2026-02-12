@@ -136,6 +136,12 @@ sealed class BytecodeBuilder
     public BytecodeBuilder NewObject(string typeName) => AddStringOperand(OpCode.NewObject, typeName);
     public BytecodeBuilder GetField(string fieldName) => AddStringOperand(OpCode.GetField, fieldName);
     public BytecodeBuilder SetField(string fieldName) => AddStringOperand(OpCode.SetField, fieldName);
+    public BytecodeBuilder GetTypeName()
+    {
+        RecordDebug();
+        _bytes.Add((byte)OpCode.GetTypeName);
+        return this;
+    }
 
     public BytecodeBuilder Call(string label, int argCount, int localCount)
     {

@@ -61,6 +61,7 @@ static class Disassembler
                 case OpCode.OptionalValue:
                 case OpCode.OptionalOr:
                 case OpCode.ThrowError:
+                case OpCode.GetTypeName:
                 case OpCode.Halt:
                     break;
                 case OpCode.PushString:

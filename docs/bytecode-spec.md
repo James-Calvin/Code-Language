@@ -49,6 +49,7 @@ Version: 0.8 (2026-02-12)
 | 0x1F | NEW_OBJECT | int32 length, UTF-8 type name | +1 | create VM object instance |
 | 0x20 | GET_FIELD | int32 length, UTF-8 field name | 0 | pop object, push field value; throws if unset/missing |
 | 0x21 | SET_FIELD | int32 length, UTF-8 field name | -1 | pop value, pop object, assign field, push value |
+| 0x22 | GET_TYPE_NAME | — | 0 | pop object, push runtime object type name string |
 | 0xFF | HALT | — | 0 | stop execution |
 
 ## Planned additions
@@ -65,4 +66,4 @@ Version: 0.8 (2026-02-12)
 - ARRAY_SET pops value, index, array; writes in place; returns the value.
 - Objects are stored as VM-managed instances with a type name and field dictionary; field access is name-based via GET_FIELD/SET_FIELD.
 - Object methods currently lower to regular CALL sites with implicit `this` prepended to explicit arguments; overload choice is resolved at compile time.
-- Interface declarations and `implement` mappings are compile-time metadata only in v0.8; they emit no dedicated bytecode and do not change runtime dispatch yet.
+- Interface declarations and `implement` mappings remain compile-time metadata in v0.8; interface-typed calls lower to runtime dispatch chains that use `GET_TYPE_NAME`, string equality, and regular `CALL`.

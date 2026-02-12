@@ -7,29 +7,35 @@ sealed class CodeGenerator
 {
     private readonly BytecodeBuilder _builder = BytecodeBuilder.New();
     private Dictionary<string, int> _locals = new(StringComparer.Ordinal);
-    private Dictionary<string, string> _localObjectTypes = new(StringComparer.Ordinal);
+    private Dictionary<string, TypeRef> _localDeclaredTypes = new(StringComparer.Ordinal);
     private int _nextLocalIndex;
     private int _functionLocalHighWater;
     private readonly Stack<Dictionary<string, int>> _scopeStack = new();
-    private readonly Stack<Dictionary<string, string>> _scopeObjectTypesStack = new();
+    private readonly Stack<Dictionary<string, TypeRef>> _scopeDeclaredTypesStack = new();
     private readonly Stack<int> _nextLocalStack = new();
     private readonly List<int> _freeTemps = new();
     private readonly Dictionary<string, (string Label, int ParamCount, int LocalCount)> _functions = new(StringComparer.Ordinal);
     private readonly Dictionary<string, (string Label, int ParamCount, int LocalCount)> _constructors = new(StringComparer.Ordinal);
     private readonly Dictionary<string, (string Label, int ParamCount, int LocalCount)> _methods = new(StringComparer.Ordinal);
     private readonly HashSet<string> _objectNames = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, Dictionary<string, string>> _objectFieldObjectTypes = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _interfaceNames = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, Dictionary<string, TypeRef>> _objectFieldTypes = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, List<InterfaceDispatchTarget>> _interfaceDispatch = new(StringComparer.Ordinal);
     private int _labelCounter;
 
     public byte[] Generate(IList<Stmt> statements)
     {
         var functionDecls = new List<FunctionDecl>();
         var objectDecls = new List<ObjectDecl>();
+        var interfaceDecls = new List<InterfaceDecl>();
+        var implementDecls = new List<ImplementDecl>();
         var topLevel = new List<Stmt>();
         foreach (var stmt in statements)
         {
             if (stmt is FunctionDecl fd) functionDecls.Add(fd);
             else if (stmt is ObjectDecl od) objectDecls.Add(od);
+            else if (stmt is InterfaceDecl iface) interfaceDecls.Add(iface);
+            else if (stmt is ImplementDecl impl) implementDecls.Add(impl);
             else topLevel.Add(stmt);
         }
 
@@ -47,13 +53,12 @@ sealed class CodeGenerator
         foreach (var obj in objectDecls)
         {
             _objectNames.Add(obj.Name.Lexeme);
-            var fieldTypes = new Dictionary<string, string>(StringComparer.Ordinal);
+            var fieldTypes = new Dictionary<string, TypeRef>(StringComparer.Ordinal);
             foreach (var field in obj.Fields)
             {
-                if (IsObjectType(field.Type))
-                    fieldTypes[field.Name.Lexeme] = field.Type.Name;
+                fieldTypes[field.Name.Lexeme] = field.Type;
             }
-            _objectFieldObjectTypes[obj.Name.Lexeme] = fieldTypes;
+            _objectFieldTypes[obj.Name.Lexeme] = fieldTypes;
             foreach (var ctor in obj.Constructors)
             {
                 string key = ConstructorKey(obj.Name.Lexeme, ctor.Parameters);
@@ -67,6 +72,11 @@ sealed class CodeGenerator
                 _methods[key] = (label, method.Parameters.Count + 1, 0); // +1 for implicit this
             }
         }
+        foreach (var iface in interfaceDecls)
+        {
+            _interfaceNames.Add(iface.Name.Lexeme);
+        }
+        BuildInterfaceDispatch(implementDecls);
 
         // Emit object methods/constructors before normal functions.
         foreach (var obj in objectDecls)
@@ -112,8 +122,8 @@ sealed class CodeGenerator
         {
             var param = fn.Parameters[i];
             _locals[param.Name.Lexeme] = _nextLocalIndex++;
-            if (param.Type is not null && IsObjectType(param.Type))
-                _localObjectTypes[param.Name.Lexeme] = param.Type.Name;
+            if (param.Type is not null)
+                _localDeclaredTypes[param.Name.Lexeme] = param.Type;
             _functionLocalHighWater = Math.Max(_functionLocalHighWater, _nextLocalIndex);
         }
 
@@ -156,15 +166,15 @@ sealed class CodeGenerator
 
         // implicit this
         _locals["this"] = _nextLocalIndex++;
-        _localObjectTypes["this"] = obj.Name.Lexeme;
+        _localDeclaredTypes["this"] = new TypeRef(obj.Name.Lexeme, null, obj.Name.Line, obj.Name.Column);
         _functionLocalHighWater = Math.Max(_functionLocalHighWater, _nextLocalIndex);
 
         for (int i = 0; i < ctor.Parameters.Count; i++)
         {
             var param = ctor.Parameters[i];
             _locals[param.Name.Lexeme] = _nextLocalIndex++;
-            if (param.Type is not null && IsObjectType(param.Type))
-                _localObjectTypes[param.Name.Lexeme] = param.Type.Name;
+            if (param.Type is not null)
+                _localDeclaredTypes[param.Name.Lexeme] = param.Type;
             _functionLocalHighWater = Math.Max(_functionLocalHighWater, _nextLocalIndex);
         }
 
@@ -189,15 +199,15 @@ sealed class CodeGenerator
         PushScope();
 
         _locals["this"] = _nextLocalIndex++;
-        _localObjectTypes["this"] = obj.Name.Lexeme;
+        _localDeclaredTypes["this"] = new TypeRef(obj.Name.Lexeme, null, obj.Name.Line, obj.Name.Column);
         _functionLocalHighWater = Math.Max(_functionLocalHighWater, _nextLocalIndex);
 
         for (int i = 0; i < method.Parameters.Count; i++)
         {
             var param = method.Parameters[i];
             _locals[param.Name.Lexeme] = _nextLocalIndex++;
-            if (param.Type is not null && IsObjectType(param.Type))
-                _localObjectTypes[param.Name.Lexeme] = param.Type.Name;
+            if (param.Type is not null)
+                _localDeclaredTypes[param.Name.Lexeme] = param.Type;
             _functionLocalHighWater = Math.Max(_functionLocalHighWater, _nextLocalIndex);
         }
 
@@ -217,8 +227,7 @@ sealed class CodeGenerator
             case VarDecl v:
                 SetLoc(v.Name);
                 int slot = GetOrAllocate(v.Name.Lexeme);
-                if (IsObjectType(v.Type))
-                    _localObjectTypes[v.Name.Lexeme] = v.Type.Name;
+                _localDeclaredTypes[v.Name.Lexeme] = v.Type;
                 if (v.Initializer is not null)
                 {
                     Emit(v.Initializer);
@@ -444,22 +453,18 @@ sealed class CodeGenerator
             case MethodCallExpr mc:
             {
                 SetLoc(mc.MethodName);
-                Emit(mc.Target);
-                foreach (var arg in mc.Arguments)
+                var targetType = TryResolveTypeRef(mc.Target);
+                if (targetType is null)
+                    throw new InvalidOperationException($"Unable to resolve method target type for '{mc.MethodName.Lexeme}'");
+
+                if (mc.ResolvedInterfaceName is not null || _interfaceNames.Contains(targetType.Name))
                 {
-                    Emit(arg);
+                    EmitInterfaceMethodCall(mc, targetType);
                 }
-
-                string? objectType = TryResolveObjectTypeName(mc.Target);
-                if (objectType is null)
-                    throw new InvalidOperationException($"Unable to resolve object type for method '{mc.MethodName.Lexeme}'");
-
-                string key = mc.ResolvedMethodKey ?? MethodKey(objectType, mc.MethodName.Lexeme, mc.Arguments.Count);
-                if (!_methods.TryGetValue(key, out var info))
-                    throw new InvalidOperationException($"Undefined method '{objectType}.{mc.MethodName.Lexeme}' with {mc.Arguments.Count} args");
-
-                int frameSize = Math.Max(info.LocalCount, info.ParamCount);
-                _builder.Call(info.Label, info.ParamCount, frameSize);
+                else
+                {
+                    EmitObjectMethodCall(mc, targetType);
+                }
                 break;
             }
 
@@ -632,31 +637,141 @@ sealed class CodeGenerator
     }
 
     private static string MethodKey(string typeName, string methodName, int arity) => $"{typeName}.{methodName}#arity:{arity}";
-    private bool IsObjectType(TypeRef type) =>
-        !type.IsArray && !type.IsOptional && type.Name is not "integer" and not "whole" and not "real" and not "boolean" and not "string";
+    private static string InterfaceMethodKey(string methodName, IReadOnlyList<Parameter> parameters)
+    {
+        var parts = new List<string>(parameters.Count);
+        foreach (var p in parameters)
+        {
+            if (p.Type is null)
+                throw new InvalidOperationException($"Interface mapping parameter '{p.Name.Lexeme}' is missing a type.");
+            parts.Add(TypeRefKey(p.Type));
+        }
+        return $"{methodName}({string.Join(",", parts)})";
+    }
 
-    private string? TryResolveObjectTypeName(Expr expr)
+    private static string InterfaceDispatchKey(string interfaceName, string interfaceMethodKey) =>
+        $"{interfaceName}.{interfaceMethodKey}";
+
+    private void BuildInterfaceDispatch(IReadOnlyList<ImplementDecl> implementDecls)
+    {
+        foreach (var impl in implementDecls)
+        {
+            foreach (var map in impl.Methods)
+            {
+                string ifaceMethodKey = InterfaceMethodKey(map.InterfaceMethodName.Lexeme, map.Parameters);
+                string dispatchKey = InterfaceDispatchKey(impl.InterfaceName.Lexeme, ifaceMethodKey);
+                string objectMethodKey = MethodKey(impl.ObjectName.Lexeme, map.ViaMethodName.Lexeme, map.Parameters);
+                if (!_interfaceDispatch.TryGetValue(dispatchKey, out var targets))
+                {
+                    targets = new List<InterfaceDispatchTarget>();
+                    _interfaceDispatch[dispatchKey] = targets;
+                }
+                targets.Add(new InterfaceDispatchTarget(impl.ObjectName.Lexeme, objectMethodKey));
+            }
+        }
+    }
+
+    private TypeRef? TryResolveTypeRef(Expr expr)
     {
         switch (expr)
         {
             case Variable v:
-                return _localObjectTypes.TryGetValue(v.Name.Lexeme, out var t) ? t : null;
+                return _localDeclaredTypes.TryGetValue(v.Name.Lexeme, out var t) ? t : null;
             case NewObjectExpr no:
-                return no.TypeName.Lexeme;
+                return new TypeRef(no.TypeName.Lexeme, null, no.TypeName.Line, no.TypeName.Column);
             case FieldAccessExpr fa:
             {
-                var ownerType = TryResolveObjectTypeName(fa.Target);
+                var ownerType = TryResolveTypeRef(fa.Target);
                 if (ownerType is null) return null;
-                if (_objectFieldObjectTypes.TryGetValue(ownerType, out var fields) &&
+                if (_objectFieldTypes.TryGetValue(ownerType.Name, out var fields) &&
                     fields.TryGetValue(fa.Name.Lexeme, out var fieldType))
                 {
                     return fieldType;
                 }
                 return null;
             }
+            case MethodCallExpr mc:
+                return mc.ResolvedReturnTypeRef;
             default:
                 return null;
         }
+    }
+
+    private void EmitObjectMethodCall(MethodCallExpr mc, TypeRef targetType)
+    {
+        Emit(mc.Target);
+        foreach (var arg in mc.Arguments)
+        {
+            Emit(arg);
+        }
+
+        string key = mc.ResolvedMethodKey ?? MethodKey(targetType.Name, mc.MethodName.Lexeme, mc.Arguments.Count);
+        if (!_methods.TryGetValue(key, out var info))
+            throw new InvalidOperationException($"Undefined method '{targetType.Name}.{mc.MethodName.Lexeme}' with {mc.Arguments.Count} args");
+
+        int frameSize = Math.Max(info.LocalCount, info.ParamCount);
+        _builder.Call(info.Label, info.ParamCount, frameSize);
+    }
+
+    private void EmitInterfaceMethodCall(MethodCallExpr mc, TypeRef interfaceType)
+    {
+        if (mc.ResolvedInterfaceMethodKey is null)
+            throw new InvalidOperationException($"Missing resolved interface method key for '{interfaceType.Name}.{mc.MethodName.Lexeme}'");
+        string ifaceMethodKey = mc.ResolvedInterfaceMethodKey;
+        string dispatchKey = InterfaceDispatchKey(interfaceType.Name, ifaceMethodKey);
+        if (!_interfaceDispatch.TryGetValue(dispatchKey, out var targets) || targets.Count == 0)
+            throw new InvalidOperationException($"No dispatch targets for interface method '{interfaceType.Name}.{mc.MethodName.Lexeme}'");
+
+        int targetSlot = AllocateTemp();
+        Emit(mc.Target);
+        _builder.Store(targetSlot);
+
+        var argSlots = new List<int>(mc.Arguments.Count);
+        foreach (var arg in mc.Arguments)
+        {
+            int argSlot = AllocateTemp();
+            Emit(arg);
+            _builder.Store(argSlot);
+            argSlots.Add(argSlot);
+        }
+
+        int typeNameSlot = AllocateTemp();
+        _builder.Load(targetSlot);
+        _builder.GetTypeName();
+        _builder.Store(typeNameSlot);
+
+        string endLabel = NewLabel("iface_call_end");
+        for (int i = 0; i < targets.Count; i++)
+        {
+            string nextLabel = NewLabel("iface_call_next");
+            var target = targets[i];
+
+            _builder.Load(typeNameSlot);
+            _builder.PushString(target.ObjectTypeName);
+            _builder.Eq();
+            _builder.JumpIfZero(nextLabel);
+
+            _builder.Load(targetSlot);
+            for (int a = 0; a < argSlots.Count; a++)
+                _builder.Load(argSlots[a]);
+
+            if (!_methods.TryGetValue(target.ObjectMethodDispatchKey, out var info))
+                throw new InvalidOperationException($"Undefined mapped method '{target.ObjectMethodDispatchKey}'");
+
+            int frameSize = Math.Max(info.LocalCount, info.ParamCount);
+            _builder.Call(info.Label, info.ParamCount, frameSize);
+            _builder.Jump(endLabel);
+            _builder.Label(nextLabel);
+        }
+
+        _builder.PushString($"No implementation for interface '{interfaceType.Name}.{mc.MethodName.Lexeme}' on runtime object");
+        _builder.ThrowError();
+        _builder.Label(endLabel);
+
+        ReleaseTemp(typeNameSlot);
+        foreach (var argSlot in argSlots)
+            ReleaseTemp(argSlot);
+        ReleaseTemp(targetSlot);
     }
 
     private bool HasConstructors(string typeName)
@@ -870,17 +985,19 @@ sealed class CodeGenerator
     private void PushScope()
     {
         _scopeStack.Push(_locals);
-        _scopeObjectTypesStack.Push(_localObjectTypes);
+        _scopeDeclaredTypesStack.Push(_localDeclaredTypes);
         _nextLocalStack.Push(_nextLocalIndex);
         _locals = new Dictionary<string, int>(StringComparer.Ordinal);
-        _localObjectTypes = new Dictionary<string, string>(StringComparer.Ordinal);
+        _localDeclaredTypes = new Dictionary<string, TypeRef>(StringComparer.Ordinal);
     }
 
     private void PopScope()
     {
         _locals = _scopeStack.Pop();
-        _localObjectTypes = _scopeObjectTypesStack.Pop();
+        _localDeclaredTypes = _scopeDeclaredTypesStack.Pop();
         _nextLocalIndex = _nextLocalStack.Pop();
     }
+
+    private sealed record InterfaceDispatchTarget(string ObjectTypeName, string ObjectMethodDispatchKey);
 
 }

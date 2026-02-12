@@ -40,6 +40,7 @@ enum OpCode : byte
     NewObject = 0x1F,
     GetField = 0x20,
     SetField = 0x21,
+    GetTypeName = 0x22,
     Halt = 0xFF
 }
 
@@ -347,6 +348,19 @@ sealed class Vm
                     }
                     vmObj.Fields[fieldName] = value;
                     _stack.Push(value);
+                    break;
+                }
+
+                case OpCode.GetTypeName:
+                {
+                    EnsureStack(1);
+                    var obj = _stack.Pop();
+                    if (obj is not VmObject vmObj)
+                    {
+                        throwRuntimeType("GetTypeName expects object");
+                        break;
+                    }
+                    _stack.Push(vmObj.TypeName);
                     break;
                 }
 

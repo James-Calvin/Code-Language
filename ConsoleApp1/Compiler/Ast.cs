@@ -143,6 +143,9 @@ sealed class MethodCallExpr : Expr
     public Token MethodName { get; }
     public IReadOnlyList<Expr> Arguments { get; }
     public string? ResolvedMethodKey { get; set; }
+    public string? ResolvedInterfaceName { get; set; }
+    public string? ResolvedInterfaceMethodKey { get; set; }
+    public TypeRef? ResolvedReturnTypeRef { get; set; }
     public MethodCallExpr(Expr target, Token methodName, IReadOnlyList<Expr> args)
     {
         Target = target; MethodName = methodName; Arguments = args;

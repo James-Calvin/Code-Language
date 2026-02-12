@@ -9,6 +9,9 @@ sealed class TypeChecker
     private readonly Dictionary<string, FunctionSignature> _functions = new(StringComparer.Ordinal);
     private readonly Dictionary<string, ObjectSymbol> _objects = new(StringComparer.Ordinal);
     private readonly Dictionary<string, InterfaceSymbol> _interfaces = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _interfaceObjectPairs = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, HashSet<string>> _interfaceMethodImplementers = new(StringComparer.Ordinal);
+    private TypeRef? _currentReturnTypeRef;
 
     public void Check(IList<Stmt> statements)
     {
@@ -144,6 +147,9 @@ sealed class TypeChecker
                 throw new CompilerException($"Unknown interface '{impl.InterfaceName.Lexeme}'", impl.InterfaceName.Line, impl.InterfaceName.Column);
             if (!_objects.TryGetValue(impl.ObjectName.Lexeme, out var obj))
                 throw new CompilerException($"Unknown object '{impl.ObjectName.Lexeme}'", impl.ObjectName.Line, impl.ObjectName.Column);
+            string pairKey = $"{impl.InterfaceName.Lexeme}->{impl.ObjectName.Lexeme}";
+            if (!_interfaceObjectPairs.Add(pairKey))
+                throw new CompilerException($"Interface '{impl.InterfaceName.Lexeme}' is already implemented for object '{impl.ObjectName.Lexeme}'", impl.ObjectName.Line, impl.ObjectName.Column);
 
             var mapped = new HashSet<string>(StringComparer.Ordinal);
             foreach (var map in impl.Methods)
@@ -183,6 +189,14 @@ sealed class TypeChecker
                         map.ViaMethodName.Line,
                         map.ViaMethodName.Column);
                 }
+
+                string ifaceDispatchKey = InterfaceDispatchKey(impl.InterfaceName.Lexeme, ifaceKey);
+                if (!_interfaceMethodImplementers.TryGetValue(ifaceDispatchKey, out var implementers))
+                {
+                    implementers = new HashSet<string>(StringComparer.Ordinal);
+                    _interfaceMethodImplementers[ifaceDispatchKey] = implementers;
+                }
+                implementers.Add(impl.ObjectName.Lexeme);
             }
 
             foreach (var ifaceMethod in iface.Methods.Values)
@@ -205,7 +219,9 @@ sealed class TypeChecker
                     throw new CompilerException($"Function '{fn.Name.Lexeme}' already defined", fn.Name.Line, fn.Name.Column);
                 var sig = new FunctionSignature(
                     Return: MapType(fn.ReturnType),
-                    Params: fn.Parameters.Select(p => MapType(p.Type!)).ToList()
+                    ReturnTypeRef: fn.ReturnType,
+                    Params: fn.Parameters.Select(p => MapType(p.Type!)).ToList(),
+                    ParamTypeRefs: fn.Parameters.Select(p => p.Type!).ToList()
                 );
                 _functions[fn.Name.Lexeme] = sig;
             }
@@ -244,6 +260,8 @@ sealed class TypeChecker
     {
         var env = new TypeEnvironment();
         var retType = MapType(fn.ReturnType!);
+        var previousReturnRef = _currentReturnTypeRef;
+        _currentReturnTypeRef = fn.ReturnType;
         // params occupy env
         for (int i = 0; i < fn.Parameters.Count; i++)
         {
@@ -252,6 +270,7 @@ sealed class TypeChecker
             env.Define(param.Name.Lexeme, pType, param.Type, param.Name.Line, param.Name.Column, assigned: true);
         }
         bool allPathsReturn = CheckStmt(fn.Body, env, retType);
+        _currentReturnTypeRef = previousReturnRef;
         if (!allPathsReturn)
             throw new CompilerException($"Function '{fn.Name.Lexeme}' may not return a value on all paths", fn.Name.Line, fn.Name.Column);
     }
@@ -275,7 +294,10 @@ sealed class TypeChecker
             }
 
             // Constructor bodies are type-checked like regular blocks. Explicit return is currently not supported.
+            var previousReturnRef = _currentReturnTypeRef;
+            _currentReturnTypeRef = null;
             CheckStmt(ctorSig.Body, env, currentReturn: null);
+            _currentReturnTypeRef = previousReturnRef;
             EnsureAllFieldsInitialized(obj, ctorSig.Body);
         }
     }
@@ -290,6 +312,8 @@ sealed class TypeChecker
             var env = new TypeEnvironment();
             var thisType = new TypeRef(obj.Name.Lexeme, null, obj.Name.Line, obj.Name.Column);
             env.Define("this", TypeSymbol.Object, thisType, method.Name.Line, method.Name.Column, assigned: true);
+            var previousReturnRef = _currentReturnTypeRef;
+            _currentReturnTypeRef = method.ReturnTypeRef;
 
             for (int i = 0; i < method.Parameters.Count; i++)
             {
@@ -299,6 +323,7 @@ sealed class TypeChecker
             }
 
             bool allPathsReturn = CheckStmt(method.Body, env, method.ReturnType);
+            _currentReturnTypeRef = previousReturnRef;
             if (!allPathsReturn)
                 throw new CompilerException($"Method '{obj.Name.Lexeme}.{method.Name.Lexeme}' may not return a value on all paths", method.Name.Line, method.Name.Column);
         }
@@ -379,7 +404,8 @@ sealed class TypeChecker
                 if (v.Initializer is not null)
                 {
                     var init = CheckExpr(v.Initializer, env, currentReturn);
-                    RequireAssignable(t, init, v.Type.Line, v.Type.Column, "Initializer type mismatch");
+                    var initRef = ResolveExprTypeRef(v.Initializer, env);
+                    RequireAssignable(t, v.Type, init, initRef, v.Type.Line, v.Type.Column, "Initializer type mismatch");
                 }
                 bool assignedFlag = hasInit || t == TypeSymbol.Optional;
                 env.Define(v.Name.Lexeme, t, v.Type, v.Name.Line, v.Name.Column, assignedFlag);
@@ -434,7 +460,8 @@ sealed class TypeChecker
                 if (currentReturn is null)
                     throw new CompilerException("Return outside function", GetStmtLine(r), GetStmtCol(r));
                 var rval = r.Value is null ? TypeSymbol.Integer : CheckExpr(r.Value, env, currentReturn);
-                RequireAssignable(currentReturn.Value, rval, GetStmtLine(r), GetStmtCol(r), "Return type mismatch");
+                var retRef = r.Value is null ? null : ResolveExprTypeRef(r.Value, env);
+                RequireAssignable(currentReturn.Value, _currentReturnTypeRef, rval, retRef, GetStmtLine(r), GetStmtCol(r), "Return type mismatch");
                 return true;
 
             case PrintStmt p:
@@ -557,16 +584,18 @@ sealed class TypeChecker
                 var expectedType = ResolveFieldType(fset.Target, env);
                 if (expectedType is TypeSymbol expected)
                 {
-                    RequireAssignable(expected, rhsType, fset.Target.Name.Line, fset.Target.Name.Column, "Field assignment type mismatch");
+                    var expectedTypeRef = ResolveFieldTypeRef(fset.Target, env);
+                    var fieldValueTypeRef = ResolveExprTypeRef(fset.Value, env);
+                    RequireAssignable(expected, expectedTypeRef, rhsType, fieldValueTypeRef, fset.Target.Name.Line, fset.Target.Name.Column, "Field assignment type mismatch");
                 }
                 return rhsType;
             }
             case MethodCallExpr mc:
             {
                 var targetType = CheckExpr(mc.Target, env, currentReturn);
-                Require(targetType == TypeSymbol.Object, mc.Target, "Method call target must be an object");
+                Require(targetType == TypeSymbol.Object || targetType == TypeSymbol.Interface, mc.Target, "Method call target must be an object or interface");
                 var targetTypeRef = ResolveExprTypeRef(mc.Target, env);
-                if (targetTypeRef is null || !_objects.TryGetValue(targetTypeRef.Name, out var obj))
+                if (targetTypeRef is null)
                     throw new CompilerException("Could not resolve method target type", mc.MethodName.Line, mc.MethodName.Column);
 
                 var argTypes = new List<(TypeSymbol Symbol, TypeRef? Ref)>(mc.Arguments.Count);
@@ -578,6 +607,33 @@ sealed class TypeChecker
                     argTypes.Add((argType, argTypeRef));
                 }
 
+                if (_interfaces.TryGetValue(targetTypeRef.Name, out var iface))
+                {
+                    if (!TryResolveBestInterfaceMethod(iface, mc.MethodName.Lexeme, argTypes, out var ifaceMethod, out bool ambiguousIface))
+                    {
+                        if (ambiguousIface)
+                            throw new CompilerException($"Ambiguous method call '{targetTypeRef.Name}.{mc.MethodName.Lexeme}'", mc.MethodName.Line, mc.MethodName.Column);
+                        throw new CompilerException($"Interface '{targetTypeRef.Name}' has no matching method overload '{mc.MethodName.Lexeme}'", mc.MethodName.Line, mc.MethodName.Column);
+                    }
+
+                    if (!HasAnyImplementationForMethod(targetTypeRef.Name, ifaceMethod!.SignatureKey))
+                    {
+                        throw new CompilerException(
+                            $"No object implements interface method '{targetTypeRef.Name}.{mc.MethodName.Lexeme}' with this signature",
+                            mc.MethodName.Line,
+                            mc.MethodName.Column);
+                    }
+
+                    mc.ResolvedMethodKey = null;
+                    mc.ResolvedInterfaceName = targetTypeRef.Name;
+                    mc.ResolvedInterfaceMethodKey = ifaceMethod.SignatureKey;
+                    mc.ResolvedReturnTypeRef = ifaceMethod.ReturnTypeRef;
+                    return ifaceMethod.ReturnType;
+                }
+
+                if (!_objects.TryGetValue(targetTypeRef.Name, out var obj))
+                    throw new CompilerException("Could not resolve method target type", mc.MethodName.Line, mc.MethodName.Column);
+
                 if (!TryResolveBestMethod(obj, mc.MethodName.Lexeme, argTypes, out var method, out bool ambiguous))
                 {
                     if (ambiguous)
@@ -586,6 +642,9 @@ sealed class TypeChecker
                 }
 
                 mc.ResolvedMethodKey = method!.DispatchKey;
+                mc.ResolvedInterfaceName = null;
+                mc.ResolvedInterfaceMethodKey = null;
+                mc.ResolvedReturnTypeRef = method.ReturnTypeRef;
                 return method.ReturnType;
             }
             case Variable v:
@@ -593,7 +652,9 @@ sealed class TypeChecker
             case Assign a:
                 var rhs = CheckExpr(a.Value, env, currentReturn);
                 var lhsType = env.LookupForReadOrWrite(a.Name, requireAssigned: false);
-                RequireAssignable(lhsType, rhs, a.Name.Line, a.Name.Column, "Assignment type mismatch");
+                var lhsTypeRef = env.TryGetDeclaredType(a.Name);
+                var rhsTypeRef = ResolveExprTypeRef(a.Value, env);
+                RequireAssignable(lhsType, lhsTypeRef, rhs, rhsTypeRef, a.Name.Line, a.Name.Column, "Assignment type mismatch");
                 env.MarkAssigned(a.Name);
                 return lhsType;
             case Call c:
@@ -604,7 +665,8 @@ sealed class TypeChecker
                 for (int i = 0; i < c.Arguments.Count; i++)
                 {
                     var argType = CheckExpr(c.Arguments[i], env, currentReturn);
-                    RequireAssignable(sig.Params[i], argType, c.Callee.Line, c.Callee.Column, $"Argument {i} type mismatch for '{c.Callee.Lexeme}'");
+                    var argTypeRef = ResolveExprTypeRef(c.Arguments[i], env);
+                    RequireAssignable(sig.Params[i], sig.ParamTypeRefs[i], argType, argTypeRef, c.Callee.Line, c.Callee.Column, $"Argument {i} type mismatch for '{c.Callee.Lexeme}'");
                 }
                 return sig.Return;
             case Unary u:
@@ -662,7 +724,7 @@ sealed class TypeChecker
             "string" => TypeSymbol.String,
             "array" => TypeSymbol.Array,
             "optional" => TypeSymbol.Optional,
-            _ => TypeSymbol.Object
+            _ => _interfaces.ContainsKey(typeRef.Name) ? TypeSymbol.Interface : TypeSymbol.Object
         };
     }
 
@@ -727,7 +789,47 @@ sealed class TypeChecker
         return best is not null;
     }
 
-    private static bool TryCandidateCost(
+    private bool TryResolveBestInterfaceMethod(
+        InterfaceSymbol iface,
+        string methodName,
+        IReadOnlyList<(TypeSymbol Symbol, TypeRef? Ref)> args,
+        out InterfaceMethodSignature? best,
+        out bool ambiguous)
+    {
+        best = null;
+        ambiguous = false;
+        int bestCost = int.MaxValue;
+
+        foreach (var method in iface.Methods.Values.Where(m => string.Equals(m.Name.Lexeme, methodName, StringComparison.Ordinal)))
+        {
+            if (!TryCandidateCost(method.ParamTypes.ToList(), method.ParamTypeRefs, args, out int cost))
+                continue;
+
+            if (cost < bestCost)
+            {
+                best = method;
+                bestCost = cost;
+                ambiguous = false;
+            }
+            else if (cost == bestCost)
+            {
+                ambiguous = true;
+            }
+        }
+
+        return best is not null;
+    }
+
+    private bool ImplementsInterface(string objectTypeName, string interfaceName) =>
+        _interfaceObjectPairs.Contains($"{interfaceName}->{objectTypeName}");
+
+    private bool HasAnyImplementationForMethod(string interfaceName, string interfaceMethodKey)
+    {
+        string dispatchKey = InterfaceDispatchKey(interfaceName, interfaceMethodKey);
+        return _interfaceMethodImplementers.TryGetValue(dispatchKey, out var implementers) && implementers.Count > 0;
+    }
+
+    private bool TryCandidateCost(
         IList<TypeSymbol> expectedSymbols,
         IReadOnlyList<TypeRef> expectedTypeRefs,
         IReadOnlyList<(TypeSymbol Symbol, TypeRef? Ref)> actuals,
@@ -745,7 +847,7 @@ sealed class TypeChecker
         return true;
     }
 
-    private static bool TryConversionCost(
+    private bool TryConversionCost(
         TypeSymbol expected,
         TypeRef expectedRef,
         TypeSymbol actual,
@@ -755,13 +857,17 @@ sealed class TypeChecker
         cost = int.MaxValue;
         if (expected == actual)
         {
-            if (expected == TypeSymbol.Object)
+            if (expected is TypeSymbol.Object or TypeSymbol.Interface)
             {
-                if (actualRef is null || !string.Equals(expectedRef.Name, actualRef.Name, StringComparison.Ordinal))
-                    return false;
+                return TryReferenceConversionCost(expectedRef, actualRef, out cost);
             }
             cost = 0;
             return true;
+        }
+
+        if (expected is TypeSymbol.Object or TypeSymbol.Interface)
+        {
+            return TryReferenceConversionCost(expectedRef, actualRef, out cost);
         }
 
         if (expected == TypeSymbol.Optional)
@@ -780,6 +886,29 @@ sealed class TypeChecker
                 return true;
             }
             return false;
+        }
+
+        return false;
+    }
+
+    private bool TryReferenceConversionCost(TypeRef expectedRef, TypeRef? actualRef, out int cost)
+    {
+        cost = int.MaxValue;
+        if (actualRef is null)
+            return false;
+        if (SameTypeRef(expectedRef, actualRef))
+        {
+            cost = 0;
+            return true;
+        }
+
+        bool expectedIsInterface = _interfaces.ContainsKey(expectedRef.Name);
+        bool actualIsObject = _objects.ContainsKey(actualRef.Name);
+
+        if (expectedIsInterface && actualIsObject && ImplementsInterface(actualRef.Name, expectedRef.Name))
+        {
+            cost = 1;
+            return true;
         }
 
         return false;
@@ -808,6 +937,18 @@ sealed class TypeChecker
         return MapType(fieldType);
     }
 
+    private TypeRef? ResolveFieldTypeRef(FieldAccessExpr fieldAccess, TypeEnvironment env)
+    {
+        var targetType = ResolveExprTypeRef(fieldAccess.Target, env);
+        if (targetType is null)
+            return null;
+        if (!_objects.TryGetValue(targetType.Name, out var objSymbol))
+            return null;
+        if (!objSymbol.Fields.TryGetValue(fieldAccess.Name.Lexeme, out var fieldType))
+            throw new CompilerException($"Object '{targetType.Name}' has no field '{fieldAccess.Name.Lexeme}'", fieldAccess.Name.Line, fieldAccess.Name.Column);
+        return fieldType;
+    }
+
     private TypeRef? ResolveExprTypeRef(Expr expr, TypeEnvironment env)
     {
         switch (expr)
@@ -816,6 +957,10 @@ sealed class TypeChecker
                 return env.TryGetDeclaredType(v.Name);
             case NewObjectExpr no:
                 return new TypeRef(no.TypeName.Lexeme, null, no.TypeName.Line, no.TypeName.Column);
+            case Call c:
+                if (_functions.TryGetValue(c.Callee.Lexeme, out var sig))
+                    return sig.ReturnTypeRef;
+                return null;
             case FieldAccessExpr fa:
             {
                 var owner = ResolveExprTypeRef(fa.Target, env);
@@ -826,14 +971,7 @@ sealed class TypeChecker
                 return fieldType;
             }
             case MethodCallExpr mc:
-            {
-                var owner = ResolveExprTypeRef(mc.Target, env);
-                if (owner is null) return null;
-                if (!_objects.TryGetValue(owner.Name, out var objSymbol)) return null;
-                if (mc.ResolvedMethodKey is null || !objSymbol.Methods.TryGetValue(mc.ResolvedMethodKey, out var method))
-                    return null;
-                return method.ReturnType == TypeSymbol.Object ? method.ReturnTypeRef : null;
-            }
+                return mc.ResolvedReturnTypeRef;
             default:
                 return null;
         }
@@ -862,7 +1000,7 @@ sealed class TypeChecker
             default:
                 if (typeRef.TypeArguments.Count > 0)
                     throw new CompilerException($"Type '{typeRef.Name}' does not support type arguments yet", typeRef.Line, typeRef.Column);
-                if (!_objects.ContainsKey(typeRef.Name))
+                if (!_objects.ContainsKey(typeRef.Name) && !_interfaces.ContainsKey(typeRef.Name))
                     throw new CompilerException($"Unknown type '{typeRef.Name}'", typeRef.Line, typeRef.Column);
                 return;
         }
@@ -888,8 +1026,26 @@ sealed class TypeChecker
         if (!condition) throw new CompilerException(message, GetLine(expr), GetCol(expr));
     }
 
-    private static void RequireAssignable(TypeSymbol target, TypeSymbol value, int line, int col, string message)
+    private void RequireAssignable(
+        TypeSymbol target,
+        TypeRef? targetRef,
+        TypeSymbol value,
+        TypeRef? valueRef,
+        int line,
+        int col,
+        string message)
     {
+        if (target is TypeSymbol.Object or TypeSymbol.Interface)
+        {
+            if (targetRef is null)
+                throw new CompilerException(message, line, col);
+
+            if (TryReferenceConversionCost(targetRef, valueRef, out _))
+                return;
+
+            throw new CompilerException(message, line, col);
+        }
+
         if (target == value) return;
         if (target == TypeSymbol.Optional) return; // allow any value into optional
         if (IsNumeric(target) && IsNumeric(value) && CanWiden(value, target)) return;
@@ -917,6 +1073,8 @@ sealed class TypeChecker
             : $"{t.Name}<{string.Join(",", t.TypeArguments.Select(TypeRefKey))}>";
     private static string InterfaceMethodKey(string methodName, IReadOnlyList<TypeRef> paramTypes) =>
         $"{methodName}({string.Join(",", paramTypes.Select(TypeRefKey))})";
+    private static string InterfaceDispatchKey(string interfaceName, string interfaceMethodKey) =>
+        $"{interfaceName}.{interfaceMethodKey}";
     private static string ConstructorDispatchKey(string typeName, IReadOnlyList<TypeRef> paramTypes) =>
         $"{typeName}({string.Join(",", paramTypes.Select(TypeRefKey))})";
     private static string MethodDispatchKey(string typeName, string methodName, IReadOnlyList<TypeRef> paramTypes) =>
@@ -983,7 +1141,11 @@ sealed class TypeChecker
         _ => 0
     };
 
-    private sealed record FunctionSignature(TypeSymbol Return, IList<TypeSymbol> Params);
+    private sealed record FunctionSignature(
+        TypeSymbol Return,
+        TypeRef ReturnTypeRef,
+        IList<TypeSymbol> Params,
+        IReadOnlyList<TypeRef> ParamTypeRefs);
     private sealed record ConstructorSignature(
         Token Keyword,
         IList<TypeSymbol> Params,

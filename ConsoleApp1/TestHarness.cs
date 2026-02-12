@@ -273,8 +273,49 @@ object Counter {
 implement ICounter for Counter {
   read() via Counter.read;
 }
-Counter c = new Counter(7);
+ICounter c = new Counter(7);
 print(c.read());", "7\n"),
+            ("interface-runtime-dispatch",
+@"interface IValue {
+  function<integer> read();
+}
+object One {
+  constructor() { }
+  function<integer> read() {
+    return 1;
+  }
+}
+object Two {
+  constructor() { }
+  function<integer> read() {
+    return 2;
+  }
+}
+implement IValue for One {
+  read() via One.read;
+}
+implement IValue for Two {
+  read() via Two.read;
+}
+IValue v = new One();
+print(v.read());
+v = new Two();
+print(v.read());", "1\n2\n"),
+            ("interface-runtime-dispatch-via-alias-method",
+@"interface IText {
+  function<string> text(integer value);
+}
+object Printer {
+  constructor() { }
+  function<string> render(integer value) {
+    return ""v="" + value;
+  }
+}
+implement IText for Printer {
+  text(integer value) via Printer.render;
+}
+IText t = new Printer();
+print(t.text(3));", "v=3\n"),
         };
         // Expected error cases
         var errorCases = new List<(string Name, string Source, string ExpectedType)>
@@ -371,6 +412,38 @@ object Thing {
 implement IThing for Thing {
   id() via Thing.id;
 }", "does not map interface method"),
+            ("interface-assign-non-implementer",
+@"interface IThing {
+  function<integer> id();
+}
+object Thing {
+  constructor() { }
+  function<integer> id() {
+    return 1;
+  }
+}
+object Other {
+  constructor() { }
+}
+implement IThing for Thing {
+  id() via Thing.id;
+}
+IThing value = new Other();", "Initializer type mismatch"),
+            ("interface-call-missing-member",
+@"interface IThing {
+  function<integer> id();
+}
+object Thing {
+  constructor() { }
+  function<integer> id() {
+    return 1;
+  }
+}
+implement IThing for Thing {
+  id() via Thing.id;
+}
+IThing t = new Thing();
+print(t.missing());", "has no matching method overload"),
         };
 
         foreach (var (name, src, expected) in cases)

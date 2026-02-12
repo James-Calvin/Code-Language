@@ -12,5 +12,5 @@ implement Greeter for ConsoleGreeter {
   greet(string name) via ConsoleGreeter.greet;
 }
 
-ConsoleGreeter greeter = new ConsoleGreeter();
+Greeter greeter = new ConsoleGreeter();
 print(greeter.greet("Code"));

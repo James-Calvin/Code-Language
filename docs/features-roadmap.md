@@ -40,13 +40,13 @@ Legend:
 | `[~]` | Object model | `record` value semantics (copy on assignment/pass/return) | Permanent feature, follows object core |
 | `[~]` | Object model | Visibility enforcement (`public/package/private`) | Permanent; phase in from parser -> checker -> codegen |
 | `[x]` | Object model | Interfaces + `implement ... for ...` conformance checks | Compile-time interface declarations + explicit `implement Interface for Object { ... via Object.method; }` mapping with signature/return checks |
-| `[_]` | Object model | Interface dispatch lowering/runtime model | Interface-typed vars/calls and runtime dispatch remain deferred (currently object-direct method calls only) |
+| `[~]` | Object model | Interface dispatch lowering/runtime model | Baseline runtime dispatch implemented for interface-typed locals and calls; extend to broader interface surfaces and optimization |
 | `[_]` | Object model | Lifecycle/perf plan for heap instances (GC/ownership strategy) | Permanent runtime design decision; defer until objects are exercised |
 | `[_]` | Modules/imports | Exported declarations | Export syntax in spec; not implemented |
 | `[_]` | Modules/imports | Import syntax & package declarations | Not implemented |
 | `[_]` | Modules/imports | Package search paths/stdlib layout/versioning | Deferred until core stabilizes |
 | `[x]` | Bytecode/VM | Header v0x05 + debug table | Implemented |
-| `[x]` | Bytecode/VM | Core opcodes (arith/stack/jump/load/store/PRINT/CALL/RET/PUSH_STRING) | Implemented |
+| `[x]` | Bytecode/VM | Core opcodes (arith/stack/jump/load/store/PRINT/CALL/RET/PUSH_STRING) | Implemented; includes object/array/optional/error primitives and `GET_TYPE_NAME` for interface dispatch lowering |
 | `[~]` | Bytecode/VM | Constant pool for literals | To reduce code size |
 | `[!]` | Bytecode/VM | Real exception/error objects | Needed for typed errors |
 | `[x]` | Compiler pipeline | Lexer/parser/AST | Implemented |
@@ -64,7 +64,7 @@ Legend:
 | `[x]` | Testing | VM harness tests | Implemented |
 | `[x]` | Testing | Compiler integration suite | Includes print, arithmetic, functions, loops, foreach, strings |
 | `[x]` | Testing | Property/fuzz tests (parser/VM) | Arithmetic, boolean logic, string concat, loop sums |
-| `[!]` | Testing | Object-model integration suite | Constructor/new/field/method paths + compile-time object/interface diagnostics covered; expand for records/interface dispatch |
+| `[!]` | Testing | Object-model integration suite | Constructor/new/field/method paths + compile-time/runtime interface diagnostics covered; expand for records and broader interface surfaces |
 | `[~]` | Testing | Object-model fuzz/property domains | Constructor/field mutation/member access invariants |
 
 ## Priority Rollup (benefit/effort)

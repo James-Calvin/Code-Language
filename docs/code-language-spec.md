@@ -261,19 +261,19 @@ array<integer> otherNumbers = new array<integer>(10);
 - Interface fulfillment maps interface signatures to object methods via `interfaceMethod(parameterTypes...) via ObjectName.methodName;`.
 - Mapping includes parameter types/signature to support overload resolution.
 - The mapped object method must have a compatible signature.
-- Constructor overloading is supported.
-- Method overloading is currently supported by arity (parameter count).
+- Constructor overloading is supported by typed signatures.
+- Method overloading is supported by typed signatures.
 - Object fields must be initialized either:
   - at field declaration, or
   - during constructor execution.
 - Current constructor rules (implemented):
   - If an object has fields, it must declare at least one constructor.
-  - Constructor overloads currently resolve by parameter count (arity).
+  - Constructor overloads resolve by parameter-type signatures with best-match conversion scoring.
   - Each constructor must definitely assign all declared fields via `this.field = ...`.
   - `return` is not currently allowed in constructors.
 - Current method lowering (implemented):
   - Methods are lowered to hidden callable bodies with implicit `this` as the first argument.
-  - Method resolution currently uses object type + method name + arity.
+  - Method resolution uses object type + method name + parameter-type signature with best-match conversion scoring.
 - Reserved field names (currently disallowed): `length`, `hasValue`, `value`, `or`.
 - `record` is a type like `object`, but passed by value.
 - `object` instances are passed by reference.

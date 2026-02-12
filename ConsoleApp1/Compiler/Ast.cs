@@ -106,6 +106,7 @@ sealed class NewObjectExpr : Expr
 {
     public Token TypeName { get; }
     public IReadOnlyList<Expr> Arguments { get; }
+    public string? ResolvedConstructorKey { get; set; }
     public NewObjectExpr(Token typeName, IReadOnlyList<Expr> args) { TypeName = typeName; Arguments = args; }
 }
 
@@ -141,6 +142,7 @@ sealed class MethodCallExpr : Expr
     public Expr Target { get; }
     public Token MethodName { get; }
     public IReadOnlyList<Expr> Arguments { get; }
+    public string? ResolvedMethodKey { get; set; }
     public MethodCallExpr(Expr target, Token methodName, IReadOnlyList<Expr> args)
     {
         Target = target; MethodName = methodName; Arguments = args;

@@ -56,14 +56,14 @@ sealed class CodeGenerator
             _objectFieldObjectTypes[obj.Name.Lexeme] = fieldTypes;
             foreach (var ctor in obj.Constructors)
             {
-                string key = ConstructorKey(obj.Name.Lexeme, ctor.Parameters.Count);
-                string label = $"ctor_{obj.Name.Lexeme}_{ctor.Parameters.Count}";
+                string key = ConstructorKey(obj.Name.Lexeme, ctor.Parameters);
+                string label = $"ctor_{obj.Name.Lexeme}_{_constructors.Count}";
                 _constructors[key] = (label, ctor.Parameters.Count + 1, 0); // +1 for implicit this
             }
             foreach (var method in obj.Methods)
             {
-                string key = MethodKey(obj.Name.Lexeme, method.Name.Lexeme, method.Parameters.Count);
-                string label = $"m_{obj.Name.Lexeme}_{method.Name.Lexeme}_{method.Parameters.Count}";
+                string key = MethodKey(obj.Name.Lexeme, method.Name.Lexeme, method.Parameters);
+                string label = $"m_{obj.Name.Lexeme}_{method.Name.Lexeme}_{_methods.Count}";
                 _methods[key] = (label, method.Parameters.Count + 1, 0); // +1 for implicit this
             }
         }
@@ -145,7 +145,7 @@ sealed class CodeGenerator
 
     private void EmitConstructor(ObjectDecl obj, ConstructorDecl ctor)
     {
-        string key = ConstructorKey(obj.Name.Lexeme, ctor.Parameters.Count);
+        string key = ConstructorKey(obj.Name.Lexeme, ctor.Parameters);
         var info = _constructors[key];
         _builder.Label(info.Label);
 
@@ -179,7 +179,7 @@ sealed class CodeGenerator
 
     private void EmitMethod(ObjectDecl obj, MethodDecl method)
     {
-        string key = MethodKey(obj.Name.Lexeme, method.Name.Lexeme, method.Parameters.Count);
+        string key = MethodKey(obj.Name.Lexeme, method.Name.Lexeme, method.Parameters);
         var info = _methods[key];
         _builder.Label(info.Label);
 
@@ -372,7 +372,7 @@ sealed class CodeGenerator
                 if (!_objectNames.Contains(no.TypeName.Lexeme))
                     throw new InvalidOperationException($"Unknown object type '{no.TypeName.Lexeme}' at line {no.TypeName.Line}, col {no.TypeName.Column}");
                 _builder.NewObject(no.TypeName.Lexeme);
-                string ctorKey = ConstructorKey(no.TypeName.Lexeme, no.Arguments.Count);
+                string ctorKey = no.ResolvedConstructorKey ?? ConstructorKey(no.TypeName.Lexeme, no.Arguments.Count);
                 if (_constructors.TryGetValue(ctorKey, out var ctor))
                 {
                     _builder.Dup(); // keep object on stack after constructor call
@@ -450,7 +450,7 @@ sealed class CodeGenerator
                 if (objectType is null)
                     throw new InvalidOperationException($"Unable to resolve object type for method '{mc.MethodName.Lexeme}'");
 
-                string key = MethodKey(objectType, mc.MethodName.Lexeme, mc.Arguments.Count);
+                string key = mc.ResolvedMethodKey ?? MethodKey(objectType, mc.MethodName.Lexeme, mc.Arguments.Count);
                 if (!_methods.TryGetValue(key, out var info))
                     throw new InvalidOperationException($"Undefined method '{objectType}.{mc.MethodName.Lexeme}' with {mc.Arguments.Count} args");
 
@@ -590,8 +590,44 @@ sealed class CodeGenerator
         return slot;
     }
 
-    private static string ConstructorKey(string typeName, int arity) => $"{typeName}#{arity}";
-    private static string MethodKey(string typeName, string methodName, int arity) => $"{typeName}.{methodName}#{arity}";
+    private static string TypeRefKey(TypeRef t) =>
+        t.TypeArguments.Count == 0
+            ? t.Name
+            : $"{t.Name}<{string.Join(",", GetTypeArgKeys(t.TypeArguments))}>";
+
+    private static IEnumerable<string> GetTypeArgKeys(IReadOnlyList<TypeRef> args)
+    {
+        for (int i = 0; i < args.Count; i++)
+            yield return TypeRefKey(args[i]);
+    }
+
+    private static string ConstructorKey(string typeName, IReadOnlyList<Parameter> parameters)
+    {
+        var parts = new List<string>(parameters.Count);
+        foreach (var p in parameters)
+        {
+            if (p.Type is null)
+                throw new InvalidOperationException($"Constructor parameter '{p.Name.Lexeme}' is missing a type.");
+            parts.Add(TypeRefKey(p.Type));
+        }
+        return $"{typeName}({string.Join(",", parts)})";
+    }
+
+    private static string ConstructorKey(string typeName, int arity) => $"{typeName}#arity:{arity}";
+
+    private static string MethodKey(string typeName, string methodName, IReadOnlyList<Parameter> parameters)
+    {
+        var parts = new List<string>(parameters.Count);
+        foreach (var p in parameters)
+        {
+            if (p.Type is null)
+                throw new InvalidOperationException($"Method parameter '{p.Name.Lexeme}' is missing a type.");
+            parts.Add(TypeRefKey(p.Type));
+        }
+        return $"{typeName}.{methodName}({string.Join(",", parts)})";
+    }
+
+    private static string MethodKey(string typeName, string methodName, int arity) => $"{typeName}.{methodName}#arity:{arity}";
     private bool IsObjectType(TypeRef type) =>
         !type.IsArray && !type.IsOptional && type.Name is not "integer" and not "whole" and not "real" and not "boolean" and not "string";
 
@@ -623,7 +659,7 @@ sealed class CodeGenerator
     {
         foreach (var key in _constructors.Keys)
         {
-            if (key.StartsWith($"{typeName}#", StringComparison.Ordinal))
+            if (key.StartsWith($"{typeName}(", StringComparison.Ordinal))
                 return true;
         }
         return false;

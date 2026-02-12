@@ -64,4 +64,4 @@ Version: 0.8 (2026-02-12)
 - Arrays are stored as VM-managed lists; NEW_ARRAY pops pre-pushed elements, NEW_ARRAY_N allocates default-filled arrays of length N, ARRAY_LENGTH/GET operate on them (GET pops index then array).
 - ARRAY_SET pops value, index, array; writes in place; returns the value.
 - Objects are stored as VM-managed instances with a type name and field dictionary; field access is name-based via GET_FIELD/SET_FIELD.
-- Object methods currently lower to regular CALL sites with implicit `this` prepended to explicit arguments.
+- Object methods currently lower to regular CALL sites with implicit `this` prepended to explicit arguments; overload choice is resolved at compile time.

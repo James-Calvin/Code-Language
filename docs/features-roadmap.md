@@ -31,12 +31,12 @@ Legend:
 | `[!]` | Error model | Propagation semantics across functions | Requires compiler/codegen rules |
 | `[x]` | Object model | Type references in AST/type checker (`TypeRef`) for named/generic user types | Implemented; parser/type-checker now use `TypeRef` instead of token-only types |
 | `[x]` | Object model | Object symbol table pass (object names + fields + forward refs) | Implemented; duplicate checks + field type validation in place |
-| `[x]` | Object model | Constructor symbol collection (signatures/arity) | Implemented for constructor overload-by-arity |
+| `[x]` | Object model | Constructor symbol collection (typed signatures) | Implemented with signature-based overload resolution |
 | `[x]` | Object model | VM heap object representation + opcodes (`NEW_OBJECT`, `GET_FIELD`, `SET_FIELD`) | Implemented with runtime object field dictionary |
 | `[x]` | Object model | Parse + lower `new Type(...)`, `obj.field`, `obj.field = value` | Implemented for object construction + field read/write |
 | `[x]` | Object model | Constructors + definite field initialization rules | Implemented baseline: fields require constructor init; constructors enforced |
-| `[x]` | Object model | Method declarations + call syntax (`obj.method(args)`) | Implemented baseline with arity overloads |
-| `[x]` | Object model | Temporary method lowering (`method` -> static fn with implicit `this`) | Implemented for current VM (no dynamic dispatch yet) |
+| `[x]` | Object model | Method declarations + call syntax (`obj.method(args)`) | Implemented with signature-based overload resolution |
+| `[x]` | Object model | Temporary method lowering (`method` -> static fn with implicit `this`) | Implemented with compile-time signature binding (no dynamic dispatch yet) |
 | `[~]` | Object model | `record` value semantics (copy on assignment/pass/return) | Permanent feature, follows object core |
 | `[~]` | Object model | Visibility enforcement (`public/package/private`) | Permanent; phase in from parser -> checker -> codegen |
 | `[_]` | Object model | Interfaces + `implement ... for ...` conformance checks | Permanent; depends on methods + type refs |
@@ -68,6 +68,6 @@ Legend:
 | `[~]` | Testing | Object-model fuzz/property domains | Constructor/field mutation/member access invariants |
 
 ## Priority Rollup (benefit/effort)
-- High (`[!]`): object method dispatch refinement (beyond temporary lowering), type system/codegen polish (frame sizing, flow/return analysis), testing expansion, error propagation semantics.
+- High (`[!]`): interface/dynamic dispatch model, type system/codegen polish (frame sizing, flow/return analysis), testing expansion, error propagation semantics.
 - Medium (`[~]`): record semantics, constant pool, optimizer expansion, stdlib basics, tooling polish.
 - Low (`[_]`): interfaces runtime dispatch, modules/packages, REPL, future stdlib/versioning, long-term runtime lifecycle strategy.

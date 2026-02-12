@@ -43,21 +43,25 @@ sealed class TypeChecker
                 symbol.Fields[field.Name.Lexeme] = field.Type;
             }
 
-            var ctorArities = new HashSet<int>();
+            var ctorSignatures = new HashSet<string>(StringComparer.Ordinal);
             foreach (var ctor in obj.Constructors)
             {
-                if (!ctorArities.Add(ctor.Parameters.Count))
-                    throw new CompilerException($"Constructor overload with {ctor.Parameters.Count} parameters is already defined in object '{obj.Name.Lexeme}'", ctor.Keyword.Line, ctor.Keyword.Column);
-
                 var paramTypes = new List<TypeSymbol>(ctor.Parameters.Count);
+                var paramTypeRefs = new List<TypeRef>(ctor.Parameters.Count);
                 foreach (var param in ctor.Parameters)
                 {
                     if (param.Type is null)
                         throw new CompilerException("Constructor parameters must be typed", param.Name.Line, param.Name.Column);
                     ValidateTypeRef(param.Type);
+                    paramTypeRefs.Add(param.Type);
                     paramTypes.Add(MapType(param.Type));
                 }
-                symbol.Constructors.Add(new ConstructorSignature(ctor.Keyword, paramTypes, ctor.Body));
+                string dispatchKey = ConstructorDispatchKey(obj.Name.Lexeme, paramTypeRefs);
+                if (!ctorSignatures.Add(dispatchKey))
+                {
+                    throw new CompilerException($"Constructor overload '{dispatchKey}' is already defined in object '{obj.Name.Lexeme}'", ctor.Keyword.Line, ctor.Keyword.Column);
+                }
+                symbol.Constructors.Add(new ConstructorSignature(ctor.Keyword, paramTypes, paramTypeRefs, dispatchKey, ctor.Body));
             }
 
             var methodKeys = new HashSet<string>(StringComparer.Ordinal);
@@ -68,13 +72,14 @@ sealed class TypeChecker
                 if (method.Parameters.Any(p => p.Type is null))
                     throw new CompilerException($"Method '{method.Name.Lexeme}' has untyped parameters", method.Name.Line, method.Name.Column);
 
-                string methodKey = MethodKey(method.Name.Lexeme, method.Parameters.Count);
+                var paramTypeRefs = method.Parameters.Select(p => p.Type!).ToList();
+                string methodKey = MethodDispatchKey(obj.Name.Lexeme, method.Name.Lexeme, paramTypeRefs);
                 if (!methodKeys.Add(methodKey))
-                    throw new CompilerException($"Method overload '{method.Name.Lexeme}' with {method.Parameters.Count} parameters is already defined in object '{obj.Name.Lexeme}'", method.Name.Line, method.Name.Column);
+                    throw new CompilerException($"Method overload '{method.Name.Lexeme}' with the same signature is already defined in object '{obj.Name.Lexeme}'", method.Name.Line, method.Name.Column);
 
                 var paramTypes = method.Parameters.Select(p => MapType(p.Type!)).ToList();
                 var returnType = MapType(method.ReturnType);
-                symbol.Methods[methodKey] = new MethodSignature(method.Name, method.ReturnType, returnType, paramTypes, method.Body, method.Parameters);
+                symbol.Methods[methodKey] = new MethodSignature(method.Name, method.ReturnType, returnType, paramTypes, paramTypeRefs, methodKey, method.Body, method.Parameters);
             }
 
             if (symbol.Fields.Count > 0 && symbol.Constructors.Count == 0)
@@ -378,23 +383,25 @@ sealed class TypeChecker
                 if (!_objects.TryGetValue(no.TypeName.Lexeme, out var obj))
                     throw new CompilerException($"Unknown object type '{no.TypeName.Lexeme}'", no.TypeName.Line, no.TypeName.Column);
 
-                var ctor = obj.Constructors.FirstOrDefault(c => c.Params.Count == no.Arguments.Count);
-                if (ctor is null)
+                var argTypes = new List<(TypeSymbol Symbol, TypeRef? Ref)>(no.Arguments.Count);
+                for (int i = 0; i < no.Arguments.Count; i++)
+                {
+                    var argExpr = no.Arguments[i];
+                    var argType = CheckExpr(argExpr, env, currentReturn);
+                    var argTypeRef = ResolveExprTypeRef(argExpr, env);
+                    argTypes.Add((argType, argTypeRef));
+                }
+
+                if (!TryResolveBestConstructor(obj, argTypes, out var ctor, out bool ambiguous))
                 {
                     if (obj.Constructors.Count == 0 && no.Arguments.Count == 0)
                         return TypeSymbol.Object;
-                    throw new CompilerException(
-                        $"No constructor for '{no.TypeName.Lexeme}' takes {no.Arguments.Count} argument(s)",
-                        no.TypeName.Line,
-                        no.TypeName.Column);
+                    if (ambiguous)
+                        throw new CompilerException($"Ambiguous constructor call for '{no.TypeName.Lexeme}'", no.TypeName.Line, no.TypeName.Column);
+                    throw new CompilerException($"No matching constructor overload for '{no.TypeName.Lexeme}'", no.TypeName.Line, no.TypeName.Column);
                 }
 
-                for (int i = 0; i < no.Arguments.Count; i++)
-                {
-                    var argType = CheckExpr(no.Arguments[i], env, currentReturn);
-                    RequireAssignable(ctor.Params[i], argType, no.TypeName.Line, no.TypeName.Column, $"Constructor argument {i} type mismatch");
-                }
-
+                no.ResolvedConstructorKey = ctor!.DispatchKey;
                 return TypeSymbol.Object;
             }
             case ArrayLengthExpr alen:
@@ -452,15 +459,23 @@ sealed class TypeChecker
                 if (targetTypeRef is null || !_objects.TryGetValue(targetTypeRef.Name, out var obj))
                     throw new CompilerException("Could not resolve method target type", mc.MethodName.Line, mc.MethodName.Column);
 
-                string key = MethodKey(mc.MethodName.Lexeme, mc.Arguments.Count);
-                if (!obj.Methods.TryGetValue(key, out var method))
-                    throw new CompilerException($"Object '{targetTypeRef.Name}' has no method '{mc.MethodName.Lexeme}' with {mc.Arguments.Count} arguments", mc.MethodName.Line, mc.MethodName.Column);
-
+                var argTypes = new List<(TypeSymbol Symbol, TypeRef? Ref)>(mc.Arguments.Count);
                 for (int i = 0; i < mc.Arguments.Count; i++)
                 {
-                    var argType = CheckExpr(mc.Arguments[i], env, currentReturn);
-                    RequireAssignable(method.ParamTypes[i], argType, mc.MethodName.Line, mc.MethodName.Column, $"Method argument {i} type mismatch");
+                    var argExpr = mc.Arguments[i];
+                    var argType = CheckExpr(argExpr, env, currentReturn);
+                    var argTypeRef = ResolveExprTypeRef(argExpr, env);
+                    argTypes.Add((argType, argTypeRef));
                 }
+
+                if (!TryResolveBestMethod(obj, mc.MethodName.Lexeme, argTypes, out var method, out bool ambiguous))
+                {
+                    if (ambiguous)
+                        throw new CompilerException($"Ambiguous method call '{targetTypeRef.Name}.{mc.MethodName.Lexeme}'", mc.MethodName.Line, mc.MethodName.Column);
+                    throw new CompilerException($"Object '{targetTypeRef.Name}' has no matching method overload '{mc.MethodName.Lexeme}'", mc.MethodName.Line, mc.MethodName.Column);
+                }
+
+                mc.ResolvedMethodKey = method!.DispatchKey;
                 return method.ReturnType;
             }
             case Variable v:
@@ -541,6 +556,133 @@ sealed class TypeChecker
         };
     }
 
+    private bool TryResolveBestConstructor(
+        ObjectSymbol obj,
+        IReadOnlyList<(TypeSymbol Symbol, TypeRef? Ref)> args,
+        out ConstructorSignature? best,
+        out bool ambiguous)
+    {
+        best = null;
+        ambiguous = false;
+        int bestCost = int.MaxValue;
+
+        foreach (var ctor in obj.Constructors)
+        {
+            if (!TryCandidateCost(ctor.Params, ctor.ParamTypeRefs, args, out int cost))
+                continue;
+
+            if (cost < bestCost)
+            {
+                best = ctor;
+                bestCost = cost;
+                ambiguous = false;
+            }
+            else if (cost == bestCost)
+            {
+                ambiguous = true;
+            }
+        }
+
+        return best is not null;
+    }
+
+    private bool TryResolveBestMethod(
+        ObjectSymbol obj,
+        string methodName,
+        IReadOnlyList<(TypeSymbol Symbol, TypeRef? Ref)> args,
+        out MethodSignature? best,
+        out bool ambiguous)
+    {
+        best = null;
+        ambiguous = false;
+        int bestCost = int.MaxValue;
+
+        foreach (var method in obj.Methods.Values.Where(m => string.Equals(m.Name.Lexeme, methodName, StringComparison.Ordinal)))
+        {
+            if (!TryCandidateCost(method.ParamTypes, method.ParamTypeRefs, args, out int cost))
+                continue;
+
+            if (cost < bestCost)
+            {
+                best = method;
+                bestCost = cost;
+                ambiguous = false;
+            }
+            else if (cost == bestCost)
+            {
+                ambiguous = true;
+            }
+        }
+
+        return best is not null;
+    }
+
+    private static bool TryCandidateCost(
+        IList<TypeSymbol> expectedSymbols,
+        IReadOnlyList<TypeRef> expectedTypeRefs,
+        IReadOnlyList<(TypeSymbol Symbol, TypeRef? Ref)> actuals,
+        out int totalCost)
+    {
+        totalCost = 0;
+        if (expectedSymbols.Count != actuals.Count) return false;
+
+        for (int i = 0; i < expectedSymbols.Count; i++)
+        {
+            if (!TryConversionCost(expectedSymbols[i], expectedTypeRefs[i], actuals[i].Symbol, actuals[i].Ref, out int cost))
+                return false;
+            totalCost += cost;
+        }
+        return true;
+    }
+
+    private static bool TryConversionCost(
+        TypeSymbol expected,
+        TypeRef expectedRef,
+        TypeSymbol actual,
+        TypeRef? actualRef,
+        out int cost)
+    {
+        cost = int.MaxValue;
+        if (expected == actual)
+        {
+            if (expected == TypeSymbol.Object)
+            {
+                if (actualRef is null || !string.Equals(expectedRef.Name, actualRef.Name, StringComparison.Ordinal))
+                    return false;
+            }
+            cost = 0;
+            return true;
+        }
+
+        if (expected == TypeSymbol.Optional)
+        {
+            cost = 3;
+            return true;
+        }
+
+        if (IsNumeric(expected) && IsNumeric(actual))
+        {
+            int eRank = NumericRank(expected);
+            int aRank = NumericRank(actual);
+            if (aRank <= eRank)
+            {
+                cost = eRank - aRank + 1; // exact handled above
+                return true;
+            }
+            return false;
+        }
+
+        return false;
+    }
+
+    private static int NumericRank(TypeSymbol t) => t switch
+    {
+        TypeSymbol.Whole => 1,
+        TypeSymbol.Integer => 2,
+        TypeSymbol.Real => 3,
+        _ => 0
+    };
+
     private TypeSymbol? ResolveFieldType(FieldAccessExpr fieldAccess, TypeEnvironment env)
     {
         var targetType = ResolveExprTypeRef(fieldAccess.Target, env);
@@ -578,8 +720,8 @@ sealed class TypeChecker
                 var owner = ResolveExprTypeRef(mc.Target, env);
                 if (owner is null) return null;
                 if (!_objects.TryGetValue(owner.Name, out var objSymbol)) return null;
-                string key = MethodKey(mc.MethodName.Lexeme, mc.Arguments.Count);
-                if (!objSymbol.Methods.TryGetValue(key, out var method)) return null;
+                if (mc.ResolvedMethodKey is null || !objSymbol.Methods.TryGetValue(mc.ResolvedMethodKey, out var method))
+                    return null;
                 return method.ReturnType == TypeSymbol.Object ? method.ReturnTypeRef : null;
             }
             default:
@@ -659,7 +801,14 @@ sealed class TypeChecker
     private static bool IsReservedPropertyName(string name) =>
         name is "length" or "hasValue" or "value" or "or";
 
-    private static string MethodKey(string name, int arity) => $"{name}#{arity}";
+    private static string TypeRefKey(TypeRef t) =>
+        t.TypeArguments.Count == 0
+            ? t.Name
+            : $"{t.Name}<{string.Join(",", t.TypeArguments.Select(TypeRefKey))}>";
+    private static string ConstructorDispatchKey(string typeName, IReadOnlyList<TypeRef> paramTypes) =>
+        $"{typeName}({string.Join(",", paramTypes.Select(TypeRefKey))})";
+    private static string MethodDispatchKey(string typeName, string methodName, IReadOnlyList<TypeRef> paramTypes) =>
+        $"{typeName}.{methodName}({string.Join(",", paramTypes.Select(TypeRefKey))})";
 
     private static int GetLine(Expr expr) => expr switch
     {
@@ -700,12 +849,19 @@ sealed class TypeChecker
     };
 
     private sealed record FunctionSignature(TypeSymbol Return, IList<TypeSymbol> Params);
-    private sealed record ConstructorSignature(Token Keyword, IList<TypeSymbol> Params, Block Body);
+    private sealed record ConstructorSignature(
+        Token Keyword,
+        IList<TypeSymbol> Params,
+        IReadOnlyList<TypeRef> ParamTypeRefs,
+        string DispatchKey,
+        Block Body);
     private sealed record MethodSignature(
         Token Name,
         TypeRef ReturnTypeRef,
         TypeSymbol ReturnType,
         IList<TypeSymbol> ParamTypes,
+        IReadOnlyList<TypeRef> ParamTypeRefs,
+        string DispatchKey,
         Block Body,
         IReadOnlyList<Parameter> Parameters);
     private sealed record ObjectSymbol(

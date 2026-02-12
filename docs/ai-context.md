@@ -6,7 +6,7 @@ Read this first. Update it whenever semantics or process change.
 ## Current Capability Snapshot
 - Types: integer/whole/real, boolean, string, array<T> (literals `{...}`, `new array<T>(n)`, `.length`, indexing, mutation), optional<T> (`none`, `.hasValue`, `.value`, `.or(fallback)`), typed functions, object types.
 - Compiler type model: AST/parser/type-checker use `TypeRef`; named object types resolve via object symbol tables (fields + constructors + forward refs).
-- Object rules: fields require constructor initialization; constructor/method overloads are arity-based; methods lower to hidden static call targets with implicit `this`; reserved field names are `length`, `hasValue`, `value`, `or`.
+- Object rules: fields require constructor initialization; constructor/method overloads resolve by typed signature (best-match conversions), methods lower to hidden static call targets with implicit `this`; reserved field names are `length`, `hasValue`, `value`, `or`.
 - Control flow: if/then[/else], while, for, foreach (numeric or array), break/continue, return (implicit 0).
 - Expressions: arithmetic, comparisons, logical and/or/not (short-circuit), assignment, function calls, string interpolation/concat.
 - Errors: `panic <expr>;` raises `UserError` with line/col + call stack (from bytecode debug map).
@@ -33,6 +33,7 @@ Read this first. Update it whenever semantics or process change.
 - Preserve prior decisions; ask user when unclear.
 
 ## Change Log
+- 2026-02-12: Refined method/constructor dispatch to signature-based overload resolution with compile-time binding of call sites.
 - 2026-02-12: Added object methods (`function` inside `object` + `obj.method(args)`) with temporary lowering to hidden static call targets.
 - 2026-02-12: Implemented object construction + field read/write + constructor arity checks + baseline definite field initialization enforcement; added VM object opcodes and object integration tests.
 - 2026-02-12: Object symbol-table milestone added (object name/field collection, duplicate checks, field-type validation, forward refs) + integration tests; `object.code` example added.

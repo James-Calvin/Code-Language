@@ -224,6 +224,36 @@ print(p.getAge());", "12\n"),
 MathBox box = new MathBox(4);
 print(box.add(3));
 print(box.add(2, 8));", "7\n10\n"),
+            ("object-method-overload-types",
+@"object Printer {
+  integer baseValue;
+  constructor(integer value) {
+    this.baseValue = value;
+  }
+  function<integer> pick(integer value) {
+    return value + this.baseValue;
+  }
+  function<integer> pick(boolean value) {
+    return this.baseValue + 100;
+  }
+}
+Printer p = new Printer(2);
+print(p.pick(5));
+print(p.pick(true));", "7\n102\n"),
+            ("object-constructor-overload-types",
+@"object Bag {
+  integer count;
+  constructor(integer v) {
+    this.count = v;
+  }
+  constructor(boolean v) {
+    this.count = 999;
+  }
+}
+Bag a = new Bag(3);
+Bag b = new Bag(true);
+print(a.count);
+print(b.count);", "3\n999\n"),
         };
         // Expected error cases
         var errorCases = new List<(string Name, string Source, string ExpectedType)>
@@ -237,10 +267,19 @@ print(box.add(2, 8));", "7\n10\n"),
             ("object-unknown-field-type", @"object Person { UnknownType data; }", "Unknown type"),
             ("object-missing-constructor", @"object Person { integer age; }", "has no constructor"),
             ("object-missing-field-init", @"object Person { integer age; constructor() { } }", "does not definitely assign fields"),
-            ("object-new-ctor-arity-mismatch", @"object Person { integer age; constructor(integer value) { this.age = value; } } Person p = new Person();", "No constructor"),
+            ("object-new-ctor-arity-mismatch", @"object Person { integer age; constructor(integer value) { this.age = value; } } Person p = new Person();", "No matching constructor overload"),
             ("object-method-missing-return", @"object A { integer x; constructor(integer v){ this.x = v; } function<integer> f() { integer y = 1; } }", "may not return"),
-            ("object-method-undefined", @"object A { integer x; constructor(integer v){ this.x = v; } } A a = new A(1); print(a.nope());", "has no method"),
+            ("object-method-undefined", @"object A { integer x; constructor(integer v){ this.x = v; } } A a = new A(1); print(a.nope());", "no matching method overload"),
             ("object-method-duplicate-arity", @"object A { integer x; constructor(integer v){ this.x = v; } function<integer> f(integer v) { return v; } function<integer> f(integer z) { return z; } }", "already defined"),
+            ("object-method-no-compatible-overload",
+@"object A {
+  integer x;
+  constructor(integer v){ this.x = v; }
+  function<integer> f(real v) { return 1; }
+  function<integer> f(integer z) { return 2; }
+}
+A a = new A(0);
+print(a.f(true));", "no matching method overload"),
         };
 
         foreach (var (name, src, expected) in cases)

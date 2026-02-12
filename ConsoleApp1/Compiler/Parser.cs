@@ -64,18 +64,25 @@ sealed class Parser
 
     private Stmt FunctionDeclaration()
     {
+        var sig = ParseCallableSignature("function");
+        Block body = ParseCallableBody("function");
+        return new FunctionDecl(sig.Name, sig.ReturnType, sig.Parameters, body);
+    }
+
+    private (Token Name, TypeRef? ReturnType, IReadOnlyList<Parameter> Parameters) ParseCallableSignature(string kind)
+    {
         TypeRef? returnType = null;
         if (Match(TokenType.Less))
         {
             returnType = ParseTypeRef();
-            Consume(TokenType.Greater, "Expect '>' after return type.");
+            Consume(TokenType.Greater, $"Expect '>' after {kind} return type.");
         }
         else if (LooksLikeTypeThenIdentifier(_current))
         {
             returnType = ParseTypeRef();
         }
-        Token name = Consume(TokenType.Identifier, "Expect function name.");
-        Consume(TokenType.LeftParen, "Expect '(' after function name.");
+        Token name = Consume(TokenType.Identifier, $"Expect {kind} name.");
+        Consume(TokenType.LeftParen, $"Expect '(' after {kind} name.");
         var parameters = new List<Parameter>();
         if (!Check(TokenType.RightParen))
         {
@@ -86,44 +93,28 @@ sealed class Parser
                 {
                     paramType = ParseTypeRef();
                 }
-                Token paramName = Consume(TokenType.Identifier, "Expect parameter name.");
+                Token paramName = Consume(TokenType.Identifier, $"Expect {kind} parameter name.");
                 parameters.Add(new Parameter(paramType, paramName));
             } while (Match(TokenType.Comma));
         }
-        Consume(TokenType.RightParen, "Expect ')' after parameters.");
-        Block body;
-        if (Match(TokenType.LeftBrace))
-        {
-            body = new Block(BlockStatements());
-        }
-        else
-        {
-            throw Error(Peek(), "Expect function body block.");
-        }
-        return new FunctionDecl(name, returnType, parameters, body);
+        Consume(TokenType.RightParen, $"Expect ')' after {kind} parameters.");
+        return (name, returnType, parameters);
     }
 
-    private Stmt ObjectDeclaration()
+    private Block ParseCallableBody(string kind)
     {
-        Token name = Consume(TokenType.Identifier, "Expect object name.");
-        Consume(TokenType.LeftBrace, "Expect '{' after object name.");
-        var fields = new List<FieldDecl>();
-        var constructors = new List<ConstructorDecl>();
-        while (!Check(TokenType.RightBrace) && !IsAtEnd())
+        if (Match(TokenType.LeftBrace))
         {
-            if (Match(TokenType.Constructor))
-            {
-                constructors.Add(ParseConstructor(Previous()));
-                continue;
-            }
-
-            var fType = ParseTypeRef();
-            Token fname = Consume(TokenType.Identifier, "Expect field name.");
-            Consume(TokenType.Semicolon, "Expect ';' after field.");
-            fields.Add(new FieldDecl(fType, fname));
+            return new Block(BlockStatements());
         }
-        Consume(TokenType.RightBrace, "Expect '}' after object fields.");
-        return new ObjectDecl(name, fields, constructors);
+        throw Error(Peek(), $"Expect {kind} body block.");
+    }
+
+    private MethodDecl ParseMethodDeclaration()
+    {
+        var sig = ParseCallableSignature("method");
+        Block body = ParseCallableBody("method");
+        return new MethodDecl(sig.Name, sig.ReturnType, sig.Parameters, body);
     }
 
     private ConstructorDecl ParseConstructor(Token ctorKeyword)
@@ -140,9 +131,37 @@ sealed class Parser
             } while (Match(TokenType.Comma));
         }
         Consume(TokenType.RightParen, "Expect ')' after constructor parameters.");
-        if (!Match(TokenType.LeftBrace))
-            throw Error(Peek(), "Expect constructor body block.");
-        return new ConstructorDecl(ctorKeyword, parameters, new Block(BlockStatements()));
+        Block body = ParseCallableBody("constructor");
+        return new ConstructorDecl(ctorKeyword, parameters, body);
+    }
+
+    private Stmt ObjectDeclaration()
+    {
+        Token name = Consume(TokenType.Identifier, "Expect object name.");
+        Consume(TokenType.LeftBrace, "Expect '{' after object name.");
+        var fields = new List<FieldDecl>();
+        var constructors = new List<ConstructorDecl>();
+        var methods = new List<MethodDecl>();
+        while (!Check(TokenType.RightBrace) && !IsAtEnd())
+        {
+            if (Match(TokenType.Constructor))
+            {
+                constructors.Add(ParseConstructor(Previous()));
+                continue;
+            }
+            if (Match(TokenType.Function))
+            {
+                methods.Add(ParseMethodDeclaration());
+                continue;
+            }
+
+            var fType = ParseTypeRef();
+            Token fname = Consume(TokenType.Identifier, "Expect field name.");
+            Consume(TokenType.Semicolon, "Expect ';' after field.");
+            fields.Add(new FieldDecl(fType, fname));
+        }
+        Consume(TokenType.RightBrace, "Expect '}' after object fields.");
+        return new ObjectDecl(name, fields, constructors, methods);
     }
 
     private Stmt VarDeclaration(TypeRef typeRef)
@@ -597,6 +616,8 @@ sealed class Parser
                 Consume(TokenType.RightParen, "Expect ')' after arguments.");
                 if (expr is Variable v)
                     expr = new Call(v.Name, args);
+                else if (expr is FieldAccessExpr fa)
+                    expr = new MethodCallExpr(fa.Target, fa.Name, args);
                 else
                     throw Error(Peek(), "Cannot call non-variable expression");
             }

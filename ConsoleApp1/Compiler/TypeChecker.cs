@@ -19,7 +19,11 @@ sealed class TypeChecker
 
             if (_objects.ContainsKey(obj.Name.Lexeme))
                 throw new CompilerException($"Object '{obj.Name.Lexeme}' already defined", obj.Name.Line, obj.Name.Column);
-            _objects[obj.Name.Lexeme] = new ObjectSymbol(obj.Name, new Dictionary<string, TypeRef>(StringComparer.Ordinal), new List<ConstructorSignature>());
+            _objects[obj.Name.Lexeme] = new ObjectSymbol(
+                obj.Name,
+                new Dictionary<string, TypeRef>(StringComparer.Ordinal),
+                new List<ConstructorSignature>(),
+                new Dictionary<string, MethodSignature>(StringComparer.Ordinal));
         }
 
         // Validate object field declarations.
@@ -56,6 +60,23 @@ sealed class TypeChecker
                 symbol.Constructors.Add(new ConstructorSignature(ctor.Keyword, paramTypes, ctor.Body));
             }
 
+            var methodKeys = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var method in obj.Methods)
+            {
+                if (method.ReturnType is null)
+                    throw new CompilerException($"Method '{method.Name.Lexeme}' is missing a return type", method.Name.Line, method.Name.Column);
+                if (method.Parameters.Any(p => p.Type is null))
+                    throw new CompilerException($"Method '{method.Name.Lexeme}' has untyped parameters", method.Name.Line, method.Name.Column);
+
+                string methodKey = MethodKey(method.Name.Lexeme, method.Parameters.Count);
+                if (!methodKeys.Add(methodKey))
+                    throw new CompilerException($"Method overload '{method.Name.Lexeme}' with {method.Parameters.Count} parameters is already defined in object '{obj.Name.Lexeme}'", method.Name.Line, method.Name.Column);
+
+                var paramTypes = method.Parameters.Select(p => MapType(p.Type!)).ToList();
+                var returnType = MapType(method.ReturnType);
+                symbol.Methods[methodKey] = new MethodSignature(method.Name, method.ReturnType, returnType, paramTypes, method.Body, method.Parameters);
+            }
+
             if (symbol.Fields.Count > 0 && symbol.Constructors.Count == 0)
             {
                 throw new CompilerException($"Object '{obj.Name.Lexeme}' declares fields but has no constructor to initialize them", obj.Name.Line, obj.Name.Column);
@@ -87,6 +108,7 @@ sealed class TypeChecker
             if (stmt is not ObjectDecl obj)
                 continue;
             CheckObjectConstructors(obj);
+            CheckObjectMethods(obj);
         }
 
         var global = new TypeEnvironment();
@@ -146,6 +168,30 @@ sealed class TypeChecker
             // Constructor bodies are type-checked like regular blocks. Explicit return is currently not supported.
             CheckStmt(ctorSig.Body, env, currentReturn: null);
             EnsureAllFieldsInitialized(obj, ctorSig.Body);
+        }
+    }
+
+    private void CheckObjectMethods(ObjectDecl obj)
+    {
+        if (!_objects.TryGetValue(obj.Name.Lexeme, out var symbol))
+            return;
+
+        foreach (var method in symbol.Methods.Values)
+        {
+            var env = new TypeEnvironment();
+            var thisType = new TypeRef(obj.Name.Lexeme, null, obj.Name.Line, obj.Name.Column);
+            env.Define("this", TypeSymbol.Object, thisType, method.Name.Line, method.Name.Column, assigned: true);
+
+            for (int i = 0; i < method.Parameters.Count; i++)
+            {
+                var paramDecl = method.Parameters[i];
+                var pType = method.ParamTypes[i];
+                env.Define(paramDecl.Name.Lexeme, pType, paramDecl.Type, paramDecl.Name.Line, paramDecl.Name.Column, assigned: true);
+            }
+
+            bool allPathsReturn = CheckStmt(method.Body, env, method.ReturnType);
+            if (!allPathsReturn)
+                throw new CompilerException($"Method '{obj.Name.Lexeme}.{method.Name.Lexeme}' may not return a value on all paths", method.Name.Line, method.Name.Column);
         }
     }
 
@@ -398,6 +444,25 @@ sealed class TypeChecker
                 }
                 return rhsType;
             }
+            case MethodCallExpr mc:
+            {
+                var targetType = CheckExpr(mc.Target, env, currentReturn);
+                Require(targetType == TypeSymbol.Object, mc.Target, "Method call target must be an object");
+                var targetTypeRef = ResolveExprTypeRef(mc.Target, env);
+                if (targetTypeRef is null || !_objects.TryGetValue(targetTypeRef.Name, out var obj))
+                    throw new CompilerException("Could not resolve method target type", mc.MethodName.Line, mc.MethodName.Column);
+
+                string key = MethodKey(mc.MethodName.Lexeme, mc.Arguments.Count);
+                if (!obj.Methods.TryGetValue(key, out var method))
+                    throw new CompilerException($"Object '{targetTypeRef.Name}' has no method '{mc.MethodName.Lexeme}' with {mc.Arguments.Count} arguments", mc.MethodName.Line, mc.MethodName.Column);
+
+                for (int i = 0; i < mc.Arguments.Count; i++)
+                {
+                    var argType = CheckExpr(mc.Arguments[i], env, currentReturn);
+                    RequireAssignable(method.ParamTypes[i], argType, mc.MethodName.Line, mc.MethodName.Column, $"Method argument {i} type mismatch");
+                }
+                return method.ReturnType;
+            }
             case Variable v:
                 return env.LookupForRead(v.Name);
             case Assign a:
@@ -508,6 +573,15 @@ sealed class TypeChecker
                     throw new CompilerException($"Object '{owner.Name}' has no field '{fa.Name.Lexeme}'", fa.Name.Line, fa.Name.Column);
                 return fieldType;
             }
+            case MethodCallExpr mc:
+            {
+                var owner = ResolveExprTypeRef(mc.Target, env);
+                if (owner is null) return null;
+                if (!_objects.TryGetValue(owner.Name, out var objSymbol)) return null;
+                string key = MethodKey(mc.MethodName.Lexeme, mc.Arguments.Count);
+                if (!objSymbol.Methods.TryGetValue(key, out var method)) return null;
+                return method.ReturnType == TypeSymbol.Object ? method.ReturnTypeRef : null;
+            }
             default:
                 return null;
         }
@@ -585,12 +659,15 @@ sealed class TypeChecker
     private static bool IsReservedPropertyName(string name) =>
         name is "length" or "hasValue" or "value" or "or";
 
+    private static string MethodKey(string name, int arity) => $"{name}#{arity}";
+
     private static int GetLine(Expr expr) => expr switch
     {
         Literal => 0,
         Variable v => v.Name.Line,
         Assign a => a.Name.Line,
         Call c => c.Callee.Line,
+        MethodCallExpr mc => mc.MethodName.Line,
         Unary u => GetLine(u.Right),
         Binary b => GetLine(b.Left),
         _ => 0
@@ -602,6 +679,7 @@ sealed class TypeChecker
         Variable v => v.Name.Column,
         Assign a => a.Name.Column,
         Call c => c.Callee.Column,
+        MethodCallExpr mc => mc.MethodName.Column,
         Unary u => GetCol(u.Right),
         Binary b => GetCol(b.Left),
         _ => 0
@@ -623,7 +701,18 @@ sealed class TypeChecker
 
     private sealed record FunctionSignature(TypeSymbol Return, IList<TypeSymbol> Params);
     private sealed record ConstructorSignature(Token Keyword, IList<TypeSymbol> Params, Block Body);
-    private sealed record ObjectSymbol(Token Name, Dictionary<string, TypeRef> Fields, List<ConstructorSignature> Constructors);
+    private sealed record MethodSignature(
+        Token Name,
+        TypeRef ReturnTypeRef,
+        TypeSymbol ReturnType,
+        IList<TypeSymbol> ParamTypes,
+        Block Body,
+        IReadOnlyList<Parameter> Parameters);
+    private sealed record ObjectSymbol(
+        Token Name,
+        Dictionary<string, TypeRef> Fields,
+        List<ConstructorSignature> Constructors,
+        Dictionary<string, MethodSignature> Methods);
 
     private sealed class TypeEnvironment
     {

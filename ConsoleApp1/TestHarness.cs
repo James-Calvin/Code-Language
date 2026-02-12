@@ -196,6 +196,34 @@ object A {
 A a = new A(9);
 B b = new B(a);
 print(b.a.number);", "9\n"),
+            ("object-method-call",
+@"object Person {
+  integer age;
+  constructor(integer years) {
+    this.age = years;
+  }
+  function<integer> getAge() {
+    return this.age;
+  }
+}
+Person p = new Person(12);
+print(p.getAge());", "12\n"),
+            ("object-method-overload-arity",
+@"object MathBox {
+  integer baseValue;
+  constructor(integer value) {
+    this.baseValue = value;
+  }
+  function<integer> add(integer value) {
+    return this.baseValue + value;
+  }
+  function<integer> add(integer left, integer right) {
+    return left + right;
+  }
+}
+MathBox box = new MathBox(4);
+print(box.add(3));
+print(box.add(2, 8));", "7\n10\n"),
         };
         // Expected error cases
         var errorCases = new List<(string Name, string Source, string ExpectedType)>
@@ -210,6 +238,9 @@ print(b.a.number);", "9\n"),
             ("object-missing-constructor", @"object Person { integer age; }", "has no constructor"),
             ("object-missing-field-init", @"object Person { integer age; constructor() { } }", "does not definitely assign fields"),
             ("object-new-ctor-arity-mismatch", @"object Person { integer age; constructor(integer value) { this.age = value; } } Person p = new Person();", "No constructor"),
+            ("object-method-missing-return", @"object A { integer x; constructor(integer v){ this.x = v; } function<integer> f() { integer y = 1; } }", "may not return"),
+            ("object-method-undefined", @"object A { integer x; constructor(integer v){ this.x = v; } } A a = new A(1); print(a.nope());", "has no method"),
+            ("object-method-duplicate-arity", @"object A { integer x; constructor(integer v){ this.x = v; } function<integer> f(integer v) { return v; } function<integer> f(integer z) { return z; } }", "already defined"),
         };
 
         foreach (var (name, src, expected) in cases)

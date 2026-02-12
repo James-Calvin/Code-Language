@@ -3,6 +3,9 @@ object Person {
   constructor(integer value) {
     this.age = value;
   }
+  function<integer> years() {
+    return this.age;
+  }
 }
 
 object Team {
@@ -14,4 +17,4 @@ object Team {
 
 Person ada = new Person(37);
 Team team = new Team(ada);
-print(team.lead.age);
+print(team.lead.years());

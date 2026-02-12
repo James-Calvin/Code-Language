@@ -250,8 +250,8 @@ array<integer> otherNumbers = new array<integer>(10);
 
 ## 9. Object Model and Interfaces
 - Current implementation status:
-  - Implemented: object declarations with fields/constructors, `new Type(...)`, and object field read/write (`obj.field`, `obj.field = value`).
-  - Not yet implemented: object methods, interfaces, visibility enforcement, records.
+  - Implemented: object declarations with fields/constructors/methods, `new Type(...)`, object field read/write (`obj.field`, `obj.field = value`), and method calls (`obj.method(args)`).
+  - Not yet implemented: interfaces, visibility enforcement, records, dynamic/interface dispatch.
 - No inheritance.
 - Contracts are declared as `interface`.
 - Concrete types are declared as `object`.
@@ -262,6 +262,7 @@ array<integer> otherNumbers = new array<integer>(10);
 - Mapping includes parameter types/signature to support overload resolution.
 - The mapped object method must have a compatible signature.
 - Constructor overloading is supported.
+- Method overloading is currently supported by arity (parameter count).
 - Object fields must be initialized either:
   - at field declaration, or
   - during constructor execution.
@@ -270,6 +271,9 @@ array<integer> otherNumbers = new array<integer>(10);
   - Constructor overloads currently resolve by parameter count (arity).
   - Each constructor must definitely assign all declared fields via `this.field = ...`.
   - `return` is not currently allowed in constructors.
+- Current method lowering (implemented):
+  - Methods are lowered to hidden callable bodies with implicit `this` as the first argument.
+  - Method resolution currently uses object type + method name + arity.
 - Reserved field names (currently disallowed): `length`, `hasValue`, `value`, `or`.
 - `record` is a type like `object`, but passed by value.
 - `object` instances are passed by reference.
@@ -414,6 +418,7 @@ real result3 = errorExample(0) on error panic("Error message {error}");
 - Type syntax is parsed through structured type references (`TypeRef`) including generic forms; named object types resolve through the object symbol table.
 - Object symbols are collected before function/body checking, enabling duplicate object/field checks and forward references in object field types.
 - Constructor symbols are collected and used for `new Type(...)` arity/type validation.
+- Method symbols are collected and used for `obj.method(args)` arity/type validation.
 - Object construction and field access lower to dedicated VM opcodes (`NEW_OBJECT`, `GET_FIELD`, `SET_FIELD`).
 - Arrays: literals `{...}` create arrays; typed declarations `array<integer> xs = {1,2,3};`; dynamic `new array<integer>(n)` requires a size; `xs.length` yields length; `foreach` iterates arrays by element.
 

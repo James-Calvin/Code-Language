@@ -7,14 +7,18 @@ sealed class CodeGenerator
 {
     private readonly BytecodeBuilder _builder = BytecodeBuilder.New();
     private Dictionary<string, int> _locals = new(StringComparer.Ordinal);
+    private Dictionary<string, string> _localObjectTypes = new(StringComparer.Ordinal);
     private int _nextLocalIndex;
     private int _functionLocalHighWater;
     private readonly Stack<Dictionary<string, int>> _scopeStack = new();
+    private readonly Stack<Dictionary<string, string>> _scopeObjectTypesStack = new();
     private readonly Stack<int> _nextLocalStack = new();
     private readonly List<int> _freeTemps = new();
     private readonly Dictionary<string, (string Label, int ParamCount, int LocalCount)> _functions = new(StringComparer.Ordinal);
     private readonly Dictionary<string, (string Label, int ParamCount, int LocalCount)> _constructors = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, (string Label, int ParamCount, int LocalCount)> _methods = new(StringComparer.Ordinal);
     private readonly HashSet<string> _objectNames = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, Dictionary<string, string>> _objectFieldObjectTypes = new(StringComparer.Ordinal);
     private int _labelCounter;
 
     public byte[] Generate(IList<Stmt> statements)
@@ -43,17 +47,31 @@ sealed class CodeGenerator
         foreach (var obj in objectDecls)
         {
             _objectNames.Add(obj.Name.Lexeme);
+            var fieldTypes = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var field in obj.Fields)
+            {
+                if (IsObjectType(field.Type))
+                    fieldTypes[field.Name.Lexeme] = field.Type.Name;
+            }
+            _objectFieldObjectTypes[obj.Name.Lexeme] = fieldTypes;
             foreach (var ctor in obj.Constructors)
             {
                 string key = ConstructorKey(obj.Name.Lexeme, ctor.Parameters.Count);
                 string label = $"ctor_{obj.Name.Lexeme}_{ctor.Parameters.Count}";
                 _constructors[key] = (label, ctor.Parameters.Count + 1, 0); // +1 for implicit this
             }
+            foreach (var method in obj.Methods)
+            {
+                string key = MethodKey(obj.Name.Lexeme, method.Name.Lexeme, method.Parameters.Count);
+                string label = $"m_{obj.Name.Lexeme}_{method.Name.Lexeme}_{method.Parameters.Count}";
+                _methods[key] = (label, method.Parameters.Count + 1, 0); // +1 for implicit this
+            }
         }
 
-        // Emit constructors before normal functions.
+        // Emit object methods/constructors before normal functions.
         foreach (var obj in objectDecls)
         {
+            EmitObjectMethods(obj);
             EmitObjectConstructors(obj);
         }
 
@@ -94,6 +112,8 @@ sealed class CodeGenerator
         {
             var param = fn.Parameters[i];
             _locals[param.Name.Lexeme] = _nextLocalIndex++;
+            if (param.Type is not null && IsObjectType(param.Type))
+                _localObjectTypes[param.Name.Lexeme] = param.Type.Name;
             _functionLocalHighWater = Math.Max(_functionLocalHighWater, _nextLocalIndex);
         }
 
@@ -115,6 +135,14 @@ sealed class CodeGenerator
         }
     }
 
+    private void EmitObjectMethods(ObjectDecl obj)
+    {
+        foreach (var method in obj.Methods)
+        {
+            EmitMethod(obj, method);
+        }
+    }
+
     private void EmitConstructor(ObjectDecl obj, ConstructorDecl ctor)
     {
         string key = ConstructorKey(obj.Name.Lexeme, ctor.Parameters.Count);
@@ -128,12 +156,15 @@ sealed class CodeGenerator
 
         // implicit this
         _locals["this"] = _nextLocalIndex++;
+        _localObjectTypes["this"] = obj.Name.Lexeme;
         _functionLocalHighWater = Math.Max(_functionLocalHighWater, _nextLocalIndex);
 
         for (int i = 0; i < ctor.Parameters.Count; i++)
         {
             var param = ctor.Parameters[i];
             _locals[param.Name.Lexeme] = _nextLocalIndex++;
+            if (param.Type is not null && IsObjectType(param.Type))
+                _localObjectTypes[param.Name.Lexeme] = param.Type.Name;
             _functionLocalHighWater = Math.Max(_functionLocalHighWater, _nextLocalIndex);
         }
 
@@ -146,6 +177,39 @@ sealed class CodeGenerator
         PopScope();
     }
 
+    private void EmitMethod(ObjectDecl obj, MethodDecl method)
+    {
+        string key = MethodKey(obj.Name.Lexeme, method.Name.Lexeme, method.Parameters.Count);
+        var info = _methods[key];
+        _builder.Label(info.Label);
+
+        _nextLocalIndex = 0;
+        _functionLocalHighWater = 0;
+        _freeTemps.Clear();
+        PushScope();
+
+        _locals["this"] = _nextLocalIndex++;
+        _localObjectTypes["this"] = obj.Name.Lexeme;
+        _functionLocalHighWater = Math.Max(_functionLocalHighWater, _nextLocalIndex);
+
+        for (int i = 0; i < method.Parameters.Count; i++)
+        {
+            var param = method.Parameters[i];
+            _locals[param.Name.Lexeme] = _nextLocalIndex++;
+            if (param.Type is not null && IsObjectType(param.Type))
+                _localObjectTypes[param.Name.Lexeme] = param.Type.Name;
+            _functionLocalHighWater = Math.Max(_functionLocalHighWater, _nextLocalIndex);
+        }
+
+        Emit(method.Body);
+
+        _builder.PushInt(0);
+        _builder.Ret();
+
+        _methods[key] = (info.Label, info.ParamCount, _functionLocalHighWater);
+        PopScope();
+    }
+
     private void Emit(Stmt stmt)
     {
         switch (stmt)
@@ -153,6 +217,8 @@ sealed class CodeGenerator
             case VarDecl v:
                 SetLoc(v.Name);
                 int slot = GetOrAllocate(v.Name.Lexeme);
+                if (IsObjectType(v.Type))
+                    _localObjectTypes[v.Name.Lexeme] = v.Type.Name;
                 if (v.Initializer is not null)
                 {
                     Emit(v.Initializer);
@@ -371,6 +437,27 @@ sealed class CodeGenerator
                 Emit(fset.Value);
                 _builder.SetField(fset.Target.Name.Lexeme);
                 break;
+            case MethodCallExpr mc:
+            {
+                SetLoc(mc.MethodName);
+                Emit(mc.Target);
+                foreach (var arg in mc.Arguments)
+                {
+                    Emit(arg);
+                }
+
+                string? objectType = TryResolveObjectTypeName(mc.Target);
+                if (objectType is null)
+                    throw new InvalidOperationException($"Unable to resolve object type for method '{mc.MethodName.Lexeme}'");
+
+                string key = MethodKey(objectType, mc.MethodName.Lexeme, mc.Arguments.Count);
+                if (!_methods.TryGetValue(key, out var info))
+                    throw new InvalidOperationException($"Undefined method '{objectType}.{mc.MethodName.Lexeme}' with {mc.Arguments.Count} args");
+
+                int frameSize = Math.Max(info.LocalCount, info.ParamCount);
+                _builder.Call(info.Label, info.ParamCount, frameSize);
+                break;
+            }
 
             case Call call:
                 SetLoc(call.Callee);
@@ -504,6 +591,34 @@ sealed class CodeGenerator
     }
 
     private static string ConstructorKey(string typeName, int arity) => $"{typeName}#{arity}";
+    private static string MethodKey(string typeName, string methodName, int arity) => $"{typeName}.{methodName}#{arity}";
+    private bool IsObjectType(TypeRef type) =>
+        !type.IsArray && !type.IsOptional && type.Name is not "integer" and not "whole" and not "real" and not "boolean" and not "string";
+
+    private string? TryResolveObjectTypeName(Expr expr)
+    {
+        switch (expr)
+        {
+            case Variable v:
+                return _localObjectTypes.TryGetValue(v.Name.Lexeme, out var t) ? t : null;
+            case NewObjectExpr no:
+                return no.TypeName.Lexeme;
+            case FieldAccessExpr fa:
+            {
+                var ownerType = TryResolveObjectTypeName(fa.Target);
+                if (ownerType is null) return null;
+                if (_objectFieldObjectTypes.TryGetValue(ownerType, out var fields) &&
+                    fields.TryGetValue(fa.Name.Lexeme, out var fieldType))
+                {
+                    return fieldType;
+                }
+                return null;
+            }
+            default:
+                return null;
+        }
+    }
+
     private bool HasConstructors(string typeName)
     {
         foreach (var key in _constructors.Keys)
@@ -715,13 +830,16 @@ sealed class CodeGenerator
     private void PushScope()
     {
         _scopeStack.Push(_locals);
+        _scopeObjectTypesStack.Push(_localObjectTypes);
         _nextLocalStack.Push(_nextLocalIndex);
         _locals = new Dictionary<string, int>(StringComparer.Ordinal);
+        _localObjectTypes = new Dictionary<string, string>(StringComparer.Ordinal);
     }
 
     private void PopScope()
     {
         _locals = _scopeStack.Pop();
+        _localObjectTypes = _scopeObjectTypesStack.Pop();
         _nextLocalIndex = _nextLocalStack.Pop();
     }
 

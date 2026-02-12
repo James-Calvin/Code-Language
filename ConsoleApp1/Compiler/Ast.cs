@@ -136,6 +136,17 @@ sealed class Call : Expr
     public Call(Token callee, IReadOnlyList<Expr> args) { Callee = callee; Arguments = args; }
 }
 
+sealed class MethodCallExpr : Expr
+{
+    public Expr Target { get; }
+    public Token MethodName { get; }
+    public IReadOnlyList<Expr> Arguments { get; }
+    public MethodCallExpr(Expr target, Token methodName, IReadOnlyList<Expr> args)
+    {
+        Target = target; MethodName = methodName; Arguments = args;
+    }
+}
+
 sealed record Parameter(TypeRef? Type, Token Name);
 
 sealed record FieldDecl(TypeRef Type, Token Name);
@@ -242,9 +253,10 @@ sealed class ObjectDecl : Stmt
     public Token Name { get; }
     public IReadOnlyList<FieldDecl> Fields { get; }
     public IReadOnlyList<ConstructorDecl> Constructors { get; }
-    public ObjectDecl(Token name, IReadOnlyList<FieldDecl> fields, IReadOnlyList<ConstructorDecl> constructors)
+    public IReadOnlyList<MethodDecl> Methods { get; }
+    public ObjectDecl(Token name, IReadOnlyList<FieldDecl> fields, IReadOnlyList<ConstructorDecl> constructors, IReadOnlyList<MethodDecl> methods)
     {
-        Name = name; Fields = fields; Constructors = constructors;
+        Name = name; Fields = fields; Constructors = constructors; Methods = methods;
     }
 }
 
@@ -256,5 +268,17 @@ sealed class ConstructorDecl
     public ConstructorDecl(Token keyword, IReadOnlyList<Parameter> parameters, Block body)
     {
         Keyword = keyword; Parameters = parameters; Body = body;
+    }
+}
+
+sealed class MethodDecl
+{
+    public Token Name { get; }
+    public TypeRef? ReturnType { get; }
+    public IReadOnlyList<Parameter> Parameters { get; }
+    public Block Body { get; }
+    public MethodDecl(Token name, TypeRef? returnType, IReadOnlyList<Parameter> parameters, Block body)
+    {
+        Name = name; ReturnType = returnType; Parameters = parameters; Body = body;
     }
 }

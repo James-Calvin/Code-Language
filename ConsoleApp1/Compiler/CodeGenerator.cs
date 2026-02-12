@@ -13,15 +13,19 @@ sealed class CodeGenerator
     private readonly Stack<int> _nextLocalStack = new();
     private readonly List<int> _freeTemps = new();
     private readonly Dictionary<string, (string Label, int ParamCount, int LocalCount)> _functions = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, (string Label, int ParamCount, int LocalCount)> _constructors = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _objectNames = new(StringComparer.Ordinal);
     private int _labelCounter;
 
     public byte[] Generate(IList<Stmt> statements)
     {
         var functionDecls = new List<FunctionDecl>();
+        var objectDecls = new List<ObjectDecl>();
         var topLevel = new List<Stmt>();
         foreach (var stmt in statements)
         {
             if (stmt is FunctionDecl fd) functionDecls.Add(fd);
+            else if (stmt is ObjectDecl od) objectDecls.Add(od);
             else topLevel.Add(stmt);
         }
 
@@ -33,6 +37,24 @@ sealed class CodeGenerator
         {
             string label = $"fn_{fn.Name.Lexeme}";
             _functions[fn.Name.Lexeme] = (label, fn.Parameters.Count, 0);
+        }
+
+        // Pre-register object names and constructor labels for forward constructor calls.
+        foreach (var obj in objectDecls)
+        {
+            _objectNames.Add(obj.Name.Lexeme);
+            foreach (var ctor in obj.Constructors)
+            {
+                string key = ConstructorKey(obj.Name.Lexeme, ctor.Parameters.Count);
+                string label = $"ctor_{obj.Name.Lexeme}_{ctor.Parameters.Count}";
+                _constructors[key] = (label, ctor.Parameters.Count + 1, 0); // +1 for implicit this
+            }
+        }
+
+        // Emit constructors before normal functions.
+        foreach (var obj in objectDecls)
+        {
+            EmitObjectConstructors(obj);
         }
 
         // Emit functions to compute locals and bodies
@@ -82,6 +104,45 @@ sealed class CodeGenerator
         _builder.Ret();
 
         _functions[fn.Name.Lexeme] = (label, fn.Parameters.Count, _functionLocalHighWater);
+        PopScope();
+    }
+
+    private void EmitObjectConstructors(ObjectDecl obj)
+    {
+        foreach (var ctor in obj.Constructors)
+        {
+            EmitConstructor(obj, ctor);
+        }
+    }
+
+    private void EmitConstructor(ObjectDecl obj, ConstructorDecl ctor)
+    {
+        string key = ConstructorKey(obj.Name.Lexeme, ctor.Parameters.Count);
+        var info = _constructors[key];
+        _builder.Label(info.Label);
+
+        _nextLocalIndex = 0;
+        _functionLocalHighWater = 0;
+        _freeTemps.Clear();
+        PushScope();
+
+        // implicit this
+        _locals["this"] = _nextLocalIndex++;
+        _functionLocalHighWater = Math.Max(_functionLocalHighWater, _nextLocalIndex);
+
+        for (int i = 0; i < ctor.Parameters.Count; i++)
+        {
+            var param = ctor.Parameters[i];
+            _locals[param.Name.Lexeme] = _nextLocalIndex++;
+            _functionLocalHighWater = Math.Max(_functionLocalHighWater, _nextLocalIndex);
+        }
+
+        Emit(ctor.Body);
+
+        _builder.PushInt(0);
+        _builder.Ret();
+
+        _constructors[key] = (info.Label, info.ParamCount, _functionLocalHighWater);
         PopScope();
     }
 
@@ -240,6 +301,29 @@ sealed class CodeGenerator
                 Emit(na.Size);
                 _builder.NewArrayN();
                 break;
+            case NewObjectExpr no:
+            {
+                if (!_objectNames.Contains(no.TypeName.Lexeme))
+                    throw new InvalidOperationException($"Unknown object type '{no.TypeName.Lexeme}' at line {no.TypeName.Line}, col {no.TypeName.Column}");
+                _builder.NewObject(no.TypeName.Lexeme);
+                string ctorKey = ConstructorKey(no.TypeName.Lexeme, no.Arguments.Count);
+                if (_constructors.TryGetValue(ctorKey, out var ctor))
+                {
+                    _builder.Dup(); // keep object on stack after constructor call
+                    foreach (var arg in no.Arguments)
+                    {
+                        Emit(arg);
+                    }
+                    int frameSize = Math.Max(ctor.LocalCount, ctor.ParamCount);
+                    _builder.Call(ctor.Label, ctor.ParamCount, frameSize);
+                    _builder.Pop(); // discard constructor return value
+                }
+                else if (no.Arguments.Count > 0 || HasConstructors(no.TypeName.Lexeme))
+                {
+                    throw new InvalidOperationException($"No constructor found for '{no.TypeName.Lexeme}' with {no.Arguments.Count} arguments at line {no.TypeName.Line}, col {no.TypeName.Column}");
+                }
+                break;
+            }
             case ArrayLengthExpr alen:
                 Emit(alen.Target);
                 _builder.ArrayLength();
@@ -262,6 +346,10 @@ sealed class CodeGenerator
                 Emit(oor.Fallback);
                 _builder.OptionalOr();
                 break;
+            case FieldAccessExpr fa:
+                Emit(fa.Target);
+                _builder.GetField(fa.Name.Lexeme);
+                break;
             case Variable v:
                 SetLoc(v.Name);
                 _builder.Load(GetSlot(v.Name));
@@ -277,6 +365,11 @@ sealed class CodeGenerator
                 Emit(aset.Target.Index);
                 Emit(aset.Value);
                 _builder.ArraySet();
+                break;
+            case FieldSetExpr fset:
+                Emit(fset.Target.Target);
+                Emit(fset.Value);
+                _builder.SetField(fset.Target.Name.Lexeme);
                 break;
 
             case Call call:
@@ -408,6 +501,17 @@ sealed class CodeGenerator
         if (!_locals.TryGetValue(name.Lexeme, out var slot))
             throw new InvalidOperationException($"Undefined variable '{name.Lexeme}' at line {name.Line}, col {name.Column}");
         return slot;
+    }
+
+    private static string ConstructorKey(string typeName, int arity) => $"{typeName}#{arity}";
+    private bool HasConstructors(string typeName)
+    {
+        foreach (var key in _constructors.Keys)
+        {
+            if (key.StartsWith($"{typeName}#", StringComparison.Ordinal))
+                return true;
+        }
+        return false;
     }
 
     private string NewLabel(string prefix) => $"{prefix}_{_labelCounter++}";

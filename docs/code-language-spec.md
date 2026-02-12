@@ -1,7 +1,7 @@
 # Code Language Specification (Living Draft)
 
-Version: 0.9  
-Last updated: 2026-02-10
+Version: 1.0  
+Last updated: 2026-02-12
 
 ## 1. Goals and Design
 - `Code` is a general-purpose language.
@@ -249,7 +249,9 @@ array<integer> otherNumbers = new array<integer>(10);
 ```
 
 ## 9. Object Model and Interfaces
-- Current implementation status: object declarations with field lists are parsed and type-checked as compile-time symbols (including forward-referenced field types). Runtime object construction/method dispatch is not implemented yet.
+- Current implementation status:
+  - Implemented: object declarations with fields/constructors, `new Type(...)`, and object field read/write (`obj.field`, `obj.field = value`).
+  - Not yet implemented: object methods, interfaces, visibility enforcement, records.
 - No inheritance.
 - Contracts are declared as `interface`.
 - Concrete types are declared as `object`.
@@ -263,6 +265,12 @@ array<integer> otherNumbers = new array<integer>(10);
 - Object fields must be initialized either:
   - at field declaration, or
   - during constructor execution.
+- Current constructor rules (implemented):
+  - If an object has fields, it must declare at least one constructor.
+  - Constructor overloads currently resolve by parameter count (arity).
+  - Each constructor must definitely assign all declared fields via `this.field = ...`.
+  - `return` is not currently allowed in constructors.
+- Reserved field names (currently disallowed): `length`, `hasValue`, `value`, `or`.
 - `record` is a type like `object`, but passed by value.
 - `object` instances are passed by reference.
 - For remaining categories, reference/value behavior follows common C# conventions (provisional).
@@ -292,11 +300,14 @@ object Person implements Methodable {
 }
 ```
 
-Object field default example:
+Object field initialization example:
 
 ```code
 object Counter {
-  integer count = 0;
+  integer count;
+  constructor(integer initial) {
+    this.count = initial;
+  }
 }
 ```
 
@@ -402,6 +413,8 @@ real result3 = errorExample(0) on error panic("Error message {error}");
 - Runtime errors include line/column mapping and a bytecode call stack derived from embedded debug info in the compiled `.bytecode` file.
 - Type syntax is parsed through structured type references (`TypeRef`) including generic forms; named object types resolve through the object symbol table.
 - Object symbols are collected before function/body checking, enabling duplicate object/field checks and forward references in object field types.
+- Constructor symbols are collected and used for `new Type(...)` arity/type validation.
+- Object construction and field access lower to dedicated VM opcodes (`NEW_OBJECT`, `GET_FIELD`, `SET_FIELD`).
 - Arrays: literals `{...}` create arrays; typed declarations `array<integer> xs = {1,2,3};`; dynamic `new array<integer>(n)` requires a size; `xs.length` yields length; `foreach` iterates arrays by element.
 
 ```code

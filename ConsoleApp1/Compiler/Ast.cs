@@ -241,8 +241,20 @@ sealed class ObjectDecl : Stmt
 {
     public Token Name { get; }
     public IReadOnlyList<FieldDecl> Fields { get; }
-    public ObjectDecl(Token name, IReadOnlyList<FieldDecl> fields)
+    public IReadOnlyList<ConstructorDecl> Constructors { get; }
+    public ObjectDecl(Token name, IReadOnlyList<FieldDecl> fields, IReadOnlyList<ConstructorDecl> constructors)
     {
-        Name = name; Fields = fields;
+        Name = name; Fields = fields; Constructors = constructors;
+    }
+}
+
+sealed class ConstructorDecl
+{
+    public Token Keyword { get; }
+    public IReadOnlyList<Parameter> Parameters { get; }
+    public Block Body { get; }
+    public ConstructorDecl(Token keyword, IReadOnlyList<Parameter> parameters, Block body)
+    {
+        Keyword = keyword; Parameters = parameters; Body = body;
     }
 }

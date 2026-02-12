@@ -1,9 +1,9 @@
 # Bytecode Specification (draft)
 
-Version: 0.7 (2026-02-11)
+Version: 0.8 (2026-02-12)
 
 ## File format
-- Header: "CODE" ASCII (4 bytes) + version byte (0x02) + int32 codeSize + int32 debugCount.
+- Header: "CODE" ASCII (4 bytes) + version byte (0x05) + int32 codeSize + int32 debugCount.
 - Encoding: little-endian integers.
 - Layout: header, then `codeSize` bytes of opcodes/operands, followed by `debugCount` debug entries (ip, line, column; each int32).
 - Produced files should use the `.bytecode` extension.
@@ -46,6 +46,9 @@ Version: 0.7 (2026-02-11)
 | 0x1C | OPTIONAL_VALUE | — | 0 | pop optional, push value or panic if none |
 | 0x1D | OPTIONAL_OR | — | -1 | pop fallback, pop optional, push optional-or-fallback |
 | 0x1E | ARRAY_SET | — | -2 | pop value, index, array; set element; push value |
+| 0x1F | NEW_OBJECT | int32 length, UTF-8 type name | +1 | create VM object instance |
+| 0x20 | GET_FIELD | int32 length, UTF-8 field name | 0 | pop object, push field value; throws if unset/missing |
+| 0x21 | SET_FIELD | int32 length, UTF-8 field name | -1 | pop value, pop object, assign field, push value |
 | 0xFF | HALT | — | 0 | stop execution |
 
 ## Planned additions
@@ -60,3 +63,4 @@ Version: 0.7 (2026-02-11)
 - Debug entries map instruction pointer offsets (absolute byte positions) back to source line/column for runtime stack traces; entries are optional per instruction but recorded when available.
 - Arrays are stored as VM-managed lists; NEW_ARRAY pops pre-pushed elements, NEW_ARRAY_N allocates default-filled arrays of length N, ARRAY_LENGTH/GET operate on them (GET pops index then array).
 - ARRAY_SET pops value, index, array; writes in place; returns the value.
+- Objects are stored as VM-managed instances with a type name and field dictionary; field access is name-based via GET_FIELD/SET_FIELD.

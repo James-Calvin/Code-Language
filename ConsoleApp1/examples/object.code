@@ -1,11 +1,17 @@
-// Current milestone: object declarations are type-checked metadata.
 object Person {
   integer age;
+  constructor(integer value) {
+    this.age = value;
+  }
 }
 
 object Team {
-  array<integer> scores;
-  optional<Person> lead;
+  Person lead;
+  constructor(Person captain) {
+    this.lead = captain;
+  }
 }
 
-print("object symbols ok");
+Person ada = new Person(37);
+Team team = new Team(ada);
+print(team.lead.age);

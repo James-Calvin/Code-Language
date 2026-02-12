@@ -30,11 +30,11 @@ Legend:
 | `[x]` | Error model | Typed errors / exception objects in VM | VmError objects, THROW opcode, panic statement, tests |
 | `[!]` | Error model | Propagation semantics across functions | Requires compiler/codegen rules |
 | `[x]` | Object model | Type references in AST/type checker (`TypeRef`) for named/generic user types | Implemented; parser/type-checker now use `TypeRef` instead of token-only types |
-| `[x]` | Object model | Object symbol table pass (object names + fields + forward refs) | Implemented for field-only object declarations; duplicate checks + type validation in place |
-| `[!]` | Object model | Constructor/method symbol collection (signatures, overload sets, visibility) | Next symbol-table milestone once syntax lands |
-| `[!]` | Object model | VM heap object representation + opcodes (`NEW_OBJECT`, `GET_FIELD`, `SET_FIELD`) | Permanent runtime substrate for user-defined instances |
-| `[!]` | Object model | Parse + lower `new Type(...)`, `obj.field`, `obj.field = value` | Permanent surface syntax; unblocks first useful object programs |
-| `[!]` | Object model | Constructors + definite field initialization rules | Permanent safety requirement for object creation |
+| `[x]` | Object model | Object symbol table pass (object names + fields + forward refs) | Implemented; duplicate checks + field type validation in place |
+| `[x]` | Object model | Constructor symbol collection (signatures/arity) | Implemented for constructor overload-by-arity; method/visibility symbols still pending |
+| `[x]` | Object model | VM heap object representation + opcodes (`NEW_OBJECT`, `GET_FIELD`, `SET_FIELD`) | Implemented with runtime object field dictionary |
+| `[x]` | Object model | Parse + lower `new Type(...)`, `obj.field`, `obj.field = value` | Implemented for object construction + field read/write |
+| `[x]` | Object model | Constructors + definite field initialization rules | Implemented baseline: fields require constructor init; constructors enforced |
 | `[~]` | Object model | Method declarations + call syntax (`obj.method(args)`) | Permanent syntax; initial lowering can be simplified |
 | `[~]` | Object model | Temporary method lowering (`method` -> static fn with implicit `this`) | Temporary bridge to ship methods before dynamic dispatch |
 | `[~]` | Object model | `record` value semantics (copy on assignment/pass/return) | Permanent feature, follows object core |
@@ -57,17 +57,17 @@ Legend:
 | `[~]` | Compiler pipeline | Optimizations: const fold/DCE | Initial literal fold in place |
 | `[~]` | Runtime/stdlib | Basic stdlib (IO/math/time) | Print exists; extend |
 | `[_]` | Runtime/stdlib | REPL | Future |
-| `[x]` | Tooling/docs | Bytecode spec v0.7 (debug map + arrays/optionals/errors) | Implemented |
+| `[x]` | Tooling/docs | Bytecode spec v0.8 (debug map + arrays/optionals/errors/objects) | Implemented |
 | `[x]` | Tooling/docs | AI context + sample programs | Implemented |
 | `[~]` | Tooling/docs | Disassembler/trace polish; CLI trace flags | Medium priority |
 | `[~]` | Tooling/docs | Formatter/linter for `.code` | Medium priority |
 | `[x]` | Testing | VM harness tests | Implemented |
 | `[x]` | Testing | Compiler integration suite | Includes print, arithmetic, functions, loops, foreach, strings |
 | `[x]` | Testing | Property/fuzz tests (parser/VM) | Arithmetic, boolean logic, string concat, loop sums |
-| `[!]` | Testing | Object-model integration suite | Initial symbol-table coverage in place; expand for construct/field/method/record/interface runtime behavior |
+| `[!]` | Testing | Object-model integration suite | Constructor/new/field read-write + compile-time object diagnostics covered; expand for methods/records/interfaces |
 | `[~]` | Testing | Object-model fuzz/property domains | Constructor/field mutation/member access invariants |
 
 ## Priority Rollup (benefit/effort)
-- High (`[!]`): object prerequisites (type refs, symbols, object ops, constructors), type system/codegen polish (frame sizing, flow/return analysis), testing expansion, error propagation semantics.
+- High (`[!]`): object methods/dispatch prerequisites, type system/codegen polish (frame sizing, flow/return analysis), testing expansion, error propagation semantics.
 - Medium (`[~]`): methods (via temporary lowering), record semantics, constant pool, optimizer expansion, stdlib basics, tooling polish.
 - Low (`[_]`): interfaces runtime dispatch, modules/packages, REPL, future stdlib/versioning, long-term runtime lifecycle strategy.

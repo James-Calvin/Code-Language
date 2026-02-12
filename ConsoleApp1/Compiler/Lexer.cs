@@ -28,6 +28,7 @@ sealed class Lexer
         { "return", TokenType.Return },
         { "print", TokenType.Print },
         { "function", TokenType.Function },
+        { "constructor", TokenType.Constructor },
         { "new", TokenType.New },
         { "true", TokenType.True },
         { "false", TokenType.False },

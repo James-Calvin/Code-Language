@@ -159,10 +159,43 @@ print(""x={x}"");", "x=3\n")
             ("optional-or", @"optional<integer> v; print(v.or(42));", "42\n"),
             ("optional-some", @"optional<integer> v = 5; print(v.hasValue); print(v.value);", "1\n5\n")
         };
-        var objectSymbolCases = new List<(string Name, string Source, string Expected)>
+        var objectCases = new List<(string Name, string Source, string Expected)>
         {
-            ("object-decl-top-level", @"object Person { integer age; } print(""ok"");", "ok\n"),
-            ("object-forward-field-ref", @"object B { A a; } object A { integer value; } print(""ok"");", "ok\n"),
+            ("object-construct-and-field",
+@"object Person {
+  integer age;
+  constructor(integer value) {
+    this.age = value;
+  }
+}
+Person p = new Person(42);
+print(p.age);", "42\n"),
+            ("object-field-set",
+@"object Counter {
+  integer count;
+  constructor(integer start) {
+    this.count = start;
+  }
+}
+Counter c = new Counter(1);
+c.count = c.count + 5;
+print(c.count);", "6\n"),
+            ("object-forward-field-ref",
+@"object B {
+  A a;
+  constructor(A value) {
+    this.a = value;
+  }
+}
+object A {
+  integer number;
+  constructor(integer n) {
+    this.number = n;
+  }
+}
+A a = new A(9);
+B b = new B(a);
+print(b.a.number);", "9\n"),
         };
         // Expected error cases
         var errorCases = new List<(string Name, string Source, string ExpectedType)>
@@ -171,9 +204,12 @@ print(""x={x}"");", "x=3\n")
         };
         var compileErrorCases = new List<(string Name, string Source, string ErrorContains)>
         {
-            ("object-duplicate-name", @"object Person { integer age; } object Person { integer score; }", "already defined"),
-            ("object-duplicate-field", @"object Person { integer age; integer age; }", "already defined"),
+            ("object-duplicate-name", @"object Person { integer age; constructor(integer v){ this.age = v; } } object Person { integer score; constructor(integer v){ this.score = v; } }", "already defined"),
+            ("object-duplicate-field", @"object Person { integer age; integer age; constructor(integer v){ this.age = v; } }", "already defined"),
             ("object-unknown-field-type", @"object Person { UnknownType data; }", "Unknown type"),
+            ("object-missing-constructor", @"object Person { integer age; }", "has no constructor"),
+            ("object-missing-field-init", @"object Person { integer age; constructor() { } }", "does not definitely assign fields"),
+            ("object-new-ctor-arity-mismatch", @"object Person { integer age; constructor(integer value) { this.age = value; } } Person p = new Person();", "No constructor"),
         };
 
         foreach (var (name, src, expected) in cases)
@@ -222,7 +258,7 @@ print(""x={x}"");", "x=3\n")
             }
         }
 
-        foreach (var (name, src, expected) in objectSymbolCases)
+        foreach (var (name, src, expected) in objectCases)
         {
             try
             {

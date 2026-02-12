@@ -24,6 +24,7 @@ enum TokenType
     Return,
     Print,
     Function,
+    Constructor,
     And, Or, Not,
     For, Foreach, In,
     New,

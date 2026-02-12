@@ -64,6 +64,9 @@ static class Disassembler
                 case OpCode.Halt:
                     break;
                 case OpCode.PushString:
+                case OpCode.NewObject:
+                case OpCode.GetField:
+                case OpCode.SetField:
                     if (ip + 4 > codeEnd) throw new InvalidOperationException("Truncated string length");
                     int len = BitConverter.ToInt32(bytes, ip); ip += 4;
                     if (ip + len > codeEnd) throw new InvalidOperationException("Truncated string data");

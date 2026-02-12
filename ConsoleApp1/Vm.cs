@@ -37,6 +37,9 @@ enum OpCode : byte
     OptionalValue = 0x1C,
     OptionalOr = 0x1D,
     ArraySet = 0x1E,
+    NewObject = 0x1F,
+    GetField = 0x20,
+    SetField = 0x21,
     Halt = 0xFF
 }
 
@@ -308,6 +311,45 @@ sealed class Vm
                     break;
                 }
 
+                case OpCode.NewObject:
+                {
+                    string typeName = ReadStringOperand();
+                    _stack.Push(new VmObject(typeName));
+                    break;
+                }
+
+                case OpCode.GetField:
+                {
+                    string fieldName = ReadStringOperand();
+                    EnsureStack(1);
+                    var obj = _stack.Pop();
+                    if (obj is not VmObject vmObj)
+                    {
+                        throwRuntimeType("GetField expects object");
+                        break;
+                    }
+                    if (!vmObj.Fields.TryGetValue(fieldName, out var value))
+                        ThrowRuntime($"Field '{fieldName}' is not initialized on object '{vmObj.TypeName}'");
+                    _stack.Push(value!);
+                    break;
+                }
+
+                case OpCode.SetField:
+                {
+                    string fieldName = ReadStringOperand();
+                    EnsureStack(2);
+                    var value = _stack.Pop();
+                    var obj = _stack.Pop();
+                    if (obj is not VmObject vmObj)
+                    {
+                        throwRuntimeType("SetField expects object");
+                        break;
+                    }
+                    vmObj.Fields[fieldName] = value;
+                    _stack.Push(value);
+                    break;
+                }
+
                 case OpCode.NewArrayN:
                 {
                     EnsureStack(1);
@@ -416,6 +458,15 @@ sealed class Vm
         EnsureBytes(4);
         int value = BinaryPrimitives.ReadInt32LittleEndian(_code.AsSpan(_ip, 4));
         _ip += 4;
+        return value;
+    }
+
+    private string ReadStringOperand()
+    {
+        int length = ReadIntOperand();
+        EnsureBytes(length);
+        string value = System.Text.Encoding.UTF8.GetString(_code, _ip, length);
+        _ip += length;
         return value;
     }
 

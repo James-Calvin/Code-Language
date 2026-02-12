@@ -132,6 +132,11 @@ sealed class BytecodeBuilder
         _bytes.Add((byte)OpCode.ArraySet);
         return this;
     }
+
+    public BytecodeBuilder NewObject(string typeName) => AddStringOperand(OpCode.NewObject, typeName);
+    public BytecodeBuilder GetField(string fieldName) => AddStringOperand(OpCode.GetField, fieldName);
+    public BytecodeBuilder SetField(string fieldName) => AddStringOperand(OpCode.SetField, fieldName);
+
     public BytecodeBuilder Call(string label, int argCount, int localCount)
     {
         RecordDebug();
@@ -195,6 +200,16 @@ sealed class BytecodeBuilder
         RecordDebug();
         _bytes.Add((byte)op);
         _bytes.AddRange(BitConverter.GetBytes(slot));
+        return this;
+    }
+
+    private BytecodeBuilder AddStringOperand(OpCode op, string value)
+    {
+        RecordDebug();
+        _bytes.Add((byte)op);
+        var utf8 = Encoding.UTF8.GetBytes(value);
+        _bytes.AddRange(BitConverter.GetBytes(utf8.Length));
+        _bytes.AddRange(utf8);
         return this;
     }
 }

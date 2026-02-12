@@ -19,7 +19,7 @@ sealed class TypeChecker
 
             if (_objects.ContainsKey(obj.Name.Lexeme))
                 throw new CompilerException($"Object '{obj.Name.Lexeme}' already defined", obj.Name.Line, obj.Name.Column);
-            _objects[obj.Name.Lexeme] = new ObjectSymbol(obj.Name, new Dictionary<string, TypeRef>(StringComparer.Ordinal));
+            _objects[obj.Name.Lexeme] = new ObjectSymbol(obj.Name, new Dictionary<string, TypeRef>(StringComparer.Ordinal), new List<ConstructorSignature>());
         }
 
         // Validate object field declarations.
@@ -33,8 +33,32 @@ sealed class TypeChecker
             {
                 if (symbol.Fields.ContainsKey(field.Name.Lexeme))
                     throw new CompilerException($"Field '{field.Name.Lexeme}' is already defined in object '{obj.Name.Lexeme}'", field.Name.Line, field.Name.Column);
+                if (IsReservedPropertyName(field.Name.Lexeme))
+                    throw new CompilerException($"Field name '{field.Name.Lexeme}' is reserved for built-in properties", field.Name.Line, field.Name.Column);
                 ValidateTypeRef(field.Type);
                 symbol.Fields[field.Name.Lexeme] = field.Type;
+            }
+
+            var ctorArities = new HashSet<int>();
+            foreach (var ctor in obj.Constructors)
+            {
+                if (!ctorArities.Add(ctor.Parameters.Count))
+                    throw new CompilerException($"Constructor overload with {ctor.Parameters.Count} parameters is already defined in object '{obj.Name.Lexeme}'", ctor.Keyword.Line, ctor.Keyword.Column);
+
+                var paramTypes = new List<TypeSymbol>(ctor.Parameters.Count);
+                foreach (var param in ctor.Parameters)
+                {
+                    if (param.Type is null)
+                        throw new CompilerException("Constructor parameters must be typed", param.Name.Line, param.Name.Column);
+                    ValidateTypeRef(param.Type);
+                    paramTypes.Add(MapType(param.Type));
+                }
+                symbol.Constructors.Add(new ConstructorSignature(ctor.Keyword, paramTypes, ctor.Body));
+            }
+
+            if (symbol.Fields.Count > 0 && symbol.Constructors.Count == 0)
+            {
+                throw new CompilerException($"Object '{obj.Name.Lexeme}' declares fields but has no constructor to initialize them", obj.Name.Line, obj.Name.Column);
             }
         }
 
@@ -55,6 +79,14 @@ sealed class TypeChecker
                 );
                 _functions[fn.Name.Lexeme] = sig;
             }
+        }
+
+        // Validate constructor bodies and field definite-initialization.
+        foreach (var stmt in statements)
+        {
+            if (stmt is not ObjectDecl obj)
+                continue;
+            CheckObjectConstructors(obj);
         }
 
         var global = new TypeEnvironment();
@@ -86,11 +118,100 @@ sealed class TypeChecker
         {
             var param = fn.Parameters[i];
             var pType = MapType(param.Type!);
-            env.Define(param.Name.Lexeme, pType, param.Name.Line, param.Name.Column, assigned: true);
+            env.Define(param.Name.Lexeme, pType, param.Type, param.Name.Line, param.Name.Column, assigned: true);
         }
         bool allPathsReturn = CheckStmt(fn.Body, env, retType);
         if (!allPathsReturn)
             throw new CompilerException($"Function '{fn.Name.Lexeme}' may not return a value on all paths", fn.Name.Line, fn.Name.Column);
+    }
+
+    private void CheckObjectConstructors(ObjectDecl obj)
+    {
+        if (!_objects.TryGetValue(obj.Name.Lexeme, out var symbol))
+            return;
+
+        for (int i = 0; i < obj.Constructors.Count; i++)
+        {
+            var ctor = obj.Constructors[i];
+            var ctorSig = symbol.Constructors[i];
+            var env = new TypeEnvironment();
+            var thisType = new TypeRef(obj.Name.Lexeme, null, obj.Name.Line, obj.Name.Column);
+            env.Define("this", TypeSymbol.Object, thisType, ctor.Keyword.Line, ctor.Keyword.Column, assigned: true);
+            foreach (var param in ctor.Parameters)
+            {
+                var pType = MapType(param.Type!);
+                env.Define(param.Name.Lexeme, pType, param.Type, param.Name.Line, param.Name.Column, assigned: true);
+            }
+
+            // Constructor bodies are type-checked like regular blocks. Explicit return is currently not supported.
+            CheckStmt(ctorSig.Body, env, currentReturn: null);
+            EnsureAllFieldsInitialized(obj, ctorSig.Body);
+        }
+    }
+
+    private void EnsureAllFieldsInitialized(ObjectDecl obj, Block body)
+    {
+        var assigned = ComputeDefiniteFieldAssignments(body, new HashSet<string>(StringComparer.Ordinal));
+        var missing = new List<string>();
+        foreach (var field in obj.Fields)
+        {
+            if (!assigned.Contains(field.Name.Lexeme))
+                missing.Add(field.Name.Lexeme);
+        }
+
+        if (missing.Count > 0)
+        {
+            throw new CompilerException(
+                $"Constructor for '{obj.Name.Lexeme}' does not definitely assign fields: {string.Join(", ", missing)}",
+                obj.Name.Line,
+                obj.Name.Column);
+        }
+    }
+
+    private HashSet<string> ComputeDefiniteFieldAssignments(Stmt stmt, HashSet<string> incoming)
+    {
+        var assigned = new HashSet<string>(incoming, StringComparer.Ordinal);
+        switch (stmt)
+        {
+            case ExprStmt es:
+                if (TryGetThisFieldName(es.Expression, out var fieldName))
+                    assigned.Add(fieldName);
+                return assigned;
+            case Block block:
+                foreach (var s in block.Statements)
+                {
+                    assigned = ComputeDefiniteFieldAssignments(s, assigned);
+                }
+                return assigned;
+            case IfStmt ifs:
+            {
+                var thenAssigned = ComputeDefiniteFieldAssignments(ifs.ThenBranch, assigned);
+                if (ifs.ElseBranch is null)
+                    return assigned;
+                var elseAssigned = ComputeDefiniteFieldAssignments(ifs.ElseBranch, assigned);
+                thenAssigned.IntersectWith(elseAssigned);
+                return thenAssigned;
+            }
+            case WhileStmt:
+            case ForStmt:
+            case ForeachStmt:
+                return assigned; // loops may not execute
+            case ReturnStmt r:
+                throw new CompilerException("Return is not supported inside constructors yet", GetStmtLine(r), GetStmtCol(r));
+            default:
+                return assigned;
+        }
+    }
+
+    private static bool TryGetThisFieldName(Expr expr, out string fieldName)
+    {
+        fieldName = string.Empty;
+        if (expr is not FieldSetExpr set)
+            return false;
+        if (set.Target.Target is not Variable thisVar || !string.Equals(thisVar.Name.Lexeme, "this", StringComparison.Ordinal))
+            return false;
+        fieldName = set.Target.Name.Lexeme;
+        return true;
     }
 
     private bool CheckStmt(Stmt stmt, TypeEnvironment env, TypeSymbol? currentReturn)
@@ -106,7 +227,7 @@ sealed class TypeChecker
                     RequireAssignable(t, init, v.Type.Line, v.Type.Column, "Initializer type mismatch");
                 }
                 bool assignedFlag = hasInit || t == TypeSymbol.Optional;
-                env.Define(v.Name.Lexeme, t, v.Name.Line, v.Name.Column, assignedFlag);
+                env.Define(v.Name.Lexeme, t, v.Type, v.Name.Line, v.Name.Column, assignedFlag);
                 return false;
 
             case ExprStmt e:
@@ -150,7 +271,7 @@ sealed class TypeChecker
                 Require(IsNumeric(iterType) || iterType == TypeSymbol.Array, fe.Iterable, "foreach iterable must be numeric (count) or array");
                 fe.IsArray = iterType == TypeSymbol.Array;
                 var feEnv = env.CreateChild();
-                feEnv.Define(fe.Iterator.Lexeme, TypeSymbol.Integer, fe.Iterator.Line, fe.Iterator.Column, assigned: true);
+                feEnv.Define(fe.Iterator.Lexeme, TypeSymbol.Integer, null, fe.Iterator.Line, fe.Iterator.Column, assigned: true);
                 CheckStmt(fe.Body, feEnv, currentReturn);
                 return false;
 
@@ -206,6 +327,30 @@ sealed class TypeChecker
                 var sizeType = CheckExpr(na.Size, env, currentReturn);
                 Require(IsNumeric(sizeType), na.Size, "Array size must be numeric");
                 return TypeSymbol.Array;
+            case NewObjectExpr no:
+            {
+                if (!_objects.TryGetValue(no.TypeName.Lexeme, out var obj))
+                    throw new CompilerException($"Unknown object type '{no.TypeName.Lexeme}'", no.TypeName.Line, no.TypeName.Column);
+
+                var ctor = obj.Constructors.FirstOrDefault(c => c.Params.Count == no.Arguments.Count);
+                if (ctor is null)
+                {
+                    if (obj.Constructors.Count == 0 && no.Arguments.Count == 0)
+                        return TypeSymbol.Object;
+                    throw new CompilerException(
+                        $"No constructor for '{no.TypeName.Lexeme}' takes {no.Arguments.Count} argument(s)",
+                        no.TypeName.Line,
+                        no.TypeName.Column);
+                }
+
+                for (int i = 0; i < no.Arguments.Count; i++)
+                {
+                    var argType = CheckExpr(no.Arguments[i], env, currentReturn);
+                    RequireAssignable(ctor.Params[i], argType, no.TypeName.Line, no.TypeName.Column, $"Constructor argument {i} type mismatch");
+                }
+
+                return TypeSymbol.Object;
+            }
             case ArrayLengthExpr alen:
                 var targType = CheckExpr(alen.Target, env, currentReturn);
                 Require(targType == TypeSymbol.Array, alen.Target, "'.length' is only valid on arrays");
@@ -227,6 +372,13 @@ sealed class TypeChecker
                 var fbType = CheckExpr(oor.Fallback, env, currentReturn);
                 CheckExpr(oor.Optional, env, currentReturn);
                 return fbType;
+            case FieldAccessExpr fa:
+            {
+                var targetType = CheckExpr(fa.Target, env, currentReturn);
+                Require(targetType == TypeSymbol.Object, fa.Target, "Field access requires object target");
+                var resolved = ResolveFieldType(fa, env);
+                return resolved ?? TypeSymbol.Unknown;
+            }
             case ArraySetExpr aset:
                 var arrT = CheckExpr(aset.Target.Array, env, currentReturn);
                 Require(arrT == TypeSymbol.Array, aset.Target.Array, "Indexing requires an array");
@@ -234,6 +386,18 @@ sealed class TypeChecker
                 Require(IsNumeric(idxT), aset.Target.Index, "Array index must be numeric");
                 var valT = CheckExpr(aset.Value, env, currentReturn);
                 return valT;
+            case FieldSetExpr fset:
+            {
+                var targetType = CheckExpr(fset.Target.Target, env, currentReturn);
+                Require(targetType == TypeSymbol.Object, fset.Target.Target, "Field assignment requires object target");
+                var rhsType = CheckExpr(fset.Value, env, currentReturn);
+                var expectedType = ResolveFieldType(fset.Target, env);
+                if (expectedType is TypeSymbol expected)
+                {
+                    RequireAssignable(expected, rhsType, fset.Target.Name.Line, fset.Target.Name.Column, "Field assignment type mismatch");
+                }
+                return rhsType;
+            }
             case Variable v:
                 return env.LookupForRead(v.Name);
             case Assign a:
@@ -312,6 +476,43 @@ sealed class TypeChecker
         };
     }
 
+    private TypeSymbol? ResolveFieldType(FieldAccessExpr fieldAccess, TypeEnvironment env)
+    {
+        var targetType = ResolveExprTypeRef(fieldAccess.Target, env);
+        if (targetType is null)
+            return null;
+
+        if (!_objects.TryGetValue(targetType.Name, out var objSymbol))
+            return null;
+
+        if (!objSymbol.Fields.TryGetValue(fieldAccess.Name.Lexeme, out var fieldType))
+            throw new CompilerException($"Object '{targetType.Name}' has no field '{fieldAccess.Name.Lexeme}'", fieldAccess.Name.Line, fieldAccess.Name.Column);
+
+        return MapType(fieldType);
+    }
+
+    private TypeRef? ResolveExprTypeRef(Expr expr, TypeEnvironment env)
+    {
+        switch (expr)
+        {
+            case Variable v:
+                return env.TryGetDeclaredType(v.Name);
+            case NewObjectExpr no:
+                return new TypeRef(no.TypeName.Lexeme, null, no.TypeName.Line, no.TypeName.Column);
+            case FieldAccessExpr fa:
+            {
+                var owner = ResolveExprTypeRef(fa.Target, env);
+                if (owner is null) return null;
+                if (!_objects.TryGetValue(owner.Name, out var objSymbol)) return null;
+                if (!objSymbol.Fields.TryGetValue(fa.Name.Lexeme, out var fieldType))
+                    throw new CompilerException($"Object '{owner.Name}' has no field '{fa.Name.Lexeme}'", fa.Name.Line, fa.Name.Column);
+                return fieldType;
+            }
+            default:
+                return null;
+        }
+    }
+
     private void ValidateTypeRef(TypeRef typeRef)
     {
         switch (typeRef.Name)
@@ -381,6 +582,9 @@ sealed class TypeChecker
         return Rank(from) <= Rank(to) && Rank(to) > 0;
     }
 
+    private static bool IsReservedPropertyName(string name) =>
+        name is "length" or "hasValue" or "value" or "or";
+
     private static int GetLine(Expr expr) => expr switch
     {
         Literal => 0,
@@ -418,7 +622,8 @@ sealed class TypeChecker
     };
 
     private sealed record FunctionSignature(TypeSymbol Return, IList<TypeSymbol> Params);
-    private sealed record ObjectSymbol(Token Name, Dictionary<string, TypeRef> Fields);
+    private sealed record ConstructorSignature(Token Keyword, IList<TypeSymbol> Params, Block Body);
+    private sealed record ObjectSymbol(Token Name, Dictionary<string, TypeRef> Fields, List<ConstructorSignature> Constructors);
 
     private sealed class TypeEnvironment
     {
@@ -427,11 +632,11 @@ sealed class TypeChecker
         public TypeEnvironment(TypeEnvironment? parent = null) => _parent = parent;
         public TypeEnvironment CreateChild() => new(this);
 
-        public void Define(string name, TypeSymbol type, int line, int col, bool assigned)
+        public void Define(string name, TypeSymbol type, TypeRef? declaredType, int line, int col, bool assigned)
         {
             if (_vars.ContainsKey(name))
                 throw new CompilerException($"'{name}' already defined in scope", line, col);
-            _vars[name] = new VarInfo(type, assigned, line, col);
+            _vars[name] = new VarInfo(type, declaredType, assigned, line, col);
         }
 
         public TypeSymbol LookupForRead(Token name)
@@ -456,6 +661,20 @@ sealed class TypeChecker
             env._vars[name.Lexeme] = info with { assigned = true };
         }
 
+        public string? TryGetObjectTypeName(Token name)
+        {
+            var info = Find(name);
+            if (info.type != TypeSymbol.Object || info.declaredType is null)
+                return null;
+            return info.declaredType.Name;
+        }
+
+        public TypeRef? TryGetDeclaredType(Token name)
+        {
+            var info = Find(name);
+            return info.declaredType;
+        }
+
         private VarInfo Find(Token name)
         {
             var info = FindWithEnv(name).info;
@@ -469,6 +688,6 @@ sealed class TypeChecker
             throw new CompilerException($"Undefined variable '{name.Lexeme}'", name.Line, name.Column);
         }
 
-        private record struct VarInfo(TypeSymbol type, bool assigned, int line, int col);
+        private record struct VarInfo(TypeSymbol type, TypeRef? declaredType, bool assigned, int line, int col);
     }
 }

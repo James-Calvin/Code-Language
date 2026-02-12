@@ -108,15 +108,41 @@ sealed class Parser
         Token name = Consume(TokenType.Identifier, "Expect object name.");
         Consume(TokenType.LeftBrace, "Expect '{' after object name.");
         var fields = new List<FieldDecl>();
+        var constructors = new List<ConstructorDecl>();
         while (!Check(TokenType.RightBrace) && !IsAtEnd())
         {
+            if (Match(TokenType.Constructor))
+            {
+                constructors.Add(ParseConstructor(Previous()));
+                continue;
+            }
+
             var fType = ParseTypeRef();
             Token fname = Consume(TokenType.Identifier, "Expect field name.");
             Consume(TokenType.Semicolon, "Expect ';' after field.");
             fields.Add(new FieldDecl(fType, fname));
         }
         Consume(TokenType.RightBrace, "Expect '}' after object fields.");
-        return new ObjectDecl(name, fields);
+        return new ObjectDecl(name, fields, constructors);
+    }
+
+    private ConstructorDecl ParseConstructor(Token ctorKeyword)
+    {
+        Consume(TokenType.LeftParen, "Expect '(' after constructor.");
+        var parameters = new List<Parameter>();
+        if (!Check(TokenType.RightParen))
+        {
+            do
+            {
+                TypeRef paramType = ParseTypeRef();
+                Token paramName = Consume(TokenType.Identifier, "Expect constructor parameter name.");
+                parameters.Add(new Parameter(paramType, paramName));
+            } while (Match(TokenType.Comma));
+        }
+        Consume(TokenType.RightParen, "Expect ')' after constructor parameters.");
+        if (!Match(TokenType.LeftBrace))
+            throw Error(Peek(), "Expect constructor body block.");
+        return new ConstructorDecl(ctorKeyword, parameters, new Block(BlockStatements()));
     }
 
     private Stmt VarDeclaration(TypeRef typeRef)
@@ -300,6 +326,8 @@ sealed class Parser
                 return new Assign(variable.Name, value);
             if (expr is ArrayIndexExpr aidx)
                 return new ArraySetExpr(aidx, value);
+            if (expr is FieldAccessExpr fa)
+                return new FieldSetExpr(fa, value);
 
             throw Error(equals, "Invalid assignment target.");
         }
@@ -527,14 +555,29 @@ sealed class Parser
 
     private Expr ParseNewExpression(Token newTok)
     {
-        Consume(TokenType.Array, "Expect 'array' after 'new'.");
-        Consume(TokenType.Less, "Expect '<' after array.");
-        var inner = ParseTypeRef();
-        Consume(TokenType.Greater, "Expect '>' after element type.");
-        Consume(TokenType.LeftParen, "Expect '(' after array type.");
-        Expr size = Expression();
-        Consume(TokenType.RightParen, "Expect ')' after array size.");
-        return new NewArrayExpr(inner, size, newTok.Line, newTok.Column);
+        if (Match(TokenType.Array))
+        {
+            Consume(TokenType.Less, "Expect '<' after array.");
+            var inner = ParseTypeRef();
+            Consume(TokenType.Greater, "Expect '>' after element type.");
+            Consume(TokenType.LeftParen, "Expect '(' after array type.");
+            Expr size = Expression();
+            Consume(TokenType.RightParen, "Expect ')' after array size.");
+            return new NewArrayExpr(inner, size, newTok.Line, newTok.Column);
+        }
+
+        Token typeName = Consume(TokenType.Identifier, "Expect type name after 'new'.");
+        Consume(TokenType.LeftParen, "Expect '(' after type name.");
+        var args = new List<Expr>();
+        if (!Check(TokenType.RightParen))
+        {
+            do
+            {
+                args.Add(Expression());
+            } while (Match(TokenType.Comma));
+        }
+        Consume(TokenType.RightParen, "Expect ')' after constructor arguments.");
+        return new NewObjectExpr(typeName, args);
     }
 
     private Expr FinishPostfix(Expr expr)
@@ -588,7 +631,7 @@ sealed class Parser
                 }
                 else
                 {
-                    throw Error(prop, $"Unknown property '{prop.Lexeme}'");
+                    expr = new FieldAccessExpr(expr, prop);
                 }
             }
             else if (Match(TokenType.LeftBracket))

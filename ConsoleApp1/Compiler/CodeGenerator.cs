@@ -98,7 +98,7 @@ sealed class CodeGenerator
                 }
                 else
                 {
-                    if (v.TypeToken.Type == TokenType.Optional)
+                    if (v.Type.IsOptional)
                         _builder.PushNone();
                     else
                         _builder.PushInt(0); // default

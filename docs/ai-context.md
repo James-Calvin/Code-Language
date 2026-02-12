@@ -1,10 +1,11 @@
 # AI Context — Draive / Code Language
-Updated: 2026-02-11
+Updated: 2026-02-12
 
 Read this first. Update it whenever semantics or process change.
 
 ## Current Capability Snapshot
-- Types: integer/whole/real, boolean, string, array<T> (literals `{...}`, `new array<T>(n)`, `.length`, indexing), optional<T> (`none`, `.hasValue`, `.value`, `.or(fallback)`), typed functions.
+- Types: integer/whole/real, boolean, string, array<T> (literals `{...}`, `new array<T>(n)`, `.length`, indexing, mutation), optional<T> (`none`, `.hasValue`, `.value`, `.or(fallback)`), typed functions.
+- Compiler type model: AST/parser/type-checker now use `TypeRef` (supports generic type references syntactically; unknown named types still rejected until object symbols land).
 - Control flow: if/then[/else], while, for, foreach (numeric or array), break/continue, return (implicit 0).
 - Expressions: arithmetic, comparisons, logical and/or/not (short-circuit), assignment, function calls, string interpolation/concat.
 - Errors: `panic <expr>;` raises `UserError` with line/col + call stack (from bytecode debug map).
@@ -15,7 +16,7 @@ Read this first. Update it whenever semantics or process change.
 ## Not Implemented (yet)
 - User-defined data: objects/records/interfaces (fields, construction, methods, visibility).
 - Modules/imports/package layout and stdlib organization.
-- Array mutation (set), typed element enforcement, constant pool, formatter/linter, REPL.
+- Typed array element enforcement, constant pool, formatter/linter, REPL.
 - Typed error values / `fallible<T>` semantics wired to VM errors.
 
 ## Canonical Docs
@@ -31,6 +32,7 @@ Read this first. Update it whenever semantics or process change.
 - Preserve prior decisions; ask user when unclear.
 
 ## Change Log
+- 2026-02-12: TypeRef milestone implemented (token-free type representation in parser/AST/type-checker); tests pass.
 - 2026-02-11: Arrays (typed, length, indexing), optionals (`none`, hasValue/value/or), panic errors, expanded tests/fuzz; CLI `--run-tests`; docs/README/roadmap updated.
 - 2026-02-10: Numeric literal rules, conversions, interpolation, overload order, imports resolution, debug map; control flow/functions; CLI utilities.
 - 2026-02-09: Initial context and spec v0.8 snapshot.

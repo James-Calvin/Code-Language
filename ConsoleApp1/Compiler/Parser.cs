@@ -27,46 +27,52 @@ sealed class Parser
     {
         if (Match(TokenType.Function)) return FunctionDeclaration();
         if (Match(TokenType.Object)) return ObjectDeclaration();
-        if (IsTypeToken(Peek()))
+        if (LooksLikeTypeThenIdentifier(_current))
         {
-            var typeTok = ParseTypeToken();
-            return VarDeclaration(typeTok);
+            var typeRef = ParseTypeRef();
+            return VarDeclaration(typeRef);
         }
         return Statement();
     }
 
-    private Token ParseTypeToken()
+    private TypeRef ParseTypeRef()
     {
-        Token t = ConsumeType("Expect type.");
-        if (t.Type == TokenType.Array)
+        Token t = ConsumeTypeStart("Expect type.");
+        string name = t.Type switch
         {
-            Consume(TokenType.Less, "Expect '<' after array.");
-            Token inner = ConsumeType("Expect element type for array.");
-            Consume(TokenType.Greater, "Expect '>' after array element type.");
-            // store inner token type in Literal for mapping
-            t = new Token(TokenType.Array, "array", inner, t.Line, t.Column);
-        }
-        else if (t.Type == TokenType.Optional)
+            TokenType.Integer => "integer",
+            TokenType.Whole => "whole",
+            TokenType.Real => "real",
+            TokenType.Boolean => "boolean",
+            TokenType.Array => "array",
+            TokenType.Optional => "optional",
+            TokenType.Identifier => t.Lexeme,
+            _ => throw Error(t, "Expect type.")
+        };
+
+        var args = new List<TypeRef>();
+        if (Match(TokenType.Less))
         {
-            Consume(TokenType.Less, "Expect '<' after optional.");
-            Token inner = ConsumeType("Expect inner type for optional.");
-            Consume(TokenType.Greater, "Expect '>' after optional inner type.");
-            t = new Token(TokenType.Optional, "optional", inner, t.Line, t.Column);
+            do
+            {
+                args.Add(ParseTypeRef());
+            } while (Match(TokenType.Comma));
+            Consume(TokenType.Greater, "Expect '>' after type arguments.");
         }
-        return t;
+        return new TypeRef(name, args, t.Line, t.Column);
     }
 
     private Stmt FunctionDeclaration()
     {
-        Token? returnType = null;
+        TypeRef? returnType = null;
         if (Match(TokenType.Less))
         {
-            returnType = ParseTypeToken();
+            returnType = ParseTypeRef();
             Consume(TokenType.Greater, "Expect '>' after return type.");
         }
-        else if (IsTypeToken(Peek()))
+        else if (LooksLikeTypeThenIdentifier(_current))
         {
-            returnType = ParseTypeToken();
+            returnType = ParseTypeRef();
         }
         Token name = Consume(TokenType.Identifier, "Expect function name.");
         Consume(TokenType.LeftParen, "Expect '(' after function name.");
@@ -75,10 +81,10 @@ sealed class Parser
         {
             do
             {
-                Token? paramType = null;
-                if (IsTypeToken(Peek()))
+                TypeRef? paramType = null;
+                if (LooksLikeTypeThenIdentifier(_current))
                 {
-                    paramType = ParseTypeToken();
+                    paramType = ParseTypeRef();
                 }
                 Token paramName = Consume(TokenType.Identifier, "Expect parameter name.");
                 parameters.Add(new Parameter(paramType, paramName));
@@ -104,7 +110,7 @@ sealed class Parser
         var fields = new List<FieldDecl>();
         while (!Check(TokenType.RightBrace) && !IsAtEnd())
         {
-            var fType = ParseTypeToken();
+            var fType = ParseTypeRef();
             Token fname = Consume(TokenType.Identifier, "Expect field name.");
             Consume(TokenType.Semicolon, "Expect ';' after field.");
             fields.Add(new FieldDecl(fType, fname));
@@ -113,7 +119,7 @@ sealed class Parser
         return new ObjectDecl(name, fields);
     }
 
-    private Stmt VarDeclaration(Token typeToken)
+    private Stmt VarDeclaration(TypeRef typeRef)
     {
         Token name = Consume(TokenType.Identifier, "Expect variable name.");
         Expr? initializer = null;
@@ -122,7 +128,7 @@ sealed class Parser
             initializer = Expression();
         }
         Consume(TokenType.Semicolon, "Expect ';' after variable declaration.");
-        return new VarDecl(typeToken, name, initializer);
+        return new VarDecl(typeRef, name, initializer);
     }
 
     private Stmt Statement()
@@ -190,8 +196,8 @@ sealed class Parser
         Stmt? initializer = null;
         if (!Check(TokenType.Semicolon))
         {
-            if (Match(TokenType.Integer, TokenType.Whole, TokenType.Real, TokenType.Boolean))
-                initializer = VarDeclaration(Previous());
+            if (LooksLikeTypeThenIdentifier(_current))
+                initializer = VarDeclaration(ParseTypeRef());
             else
             {
                 var expr = Expression();
@@ -426,13 +432,46 @@ sealed class Parser
 
     private Token Previous() => _tokens[_current - 1];
 
-    private bool IsTypeToken(Token token) =>
-        token.Type is TokenType.Integer or TokenType.Whole or TokenType.Real or TokenType.Boolean or TokenType.Array or TokenType.Optional;
+    private bool IsTypeStart(Token token) =>
+        token.Type is TokenType.Integer or TokenType.Whole or TokenType.Real or TokenType.Boolean or TokenType.Array or TokenType.Optional or TokenType.Identifier;
 
-    private Token ConsumeType(string message)
+    private Token ConsumeTypeStart(string message)
     {
-        if (IsTypeToken(Peek())) return Advance();
+        if (IsTypeStart(Peek())) return Advance();
         throw Error(Peek(), message);
+    }
+
+    private bool LooksLikeTypeThenIdentifier(int start)
+    {
+        if (start >= _tokens.Count) return false;
+        if (!IsTypeStart(_tokens[start])) return false;
+
+        int idx = start + 1;
+        if (idx < _tokens.Count && _tokens[idx].Type == TokenType.Less)
+        {
+            int depth = 0;
+            while (idx < _tokens.Count)
+            {
+                var type = _tokens[idx].Type;
+                if (type == TokenType.Less)
+                {
+                    depth++;
+                }
+                else if (type == TokenType.Greater)
+                {
+                    depth--;
+                    if (depth == 0)
+                    {
+                        idx++;
+                        break;
+                    }
+                }
+                idx++;
+            }
+            if (depth != 0) return false;
+        }
+
+        return idx < _tokens.Count && _tokens[idx].Type == TokenType.Identifier;
     }
 
     private Exception Error(Token token, string message)
@@ -490,7 +529,7 @@ sealed class Parser
     {
         Consume(TokenType.Array, "Expect 'array' after 'new'.");
         Consume(TokenType.Less, "Expect '<' after array.");
-        var inner = ConsumeType("Expect element type.");
+        var inner = ParseTypeRef();
         Consume(TokenType.Greater, "Expect '>' after element type.");
         Consume(TokenType.LeftParen, "Expect '(' after array type.");
         Expr size = Expression();

@@ -45,11 +45,11 @@ sealed class ArrayLiteral : Expr
 
 sealed class NewArrayExpr : Expr
 {
-    public Token ElementType { get; }
+    public TypeRef ElementType { get; }
     public Expr Size { get; }
     public int Line { get; }
     public int Column { get; }
-    public NewArrayExpr(Token elementType, Expr size, int line, int column)
+    public NewArrayExpr(TypeRef elementType, Expr size, int line, int column)
     {
         ElementType = elementType; Size = size; Line = line; Column = column;
     }
@@ -136,18 +136,18 @@ sealed class Call : Expr
     public Call(Token callee, IReadOnlyList<Expr> args) { Callee = callee; Arguments = args; }
 }
 
-sealed record Parameter(Token? TypeToken, Token Name);
+sealed record Parameter(TypeRef? Type, Token Name);
 
-sealed record FieldDecl(Token TypeToken, Token Name);
+sealed record FieldDecl(TypeRef Type, Token Name);
 
 abstract class Stmt { }
 
 sealed class VarDecl : Stmt
 {
-    public Token TypeToken { get; }
+    public TypeRef Type { get; }
     public Token Name { get; }
     public Expr? Initializer { get; }
-    public VarDecl(Token typeToken, Token name, Expr? init) { TypeToken = typeToken; Name = name; Initializer = init; }
+    public VarDecl(TypeRef type, Token name, Expr? init) { Type = type; Name = name; Initializer = init; }
 }
 
 sealed class ExprStmt : Stmt
@@ -228,10 +228,10 @@ sealed class ForeachStmt : Stmt
 sealed class FunctionDecl : Stmt
 {
     public Token Name { get; }
-    public Token? ReturnType { get; }
+    public TypeRef? ReturnType { get; }
     public IReadOnlyList<Parameter> Parameters { get; }
     public Block Body { get; }
-    public FunctionDecl(Token name, Token? returnType, IReadOnlyList<Parameter> parameters, Block body)
+    public FunctionDecl(Token name, TypeRef? returnType, IReadOnlyList<Parameter> parameters, Block body)
     {
         Name = name; ReturnType = returnType; Parameters = parameters; Body = body;
     }

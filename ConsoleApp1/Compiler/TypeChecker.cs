@@ -17,13 +17,13 @@ sealed class TypeChecker
             {
                 if (fn.ReturnType is null)
                     throw new CompilerException($"Function '{fn.Name.Lexeme}' is missing a return type", fn.Name.Line, fn.Name.Column);
-                if (fn.Parameters.Any(p => p.TypeToken is null))
+                if (fn.Parameters.Any(p => p.Type is null))
                     throw new CompilerException($"Function '{fn.Name.Lexeme}' has untyped parameters", fn.Name.Line, fn.Name.Column);
                 if (_functions.ContainsKey(fn.Name.Lexeme))
                     throw new CompilerException($"Function '{fn.Name.Lexeme}' already defined", fn.Name.Line, fn.Name.Column);
                 var sig = new FunctionSignature(
                     Return: MapType(fn.ReturnType),
-                    Params: fn.Parameters.Select(p => MapType(p.TypeToken!)).ToList()
+                    Params: fn.Parameters.Select(p => MapType(p.Type!)).ToList()
                 );
                 _functions[fn.Name.Lexeme] = sig;
             }
@@ -53,7 +53,7 @@ sealed class TypeChecker
         for (int i = 0; i < fn.Parameters.Count; i++)
         {
             var param = fn.Parameters[i];
-            var pType = MapType(param.TypeToken!);
+            var pType = MapType(param.Type!);
             env.Define(param.Name.Lexeme, pType, param.Name.Line, param.Name.Column, assigned: true);
         }
         bool allPathsReturn = CheckStmt(fn.Body, env, retType);
@@ -66,12 +66,12 @@ sealed class TypeChecker
         switch (stmt)
         {
             case VarDecl v:
-                var t = MapType(v.TypeToken);
+                var t = MapType(v.Type);
                 bool hasInit = v.Initializer is not null;
                 if (v.Initializer is not null)
                 {
                     var init = CheckExpr(v.Initializer, env, currentReturn);
-                    RequireAssignable(t, init, v.TypeToken.Line, v.TypeToken.Column, "Initializer type mismatch");
+                    RequireAssignable(t, init, v.Type.Line, v.Type.Column, "Initializer type mismatch");
                 }
                 bool assignedFlag = hasInit || t == TypeSymbol.Optional;
                 env.Define(v.Name.Lexeme, t, v.Name.Line, v.Name.Column, assignedFlag);
@@ -260,16 +260,33 @@ sealed class TypeChecker
         }
     }
 
-    private static TypeSymbol MapType(Token typeToken) => typeToken.Type switch
+    private static TypeSymbol MapType(TypeRef typeRef)
     {
-        TokenType.Integer => TypeSymbol.Integer,
-        TokenType.Whole => TypeSymbol.Whole,
-        TokenType.Real => TypeSymbol.Real,
-        TokenType.Boolean => TypeSymbol.Boolean,
-        TokenType.Array => TypeSymbol.Array,
-        TokenType.Optional => TypeSymbol.Optional,
-        _ => TypeSymbol.Unknown
-    };
+        if (typeRef.Name == "array")
+        {
+            if (typeRef.TypeArguments.Count != 1)
+                throw new CompilerException("array<T> expects exactly one type argument", typeRef.Line, typeRef.Column);
+            return TypeSymbol.Array;
+        }
+        if (typeRef.Name == "optional")
+        {
+            if (typeRef.TypeArguments.Count != 1)
+                throw new CompilerException("optional<T> expects exactly one type argument", typeRef.Line, typeRef.Column);
+            return TypeSymbol.Optional;
+        }
+        if (typeRef.TypeArguments.Count > 0)
+            throw new CompilerException($"Type '{typeRef.Name}' does not support type arguments yet", typeRef.Line, typeRef.Column);
+
+        return typeRef.Name switch
+        {
+            "integer" => TypeSymbol.Integer,
+            "whole" => TypeSymbol.Whole,
+            "real" => TypeSymbol.Real,
+            "boolean" => TypeSymbol.Boolean,
+            "string" => TypeSymbol.String,
+            _ => throw new CompilerException($"Unknown type '{typeRef.Name}'", typeRef.Line, typeRef.Column)
+        };
+    }
 
     private static bool IsNumeric(TypeSymbol t) => t is TypeSymbol.Integer or TypeSymbol.Whole or TypeSymbol.Real;
 

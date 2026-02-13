@@ -2,8 +2,204 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text;
+using System.Text.Json;
 
 namespace ConsoleApp1.Compiler;
+
+sealed class ModuleCompileOptions
+{
+    public bool TraceLinker { get; init; }
+    public Action<string>? TraceWriter { get; init; }
+}
+
+sealed class ModuleCompileResult
+{
+    public byte[] Bytecode { get; }
+    public ModuleGraph Graph { get; }
+
+    public ModuleCompileResult(byte[] bytecode, ModuleGraph graph)
+    {
+        Bytecode = bytecode;
+        Graph = graph;
+    }
+}
+
+sealed class ModuleGraph
+{
+    public string EntryPath { get; }
+    public IReadOnlyList<ModuleGraphModule> Modules { get; }
+    public IReadOnlyList<ModuleGraphEdge> Edges { get; }
+
+    public ModuleGraph(string entryPath, IReadOnlyList<ModuleGraphModule> modules, IReadOnlyList<ModuleGraphEdge> edges)
+    {
+        EntryPath = entryPath;
+        Modules = modules;
+        Edges = edges;
+    }
+
+    public string ToDisplayString(string? displayRoot = null)
+    {
+        var sb = new StringBuilder();
+        sb.Append("Entry: ").Append(FormatPath(EntryPath, displayRoot)).AppendLine();
+        sb.AppendLine("Modules:");
+        for (int i = 0; i < Modules.Count; i++)
+        {
+            var module = Modules[i];
+            string exports = module.Exports.Count == 0 ? "(none)" : string.Join(", ", module.Exports);
+            string package = string.IsNullOrWhiteSpace(module.PackageName) ? string.Empty : $" package={module.PackageName}";
+            sb.Append("  - ")
+                .Append(FormatPath(module.Path, displayRoot))
+                .Append(package)
+                .Append(" exports=")
+                .Append(exports)
+                .AppendLine();
+        }
+
+        sb.AppendLine("Imports:");
+        if (Edges.Count == 0)
+        {
+            sb.AppendLine("  (none)");
+        }
+        else
+        {
+            for (int i = 0; i < Edges.Count; i++)
+            {
+                var edge = Edges[i];
+                sb.Append("  - ")
+                    .Append(FormatPath(edge.ImporterPath, displayRoot))
+                    .Append(" -> ")
+                    .Append(FormatPath(edge.DependencyPath, displayRoot))
+                    .Append(" : ")
+                    .Append(edge.BindingText)
+                    .Append(" from \"")
+                    .Append(edge.SourcePath)
+                    .AppendLine("\"");
+            }
+        }
+
+        return sb.ToString();
+    }
+
+    public string ToJsonString(string? displayRoot = null, bool indented = true)
+    {
+        var payload = new
+        {
+            entry = FormatPath(EntryPath, displayRoot),
+            modules = Modules.Select(module => new
+            {
+                path = FormatPath(module.Path, displayRoot),
+                package = module.PackageName,
+                exports = module.Exports
+            }),
+            imports = Edges.Select(edge => new
+            {
+                from = FormatPath(edge.ImporterPath, displayRoot),
+                to = FormatPath(edge.DependencyPath, displayRoot),
+                source = edge.SourcePath,
+                binding = edge.BindingText
+            })
+        };
+
+        return JsonSerializer.Serialize(payload, new JsonSerializerOptions { WriteIndented = indented });
+    }
+
+    public string ToDotString(string? displayRoot = null)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("digraph ModuleGraph {");
+        sb.AppendLine("  rankdir=LR;");
+
+        var nodeIds = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        int nextNodeId = 0;
+
+        for (int i = 0; i < Modules.Count; i++)
+        {
+            var module = Modules[i];
+            string nodeId = AddNode(nodeIds, module.Path, ref nextNodeId);
+            string shape = string.Equals(module.Path, EntryPath, StringComparison.OrdinalIgnoreCase) ? "doubleoctagon" : "box";
+            string label = BuildDotLabel(module, displayRoot);
+            sb.Append("  ")
+                .Append(nodeId)
+                .Append(" [shape=")
+                .Append(shape)
+                .Append(", label=\"")
+                .Append(label)
+                .AppendLine("\"];");
+        }
+
+        for (int i = 0; i < Edges.Count; i++)
+        {
+            var edge = Edges[i];
+            string fromId = AddNode(nodeIds, edge.ImporterPath, ref nextNodeId);
+            string toId = AddNode(nodeIds, edge.DependencyPath, ref nextNodeId);
+            string label = EscapeDotLabel($"{edge.BindingText} from \"{edge.SourcePath}\"");
+            sb.Append("  ")
+                .Append(fromId)
+                .Append(" -> ")
+                .Append(toId)
+                .Append(" [label=\"")
+                .Append(label)
+                .AppendLine("\"];");
+        }
+
+        sb.AppendLine("}");
+        return sb.ToString();
+    }
+
+    private static string AddNode(IDictionary<string, string> ids, string path, ref int nextNodeId)
+    {
+        if (ids.TryGetValue(path, out var existing))
+            return existing;
+        string id = $"n{nextNodeId++}";
+        ids[path] = id;
+        return id;
+    }
+
+    private static string BuildDotLabel(ModuleGraphModule module, string? displayRoot)
+    {
+        var lines = new List<string>
+        {
+            EscapeDotLabel(FormatPath(module.Path, displayRoot))
+        };
+
+        if (!string.IsNullOrWhiteSpace(module.PackageName))
+            lines.Add(EscapeDotLabel($"package={module.PackageName}"));
+
+        string exports = module.Exports.Count == 0 ? "(none)" : string.Join(", ", module.Exports);
+        lines.Add(EscapeDotLabel($"exports={exports}"));
+
+        return string.Join("\\n", lines);
+    }
+
+    private static string EscapeDotLabel(string value)
+    {
+        return value
+            .Replace("\\", "\\\\", StringComparison.Ordinal)
+            .Replace("\"", "\\\"", StringComparison.Ordinal)
+            .Replace("\r", string.Empty, StringComparison.Ordinal)
+            .Replace("\n", "\\n", StringComparison.Ordinal);
+    }
+
+    private static string FormatPath(string path, string? displayRoot)
+    {
+        if (string.IsNullOrWhiteSpace(displayRoot))
+            return Path.GetFileName(path);
+
+        string fullRoot = Path.GetFullPath(displayRoot);
+        string fullPath = Path.GetFullPath(path);
+        string rootPrefix = fullRoot.EndsWith(Path.DirectorySeparatorChar) ? fullRoot : fullRoot + Path.DirectorySeparatorChar;
+
+        if (fullPath.StartsWith(rootPrefix, StringComparison.OrdinalIgnoreCase))
+            return Path.GetRelativePath(fullRoot, fullPath).Replace('\\', '/');
+
+        return Path.GetFileName(fullPath);
+    }
+}
+
+sealed record ModuleGraphModule(string Path, string? PackageName, IReadOnlyList<string> Exports);
+
+sealed record ModuleGraphEdge(string ImporterPath, string DependencyPath, string SourcePath, string BindingText);
 
 static class ModuleCompiler
 {
@@ -21,66 +217,101 @@ static class ModuleCompiler
 
     public static byte[] CompileFromFile(string entryPath)
     {
+        return CompileFromFileWithMetadata(entryPath).Bytecode;
+    }
+
+    public static ModuleCompileResult CompileFromFileWithMetadata(string entryPath, ModuleCompileOptions? options = null)
+    {
         string fullEntryPath = Path.GetFullPath(entryPath);
         string projectRoot = Directory.GetCurrentDirectory();
-        var linker = new ModuleLinker(projectRoot);
-        var ast = linker.Link(fullEntryPath);
+        var linker = new ModuleLinker(projectRoot, fullEntryPath, options ?? new ModuleCompileOptions());
+        var linkResult = linker.Link(fullEntryPath);
         var typeChecker = new TypeChecker();
-        typeChecker.Check(ast);
+        typeChecker.Check(linkResult.Statements);
         var generator = new CodeGenerator();
-        return generator.Generate(ast);
+        var bytecode = generator.Generate(linkResult.Statements);
+        return new ModuleCompileResult(bytecode, linkResult.Graph);
     }
 
     private sealed class ModuleLinker
     {
         private readonly string _projectRoot;
+        private readonly string _displayRoot;
+        private readonly string _entryPath;
+        private readonly ModuleCompileOptions _options;
         private readonly Dictionary<string, ModuleInfo> _modules = new(StringComparer.OrdinalIgnoreCase);
         private readonly HashSet<string> _visiting = new(StringComparer.OrdinalIgnoreCase);
         private readonly List<string> _visitStack = new();
         private readonly List<string> _order = new();
+        private readonly List<ModuleGraphEdge> _edges = new();
 
-        public ModuleLinker(string projectRoot)
+        public ModuleLinker(string projectRoot, string entryPath, ModuleCompileOptions options)
         {
             _projectRoot = Path.GetFullPath(projectRoot);
+            _entryPath = Path.GetFullPath(entryPath);
+            _displayRoot = Path.GetDirectoryName(_entryPath) ?? _projectRoot;
+            _options = options;
         }
 
-        public IList<Stmt> Link(string entryPath)
+        public LinkResult Link(string entryPath)
         {
             _modules.Clear();
             _visiting.Clear();
             _visitStack.Clear();
             _order.Clear();
+            _edges.Clear();
 
+            Trace($"Link entry module {FormatGraphPath(entryPath)}");
             Visit(entryPath);
 
             var linked = new List<Stmt>();
+            var moduleNodes = new List<ModuleGraphModule>();
             for (int i = 0; i < _order.Count; i++)
             {
                 var module = _modules[_order[i]];
                 linked.AddRange(module.LinkedStatements);
+                moduleNodes.Add(new ModuleGraphModule(
+                    module.Path,
+                    module.PackageName,
+                    module.ExportedDeclarations.Keys.OrderBy(name => name, StringComparer.Ordinal).ToList()));
             }
-            return linked;
+
+            var graph = new ModuleGraph(
+                _entryPath,
+                moduleNodes,
+                _edges.ToList());
+
+            return new LinkResult(linked, graph);
         }
 
         private ModuleInfo Visit(string modulePath)
         {
             modulePath = Path.GetFullPath(modulePath);
             if (_modules.TryGetValue(modulePath, out var cached))
+            {
+                Trace($"Reuse cached module {FormatGraphPath(modulePath)}");
                 return cached;
+            }
             if (_visiting.Contains(modulePath))
             {
                 var cycle = BuildCycleChain(modulePath);
+                Trace($"Detected circular import: {string.Join(" -> ", cycle.Select(FormatChainItem))}");
                 throw BuildChainedError("Circular import detected.", 1, 1, cycle);
             }
 
+            Trace($"Visit {FormatGraphPath(modulePath)}");
             _visiting.Add(modulePath);
             _visitStack.Add(modulePath);
             try
             {
                 var module = ParseModule(modulePath);
+                Trace($"Parsed {FormatGraphPath(modulePath)} (imports={module.Imports.Count}, exports={module.ExportedDeclarations.Count})");
                 foreach (var import in module.Imports)
                 {
                     string dependencyPath = ResolveImportPath(module.Path, import.SourcePath, import.Source);
+                    _edges.Add(new ModuleGraphEdge(module.Path, dependencyPath, import.SourcePath, FormatBindingText(import.Bindings)));
+                    Trace(
+                        $"Resolve import {FormatBindingText(import.Bindings)} from \"{import.SourcePath}\" in {FormatGraphPath(module.Path)} -> {FormatGraphPath(dependencyPath)}");
                     var dependency = Visit(dependencyPath);
                     for (int i = 0; i < import.Bindings.Count; i++)
                     {
@@ -119,6 +350,7 @@ static class ModuleCompiler
                 module.LinkedStatements.AddRange(RewriteTypeAliases(module.LocalStatements, module.TypeAliases));
                 _modules[modulePath] = module;
                 _order.Add(modulePath);
+                Trace($"Linked {FormatGraphPath(modulePath)}");
                 return module;
             }
             catch (CompilerException ex)
@@ -396,6 +628,40 @@ static class ModuleCompiler
             _ => new Token(TokenType.Identifier, string.Empty, null, 1, 1)
         };
 
+        private void Trace(string message)
+        {
+            if (!_options.TraceLinker)
+                return;
+            _options.TraceWriter?.Invoke(message);
+        }
+
+        private string FormatGraphPath(string path)
+        {
+            string fullPath = Path.GetFullPath(path);
+            string rootWithSeparator = _displayRoot.EndsWith(Path.DirectorySeparatorChar)
+                ? _displayRoot
+                : _displayRoot + Path.DirectorySeparatorChar;
+            if (fullPath.StartsWith(rootWithSeparator, StringComparison.OrdinalIgnoreCase))
+                return Path.GetRelativePath(_displayRoot, fullPath).Replace('\\', '/');
+            return Path.GetFileName(fullPath);
+        }
+
+        private static string FormatBindingText(IReadOnlyList<ImportBinding> bindings)
+        {
+            var names = new List<string>(bindings.Count);
+            for (int i = 0; i < bindings.Count; i++)
+            {
+                var binding = bindings[i];
+                names.Add(binding.Alias is null
+                    ? binding.Name.Lexeme
+                    : $"{binding.Name.Lexeme} as {binding.Alias.Lexeme}");
+            }
+
+            if (names.Count == 1)
+                return names[0];
+            return "{ " + string.Join(", ", names) + " }";
+        }
+
         private List<string> BuildImportChain(string nextPath)
         {
             var chain = new List<string>(_visitStack);
@@ -538,6 +804,8 @@ static class ModuleCompiler
             return new Token(token.Type, mapped, token.Literal, token.Line, token.Column);
         }
     }
+
+    private sealed record LinkResult(IList<Stmt> Statements, ModuleGraph Graph);
 
     private sealed record ModuleInfo(
         string Path,

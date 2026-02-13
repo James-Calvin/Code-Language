@@ -10,7 +10,7 @@ A tiny experimental programming language with a stack-based bytecode VM and a C#
 - Control flow: `if/then/else`, `while`, `for`, `foreach` (numeric bounds and arrays)
 - Expressions: arithmetic, comparisons, logical `and/or/not`, string interpolation and concatenation
 - Functions with CALL/RET, locals, return (implicit 0)
-- File modules: `export` + `import Name [as Alias] from "path";` with recursive linking and `lib/` search
+- File modules: `export` + imports (`import Name [as Alias] from "path";`, `import { A, B as C } from "path";`) with recursive linking and `lib/` search
 - Runtime diagnostics: bytecode debug map → line/column stack traces
 - Error objects: `panic <expr>;` emits a `UserError` with call stack
 
@@ -34,6 +34,18 @@ Disassemble a bytecode file:
 ```
 dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- --disasm path/to/file.bytecode
 ```
+Compile and print module graph/linker trace:
+```
+dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- --compile-only --dump-module-graph --trace-linker path/to/file.code
+```
+Write module graph to file (format inferred from extension: `.json`, `.dot`, `.gv`; default text):
+```
+dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- --compile-only --dump-module-graph graph.json path/to/file.code
+```
+Force graph format explicitly:
+```
+dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- --compile-only --dump-module-graph graph.txt --module-graph-format dot path/to/file.code
+```
 
 ## Tests
 - Default (no args) used to run tests; now use the explicit flag:
@@ -51,9 +63,11 @@ Test harness covers VM ops, compiler integration (print, arithmetic, functions, 
 - Interfaces: `interface` declarations + explicit `implement Interface for Object { ... via Object.method; }` conformance checks
 - Interface-typed locals/params/returns/fields and runtime-dispatched interface method calls
 - Modules: `export` for top-level function/object/interface declarations; `import Name [as Alias] from "path";`
+- Grouped/selective imports: `import { add, sub as minus } from "math.code";`
 - Package declarations: optional `package Name;` at top of module (before imports/declarations)
 - Import resolution: importing file directory first, then discovered ancestor `lib/` folders
-- Alias imports currently support exported functions
+- Alias imports support exported functions, objects, and interfaces
+- Module tooling flags: `--dump-module-graph [outputPath]`, `--module-graph-format <text|json|dot>`, and `--trace-linker`
 - Linker diagnostics include import chains for cycles/missing exports
 - Method/constructor overload resolution: compile-time signature-based dispatch (with best-match conversions)
 - Constructor rules: objects with fields must define constructors, and constructors must assign all fields

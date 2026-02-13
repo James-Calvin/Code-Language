@@ -1,7 +1,7 @@
 # Code Language Specification (Living Draft)
 
 Version: 1.0  
-Last updated: 2026-02-12
+Last updated: 2026-02-13
 
 ## 1. Goals and Design
 - `Code` is a general-purpose language.
@@ -354,10 +354,11 @@ function method(string name) {
 - Import syntax:
   - `import identifier from "FilePath";`
   - Alias form: `import sourceName as localName from "FilePath";`
+  - Grouped/selective form: `import { name1, name2 as alias2 } from "FilePath";`
 - String-path imports resolve relative to the file containing the `import`.
 - Import resolution order (current implementation): current file directory, then `lib/` folders discovered while walking ancestor directories (including project root `lib/` when present).
 - Imported symbol must be exported by the target module.
-- Alias imports currently support exported functions (object/interface aliasing is deferred).
+- Alias imports support exported `function`, `object`, and `interface` declarations.
 - Source file extension is `.code`.
 - Package declaration syntax: `package Name;` (dot-separated segments allowed).
 - Package declaration rules (current implementation):
@@ -368,6 +369,7 @@ function method(string name) {
 ```code
 import anotherIdentifier from "FilePath";
 import exportedFunction as errorExample from "PathToExampleAbove";
+import { add, subtract as minus } from "math.code";
 package Example.Package;
 ```
 
@@ -430,6 +432,11 @@ real result3 = errorExample(0) on error panic("Error message {error}");
 - Interface symbols and `implement` mappings are validated, and interface-typed method calls are lowered to runtime dispatch tables over mapped object methods.
 - File compilation performs module linking: recursive import graph load, export-name validation, module-scope import/declaration conflict checks, cycle detection, and flattening to a single bytecode unit.
 - Module diagnostics include import-chain context (`entry -> dep1 -> dep2`) for unresolved imports/exports and cycles.
+- Compiler tooling includes module graph and linker trace output:
+  - `--dump-module-graph [outputPath]` emits entry/modules/import edges for the current compile.
+  - Module graph output format supports `text` (default), `json`, and `dot` (Graphviz).
+  - Format selection: explicit `--module-graph-format <text|json|dot>` or file extension inference (`.json`, `.dot`, `.gv`).
+  - `--trace-linker` prints linker visit/resolve/link steps.
 - Object construction and field access lower to dedicated VM opcodes (`NEW_OBJECT`, `GET_FIELD`, `SET_FIELD`).
 - Arrays: literals `{...}` create arrays; typed declarations `array<integer> xs = {1,2,3};`; dynamic `new array<integer>(n)` requires a size; `xs.length` yields length; `foreach` iterates arrays by element.
 

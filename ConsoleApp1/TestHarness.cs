@@ -461,6 +461,49 @@ export function<integer> add(integer a, integer b) {
                 "3\n"
             )
         };
+        var moduleToolingCases = new List<(string Name, IReadOnlyDictionary<string, string> Files, string Entry, string[] GraphContains, string[] JsonContains, string[] DotContains, string[] TraceContains)>
+        {
+            (
+                "module-graph-tooling",
+                new Dictionary<string, string>
+                {
+                    ["main.code"] = "import { add, sub as minus } from \"math.code\";\nprint(add(7, 2));\nprint(minus(7, 2));",
+                    ["math.code"] =
+@"package app.math;
+export function<integer> add(integer a, integer b) { return a + b; }
+export function<integer> sub(integer a, integer b) { return a - b; }",
+                },
+                "main.code",
+                new[]
+                {
+                    "Entry: main.code",
+                    "main.code -> math.code",
+                    "{ add, sub as minus } from \"math.code\"",
+                    "math.code package=app.math exports=add, sub"
+                },
+                new[]
+                {
+                    "\"entry\": \"main.code\"",
+                    "\"path\": \"math.code\"",
+                    "\"package\": \"app.math\"",
+                    "\"binding\": \"{ add, sub as minus }\""
+                },
+                new[]
+                {
+                    "digraph ModuleGraph {",
+                    "shape=doubleoctagon",
+                    "main.code",
+                    "math.code",
+                    "add, sub as minus"
+                },
+                new[]
+                {
+                    "Link entry module main.code",
+                    "Resolve import { add, sub as minus } from \"math.code\" in main.code -> math.code",
+                    "Linked main.code"
+                }
+            )
+        };
         // Expected error cases
         var errorCases = new List<(string Name, string Source, string ExpectedType)>
         {
@@ -826,6 +869,33 @@ print(add(2, 3));",
             }
         }
 
+        foreach (var (name, files, entry, graphContains, jsonContains, dotContains, traceContains) in moduleToolingCases)
+        {
+            try
+            {
+                var outputs = CompileModulesWithMetadata(files, entry);
+                bool matched =
+                    ContainsAll(name, "graph", outputs.GraphText, graphContains) &&
+                    ContainsAll(name, "graph-json", outputs.GraphJson, jsonContains) &&
+                    ContainsAll(name, "graph-dot", outputs.GraphDot, dotContains) &&
+                    ContainsAll(name, "trace", outputs.TraceOutput, traceContains);
+
+                if (!matched)
+                {
+                    failures++;
+                }
+                else
+                {
+                    Console.WriteLine($"[PASS] {name}");
+                }
+            }
+            catch (Exception ex)
+            {
+                failures++;
+                Console.WriteLine($"[FAIL] {name}: threw {ex.GetType().Name} - {ex.Message}");
+            }
+        }
+
         foreach (var (name, src, expectedType) in errorCases)
         {
             try
@@ -1124,6 +1194,62 @@ print(sum);";
             catch { }
         }
     }
+
+    private static ModuleToolingOutputs CompileModulesWithMetadata(IReadOnlyDictionary<string, string> files, string entryRelativePath)
+    {
+        string tempRoot = Path.Combine(Path.GetTempPath(), "code-mod-tests-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+        try
+        {
+            foreach (var pair in files)
+            {
+                string fullPath = Path.Combine(tempRoot, pair.Key);
+                string? dir = Path.GetDirectoryName(fullPath);
+                if (!string.IsNullOrEmpty(dir))
+                    Directory.CreateDirectory(dir);
+                File.WriteAllText(fullPath, pair.Value);
+            }
+
+            var traceLines = new List<string>();
+            string entryPath = Path.Combine(tempRoot, entryRelativePath);
+            var options = new Compiler.ModuleCompileOptions
+            {
+                TraceLinker = true,
+                TraceWriter = message => traceLines.Add(message)
+            };
+            var result = Compiler.ModuleCompiler.CompileFromFileWithMetadata(entryPath, options);
+            return new ModuleToolingOutputs(
+                result.Graph.ToDisplayString(tempRoot),
+                result.Graph.ToJsonString(tempRoot),
+                result.Graph.ToDotString(tempRoot),
+                string.Join("\n", traceLines));
+        }
+        finally
+        {
+            try { Directory.Delete(tempRoot, recursive: true); }
+            catch { }
+        }
+    }
+
+    private static bool ContainsAll(string testName, string sectionName, string text, IReadOnlyList<string> expectedPieces)
+    {
+        for (int i = 0; i < expectedPieces.Count; i++)
+        {
+            if (!text.Contains(expectedPieces[i], StringComparison.Ordinal))
+            {
+                Console.WriteLine($"[FAIL] {testName}: {sectionName} missing '{expectedPieces[i]}'");
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private sealed record ModuleToolingOutputs(
+        string GraphText,
+        string GraphJson,
+        string GraphDot,
+        string TraceOutput);
 
     private static void CompileAndRunExpectError(string source, string expectedType)
     {

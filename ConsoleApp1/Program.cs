@@ -16,6 +16,10 @@ internal static class Program
         bool runTests = false;
         bool compileOnly = false;
         string? dumpTokensPath = null;
+        bool dumpModuleGraph = false;
+        string? moduleGraphOutputPath = null;
+        string? moduleGraphFormat = null;
+        bool traceLinker = false;
 
         for (int i = 0; i < args.Length; i++)
         {
@@ -42,6 +46,23 @@ internal static class Program
                 case "--compile-only":
                     compileOnly = true;
                     break;
+                case "--dump-module-graph":
+                    dumpModuleGraph = true;
+                    if (i + 1 < args.Length &&
+                        !args[i + 1].StartsWith("--", StringComparison.Ordinal) &&
+                        !args[i + 1].EndsWith(".code", StringComparison.OrdinalIgnoreCase) &&
+                        !args[i + 1].EndsWith(".bytecode", StringComparison.OrdinalIgnoreCase))
+                    {
+                        moduleGraphOutputPath = args[++i];
+                    }
+                    break;
+                case "--module-graph-format":
+                    if (i + 1 >= args.Length) Fail("Usage: --module-graph-format <text|json|dot>");
+                    moduleGraphFormat = args[++i];
+                    break;
+                case "--trace-linker":
+                    traceLinker = true;
+                    break;
                 default:
                     if (args[i].EndsWith(".bytecode", StringComparison.OrdinalIgnoreCase))
                         bytecodePath = args[i];
@@ -59,6 +80,9 @@ internal static class Program
             return;
         }
 
+        if (moduleGraphFormat is not null && !dumpModuleGraph)
+            Fail("--module-graph-format requires --dump-module-graph.");
+
         if (disasmPath != null)
         {
             var bytes = File.ReadAllBytes(disasmPath);
@@ -75,11 +99,14 @@ internal static class Program
         if (codePath != null)
         {
             string outputPath = outPath ?? Path.ChangeExtension(codePath, ".bytecode");
-            CompileToFile(codePath, outputPath);
+            CompileToFile(codePath, outputPath, dumpModuleGraph, moduleGraphOutputPath, moduleGraphFormat, traceLinker);
             if (!compileOnly)
                 RunBytecode(outputPath);
             return;
         }
+
+        if (dumpModuleGraph || moduleGraphOutputPath is not null || moduleGraphFormat is not null)
+            Fail("Module graph options require a .code input.");
 
         if (bytecodePath != null)
         {
@@ -100,14 +127,48 @@ internal static class Program
         new Vm(program).Run();
     }
 
-    private static void CompileToFile(string sourcePath, string outputPath)
+    private static void CompileToFile(
+        string sourcePath,
+        string outputPath,
+        bool dumpModuleGraph,
+        string? moduleGraphOutputPath,
+        string? moduleGraphFormat,
+        bool traceLinker)
     {
         var source = File.ReadAllText(sourcePath);
         try
         {
-            var bytes = ModuleCompiler.CompileFromFile(sourcePath);
-            File.WriteAllBytes(outputPath, bytes);
+            var options = new ModuleCompileOptions
+            {
+                TraceLinker = traceLinker,
+                TraceWriter = traceLinker ? message => Console.Error.WriteLine($"[linker] {message}") : null
+            };
+            var result = ModuleCompiler.CompileFromFileWithMetadata(sourcePath, options);
+            File.WriteAllBytes(outputPath, result.Bytecode);
             Console.WriteLine($"Compiled {sourcePath} -> {outputPath}");
+            if (dumpModuleGraph)
+            {
+                string graphBody = FormatModuleGraph(
+                    result.Graph,
+                    Path.GetDirectoryName(sourcePath),
+                    moduleGraphOutputPath,
+                    moduleGraphFormat);
+
+                if (moduleGraphOutputPath is null)
+                {
+                    Console.WriteLine("Module graph:");
+                    Console.Write(graphBody);
+                }
+                else
+                {
+                    string fullGraphPath = Path.GetFullPath(moduleGraphOutputPath);
+                    string? dir = Path.GetDirectoryName(fullGraphPath);
+                    if (!string.IsNullOrEmpty(dir))
+                        Directory.CreateDirectory(dir);
+                    File.WriteAllText(fullGraphPath, graphBody);
+                    Console.WriteLine($"Module graph written to {fullGraphPath}");
+                }
+            }
         }
         catch (CompilerException ce)
         {
@@ -120,6 +181,39 @@ internal static class Program
             Console.Error.WriteLine($"Compile failed: {ex.Message}");
             Environment.Exit(1);
         }
+    }
+
+    private static string FormatModuleGraph(ModuleGraph graph, string? sourceDir, string? outputPath, string? formatOverride)
+    {
+        string? format = NormalizeModuleGraphFormat(outputPath, formatOverride);
+        return format switch
+        {
+            "json" => graph.ToJsonString(sourceDir),
+            "dot" => graph.ToDotString(sourceDir),
+            _ => graph.ToDisplayString(sourceDir)
+        };
+    }
+
+    private static string? NormalizeModuleGraphFormat(string? outputPath, string? formatOverride)
+    {
+        if (!string.IsNullOrWhiteSpace(formatOverride))
+        {
+            string normalized = formatOverride.Trim().ToLowerInvariant();
+            if (normalized is "text" or "json" or "dot")
+                return normalized;
+            Fail($"Unsupported module graph format '{formatOverride}'. Use text, json, or dot.");
+        }
+
+        if (string.IsNullOrWhiteSpace(outputPath))
+            return null;
+
+        string extension = Path.GetExtension(outputPath).ToLowerInvariant();
+        return extension switch
+        {
+            ".json" => "json",
+            ".dot" or ".gv" => "dot",
+            _ => null
+        };
     }
 
     private static void RunBytecode(string path)

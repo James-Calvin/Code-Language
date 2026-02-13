@@ -12,8 +12,9 @@ Read this first. Update it whenever semantics or process change.
 - Expressions: arithmetic, comparisons, logical and/or/not (short-circuit), assignment, function calls, string interpolation/concat.
 - Errors: `panic <expr>;` raises `UserError` with line/col + call stack (from bytecode debug map).
 - Bytecode/VM: header v0x05, spec v0.8; ops include strings, arrays (NEW_ARRAY/GET/LEN/SET/NEW_ARRAY_N), optionals (NONE/HAS/VALUE/OR), objects (NEW_OBJECT/GET_FIELD/SET_FIELD/GET_TYPE_NAME), interface dispatch (INTERFACE_CALL), THROW_ERROR.
-- Modules/imports: recursive file-based module linking for `.code` files with `import`/`export`, package declarations, module-scope symbol conflict checks, import-chain diagnostics, alias-import wrappers for exported functions, and `lib/` ancestor search.
-- CLI flags: `--run-tests`, `--skip-tests`, `--disasm`, `--dump-tokens`, `--out`, `--compile-only`.
+- Modules/imports: recursive file-based module linking for `.code` files with `import`/`export`, package declarations, grouped/selective imports, module-scope symbol conflict checks, import-chain diagnostics, alias imports for function/object/interface exports, and `lib/` ancestor search.
+- Module tooling: `--dump-module-graph [outputPath]` emits entry/modules/import edges; supports text/json/dot output (via `--module-graph-format` or output extension inference); `--trace-linker` emits linker resolution steps.
+- CLI flags: `--run-tests`, `--skip-tests`, `--disasm`, `--dump-tokens`, `--out`, `--compile-only`, `--dump-module-graph`, `--module-graph-format`, `--trace-linker`.
 - Tests: integration (core features, arrays, optionals, objects, interfaces, modules/imports, panic) + fuzz (arith, boolean, strings, loop sums, panic). Run `dotnet run --project ConsoleApp1/ConsoleApp1.csproj --run-tests`.
 
 ## Not Implemented (yet)
@@ -36,6 +37,8 @@ Read this first. Update it whenever semantics or process change.
 
 ## Change Log
 - 2026-02-13: Added `package` declarations, module-level import/declaration conflict checks, and chained import diagnostics (`a -> b -> c`) for linker errors.
+- 2026-02-13: Added module graph tooling (`--dump-module-graph`) and linker tracing (`--trace-linker`) with integration coverage.
+- 2026-02-13: Added file-based machine-readable module graph export (JSON/DOT) with `--dump-module-graph <file>` and `--module-graph-format` override.
 - 2026-02-13: Implemented module linker MVP (`import`/`export`, alias imports for functions, recursive dependency loading, cycle detection, `lib/` search path) with module integration tests and examples.
 - 2026-02-12: Refined method/constructor dispatch to signature-based overload resolution with compile-time binding of call sites.
 - 2026-02-12: Added interface declarations and explicit implement blocks with compile-time method-signature and return-type conformance checks; added interface tests/example.

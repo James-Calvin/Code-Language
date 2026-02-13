@@ -49,7 +49,7 @@ Legend:
 | `[x]` | Modules/imports | Module-scope symbol conflict checks | Detect duplicate top-level declarations and import-binding collisions within a module |
 | `[x]` | Modules/imports | Import-chain diagnostics | Circular/missing-export/import resolution errors include module chain (`a -> b -> c`) |
 | `[~]` | Modules/imports | Import ergonomics expansion | Alias support for object/interface exports and grouped/selective import forms |
-| `[~]` | Modules/imports | Module graph tooling | Planned `--dump-module-graph` and richer linker tracing |
+| `[x]` | Modules/imports | Module graph tooling | `--dump-module-graph [outputPath]` emits module graph (entry/modules/import edges) in text/json/dot; `--trace-linker` emits linker step trace |
 | `[x]` | Bytecode/VM | Header v0x05 + debug table | Implemented |
 | `[x]` | Bytecode/VM | Core opcodes (arith/stack/jump/load/store/PRINT/CALL/RET/PUSH_STRING) | Implemented; includes object/array/optional/error primitives and `GET_TYPE_NAME` for interface dispatch lowering |
 | `[~]` | Bytecode/VM | Constant pool for literals | To reduce code size |
@@ -64,7 +64,7 @@ Legend:
 | `[_]` | Runtime/stdlib | REPL | Future |
 | `[x]` | Tooling/docs | Bytecode spec v0.8 (debug map + arrays/optionals/errors/objects) | Implemented |
 | `[x]` | Tooling/docs | AI context + sample programs | Implemented |
-| `[~]` | Tooling/docs | Disassembler/trace polish; CLI trace flags | Medium priority |
+| `[~]` | Tooling/docs | Disassembler/trace polish; CLI trace flags | Linker trace flags implemented; disassembler/trace polish remains |
 | `[~]` | Tooling/docs | Formatter/linter for `.code` | Medium priority |
 | `[x]` | Testing | VM harness tests | Implemented |
 | `[x]` | Testing | Compiler integration suite | Includes print, arithmetic, functions, loops, foreach, strings |

@@ -364,6 +364,18 @@ print(h.get());", "1\n"),
                 "9\n"
             ),
             (
+                "module-grouped-imports",
+                new Dictionary<string, string>
+                {
+                    ["main.code"] = "import { add, sub as minus } from \"math.code\";\nprint(add(7, 2));\nprint(minus(7, 2));",
+                    ["math.code"] =
+@"export function<integer> add(integer a, integer b) { return a + b; }
+export function<integer> sub(integer a, integer b) { return a - b; }",
+                },
+                "main.code",
+                "9\n5\n"
+            ),
+            (
                 "module-lib-search-path",
                 new Dictionary<string, string>
                 {
@@ -401,6 +413,35 @@ implement IValue for Counter {
                 },
                 "main.code",
                 "9\n"
+            ),
+            (
+                "module-alias-object-interface",
+                new Dictionary<string, string>
+                {
+                    ["main.code"] =
+@"import Counter as LocalCounter from ""types.code"";
+import IValue as LocalValue from ""types.code"";
+LocalValue value = new LocalCounter(4);
+print(value.read());",
+                    ["types.code"] =
+@"export interface IValue {
+  function<integer> read();
+}
+export object Counter {
+  integer count;
+  constructor(integer n) {
+    this.count = n;
+  }
+  function<integer> read() {
+    return this.count;
+  }
+}
+implement IValue for Counter {
+  read() via Counter.read;
+}",
+                },
+                "main.code",
+                "4\n"
             ),
             (
                 "module-package-declaration",
@@ -585,14 +626,14 @@ h.current = new Other();", "Field assignment type mismatch"),
                 "does not export"
             ),
             (
-                "module-import-alias-non-function",
+                "module-grouped-import-missing-export",
                 new Dictionary<string, string>
                 {
-                    ["main.code"] = "import Person as Human from \"types.code\";",
-                    ["types.code"] = "export object Person { constructor() { } }",
+                    ["main.code"] = "import { add, nope } from \"math.code\";\nprint(add(1,2));",
+                    ["math.code"] = "export function<integer> add(integer a, integer b) { return a + b; }",
                 },
                 "main.code",
-                "only supported for functions"
+                "does not export 'nope'"
             ),
             (
                 "module-import-cycle",

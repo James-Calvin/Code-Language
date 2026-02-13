@@ -1,0 +1,7 @@
+package examples.modules.aliastypes;
+
+import Counter as LocalCounter from "types.code";
+import IValue as LocalValue from "types.code";
+
+LocalValue value = new LocalCounter(4);
+print(value.read());

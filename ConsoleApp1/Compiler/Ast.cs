@@ -154,15 +154,16 @@ sealed class MethodCallExpr : Expr
 
 sealed class ImportDecl : Stmt
 {
-    public Token Name { get; }
-    public Token? Alias { get; }
+    public IReadOnlyList<ImportBinding> Bindings { get; }
     public Token Source { get; }
     public string SourcePath => Source.Literal?.ToString() ?? string.Empty;
-    public ImportDecl(Token name, Token? alias, Token source)
+    public ImportDecl(IReadOnlyList<ImportBinding> bindings, Token source)
     {
-        Name = name; Alias = alias; Source = source;
+        Bindings = bindings; Source = source;
     }
 }
+
+sealed record ImportBinding(Token Name, Token? Alias);
 
 sealed class ExportDecl : Stmt
 {

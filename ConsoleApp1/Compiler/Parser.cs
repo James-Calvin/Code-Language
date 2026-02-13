@@ -55,16 +55,34 @@ sealed class Parser
 
     private Stmt ImportDeclaration()
     {
-        Token name = Consume(TokenType.Identifier, "Expect imported declaration name.");
-        Token? alias = null;
-        if (Match(TokenType.As))
+        var bindings = new List<ImportBinding>();
+        if (Match(TokenType.LeftBrace))
         {
-            alias = Consume(TokenType.Identifier, "Expect alias name after 'as'.");
+            if (Check(TokenType.RightBrace))
+                throw Error(Peek(), "Expect at least one import name in grouped import.");
+            do
+            {
+                bindings.Add(ParseImportBinding());
+            } while (Match(TokenType.Comma));
+            Consume(TokenType.RightBrace, "Expect '}' after grouped import bindings.");
+        }
+        else
+        {
+            bindings.Add(ParseImportBinding());
         }
         Consume(TokenType.From, "Expect 'from' in import declaration.");
         Token source = Consume(TokenType.String, "Expect string module path in import declaration.");
         Consume(TokenType.Semicolon, "Expect ';' after import declaration.");
-        return new ImportDecl(name, alias, source);
+        return new ImportDecl(bindings, source);
+    }
+
+    private ImportBinding ParseImportBinding()
+    {
+        Token name = Consume(TokenType.Identifier, "Expect imported declaration name.");
+        Token? alias = null;
+        if (Match(TokenType.As))
+            alias = Consume(TokenType.Identifier, "Expect alias name after 'as'.");
+        return new ImportBinding(name, alias);
     }
 
     private Stmt ExportDeclaration()

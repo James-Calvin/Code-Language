@@ -1,0 +1,21 @@
+package examples.modules.types;
+
+export interface IValue {
+  function<integer> read();
+}
+
+export object Counter {
+  integer count;
+
+  constructor(integer initial) {
+    this.count = initial;
+  }
+
+  function<integer> read() {
+    return this.count;
+  }
+}
+
+implement IValue for Counter {
+  read() via Counter.read;
+}

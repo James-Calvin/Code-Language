@@ -51,8 +51,10 @@ Test harness covers VM ops, compiler integration (print, arithmetic, functions, 
 - Interfaces: `interface` declarations + explicit `implement Interface for Object { ... via Object.method; }` conformance checks
 - Interface-typed locals/params/returns/fields and runtime-dispatched interface method calls
 - Modules: `export` for top-level function/object/interface declarations; `import Name [as Alias] from "path";`
+- Package declarations: optional `package Name;` at top of module (before imports/declarations)
 - Import resolution: importing file directory first, then discovered ancestor `lib/` folders
 - Alias imports currently support exported functions
+- Linker diagnostics include import chains for cycles/missing exports
 - Method/constructor overload resolution: compile-time signature-based dispatch (with best-match conversions)
 - Constructor rules: objects with fields must define constructors, and constructors must assign all fields
 - Errors are reported with line/column and call stack when possible

@@ -401,6 +401,23 @@ implement IValue for Counter {
                 },
                 "main.code",
                 "9\n"
+            ),
+            (
+                "module-package-declaration",
+                new Dictionary<string, string>
+                {
+                    ["main.code"] =
+@"package app.main;
+import add from ""math.code"";
+print(add(1, 2));",
+                    ["math.code"] =
+@"package app.math;
+export function<integer> add(integer a, integer b) {
+  return a + b;
+}",
+                },
+                "main.code",
+                "3\n"
             )
         };
         // Expected error cases
@@ -587,6 +604,69 @@ h.current = new Other();", "Field assignment type mismatch"),
                 },
                 "main.code",
                 "Circular import detected"
+            ),
+            (
+                "module-package-duplicate",
+                new Dictionary<string, string>
+                {
+                    ["main.code"] =
+@"package app.one;
+package app.two;
+print(1);",
+                },
+                "main.code",
+                "Only one package declaration"
+            ),
+            (
+                "module-package-ordering",
+                new Dictionary<string, string>
+                {
+                    ["main.code"] =
+@"import add from ""math.code"";
+package app.bad;
+print(add(1, 2));",
+                    ["math.code"] = "export function<integer> add(integer a, integer b) { return a + b; }",
+                },
+                "main.code",
+                "Package declaration must appear before imports and declarations"
+            ),
+            (
+                "module-import-binding-collision",
+                new Dictionary<string, string>
+                {
+                    ["main.code"] =
+@"import add from ""math.code"";
+import add from ""other.code"";
+print(add(1, 2));",
+                    ["math.code"] = "export function<integer> add(integer a, integer b) { return a + b; }",
+                    ["other.code"] = "export function<integer> add(integer a, integer b) { return a - b; }",
+                },
+                "main.code",
+                "Import binding 'add' is already declared"
+            ),
+            (
+                "module-decl-import-collision",
+                new Dictionary<string, string>
+                {
+                    ["main.code"] =
+@"import add from ""math.code"";
+function<integer> add(integer a, integer b) { return a * b; }
+print(add(2, 3));",
+                    ["math.code"] = "export function<integer> add(integer a, integer b) { return a + b; }",
+                },
+                "main.code",
+                "conflicts with an import binding"
+            ),
+            (
+                "module-missing-export-chain",
+                new Dictionary<string, string>
+                {
+                    ["main.code"] = "import run from \"a.code\";\nprint(run());",
+                    ["a.code"] = "import hidden from \"b.code\";\nexport function<integer> run() { return hidden(); }",
+                    ["b.code"] = "function<integer> hidden() { return 1; }",
+                },
+                "main.code",
+                "Import chain: main.code -> a.code -> b.code"
             ),
         };
 

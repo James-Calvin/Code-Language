@@ -245,7 +245,7 @@ sealed class TypeChecker
             {
                 CheckFunction(fn);
             }
-            else if (stmt is ObjectDecl or InterfaceDecl or ImplementDecl or ImportDecl or ExportDecl)
+            else if (stmt is ObjectDecl or InterfaceDecl or ImplementDecl or ImportDecl or ExportDecl or PackageDecl)
             {
                 // Declarations are compile-time metadata.
             }
@@ -486,6 +486,7 @@ sealed class TypeChecker
                 return false;
             case ImportDecl:
             case ExportDecl:
+            case PackageDecl:
                 // module linker consumes import/export before type checking
                 return false;
 

@@ -12,13 +12,13 @@ Read this first. Update it whenever semantics or process change.
 - Expressions: arithmetic, comparisons, logical and/or/not (short-circuit), assignment, function calls, string interpolation/concat.
 - Errors: `panic <expr>;` raises `UserError` with line/col + call stack (from bytecode debug map).
 - Bytecode/VM: header v0x05, spec v0.8; ops include strings, arrays (NEW_ARRAY/GET/LEN/SET/NEW_ARRAY_N), optionals (NONE/HAS/VALUE/OR), objects (NEW_OBJECT/GET_FIELD/SET_FIELD/GET_TYPE_NAME), interface dispatch (INTERFACE_CALL), THROW_ERROR.
-- Modules/imports: recursive file-based module linking for `.code` files with `import`/`export`, cycle detection, alias-import wrappers for exported functions, and `lib/` ancestor search.
+- Modules/imports: recursive file-based module linking for `.code` files with `import`/`export`, package declarations, module-scope symbol conflict checks, import-chain diagnostics, alias-import wrappers for exported functions, and `lib/` ancestor search.
 - CLI flags: `--run-tests`, `--skip-tests`, `--disasm`, `--dump-tokens`, `--out`, `--compile-only`.
 - Tests: integration (core features, arrays, optionals, objects, interfaces, modules/imports, panic) + fuzz (arith, boolean, strings, loop sums, panic). Run `dotnet run --project ConsoleApp1/ConsoleApp1.csproj --run-tests`.
 
 ## Not Implemented (yet)
 - User-defined data remaining: records, visibility enforcement, broader interface container/module surfaces, and dispatch optimization beyond baseline tables.
-- Module namespaces/package declarations and stdlib versioning/layout.
+- Module namespaces and stdlib versioning/layout.
 - Typed array element enforcement, constant pool, formatter/linter, REPL.
 - Typed error values / `fallible<T>` semantics wired to VM errors.
 
@@ -35,6 +35,7 @@ Read this first. Update it whenever semantics or process change.
 - Preserve prior decisions; ask user when unclear.
 
 ## Change Log
+- 2026-02-13: Added `package` declarations, module-level import/declaration conflict checks, and chained import diagnostics (`a -> b -> c`) for linker errors.
 - 2026-02-13: Implemented module linker MVP (`import`/`export`, alias imports for functions, recursive dependency loading, cycle detection, `lib/` search path) with module integration tests and examples.
 - 2026-02-12: Refined method/constructor dispatch to signature-based overload resolution with compile-time binding of call sites.
 - 2026-02-12: Added interface declarations and explicit implement blocks with compile-time method-signature and return-type conformance checks; added interface tests/example.

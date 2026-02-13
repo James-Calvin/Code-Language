@@ -36,6 +36,7 @@ static class ModuleCompiler
         private readonly string _projectRoot;
         private readonly Dictionary<string, ModuleInfo> _modules = new(StringComparer.OrdinalIgnoreCase);
         private readonly HashSet<string> _visiting = new(StringComparer.OrdinalIgnoreCase);
+        private readonly List<string> _visitStack = new();
         private readonly List<string> _order = new();
 
         public ModuleLinker(string projectRoot)
@@ -47,6 +48,7 @@ static class ModuleCompiler
         {
             _modules.Clear();
             _visiting.Clear();
+            _visitStack.Clear();
             _order.Clear();
 
             Visit(entryPath);
@@ -66,36 +68,57 @@ static class ModuleCompiler
             if (_modules.TryGetValue(modulePath, out var cached))
                 return cached;
             if (_visiting.Contains(modulePath))
-                throw new CompilerException($"Circular import detected at '{Path.GetFileName(modulePath)}'", 1, 1);
-
-            _visiting.Add(modulePath);
-            var module = ParseModule(modulePath);
-            foreach (var import in module.Imports)
             {
-                string dependencyPath = ResolveImportPath(module.Path, import.SourcePath, import.Source);
-                var dependency = Visit(dependencyPath);
-                if (!dependency.ExportedDeclarations.TryGetValue(import.Name.Lexeme, out var exported))
-                {
-                    throw new CompilerException(
-                        $"Module '{Path.GetFileName(dependencyPath)}' does not export '{import.Name.Lexeme}'",
-                        import.Name.Line,
-                        import.Name.Column);
-                }
-
-                if (import.Alias is not null)
-                {
-                    module.LinkedStatements.Add(BuildAliasWrapper(import, exported));
-                }
+                var cycle = BuildCycleChain(modulePath);
+                throw BuildChainedError("Circular import detected.", 1, 1, cycle);
             }
 
-            module.LinkedStatements.AddRange(module.LocalStatements);
-            _visiting.Remove(modulePath);
-            _modules[modulePath] = module;
-            _order.Add(modulePath);
-            return module;
+            _visiting.Add(modulePath);
+            _visitStack.Add(modulePath);
+            try
+            {
+                var module = ParseModule(modulePath);
+                foreach (var import in module.Imports)
+                {
+                    string dependencyPath = ResolveImportPath(module.Path, import.SourcePath, import.Source);
+                    var dependency = Visit(dependencyPath);
+                    if (!dependency.ExportedDeclarations.TryGetValue(import.Name.Lexeme, out var exported))
+                    {
+                        var chain = BuildImportChain(dependencyPath);
+                        throw BuildChainedError(
+                            $"Module '{Path.GetFileName(dependencyPath)}' does not export '{import.Name.Lexeme}'",
+                            import.Name.Line,
+                            import.Name.Column,
+                            chain);
+                    }
+
+                    if (import.Alias is not null)
+                    {
+                        module.LinkedStatements.Add(BuildAliasWrapper(import, exported));
+                    }
+                }
+
+                module.LinkedStatements.AddRange(module.LocalStatements);
+                _modules[modulePath] = module;
+                _order.Add(modulePath);
+                return module;
+            }
+            catch (CompilerException ex)
+            {
+                if (ex.Message.Contains("Import chain:", StringComparison.Ordinal))
+                {
+                    throw;
+                }
+                throw BuildChainedError(ex.Message, ex.Line, ex.Column, _visitStack);
+            }
+            finally
+            {
+                _visitStack.RemoveAt(_visitStack.Count - 1);
+                _visiting.Remove(modulePath);
+            }
         }
 
-        private static ModuleInfo ParseModule(string modulePath)
+        private ModuleInfo ParseModule(string modulePath)
         {
             if (!File.Exists(modulePath))
                 throw new CompilerException($"Module file not found: '{modulePath}'", 1, 1);
@@ -117,11 +140,55 @@ static class ModuleCompiler
             var imports = new List<ImportDecl>();
             var locals = new List<Stmt>();
             var exports = new Dictionary<string, Stmt>(StringComparer.Ordinal);
+            var topLevelNames = new Dictionary<string, Token>(StringComparer.Ordinal);
+            var importBindings = new Dictionary<string, Token>(StringComparer.Ordinal);
+            PackageDecl? package = null;
             foreach (var stmt in statements)
             {
                 switch (stmt)
                 {
+                    case PackageDecl pkg:
+                        if (package is not null)
+                        {
+                            throw new CompilerException(
+                                "Only one package declaration is allowed per module.",
+                                pkg.NameToken.Line,
+                                pkg.NameToken.Column);
+                        }
+                        if (imports.Count > 0 || locals.Count > 0)
+                        {
+                            throw new CompilerException(
+                                "Package declaration must appear before imports and declarations.",
+                                pkg.NameToken.Line,
+                                pkg.NameToken.Column);
+                        }
+                        package = pkg;
+                        break;
                     case ImportDecl imp:
+                        if (locals.Count > 0)
+                        {
+                            throw new CompilerException(
+                                "Import declarations must appear before module declarations.",
+                                imp.Name.Line,
+                                imp.Name.Column);
+                        }
+                        string bindingName = imp.Alias?.Lexeme ?? imp.Name.Lexeme;
+                        Token bindingToken = imp.Alias ?? imp.Name;
+                        if (importBindings.ContainsKey(bindingName))
+                        {
+                            throw new CompilerException(
+                                $"Import binding '{bindingName}' is already declared in this module.",
+                                bindingToken.Line,
+                                bindingToken.Column);
+                        }
+                        if (topLevelNames.ContainsKey(bindingName))
+                        {
+                            throw new CompilerException(
+                                $"Import binding '{bindingName}' conflicts with a module declaration.",
+                                bindingToken.Line,
+                                bindingToken.Column);
+                        }
+                        importBindings[bindingName] = bindingToken;
                         imports.Add(imp);
                         break;
                     case ExportDecl exp:
@@ -135,16 +202,21 @@ static class ModuleCompiler
                                 GetDeclColumn(exp.Declaration));
                         }
                         exports[exportName] = exp.Declaration;
+                        RegisterTopLevelName(topLevelNames, importBindings, exportName, GetDeclToken(exp.Declaration));
                         locals.Add(exp.Declaration);
                         break;
                     }
                     default:
+                        if (TryGetDeclarationName(stmt, out var declName, out var declToken))
+                        {
+                            RegisterTopLevelName(topLevelNames, importBindings, declName, declToken);
+                        }
                         locals.Add(stmt);
                         break;
                 }
             }
 
-            return new ModuleInfo(modulePath, imports, locals, exports, new List<Stmt>());
+            return new ModuleInfo(modulePath, package?.Name, imports, locals, exports, new List<Stmt>());
         }
 
         private string ResolveImportPath(string importerPath, string sourcePath, Token sourceToken)
@@ -182,6 +254,29 @@ static class ModuleCompiler
                 $"Could not resolve import '{sourcePath}'",
                 sourceToken.Line,
                 sourceToken.Column);
+        }
+
+        private static void RegisterTopLevelName(
+            Dictionary<string, Token> topLevelNames,
+            Dictionary<string, Token> importBindings,
+            string name,
+            Token token)
+        {
+            if (importBindings.ContainsKey(name))
+            {
+                throw new CompilerException(
+                    $"Module declaration '{name}' conflicts with an import binding.",
+                    token.Line,
+                    token.Column);
+            }
+            if (topLevelNames.ContainsKey(name))
+            {
+                throw new CompilerException(
+                    $"Module declaration '{name}' is already declared in this module.",
+                    token.Line,
+                    token.Column);
+            }
+            topLevelNames[name] = token;
         }
 
         private static Stmt BuildAliasWrapper(ImportDecl import, Stmt exportedDecl)
@@ -248,10 +343,76 @@ static class ModuleCompiler
             InterfaceDecl iface => iface.Name.Column,
             _ => 1
         };
+
+        private static bool TryGetDeclarationName(Stmt declaration, out string name, out Token token)
+        {
+            switch (declaration)
+            {
+                case FunctionDecl fn:
+                    name = fn.Name.Lexeme;
+                    token = fn.Name;
+                    return true;
+                case ObjectDecl obj:
+                    name = obj.Name.Lexeme;
+                    token = obj.Name;
+                    return true;
+                case InterfaceDecl iface:
+                    name = iface.Name.Lexeme;
+                    token = iface.Name;
+                    return true;
+                default:
+                    name = string.Empty;
+                    token = new Token(TokenType.Identifier, string.Empty, null, 1, 1);
+                    return false;
+            }
+        }
+
+        private static Token GetDeclToken(Stmt declaration) => declaration switch
+        {
+            FunctionDecl fn => fn.Name,
+            ObjectDecl obj => obj.Name,
+            InterfaceDecl iface => iface.Name,
+            _ => new Token(TokenType.Identifier, string.Empty, null, 1, 1)
+        };
+
+        private List<string> BuildImportChain(string nextPath)
+        {
+            var chain = new List<string>(_visitStack);
+            if (chain.Count == 0 || !string.Equals(chain[^1], nextPath, StringComparison.OrdinalIgnoreCase))
+                chain.Add(nextPath);
+            return chain;
+        }
+
+        private List<string> BuildCycleChain(string repeatedPath)
+        {
+            int index = _visitStack.FindIndex(p => string.Equals(p, repeatedPath, StringComparison.OrdinalIgnoreCase));
+            if (index < 0)
+            {
+                var fallback = new List<string>(_visitStack) { repeatedPath };
+                return fallback;
+            }
+
+            var cycle = _visitStack.Skip(index).ToList();
+            cycle.Add(repeatedPath);
+            return cycle;
+        }
+
+        private static CompilerException BuildChainedError(string message, int line, int column, IEnumerable<string> chain)
+        {
+            string chainText = string.Join(" -> ", chain.Select(FormatChainItem));
+            return new CompilerException($"{message}{Environment.NewLine}Import chain: {chainText}", line, column);
+        }
+
+        private static string FormatChainItem(string path)
+        {
+            string file = Path.GetFileName(path);
+            return string.IsNullOrEmpty(file) ? path : file;
+        }
     }
 
     private sealed record ModuleInfo(
         string Path,
+        string? PackageName,
         List<ImportDecl> Imports,
         List<Stmt> LocalStatements,
         Dictionary<string, Stmt> ExportedDeclarations,

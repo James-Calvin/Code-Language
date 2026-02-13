@@ -36,6 +36,11 @@ sealed class Parser
             if (_blockDepth > 0) throw Error(Previous(), "'export' is only valid at module scope.");
             return ExportDeclaration();
         }
+        if (Match(TokenType.Package))
+        {
+            if (_blockDepth > 0) throw Error(Previous(), "'package' is only valid at module scope.");
+            return PackageDeclaration();
+        }
         if (Match(TokenType.Function)) return FunctionDeclaration();
         if (Match(TokenType.Object)) return ObjectDeclaration();
         if (Match(TokenType.Interface)) return InterfaceDeclaration();
@@ -71,6 +76,19 @@ sealed class Parser
         if (Match(TokenType.Interface))
             return new ExportDecl(InterfaceDeclaration());
         throw Error(Peek(), "Expect function/object/interface declaration after 'export'.");
+    }
+
+    private Stmt PackageDeclaration()
+    {
+        Token start = Consume(TokenType.Identifier, "Expect package name.");
+        string name = start.Lexeme;
+        while (Match(TokenType.Dot))
+        {
+            Token part = Consume(TokenType.Identifier, "Expect package name segment after '.'.");
+            name += "." + part.Lexeme;
+        }
+        Consume(TokenType.Semicolon, "Expect ';' after package declaration.");
+        return new PackageDecl(start, name);
     }
 
     private TypeRef ParseTypeRef()

@@ -173,6 +173,17 @@ sealed class ExportDecl : Stmt
     }
 }
 
+sealed class PackageDecl : Stmt
+{
+    public Token NameToken { get; }
+    public string Name { get; }
+    public PackageDecl(Token nameToken, string name)
+    {
+        NameToken = nameToken;
+        Name = name;
+    }
+}
+
 sealed record Parameter(TypeRef? Type, Token Name);
 
 sealed record FieldDecl(TypeRef Type, Token Name);

@@ -1,3 +1,5 @@
+package examples.modules.libimport;
+
 import timesTwo from "numbers.code";
 
 print(timesTwo(6));

@@ -36,6 +36,7 @@ sealed class Lexer
         { "export", TokenType.Export },
         { "from", TokenType.From },
         { "as", TokenType.As },
+        { "package", TokenType.Package },
         { "new", TokenType.New },
         { "true", TokenType.True },
         { "false", TokenType.False },

@@ -359,11 +359,16 @@ function method(string name) {
 - Imported symbol must be exported by the target module.
 - Alias imports currently support exported functions (object/interface aliasing is deferred).
 - Source file extension is `.code`.
-- Package declaration syntax and module namespaces are deferred.
+- Package declaration syntax: `package Name;` (dot-separated segments allowed).
+- Package declaration rules (current implementation):
+  - at most one per module;
+  - must appear before imports/declarations;
+  - package names are currently metadata only (namespace enforcement deferred).
 
 ```code
 import anotherIdentifier from "FilePath";
 import exportedFunction as errorExample from "PathToExampleAbove";
+package Example.Package;
 ```
 
 ## 12. Exports
@@ -423,7 +428,8 @@ real result3 = errorExample(0) on error panic("Error message {error}");
 - Constructor symbols are collected and used for `new Type(...)` arity/type validation.
 - Method symbols are collected and used for `obj.method(args)` arity/type validation.
 - Interface symbols and `implement` mappings are validated, and interface-typed method calls are lowered to runtime dispatch tables over mapped object methods.
-- File compilation performs module linking: recursive import graph load, export-name validation, cycle detection, and flattening to a single bytecode unit.
+- File compilation performs module linking: recursive import graph load, export-name validation, module-scope import/declaration conflict checks, cycle detection, and flattening to a single bytecode unit.
+- Module diagnostics include import-chain context (`entry -> dep1 -> dep2`) for unresolved imports/exports and cycles.
 - Object construction and field access lower to dedicated VM opcodes (`NEW_OBJECT`, `GET_FIELD`, `SET_FIELD`).
 - Arrays: literals `{...}` create arrays; typed declarations `array<integer> xs = {1,2,3};`; dynamic `new array<integer>(n)` requires a size; `xs.length` yields length; `foreach` iterates arrays by element.
 

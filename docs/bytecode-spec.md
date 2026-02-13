@@ -69,3 +69,4 @@ Version: 0.8 (2026-02-12)
 - Object methods currently lower to regular CALL sites with implicit `this` prepended to explicit arguments; overload choice is resolved at compile time.
 - Interface declarations and `implement` mappings remain compile-time metadata in v0.8; interface-typed calls lower to `INTERFACE_CALL` dispatch tables that map runtime type names to method targets.
 - VM caches decoded `INTERFACE_CALL` tables by call-site IP to avoid reparsing dispatch metadata on hot paths.
+- Module imports/exports are compile-time only; the linker flattens a module graph into one bytecode unit before VM execution.

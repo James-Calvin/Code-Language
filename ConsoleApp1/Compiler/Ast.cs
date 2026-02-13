@@ -152,6 +152,27 @@ sealed class MethodCallExpr : Expr
     }
 }
 
+sealed class ImportDecl : Stmt
+{
+    public Token Name { get; }
+    public Token? Alias { get; }
+    public Token Source { get; }
+    public string SourcePath => Source.Literal?.ToString() ?? string.Empty;
+    public ImportDecl(Token name, Token? alias, Token source)
+    {
+        Name = name; Alias = alias; Source = source;
+    }
+}
+
+sealed class ExportDecl : Stmt
+{
+    public Stmt Declaration { get; }
+    public ExportDecl(Stmt declaration)
+    {
+        Declaration = declaration;
+    }
+}
+
 sealed record Parameter(TypeRef? Type, Token Name);
 
 sealed record FieldDecl(TypeRef Type, Token Name);

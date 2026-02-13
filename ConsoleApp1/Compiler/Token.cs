@@ -26,6 +26,7 @@ enum TokenType
     Function,
     Constructor,
     Implement, Via,
+    Import, Export, From, As,
     And, Or, Not,
     For, Foreach, In,
     New,

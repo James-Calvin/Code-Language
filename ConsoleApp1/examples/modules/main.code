@@ -1,0 +1,3 @@
+import add as plus from "math.code";
+
+print(plus(2, 3));

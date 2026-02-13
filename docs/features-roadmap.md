@@ -42,9 +42,9 @@ Legend:
 | `[x]` | Object model | Interfaces + `implement ... for ...` conformance checks | Compile-time interface declarations + explicit `implement Interface for Object { ... via Object.method; }` mapping with signature/return checks |
 | `[~]` | Object model | Interface dispatch lowering/runtime model | Baseline runtime dispatch table opcode implemented for interface-typed locals/params/returns/fields; extend to interface collections and optimizer-grade fast paths |
 | `[_]` | Object model | Lifecycle/perf plan for heap instances (GC/ownership strategy) | Permanent runtime design decision; defer until objects are exercised |
-| `[_]` | Modules/imports | Exported declarations | Export syntax in spec; not implemented |
-| `[_]` | Modules/imports | Import syntax & package declarations | Not implemented |
-| `[_]` | Modules/imports | Package search paths/stdlib layout/versioning | Deferred until core stabilizes |
+| `[~]` | Modules/imports | Exported declarations | `export` implemented for function/object/interface declarations |
+| `[~]` | Modules/imports | Import syntax & package declarations | `import Name [as Alias] from \"path\";` implemented (package declarations still deferred) |
+| `[~]` | Modules/imports | Package search paths/stdlib layout/versioning | Relative-path + `lib/` ancestor search implemented; stdlib layout/versioning still deferred |
 | `[x]` | Bytecode/VM | Header v0x05 + debug table | Implemented |
 | `[x]` | Bytecode/VM | Core opcodes (arith/stack/jump/load/store/PRINT/CALL/RET/PUSH_STRING) | Implemented; includes object/array/optional/error primitives and `GET_TYPE_NAME` for interface dispatch lowering |
 | `[~]` | Bytecode/VM | Constant pool for literals | To reduce code size |

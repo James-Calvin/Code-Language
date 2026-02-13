@@ -352,26 +352,24 @@ function method(string name) {
 
 ## 11. Modules and Imports
 - Import syntax:
-  - `import identifier from RuntimeLibrary;`
   - `import identifier from "FilePath";`
   - Alias form: `import sourceName as localName from "FilePath";`
-- `RuntimeLibrary`-style identifiers represent built-in package namespaces.
 - String-path imports resolve relative to the file containing the `import`.
-- Import resolution order: current file directory first, then project `lib/` (configurable later). No global path search to avoid ambiguity.
+- Import resolution order (current implementation): current file directory, then `lib/` folders discovered while walking ancestor directories (including project root `lib/` when present).
+- Imported symbol must be exported by the target module.
+- Alias imports currently support exported functions (object/interface aliasing is deferred).
 - Source file extension is `.code`.
-- Package declaration syntax: `package Name;`.
-- Conventional ordering places `package Name;` immediately after imports.
+- Package declaration syntax and module namespaces are deferred.
 
 ```code
-import identifier from RuntimeLibrary;
 import anotherIdentifier from "FilePath";
 import exportedFunction as errorExample from "PathToExampleAbove";
-package ExamplePackage;
 ```
 
 ## 12. Exports
 - Exported declarations use `export` before the declaration.
 - Multiple exports can exist in one module.
+- Export is currently implemented for `function`, `object`, and `interface` declarations.
 
 ```code
 export function<fallible<real>> exportedFunction(real value) {
@@ -425,6 +423,7 @@ real result3 = errorExample(0) on error panic("Error message {error}");
 - Constructor symbols are collected and used for `new Type(...)` arity/type validation.
 - Method symbols are collected and used for `obj.method(args)` arity/type validation.
 - Interface symbols and `implement` mappings are validated, and interface-typed method calls are lowered to runtime dispatch tables over mapped object methods.
+- File compilation performs module linking: recursive import graph load, export-name validation, cycle detection, and flattening to a single bytecode unit.
 - Object construction and field access lower to dedicated VM opcodes (`NEW_OBJECT`, `GET_FIELD`, `SET_FIELD`).
 - Arrays: literals `{...}` create arrays; typed declarations `array<integer> xs = {1,2,3};`; dynamic `new array<integer>(n)` requires a size; `xs.length` yields length; `foreach` iterates arrays by element.
 

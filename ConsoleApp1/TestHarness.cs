@@ -341,6 +341,68 @@ object Holder {
 Holder h = new Holder(new One());
 print(h.get());", "1\n"),
         };
+        var moduleCases = new List<(string Name, IReadOnlyDictionary<string, string> Files, string Entry, string Expected)>
+        {
+            (
+                "module-import-export-function",
+                new Dictionary<string, string>
+                {
+                    ["main.code"] = "import add from \"math.code\";\nprint(add(2, 3));",
+                    ["math.code"] = "export function<integer> add(integer a, integer b) { return a + b; }",
+                },
+                "main.code",
+                "5\n"
+            ),
+            (
+                "module-import-export-alias",
+                new Dictionary<string, string>
+                {
+                    ["main.code"] = "import add as plus from \"math.code\";\nprint(plus(4, 5));",
+                    ["math.code"] = "export function<integer> add(integer a, integer b) { return a + b; }",
+                },
+                "main.code",
+                "9\n"
+            ),
+            (
+                "module-lib-search-path",
+                new Dictionary<string, string>
+                {
+                    ["main.code"] = "import timesTwo from \"numbers.code\";\nprint(timesTwo(6));",
+                    ["lib/numbers.code"] = "export function<integer> timesTwo(integer value) { return value * 2; }",
+                },
+                "main.code",
+                "12\n"
+            ),
+            (
+                "module-import-object-interface",
+                new Dictionary<string, string>
+                {
+                    ["main.code"] =
+@"import Counter from ""types.code"";
+import IValue from ""types.code"";
+IValue value = new Counter(9);
+print(value.read());",
+                    ["types.code"] =
+@"export interface IValue {
+  function<integer> read();
+}
+export object Counter {
+  integer count;
+  constructor(integer n) {
+    this.count = n;
+  }
+  function<integer> read() {
+    return this.count;
+  }
+}
+implement IValue for Counter {
+  read() via Counter.read;
+}",
+                },
+                "main.code",
+                "9\n"
+            )
+        };
         // Expected error cases
         var errorCases = new List<(string Name, string Source, string ExpectedType)>
         {
@@ -493,6 +555,40 @@ object Holder {
 Holder h = new Holder(new Thing());
 h.current = new Other();", "Field assignment type mismatch"),
         };
+        var moduleErrorCases = new List<(string Name, IReadOnlyDictionary<string, string> Files, string Entry, string ErrorContains)>
+        {
+            (
+                "module-import-missing-export",
+                new Dictionary<string, string>
+                {
+                    ["main.code"] = "import hidden from \"lib.code\";\nprint(hidden());",
+                    ["lib.code"] = "function<integer> hidden() { return 1; }",
+                },
+                "main.code",
+                "does not export"
+            ),
+            (
+                "module-import-alias-non-function",
+                new Dictionary<string, string>
+                {
+                    ["main.code"] = "import Person as Human from \"types.code\";",
+                    ["types.code"] = "export object Person { constructor() { } }",
+                },
+                "main.code",
+                "only supported for functions"
+            ),
+            (
+                "module-import-cycle",
+                new Dictionary<string, string>
+                {
+                    ["main.code"] = "import run from \"a.code\";\nprint(run());",
+                    ["a.code"] = "import runB from \"b.code\";\nexport function<integer> run() { return runB(); }",
+                    ["b.code"] = "import run from \"a.code\";\nexport function<integer> runB() { return run(); }",
+                },
+                "main.code",
+                "Circular import detected"
+            ),
+        };
 
         foreach (var (name, src, expected) in cases)
         {
@@ -586,6 +682,29 @@ h.current = new Other();", "Field assignment type mismatch"),
             }
         }
 
+        foreach (var (name, files, entry, expected) in moduleCases)
+        {
+            try
+            {
+                var output = Normalize(CompileAndRunModules(files, entry));
+                var expectNorm = Normalize(expected);
+                if (output != expectNorm)
+                {
+                    failures++;
+                    Console.WriteLine($"[FAIL] {name}: expected '{Escape(expectNorm)}' got '{Escape(output)}'");
+                }
+                else
+                {
+                    Console.WriteLine($"[PASS] {name}");
+                }
+            }
+            catch (Exception ex)
+            {
+                failures++;
+                Console.WriteLine($"[FAIL] {name}: threw {ex.GetType().Name} - {ex.Message}");
+            }
+        }
+
         foreach (var (name, src, expectedType) in errorCases)
         {
             try
@@ -605,6 +724,20 @@ h.current = new Other();", "Field assignment type mismatch"),
             try
             {
                 CompileExpectError(src, errorContains);
+                Console.WriteLine($"[PASS] {name}");
+            }
+            catch (Exception ex)
+            {
+                failures++;
+                Console.WriteLine($"[FAIL] {name}: {ex.GetType().Name} - {ex.Message}");
+            }
+        }
+
+        foreach (var (name, files, entry, errorContains) in moduleErrorCases)
+        {
+            try
+            {
+                CompileModulesExpectError(files, entry, errorContains);
                 Console.WriteLine($"[PASS] {name}");
             }
             catch (Exception ex)
@@ -835,18 +968,40 @@ print(sum);";
 
     private static string CompileAndRun(string source)
     {
-        var lexer = new Compiler.Lexer(source);
-        var tokens = lexer.ScanTokens();
-        var parser = new Compiler.Parser(tokens);
-        var ast = parser.Parse();
-        var typeChecker = new Compiler.TypeChecker();
-        typeChecker.Check(ast);
-        var generator = new Compiler.CodeGenerator();
-        var bytes = generator.Generate(ast);
+        var bytes = Compiler.ModuleCompiler.CompileFromSource(source);
         using var sw = new StringWriter();
         var vm = new Vm(bytes, sw);
         vm.Run();
         return sw.ToString();
+    }
+
+    private static string CompileAndRunModules(IReadOnlyDictionary<string, string> files, string entryRelativePath)
+    {
+        string tempRoot = Path.Combine(Path.GetTempPath(), "code-mod-tests-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+        try
+        {
+            foreach (var pair in files)
+            {
+                string fullPath = Path.Combine(tempRoot, pair.Key);
+                string? dir = Path.GetDirectoryName(fullPath);
+                if (!string.IsNullOrEmpty(dir))
+                    Directory.CreateDirectory(dir);
+                File.WriteAllText(fullPath, pair.Value);
+            }
+
+            string entryPath = Path.Combine(tempRoot, entryRelativePath);
+            var bytes = Compiler.ModuleCompiler.CompileFromFile(entryPath);
+            using var sw = new StringWriter();
+            var vm = new Vm(bytes, sw);
+            vm.Run();
+            return sw.ToString();
+        }
+        finally
+        {
+            try { Directory.Delete(tempRoot, recursive: true); }
+            catch { }
+        }
     }
 
     private static void CompileAndRunExpectError(string source, string expectedType)
@@ -879,6 +1034,40 @@ print(sum);";
         {
             if (!ex.Message.Contains(expectedContains, StringComparison.Ordinal))
                 throw new Exception($"Expected compile error containing '{expectedContains}', got '{ex.Message}'");
+        }
+    }
+
+    private static void CompileModulesExpectError(IReadOnlyDictionary<string, string> files, string entryRelativePath, string expectedContains)
+    {
+        string tempRoot = Path.Combine(Path.GetTempPath(), "code-mod-tests-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+        try
+        {
+            foreach (var pair in files)
+            {
+                string fullPath = Path.Combine(tempRoot, pair.Key);
+                string? dir = Path.GetDirectoryName(fullPath);
+                if (!string.IsNullOrEmpty(dir))
+                    Directory.CreateDirectory(dir);
+                File.WriteAllText(fullPath, pair.Value);
+            }
+
+            string entryPath = Path.Combine(tempRoot, entryRelativePath);
+            try
+            {
+                _ = Compiler.ModuleCompiler.CompileFromFile(entryPath);
+                throw new Exception("Expected module compile error was not thrown");
+            }
+            catch (Compiler.CompilerException ex)
+            {
+                if (!ex.Message.Contains(expectedContains, StringComparison.Ordinal))
+                    throw new Exception($"Expected compile error containing '{expectedContains}', got '{ex.Message}'");
+            }
+        }
+        finally
+        {
+            try { Directory.Delete(tempRoot, recursive: true); }
+            catch { }
         }
     }
 

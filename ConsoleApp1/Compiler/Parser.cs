@@ -7,6 +7,7 @@ sealed class Parser
 {
     private readonly IReadOnlyList<Token> _tokens;
     private int _current;
+    private int _blockDepth;
 
     public Parser(IReadOnlyList<Token> tokens)
     {
@@ -25,6 +26,16 @@ sealed class Parser
 
     private Stmt Declaration()
     {
+        if (Match(TokenType.Import))
+        {
+            if (_blockDepth > 0) throw Error(Previous(), "'import' is only valid at module scope.");
+            return ImportDeclaration();
+        }
+        if (Match(TokenType.Export))
+        {
+            if (_blockDepth > 0) throw Error(Previous(), "'export' is only valid at module scope.");
+            return ExportDeclaration();
+        }
         if (Match(TokenType.Function)) return FunctionDeclaration();
         if (Match(TokenType.Object)) return ObjectDeclaration();
         if (Match(TokenType.Interface)) return InterfaceDeclaration();
@@ -35,6 +46,31 @@ sealed class Parser
             return VarDeclaration(typeRef);
         }
         return Statement();
+    }
+
+    private Stmt ImportDeclaration()
+    {
+        Token name = Consume(TokenType.Identifier, "Expect imported declaration name.");
+        Token? alias = null;
+        if (Match(TokenType.As))
+        {
+            alias = Consume(TokenType.Identifier, "Expect alias name after 'as'.");
+        }
+        Consume(TokenType.From, "Expect 'from' in import declaration.");
+        Token source = Consume(TokenType.String, "Expect string module path in import declaration.");
+        Consume(TokenType.Semicolon, "Expect ';' after import declaration.");
+        return new ImportDecl(name, alias, source);
+    }
+
+    private Stmt ExportDeclaration()
+    {
+        if (Match(TokenType.Function))
+            return new ExportDecl(FunctionDeclaration());
+        if (Match(TokenType.Object))
+            return new ExportDecl(ObjectDeclaration());
+        if (Match(TokenType.Interface))
+            return new ExportDecl(InterfaceDeclaration());
+        throw Error(Peek(), "Expect function/object/interface declaration after 'export'.");
     }
 
     private TypeRef ParseTypeRef()
@@ -270,13 +306,21 @@ sealed class Parser
 
     private IList<Stmt> BlockStatements()
     {
+        _blockDepth++;
         var stmts = new List<Stmt>();
-        while (!Check(TokenType.RightBrace) && !IsAtEnd())
+        try
         {
-            stmts.Add(Declaration());
+            while (!Check(TokenType.RightBrace) && !IsAtEnd())
+            {
+                stmts.Add(Declaration());
+            }
+            Consume(TokenType.RightBrace, "Expect '}' after block.");
+            return stmts;
         }
-        Consume(TokenType.RightBrace, "Expect '}' after block.");
-        return stmts;
+        finally
+        {
+            _blockDepth--;
+        }
     }
 
     private Stmt IfStatement()

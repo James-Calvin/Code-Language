@@ -1,0 +1,3 @@
+import timesTwo from "numbers.code";
+
+print(timesTwo(6));

@@ -333,6 +333,8 @@ sealed class CodeGenerator
                 break;
             case InterfaceDecl:
             case ImplementDecl:
+            case ImportDecl:
+            case ExportDecl:
                 // interface metadata does not emit bytecode in current MVP
                 break;
 

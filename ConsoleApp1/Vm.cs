@@ -12,6 +12,7 @@ enum OpCode : byte
     Sub = 0x03,
     Mul = 0x04,
     Div = 0x05,
+    Mod = 0x24,
     Print = 0x06,
     Dup = 0x07,
     Swap = 0x08,
@@ -129,6 +130,15 @@ sealed class Vm
                         if (b == 0)
                         ThrowRuntime("Division by zero in bytecode.");
                         return a / b;
+                    });
+                    break;
+
+                case OpCode.Mod:
+                    NumericBinary((a, b) =>
+                    {
+                        if (b == 0)
+                            ThrowRuntime("Modulo by zero in bytecode.");
+                        return a % b;
                     });
                     break;
 

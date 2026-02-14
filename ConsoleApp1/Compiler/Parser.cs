@@ -45,6 +45,7 @@ sealed class Parser
         if (Match(TokenType.Object)) return ObjectDeclaration();
         if (Match(TokenType.Interface)) return InterfaceDeclaration();
         if (Match(TokenType.Implement)) return ImplementDeclaration();
+        if (Match(TokenType.Constant)) return ConstantDeclaration();
         if (LooksLikeTypeThenIdentifier(_current))
         {
             var typeRef = ParseTypeRef();
@@ -118,6 +119,7 @@ sealed class Parser
             TokenType.Whole => "whole",
             TokenType.Real => "real",
             TokenType.Boolean => "boolean",
+            TokenType.Void => "void",
             TokenType.Array => "array",
             TokenType.Optional => "optional",
             TokenType.Identifier => t.Lexeme,
@@ -303,14 +305,29 @@ sealed class Parser
 
     private Stmt VarDeclaration(TypeRef typeRef)
     {
+        return VarDeclaration(typeRef, isConstant: false);
+    }
+
+    private Stmt VarDeclaration(TypeRef typeRef, bool isConstant)
+    {
         Token name = Consume(TokenType.Identifier, "Expect variable name.");
         Expr? initializer = null;
         if (Match(TokenType.Equal))
         {
             initializer = Expression();
         }
+        if (isConstant && initializer is null)
+            throw Error(name, $"Constant '{name.Lexeme}' must be initialized.");
         Consume(TokenType.Semicolon, "Expect ';' after variable declaration.");
-        return new VarDecl(typeRef, name, initializer);
+        return new VarDecl(typeRef, name, initializer, isConstant);
+    }
+
+    private Stmt ConstantDeclaration()
+    {
+        if (!IsTypeStart(Peek()))
+            throw Error(Peek(), "Expect type after 'constant'.");
+        var typeRef = ParseTypeRef();
+        return VarDeclaration(typeRef, isConstant: true);
     }
 
     private Stmt Statement()
@@ -324,16 +341,6 @@ sealed class Parser
         if (Match(TokenType.Print)) return PrintStatement();
         if (Match(TokenType.Panic)) return PanicStatement();
         if (Match(TokenType.Object)) return ObjectDeclaration();
-
-        // Fast path for assignment statements to reduce parse ambiguity
-        if (Check(TokenType.Identifier) && PeekNext().Type == TokenType.Equal)
-        {
-            Token name = Advance();
-            Advance(); // consume '='
-            Expr value = Expression();
-            Consume(TokenType.Semicolon, "Expect ';' after assignment.");
-            return new ExprStmt(new Assign(name, value));
-        }
 
         var expr = Expression();
         Consume(TokenType.Semicolon, "Expect ';' after expression.");
@@ -495,6 +502,17 @@ sealed class Parser
 
             throw Error(equals, "Invalid assignment target.");
         }
+        if (Match(TokenType.PlusEqual, TokenType.MinusEqual, TokenType.StarEqual, TokenType.SlashEqual, TokenType.PercentEqual))
+        {
+            Token op = Previous();
+            Expr value = Assignment();
+            return BuildCompoundAssignment(expr, op, value);
+        }
+        if (Match(TokenType.PlusPlus, TokenType.MinusMinus))
+        {
+            Token op = Previous();
+            return BuildIncrementAssignment(expr, op);
+        }
 
         return expr;
     }
@@ -540,7 +558,7 @@ sealed class Parser
     private Expr Factor()
     {
         Expr expr = Unary();
-        while (Match(TokenType.Star, TokenType.Slash))
+        while (Match(TokenType.Star, TokenType.Slash, TokenType.Percent))
         {
             Token op = Previous();
             Expr right = Unary();
@@ -625,7 +643,7 @@ sealed class Parser
     private Token Previous() => _tokens[_current - 1];
 
     private bool IsTypeStart(Token token) =>
-        token.Type is TokenType.Integer or TokenType.Whole or TokenType.Real or TokenType.Boolean or TokenType.Array or TokenType.Optional or TokenType.Identifier;
+        token.Type is TokenType.Integer or TokenType.Whole or TokenType.Real or TokenType.Boolean or TokenType.Void or TokenType.Array or TokenType.Optional or TokenType.Identifier;
 
     private Token ConsumeTypeStart(string message)
     {
@@ -813,95 +831,55 @@ sealed class Parser
 
     private Expr ParseInlineExpression(string text, int line, int col)
     {
-        var lexer = new Lexer(text);
-        var tokens = lexer.ScanTokens();
-        int idx = 0;
-
-        Expr ParseExpr() => ParseTerm();
-
-        Expr ParseTerm()
+        try
         {
-            Expr expr = ParseFactor();
-            while (MatchInline(TokenType.Plus, TokenType.Minus))
-            {
-                Token op = PrevInline();
-                Expr right = ParseFactor();
-                expr = new Binary(expr, op, right);
-            }
-            return expr;
+            var lexer = new Lexer(text);
+            var tokens = lexer.ScanTokens();
+            var inlineParser = new Parser(tokens);
+            return inlineParser.ParseExpressionOnly();
         }
-
-        Expr ParseFactor()
+        catch (CompilerException ex)
         {
-            Expr expr = ParseUnary();
-            while (MatchInline(TokenType.Star, TokenType.Slash))
-            {
-                Token op = PrevInline();
-                Expr right = ParseUnary();
-                expr = new Binary(expr, op, right);
-            }
-            return expr;
+            throw new CompilerException(ex.Message, line, col);
         }
-
-        Expr ParseUnary()
-        {
-            if (MatchInline(TokenType.Minus, TokenType.Plus))
-            {
-                Token op = PrevInline();
-                Expr right = ParseUnary();
-                return new Unary(op, right);
-            }
-            return ParsePrimary();
-        }
-
-        Expr ParsePrimary()
-        {
-            if (MatchInline(TokenType.Number)) { var t = PrevInline(); return new Literal(t.Literal, t.Line, t.Column); }
-            if (MatchInline(TokenType.True)) { var t = PrevInline(); return new Literal(true, t.Line, t.Column); }
-            if (MatchInline(TokenType.False)) { var t = PrevInline(); return new Literal(false, t.Line, t.Column); }
-            if (MatchInline(TokenType.Identifier)) return new Variable(PrevInline());
-            if (MatchInline(TokenType.LeftParen))
-            {
-                Expr expr = ParseExpr();
-                if (!MatchInline(TokenType.RightParen))
-                    throw new CompilerException("Expect ')' in interpolation expression", line, col);
-                return expr;
-            }
-            throw new CompilerException("Invalid interpolation expression", line, col);
-        }
-
-        bool MatchInline(params TokenType[] types)
-        {
-            foreach (var t in types)
-            {
-                if (CheckInline(t)) { idx++; return true; }
-            }
-            return false;
-        }
-
-        bool CheckInline(TokenType type)
-        {
-            if (idx >= tokens.Count) return false;
-            return tokens[idx].Type == type;
-        }
-
-        Token PrevInline() => tokens[idx - 1];
-
-        Expr result = ParseExpr();
-        if (idx < tokens.Count - 1) // allow final EOF
-            throw new CompilerException("Unexpected tokens in interpolation expression", line, col);
-        return result;
     }
 
-    private static bool IsIdentifier(string text)
+    public Expr ParseExpressionOnly()
     {
-        if (string.IsNullOrEmpty(text)) return false;
-        if (!(char.IsLetter(text[0]) || text[0] == '_')) return false;
-        for (int i = 1; i < text.Length; i++)
+        Expr expr = Expression();
+        if (!IsAtEnd())
+            throw Error(Peek(), "Unexpected tokens in interpolation expression");
+        return expr;
+    }
+
+    private Expr BuildCompoundAssignment(Expr target, Token operatorToken, Expr value)
+    {
+        if (target is not Variable variable)
+            throw Error(operatorToken, "Invalid assignment target.");
+
+        TokenType binaryType = operatorToken.Type switch
         {
-            char c = text[i];
-            if (!(char.IsLetterOrDigit(c) || c == '_')) return false;
-        }
-        return true;
+            TokenType.PlusEqual => TokenType.Plus,
+            TokenType.MinusEqual => TokenType.Minus,
+            TokenType.StarEqual => TokenType.Star,
+            TokenType.SlashEqual => TokenType.Slash,
+            TokenType.PercentEqual => TokenType.Percent,
+            _ => throw Error(operatorToken, $"Unsupported compound operator '{operatorToken.Lexeme}'.")
+        };
+
+        var binaryOp = new Token(binaryType, operatorToken.Lexeme, null, operatorToken.Line, operatorToken.Column);
+        Expr rhs = new Binary(new Variable(variable.Name), binaryOp, value);
+        return new Assign(variable.Name, rhs);
+    }
+
+    private Expr BuildIncrementAssignment(Expr target, Token operatorToken)
+    {
+        if (target is not Variable variable)
+            throw Error(operatorToken, "Invalid increment/decrement target.");
+
+        TokenType binaryType = operatorToken.Type == TokenType.PlusPlus ? TokenType.Plus : TokenType.Minus;
+        var binaryOp = new Token(binaryType, operatorToken.Lexeme, null, operatorToken.Line, operatorToken.Column);
+        var one = new Literal(1, operatorToken.Line, operatorToken.Column);
+        return new Assign(variable.Name, new Binary(new Variable(variable.Name), binaryOp, one));
     }
 }

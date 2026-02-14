@@ -1,0 +1,2 @@
+constant integer PI = 3;
+PI = 4; // Expect compile error

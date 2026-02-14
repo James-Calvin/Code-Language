@@ -1,0 +1,16 @@
+record Stats {
+  integer strength;
+  integer defense;
+
+  constructor() {
+    strength = 0;
+    defense = 0;
+  }
+}
+
+Stats player = new Stats();
+print "Strength: {player.strength}"; // Expect: Strength: 0
+Stats playerCopy = player;
+player.strength = 5;
+print "Strength: {player.strength}"; // Expect: Strength: 5
+print "Strength: {playerCopy.strength}"; // Expect: Strength: 0

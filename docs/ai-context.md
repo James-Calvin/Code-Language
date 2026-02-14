@@ -1,15 +1,15 @@
 # AI Context — Draive / Code Language
-Updated: 2026-02-13
+Updated: 2026-02-14
 
 Read this first. Update it whenever semantics or process change.
 
 ## Current Capability Snapshot
-- Types: integer/whole/real, boolean, string, array<T> (literals `{...}`, `new array<T>(n)`, `.length`, indexing, mutation), optional<T> (`none`, `.hasValue`, `.value`, `.or(fallback)`), typed functions, object types.
+- Types: integer/whole/real, boolean, string, array<T> (literals `{...}`, `new array<T>(n)`, `.length`, indexing, mutation), optional<T> (`none`, `.hasValue`, `.value`, `.or(fallback)`), constants, typed/void functions, object types.
 - Compiler type model: AST/parser/type-checker use `TypeRef`; named object types resolve via object symbol tables (fields + constructors + forward refs).
 - Object rules: fields require constructor initialization; constructor/method overloads resolve by typed signature (best-match conversions), methods lower to hidden static call targets with implicit `this`; reserved field names are `length`, `hasValue`, `value`, `or`.
 - Interfaces: `interface Name { function<...> method(...); }` plus explicit `implement Interface for Object { method(types...) via Object.method; }` conformance checks and runtime dispatch for interface-typed locals/params/returns/fields.
 - Control flow: if/then[/else], while, for, foreach (numeric or array), break/continue, return (implicit 0).
-- Expressions: arithmetic, comparisons, logical and/or/not (short-circuit), assignment, function calls, string interpolation/concat.
+- Expressions: arithmetic (including `%`), comparisons, logical and/or/not (short-circuit), assignment (including `+=`, `-=`, `*=`, `/=`, `%=` and postfix `++/--`), function calls, full-expression string interpolation/concat.
 - Errors: `panic <expr>;` raises `UserError` with line/col + call stack (from bytecode debug map).
 - Bytecode/VM: header v0x05, spec v0.8; ops include strings, arrays (NEW_ARRAY/GET/LEN/SET/NEW_ARRAY_N), optionals (NONE/HAS/VALUE/OR), objects (NEW_OBJECT/GET_FIELD/SET_FIELD/GET_TYPE_NAME), interface dispatch (INTERFACE_CALL), THROW_ERROR.
 - Modules/imports: recursive file-based module linking for `.code` files with `import`/`export`, package declarations, grouped/selective imports, module-scope symbol conflict checks, import-chain diagnostics, alias imports for function/object/interface exports, and `lib/` ancestor search.
@@ -39,6 +39,7 @@ Read this first. Update it whenever semantics or process change.
 - 2026-02-13: Added `package` declarations, module-level import/declaration conflict checks, and chained import diagnostics (`a -> b -> c`) for linker errors.
 - 2026-02-13: Added module graph tooling (`--dump-module-graph`) and linker tracing (`--trace-linker`) with integration coverage.
 - 2026-02-13: Added file-based machine-readable module graph export (JSON/DOT) with `--dump-module-graph <file>` and `--module-graph-format` override.
+- 2026-02-14: Implemented modulo operator, enhanced assignments (`+=`/`-=`/`*=` `/=` `%=` + postfix `++/--`), constants (`constant`), void function support (`function<void>` and implicit-void `function name(...)`), and full interpolation expression parsing.
 - 2026-02-13: Implemented module linker MVP (`import`/`export`, alias imports for functions, recursive dependency loading, cycle detection, `lib/` search path) with module integration tests and examples.
 - 2026-02-12: Refined method/constructor dispatch to signature-based overload resolution with compile-time binding of call sites.
 - 2026-02-12: Added interface declarations and explicit implement blocks with compile-time method-signature and return-type conformance checks; added interface tests/example.

@@ -57,6 +57,7 @@ sealed class TypeChecker
             foreach (var method in iface.Methods)
             {
                 ValidateTypeRef(method.ReturnType);
+                EnsureNotVoidTypeRef(method.ReturnType, "Interface method return type cannot be void", method.Name.Line, method.Name.Column);
                 var paramTypeRefs = new List<TypeRef>(method.Parameters.Count);
                 var paramTypes = new List<TypeSymbol>(method.Parameters.Count);
                 for (int i = 0; i < method.Parameters.Count; i++)
@@ -65,6 +66,7 @@ sealed class TypeChecker
                     if (p.Type is null)
                         throw new CompilerException($"Interface method '{method.Name.Lexeme}' has untyped parameters", method.Name.Line, method.Name.Column);
                     ValidateTypeRef(p.Type);
+                    EnsureNotVoidTypeRef(p.Type, "Interface method parameters cannot be void", p.Name.Line, p.Name.Column);
                     paramTypeRefs.Add(p.Type);
                     paramTypes.Add(MapType(p.Type));
                 }
@@ -89,6 +91,7 @@ sealed class TypeChecker
                 if (IsReservedPropertyName(field.Name.Lexeme))
                     throw new CompilerException($"Field name '{field.Name.Lexeme}' is reserved for built-in properties", field.Name.Line, field.Name.Column);
                 ValidateTypeRef(field.Type);
+                EnsureNotVoidTypeRef(field.Type, "Object fields cannot be void", field.Name.Line, field.Name.Column);
                 symbol.Fields[field.Name.Lexeme] = field.Type;
             }
 
@@ -102,6 +105,7 @@ sealed class TypeChecker
                     if (param.Type is null)
                         throw new CompilerException("Constructor parameters must be typed", param.Name.Line, param.Name.Column);
                     ValidateTypeRef(param.Type);
+                    EnsureNotVoidTypeRef(param.Type, "Constructor parameters cannot be void", param.Name.Line, param.Name.Column);
                     paramTypeRefs.Add(param.Type);
                     paramTypes.Add(MapType(param.Type));
                 }
@@ -120,8 +124,13 @@ sealed class TypeChecker
                     throw new CompilerException($"Method '{method.Name.Lexeme}' is missing a return type", method.Name.Line, method.Name.Column);
                 if (method.Parameters.Any(p => p.Type is null))
                     throw new CompilerException($"Method '{method.Name.Lexeme}' has untyped parameters", method.Name.Line, method.Name.Column);
+                EnsureNotVoidTypeRef(method.ReturnType, "Methods cannot use return type 'void' in the current object model", method.Name.Line, method.Name.Column);
 
                 var paramTypeRefs = method.Parameters.Select(p => p.Type!).ToList();
+                for (int i = 0; i < paramTypeRefs.Count; i++)
+                {
+                    EnsureNotVoidTypeRef(paramTypeRefs[i], "Method parameters cannot be void", method.Parameters[i].Name.Line, method.Parameters[i].Name.Column);
+                }
                 string methodKey = MethodDispatchKey(obj.Name.Lexeme, method.Name.Lexeme, paramTypeRefs);
                 if (!methodKeys.Add(methodKey))
                     throw new CompilerException($"Method overload '{method.Name.Lexeme}' with the same signature is already defined in object '{obj.Name.Lexeme}'", method.Name.Line, method.Name.Column);
@@ -169,6 +178,7 @@ sealed class TypeChecker
                     if (p.Type is null)
                         throw new CompilerException("Implementation mapping parameters must be typed", p.Name.Line, p.Name.Column);
                     ValidateTypeRef(p.Type);
+                    EnsureNotVoidTypeRef(p.Type, "Implementation mapping parameters cannot be void", p.Name.Line, p.Name.Column);
                     mapParamTypeRefs.Add(p.Type);
                 }
 
@@ -211,18 +221,22 @@ sealed class TypeChecker
         {
             if (stmt is FunctionDecl fn)
             {
-                if (fn.ReturnType is null)
-                    throw new CompilerException($"Function '{fn.Name.Lexeme}' is missing a return type", fn.Name.Line, fn.Name.Column);
                 if (fn.Parameters.Any(p => p.Type is null))
                     throw new CompilerException($"Function '{fn.Name.Lexeme}' has untyped parameters", fn.Name.Line, fn.Name.Column);
                 if (_functions.ContainsKey(fn.Name.Lexeme))
                     throw new CompilerException($"Function '{fn.Name.Lexeme}' already defined", fn.Name.Line, fn.Name.Column);
+                var returnTypeRef = fn.ReturnType ?? BuildImplicitVoidTypeRef(fn.Name);
+                ValidateTypeRef(returnTypeRef);
                 var sig = new FunctionSignature(
-                    Return: MapType(fn.ReturnType),
-                    ReturnTypeRef: fn.ReturnType,
+                    Return: MapType(returnTypeRef),
+                    ReturnTypeRef: returnTypeRef,
                     Params: fn.Parameters.Select(p => MapType(p.Type!)).ToList(),
                     ParamTypeRefs: fn.Parameters.Select(p => p.Type!).ToList()
                 );
+                for (int i = 0; i < fn.Parameters.Count; i++)
+                {
+                    EnsureNotVoidTypeRef(fn.Parameters[i].Type!, "Function parameters cannot be void", fn.Parameters[i].Name.Line, fn.Parameters[i].Name.Column);
+                }
                 _functions[fn.Name.Lexeme] = sig;
             }
         }
@@ -259,9 +273,10 @@ sealed class TypeChecker
     private void CheckFunction(FunctionDecl fn)
     {
         var env = new TypeEnvironment();
-        var retType = MapType(fn.ReturnType!);
+        var returnTypeRef = fn.ReturnType ?? BuildImplicitVoidTypeRef(fn.Name);
+        var retType = MapType(returnTypeRef);
         var previousReturnRef = _currentReturnTypeRef;
-        _currentReturnTypeRef = fn.ReturnType;
+        _currentReturnTypeRef = returnTypeRef;
         // params occupy env
         for (int i = 0; i < fn.Parameters.Count; i++)
         {
@@ -271,7 +286,7 @@ sealed class TypeChecker
         }
         bool allPathsReturn = CheckStmt(fn.Body, env, retType);
         _currentReturnTypeRef = previousReturnRef;
-        if (!allPathsReturn)
+        if (retType != TypeSymbol.Void && !allPathsReturn)
             throw new CompilerException($"Function '{fn.Name.Lexeme}' may not return a value on all paths", fn.Name.Line, fn.Name.Column);
     }
 
@@ -400,7 +415,11 @@ sealed class TypeChecker
         {
             case VarDecl v:
                 var t = MapType(v.Type);
+                if (t == TypeSymbol.Void)
+                    throw new CompilerException("Variables cannot be declared with type 'void'", v.Name.Line, v.Name.Column);
                 bool hasInit = v.Initializer is not null;
+                if (v.IsConstant && !hasInit)
+                    throw new CompilerException($"Constant '{v.Name.Lexeme}' must be initialized", v.Name.Line, v.Name.Column);
                 if (v.Initializer is not null)
                 {
                     var init = CheckExpr(v.Initializer, env, currentReturn);
@@ -408,7 +427,7 @@ sealed class TypeChecker
                     RequireAssignable(t, v.Type, init, initRef, v.Type.Line, v.Type.Column, "Initializer type mismatch");
                 }
                 bool assignedFlag = hasInit || t == TypeSymbol.Optional;
-                env.Define(v.Name.Lexeme, t, v.Type, v.Name.Line, v.Name.Column, assignedFlag);
+                env.Define(v.Name.Lexeme, t, v.Type, v.Name.Line, v.Name.Column, assignedFlag, isConstant: v.IsConstant);
                 return false;
 
             case ExprStmt e:
@@ -459,6 +478,12 @@ sealed class TypeChecker
             case ReturnStmt r:
                 if (currentReturn is null)
                     throw new CompilerException("Return outside function", GetStmtLine(r), GetStmtCol(r));
+                if (currentReturn == TypeSymbol.Void)
+                {
+                    if (r.Value is not null)
+                        throw new CompilerException("Void function cannot return a value", GetStmtLine(r), GetStmtCol(r));
+                    return true;
+                }
                 var rval = r.Value is null ? TypeSymbol.Integer : CheckExpr(r.Value, env, currentReturn);
                 var retRef = r.Value is null ? null : ResolveExprTypeRef(r.Value, env);
                 RequireAssignable(currentReturn.Value, _currentReturnTypeRef, rval, retRef, GetStmtLine(r), GetStmtCol(r), "Return type mismatch");
@@ -655,6 +680,7 @@ sealed class TypeChecker
             case Variable v:
                 return env.LookupForRead(v.Name);
             case Assign a:
+                env.EnsureCanAssign(a.Name);
                 var rhs = CheckExpr(a.Value, env, currentReturn);
                 var lhsType = env.LookupForReadOrWrite(a.Name, requireAssigned: false);
                 var lhsTypeRef = env.TryGetDeclaredType(a.Name);
@@ -698,6 +724,7 @@ sealed class TypeChecker
                     case TokenType.Minus:
                     case TokenType.Star:
                     case TokenType.Slash:
+                    case TokenType.Percent:
                         Require(IsNumeric(lt) && IsNumeric(rt), b.Left, "Arithmetic requires numeric");
                         return Promote(lt, rt);
                     case TokenType.EqualEqual:
@@ -729,6 +756,7 @@ sealed class TypeChecker
             "string" => TypeSymbol.String,
             "array" => TypeSymbol.Array,
             "optional" => TypeSymbol.Optional,
+            "void" => TypeSymbol.Void,
             _ => _interfaces.ContainsKey(typeRef.Name) ? TypeSymbol.Interface : TypeSymbol.Object
         };
     }
@@ -991,6 +1019,7 @@ sealed class TypeChecker
             case "real":
             case "boolean":
             case "string":
+            case "void":
                 if (typeRef.TypeArguments.Count > 0)
                     throw new CompilerException($"Type '{typeRef.Name}' does not accept type arguments", typeRef.Line, typeRef.Column);
                 return;
@@ -1009,6 +1038,17 @@ sealed class TypeChecker
                     throw new CompilerException($"Unknown type '{typeRef.Name}'", typeRef.Line, typeRef.Column);
                 return;
         }
+    }
+
+    private static TypeRef BuildImplicitVoidTypeRef(Token origin)
+    {
+        return new TypeRef("void", null, origin.Line, origin.Column);
+    }
+
+    private static void EnsureNotVoidTypeRef(TypeRef typeRef, string message, int line, int col)
+    {
+        if (string.Equals(typeRef.Name, "void", StringComparison.Ordinal))
+            throw new CompilerException(message, line, col);
     }
 
     private static bool IsNumeric(TypeSymbol t) => t is TypeSymbol.Integer or TypeSymbol.Whole or TypeSymbol.Real;
@@ -1189,11 +1229,11 @@ sealed class TypeChecker
         public TypeEnvironment(TypeEnvironment? parent = null) => _parent = parent;
         public TypeEnvironment CreateChild() => new(this);
 
-        public void Define(string name, TypeSymbol type, TypeRef? declaredType, int line, int col, bool assigned)
+        public void Define(string name, TypeSymbol type, TypeRef? declaredType, int line, int col, bool assigned, bool isConstant = false)
         {
             if (_vars.ContainsKey(name))
                 throw new CompilerException($"'{name}' already defined in scope", line, col);
-            _vars[name] = new VarInfo(type, declaredType, assigned, line, col);
+            _vars[name] = new VarInfo(type, declaredType, assigned, isConstant, line, col);
         }
 
         public TypeSymbol LookupForRead(Token name)
@@ -1216,6 +1256,13 @@ sealed class TypeChecker
         {
             var (env, info) = FindWithEnv(name);
             env._vars[name.Lexeme] = info with { assigned = true };
+        }
+
+        public void EnsureCanAssign(Token name)
+        {
+            var info = Find(name);
+            if (info.isConstant && info.assigned)
+                throw new CompilerException($"Cannot assign to constant '{name.Lexeme}'", name.Line, name.Column);
         }
 
         public string? TryGetObjectTypeName(Token name)
@@ -1245,6 +1292,6 @@ sealed class TypeChecker
             throw new CompilerException($"Undefined variable '{name.Lexeme}'", name.Line, name.Column);
         }
 
-        private record struct VarInfo(TypeSymbol type, TypeRef? declaredType, bool assigned, int line, int col);
+        private record struct VarInfo(TypeSymbol type, TypeRef? declaredType, bool assigned, bool isConstant, int line, int col);
     }
 }

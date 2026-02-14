@@ -537,6 +537,7 @@ sealed class CodeGenerator
                     case TokenType.Minus: _builder.Sub(); break;
                     case TokenType.Star: _builder.Mul(); break;
                     case TokenType.Slash: _builder.Div(); break;
+                    case TokenType.Percent: _builder.Mod(); break;
                     case TokenType.EqualEqual: _builder.Eq(); break;
                     case TokenType.BangEqual:
                         _builder.Eq();
@@ -899,6 +900,10 @@ sealed class CodeGenerator
                     case TokenType.Plus: result = li + ri; return true;
                     case TokenType.Minus: result = li - ri; return true;
                     case TokenType.Star: result = li * ri; return true;
+                    case TokenType.Percent:
+                        if (ri == 0) return false;
+                        result = li % ri;
+                        return true;
                 }
             }
         }

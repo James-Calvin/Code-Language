@@ -196,7 +196,14 @@ sealed class VarDecl : Stmt
     public TypeRef Type { get; }
     public Token Name { get; }
     public Expr? Initializer { get; }
-    public VarDecl(TypeRef type, Token name, Expr? init) { Type = type; Name = name; Initializer = init; }
+    public bool IsConstant { get; }
+    public VarDecl(TypeRef type, Token name, Expr? init, bool isConstant = false)
+    {
+        Type = type;
+        Name = name;
+        Initializer = init;
+        IsConstant = isConstant;
+    }
 }
 
 sealed class ExprStmt : Stmt

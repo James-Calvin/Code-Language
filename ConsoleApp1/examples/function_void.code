@@ -1,0 +1,10 @@
+function printHello() {
+  print "hello";
+}
+
+function<void> printWorld() {
+  print "world";
+}
+
+printHello();
+printWorld();

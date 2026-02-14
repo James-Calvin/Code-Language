@@ -1,7 +1,7 @@
 # Code Language Specification (Living Draft)
 
 Version: 1.0  
-Last updated: 2026-02-13
+Last updated: 2026-02-14
 
 ## 1. Goals and Design
 - `Code` is a general-purpose language.
@@ -76,7 +76,7 @@ Examples:
 integer value = 0;
 value += 1;
 whole count = 0;
-constant real PI = 3.14159;
+constant integer maxRetries = 3;
 whole8 red = 255;
 boolean flag = false;
 ```
@@ -237,6 +237,10 @@ if not isReady then {
   8. Assignment: `=`
   - Binary operators are left-associative except assignment, which is right-associative.
   - Parentheses may be used to override precedence.
+- Arithmetic includes modulo (`%`).
+- Enhanced assignments are supported for variables:
+  - `+=`, `-=`, `*=`, `/=`, `%=`
+  - postfix `++`, `--`
 
 ## 8. Collections (Observed)
 - Generic array type syntax: `array<Type>`.
@@ -423,6 +427,7 @@ real result3 = errorExample(0) on error panic("Error message {error}");
 
 ## 14. Compiler Behavior (current implementation)
 - Definite assignment is enforced: a local must be assigned before first read; parameters and `foreach` loop variables are treated as assigned.
+- Constants are immutable after initialization (`constant Type name = value;`).
 - Compile-time constant folding for literal arithmetic (`+`, `-`, `*`) and string literal concatenation reduces runtime work without changing semantics.
 - Runtime errors include line/column mapping and a bytecode call stack derived from embedded debug info in the compiled `.bytecode` file.
 - Type syntax is parsed through structured type references (`TypeRef`) including generic forms; named object types resolve through the object symbol table.

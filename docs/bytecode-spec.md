@@ -1,6 +1,6 @@
 # Bytecode Specification (draft)
 
-Version: 0.8 (2026-02-12)
+Version: 0.8 (2026-02-14)
 
 ## File format
 - Header: "CODE" ASCII (4 bytes) + version byte (0x05) + int32 codeSize + int32 debugCount.
@@ -51,6 +51,7 @@ Version: 0.8 (2026-02-12)
 | 0x21 | SET_FIELD | int32 length, UTF-8 field name | -1 | pop value, pop object, assign field, push value |
 | 0x22 | GET_TYPE_NAME | — | 0 | pop object, push runtime object type name string |
 | 0x23 | INTERFACE_CALL | int32 explicitArgCount, int32 entryCount, repeated `(string typeName, int32 target, int32 locals)` | -explicitArgCount-1+1 | Pop args and target object, dispatch by runtime object type to mapped method target, push return value on RET |
+| 0x24 | MOD | — | -1 | pop a,b → push (a%b), throws on modulo-by-zero |
 | 0xFF | HALT | — | 0 | stop execution |
 
 ## Planned additions

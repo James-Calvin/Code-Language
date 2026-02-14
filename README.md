@@ -7,8 +7,9 @@ A tiny experimental programming language with a stack-based bytecode VM and a C#
 
 ## Features (implemented)
 - Typed variables/functions; primitives: integer/whole/real, boolean, string
+- Constants: `constant Type name = value;` (immutable after init)
 - Control flow: `if/then/else`, `while`, `for`, `foreach` (numeric bounds and arrays)
-- Expressions: arithmetic, comparisons, logical `and/or/not`, string interpolation and concatenation
+- Expressions: arithmetic (including `%`), comparisons, logical `and/or/not`, enhanced assignments (`+=`, `-=`, `*=`, `/=`, `%=` and postfix `++/--`), string interpolation and concatenation
 - Functions with CALL/RET, locals, return (implicit 0)
 - File modules: `export` + imports (`import Name [as Alias] from "path";`, `import { A, B as C } from "path";`) with recursive linking and `lib/` search
 - Runtime diagnostics: bytecode debug map → line/column stack traces
@@ -57,6 +58,7 @@ Test harness covers VM ops, compiler integration (print, arithmetic, functions, 
 ## Project conventions
 - Source files end with `.code`; compiled bytecode uses `.bytecode`
 - Semicolons required; `then` mandatory after `if/while/for/foreach` conditions
+- Function returns: explicit `function<T> name(...)` or implicit-void `function name(...)`
 - Arrays: literals `{...}`, typed declarations `array<integer> xs = {1,2,3};`, dynamic `new array<integer>(n);`, `.length`, indexing `xs[i]`, mutation `xs[i] = value`
 - Optionals: `optional<T>` with `none`, `.hasValue`, `.value`, `.or(fallback)`
 - Objects: `object` declarations with constructors/methods, `new Type(...)`, field access/assignment (`obj.field`, `obj.field = ...`), method calls (`obj.method(...)`)

@@ -8,7 +8,9 @@ enum TokenType
     Comma,
     Dot,
     Semicolon,
-    Plus, Minus, Star, Slash,
+    Plus, Minus, Star, Slash, Percent,
+    PlusEqual, MinusEqual, StarEqual, SlashEqual, PercentEqual,
+    PlusPlus, MinusMinus,
     Equal, Less, Greater,
 
     EqualEqual, BangEqual,
@@ -17,8 +19,9 @@ enum TokenType
     Identifier, Number, String,
     True, False,
 
-    Integer, Whole, Real, Boolean, Optional,
+    Integer, Whole, Real, Boolean, Void, Optional,
     Array, Object, Interface,
+    Constant,
     If, Then, Else,
     While,
     Return,

@@ -146,6 +146,30 @@ foreach i in n then print(i);",
             ("interp-string",
 @"integer x = 3;
 print(""x={x}"");", "x=3\n")
+            ,
+            ("modulo-op", @"integer value = 8 % 3; print(value);", "2\n"),
+            ("function-void",
+@"function printHello() {
+  print(""hello"");
+}
+function<void> printWorld() {
+  print(""world"");
+}
+printHello();
+printWorld();", "hello\nworld\n"),
+            ("enhanced-assignments",
+@"integer value = 0;
+value += 5;
+print(value);
+value *= 3;
+print(value);
+value /= 2;
+print(value);
+value--;
+print(value);
+value %= 4;
+print(value);", "5\n15\n7.5\n6.5\n2.5\n"),
+            ("constant-ok", @"constant real PI = 3; print(PI);", "3\n")
         };
         var arrayCases = new List<(string Name, string Source, string Expected)>
         {
@@ -240,6 +264,15 @@ print(box.add(2, 8));", "7\n10\n"),
 Printer p = new Printer(2);
 print(p.pick(5));
 print(p.pick(true));", "7\n102\n"),
+            ("object-field-interp",
+@"object Stats {
+  integer strength;
+  constructor() {
+    this.strength = 0;
+  }
+}
+Stats player = new Stats();
+print(""Strength: {player.strength}"");", "Strength: 0\n"),
             ("object-constructor-overload-types",
 @"object Bag {
   integer count;
@@ -529,6 +562,14 @@ export function<integer> sub(integer a, integer b) { return a - b; }",
 }
 A a = new A(0);
 print(a.f(true));", "no matching method overload"),
+            ("constant-reassign",
+@"constant integer PI = 3;
+PI = 4;", "Cannot assign to constant 'PI'"),
+            ("constant-missing-init", @"constant integer value;", "must be initialized"),
+            ("void-return-value",
+@"function<void> nope() {
+  return 1;
+}", "Void function cannot return a value"),
             ("interface-unknown", @"implement Missing for Thing { }", "Unknown interface"),
             ("interface-duplicate",
 @"interface IThing {

@@ -709,7 +709,7 @@ static class ModuleCompiler
 
         private static Stmt RewriteStmt(Stmt stmt, IReadOnlyDictionary<string, string> aliases) => stmt switch
         {
-            VarDecl v => new VarDecl(RewriteTypeRef(v.Type, aliases), v.Name, v.Initializer is null ? null : RewriteExpr(v.Initializer, aliases)),
+            VarDecl v => new VarDecl(RewriteTypeRef(v.Type, aliases), v.Name, v.Initializer is null ? null : RewriteExpr(v.Initializer, aliases), v.IsConstant),
             ExprStmt e => new ExprStmt(RewriteExpr(e.Expression, aliases)),
             Block b => new Block(b.Statements.Select(s => RewriteStmt(s, aliases)).ToList()),
             IfStmt i => new IfStmt(RewriteExpr(i.Condition, aliases), RewriteStmt(i.ThenBranch, aliases), i.ElseBranch is null ? null : RewriteStmt(i.ElseBranch, aliases)),

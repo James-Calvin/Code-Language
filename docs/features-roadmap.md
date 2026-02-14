@@ -12,13 +12,18 @@ Legend:
 | --- | --- | --- | --- |
 | `[x]` | Core language | Required type annotations; primitive numerics/string/boolean | Implemented |
 | `[x]` | Core language | Variables, assignments, blocks | Implemented |
+| `[x]` | Core language | Constants (`constant` declarations) | `constant Type name = value;` implemented with reassignment errors |
+| `[x]` | Core language | Enhanced assignment operators | `+=`, `-=`, `*=`, `/=`, `%=` and unary `++`/`--` implemented for variable targets |
 | `[x]` | Core language | Arithmetic and comparisons | Implemented |
+| `[x]` | Core language | Modulo operator (`%`) | Implemented in lexer/parser/type-checker/codegen/VM |
 | `[x]` | Core language | Logical `and`/`or`/`not` (short-circuit) | Implemented |
 | `[x]` | Core language | Boolean literals `true` / `false` | Implemented |
 | `[x]` | Core language | String literals + interpolation; `+` concat | Implemented |
+| `[x]` | Core language | Interpolation expression parity | Interpolation now parses full expressions (member/index/call/ops) inside `{...}` |
 | `[x]` | Core language | Control flow: `if/while/for` with mandatory `then` | Semicolons enforced |
 | `[x]` | Core language | `foreach` over numeric bounds | Lowered to 0..N-1 loop |
 | `[x]` | Core language | Function decls/calls, typed params/returns | CALL/RET |
+| `[x]` | Core language | Void functions | `void` return type + implicit-void `function name(...)` supported |
 | `[x]` | Core language | Return statements (implicit 0 if missing) | Implemented |
 | `[x]` | Core language | Collections: literals + foreach over collections | Array literals + array foreach + typed array declarations/new(size) + `.length` + indexing + mutation |
 | `[x]` | Core language | Optionals | `optional<T>` with `none`, `.hasValue`, `.value`, `.or(fallback)` |
@@ -37,7 +42,7 @@ Legend:
 | `[x]` | Object model | Constructors + definite field initialization rules | Implemented baseline: fields require constructor init; constructors enforced |
 | `[x]` | Object model | Method declarations + call syntax (`obj.method(args)`) | Implemented with signature-based overload resolution |
 | `[x]` | Object model | Temporary method lowering (`method` -> static fn with implicit `this`) | Implemented with compile-time signature binding (no dynamic dispatch yet) |
-| `[~]` | Object model | `record` value semantics (copy on assignment/pass/return) | Permanent feature, follows object core |
+| `[~]` | Object model | `record` declaration + value semantics (copy on assignment/pass/return) | Add `record` parser/type model first, then non-reference copy semantics |
 | `[~]` | Object model | Visibility enforcement (`public/package/private`) | Permanent; phase in from parser -> checker -> codegen |
 | `[x]` | Object model | Interfaces + `implement ... for ...` conformance checks | Compile-time interface declarations + explicit `implement Interface for Object { ... via Object.method; }` mapping with signature/return checks |
 | `[~]` | Object model | Interface dispatch lowering/runtime model | Baseline runtime dispatch table opcode implemented for interface-typed locals/params/returns/fields; extend to interface collections and optimizer-grade fast paths |

@@ -9,6 +9,7 @@ enum TypeSymbol
     String,
     Array,
     Optional,
+    Void,
     Object,
     Interface,
     Unknown

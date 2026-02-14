@@ -1,0 +1,11 @@
+integer value = 0;
+value += 5;
+print value; // Expect: 5
+value *= 3; 
+print value; // Expect: 15
+value /= 2; 
+print value; // Expect: 7
+value--; 
+print value; // Expect 6
+value %= 4;
+print value; // Expect 2

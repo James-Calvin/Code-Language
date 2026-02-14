@@ -18,10 +18,12 @@ sealed class Lexer
         { "whole", TokenType.Whole },
         { "real", TokenType.Real },
         { "boolean", TokenType.Boolean },
+        { "void", TokenType.Void },
         { "optional", TokenType.Optional },
         { "array", TokenType.Array },
         { "object", TokenType.Object },
         { "interface", TokenType.Interface },
+        { "constant", TokenType.Constant },
         { "if", TokenType.If },
         { "then", TokenType.Then },
         { "else", TokenType.Else },
@@ -81,9 +83,19 @@ sealed class Lexer
             case ',': AddToken(TokenType.Comma); break;
             case '.': AddToken(TokenType.Dot); break;
             case ';': AddToken(TokenType.Semicolon); break;
-            case '+': AddToken(TokenType.Plus); break;
-            case '-': AddToken(TokenType.Minus); break;
-            case '*': AddToken(TokenType.Star); break;
+            case '+':
+                if (Match('+')) AddToken(TokenType.PlusPlus);
+                else if (Match('=')) AddToken(TokenType.PlusEqual);
+                else AddToken(TokenType.Plus);
+                break;
+            case '-':
+                if (Match('-')) AddToken(TokenType.MinusMinus);
+                else if (Match('=')) AddToken(TokenType.MinusEqual);
+                else AddToken(TokenType.Minus);
+                break;
+            case '*':
+                AddToken(Match('=') ? TokenType.StarEqual : TokenType.Star);
+                break;
             case '/':
                 if (Match('/')) // line comment
                 {
@@ -100,8 +112,11 @@ sealed class Lexer
                 }
                 else
                 {
-                    AddToken(TokenType.Slash);
+                    AddToken(Match('=') ? TokenType.SlashEqual : TokenType.Slash);
                 }
+                break;
+            case '%':
+                AddToken(Match('=') ? TokenType.PercentEqual : TokenType.Percent);
                 break;
             case '=':
                 AddToken(Match('=') ? TokenType.EqualEqual : TokenType.Equal);

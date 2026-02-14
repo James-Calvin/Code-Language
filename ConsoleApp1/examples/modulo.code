@@ -1,0 +1,2 @@
+integer value = 8 % 3;
+print value; // Expect: 2

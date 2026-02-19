@@ -510,6 +510,8 @@ export function<integer> sub(integer a, integer b) { return a - b; }",
                 new[]
                 {
                     "Entry: main.code",
+                    "Target: vm-native",
+                    "Capabilities: (none)",
                     "main.code -> math.code",
                     "{ add, sub as minus } from \"math.code\"",
                     "math.code package=app.math exports=add, sub"
@@ -517,6 +519,8 @@ export function<integer> sub(integer a, integer b) { return a - b; }",
                 new[]
                 {
                     "\"entry\": \"main.code\"",
+                    "\"target\": \"vm-native\"",
+                    "\"requiredCapabilities\": []",
                     "\"path\": \"math.code\"",
                     "\"package\": \"app.math\"",
                     "\"binding\": \"{ add, sub as minus }\""
@@ -535,6 +539,35 @@ export function<integer> sub(integer a, integer b) { return a - b; }",
                     "Resolve import { add, sub as minus } from \"math.code\" in main.code -> math.code",
                     "Linked main.code"
                 }
+            )
+        };
+        var moduleTargetCases = new List<(string Name, Compiler.CompileTarget Target, IReadOnlyDictionary<string, string> Files, string Entry, string Expected)>
+        {
+            (
+                "module-target-web-allows-std-time",
+                Compiler.CompileTarget.VmWeb,
+                new Dictionary<string, string>
+                {
+                    ["main.code"] = "import nowMs from \"std/time.code\";\nprint(nowMs());",
+                    ["lib/std/time.code"] =
+@"package std.time;
+export function<integer> nowMs() { return 1; }",
+                },
+                "main.code",
+                "1\n"
+            ),
+            (
+                "module-target-native-allows-std-fs",
+                Compiler.CompileTarget.VmNative,
+                new Dictionary<string, string>
+                {
+                    ["main.code"] = "import readText from \"std/fs.code\";\nprint(readText());",
+                    ["lib/std/fs.code"] =
+@"package std.fs;
+export function<string> readText() { return ""ok""; }",
+                },
+                "main.code",
+                "ok\n"
             )
         };
         // Expected error cases
@@ -794,6 +827,22 @@ print(add(2, 3));",
                 "Import chain: main.code -> a.code -> b.code"
             ),
         };
+        var moduleTargetErrorCases = new List<(string Name, Compiler.CompileTarget Target, IReadOnlyDictionary<string, string> Files, string Entry, string ErrorContains)>
+        {
+            (
+                "module-target-web-rejects-std-fs",
+                Compiler.CompileTarget.VmWeb,
+                new Dictionary<string, string>
+                {
+                    ["main.code"] = "import readText from \"std/fs.code\";\nprint(readText());",
+                    ["lib/std/fs.code"] =
+@"package std.fs;
+export function<string> readText() { return ""ok""; }",
+                },
+                "main.code",
+                "Capability 'std.fs' is not available for target 'vm-web'"
+            )
+        };
 
         foreach (var (name, src, expected) in cases)
         {
@@ -910,6 +959,29 @@ print(add(2, 3));",
             }
         }
 
+        foreach (var (name, target, files, entry, expected) in moduleTargetCases)
+        {
+            try
+            {
+                var output = Normalize(CompileAndRunModules(files, entry, target));
+                var expectNorm = Normalize(expected);
+                if (output != expectNorm)
+                {
+                    failures++;
+                    Console.WriteLine($"[FAIL] {name}: expected '{Escape(expectNorm)}' got '{Escape(output)}'");
+                }
+                else
+                {
+                    Console.WriteLine($"[PASS] {name}");
+                }
+            }
+            catch (Exception ex)
+            {
+                failures++;
+                Console.WriteLine($"[FAIL] {name}: threw {ex.GetType().Name} - {ex.Message}");
+            }
+        }
+
         foreach (var (name, files, entry, graphContains, jsonContains, dotContains, traceContains) in moduleToolingCases)
         {
             try
@@ -970,6 +1042,20 @@ print(add(2, 3));",
             try
             {
                 CompileModulesExpectError(files, entry, errorContains);
+                Console.WriteLine($"[PASS] {name}");
+            }
+            catch (Exception ex)
+            {
+                failures++;
+                Console.WriteLine($"[FAIL] {name}: {ex.GetType().Name} - {ex.Message}");
+            }
+        }
+
+        foreach (var (name, target, files, entry, errorContains) in moduleTargetErrorCases)
+        {
+            try
+            {
+                CompileModulesExpectError(files, entry, errorContains, target);
                 Console.WriteLine($"[PASS] {name}");
             }
             catch (Exception ex)
@@ -1207,7 +1293,10 @@ print(sum);";
         return sw.ToString();
     }
 
-    private static string CompileAndRunModules(IReadOnlyDictionary<string, string> files, string entryRelativePath)
+    private static string CompileAndRunModules(
+        IReadOnlyDictionary<string, string> files,
+        string entryRelativePath,
+        Compiler.CompileTarget target = Compiler.CompileTarget.VmNative)
     {
         string tempRoot = Path.Combine(Path.GetTempPath(), "code-mod-tests-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tempRoot);
@@ -1223,7 +1312,8 @@ print(sum);";
             }
 
             string entryPath = Path.Combine(tempRoot, entryRelativePath);
-            var bytes = Compiler.ModuleCompiler.CompileFromFile(entryPath);
+            var options = new Compiler.ModuleCompileOptions { Target = target };
+            var bytes = Compiler.ModuleCompiler.CompileFromFile(entryPath, options);
             using var sw = new StringWriter();
             var vm = new Vm(bytes, sw);
             vm.Run();
@@ -1236,7 +1326,10 @@ print(sum);";
         }
     }
 
-    private static ModuleToolingOutputs CompileModulesWithMetadata(IReadOnlyDictionary<string, string> files, string entryRelativePath)
+    private static ModuleToolingOutputs CompileModulesWithMetadata(
+        IReadOnlyDictionary<string, string> files,
+        string entryRelativePath,
+        Compiler.CompileTarget target = Compiler.CompileTarget.VmNative)
     {
         string tempRoot = Path.Combine(Path.GetTempPath(), "code-mod-tests-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tempRoot);
@@ -1255,6 +1348,7 @@ print(sum);";
             string entryPath = Path.Combine(tempRoot, entryRelativePath);
             var options = new Compiler.ModuleCompileOptions
             {
+                Target = target,
                 TraceLinker = true,
                 TraceWriter = message => traceLines.Add(message)
             };
@@ -1325,7 +1419,11 @@ print(sum);";
         }
     }
 
-    private static void CompileModulesExpectError(IReadOnlyDictionary<string, string> files, string entryRelativePath, string expectedContains)
+    private static void CompileModulesExpectError(
+        IReadOnlyDictionary<string, string> files,
+        string entryRelativePath,
+        string expectedContains,
+        Compiler.CompileTarget target = Compiler.CompileTarget.VmNative)
     {
         string tempRoot = Path.Combine(Path.GetTempPath(), "code-mod-tests-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tempRoot);
@@ -1343,7 +1441,8 @@ print(sum);";
             string entryPath = Path.Combine(tempRoot, entryRelativePath);
             try
             {
-                _ = Compiler.ModuleCompiler.CompileFromFile(entryPath);
+                var options = new Compiler.ModuleCompileOptions { Target = target };
+                _ = Compiler.ModuleCompiler.CompileFromFile(entryPath, options);
                 throw new Exception("Expected module compile error was not thrown");
             }
             catch (Compiler.CompilerException ex)

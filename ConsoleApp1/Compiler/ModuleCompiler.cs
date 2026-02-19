@@ -9,6 +9,7 @@ namespace ConsoleApp1.Compiler;
 
 sealed class ModuleCompileOptions
 {
+    public CompileTarget Target { get; init; } = CompileTarget.VmNative;
     public bool TraceLinker { get; init; }
     public Action<string>? TraceWriter { get; init; }
 }
@@ -17,23 +18,36 @@ sealed class ModuleCompileResult
 {
     public byte[] Bytecode { get; }
     public ModuleGraph Graph { get; }
+    public CompileTarget Target { get; }
+    public IReadOnlyList<string> RequiredCapabilities { get; }
 
-    public ModuleCompileResult(byte[] bytecode, ModuleGraph graph)
+    public ModuleCompileResult(byte[] bytecode, ModuleGraph graph, CompileTarget target, IReadOnlyList<string> requiredCapabilities)
     {
         Bytecode = bytecode;
         Graph = graph;
+        Target = target;
+        RequiredCapabilities = requiredCapabilities;
     }
 }
 
 sealed class ModuleGraph
 {
     public string EntryPath { get; }
+    public CompileTarget Target { get; }
+    public IReadOnlyList<string> RequiredCapabilities { get; }
     public IReadOnlyList<ModuleGraphModule> Modules { get; }
     public IReadOnlyList<ModuleGraphEdge> Edges { get; }
 
-    public ModuleGraph(string entryPath, IReadOnlyList<ModuleGraphModule> modules, IReadOnlyList<ModuleGraphEdge> edges)
+    public ModuleGraph(
+        string entryPath,
+        CompileTarget target,
+        IReadOnlyList<string> requiredCapabilities,
+        IReadOnlyList<ModuleGraphModule> modules,
+        IReadOnlyList<ModuleGraphEdge> edges)
     {
         EntryPath = entryPath;
+        Target = target;
+        RequiredCapabilities = requiredCapabilities;
         Modules = modules;
         Edges = edges;
     }
@@ -42,6 +56,9 @@ sealed class ModuleGraph
     {
         var sb = new StringBuilder();
         sb.Append("Entry: ").Append(FormatPath(EntryPath, displayRoot)).AppendLine();
+        sb.Append("Target: ").Append(Target.ToCliValue()).AppendLine();
+        string capabilitiesText = RequiredCapabilities.Count == 0 ? "(none)" : string.Join(", ", RequiredCapabilities);
+        sb.Append("Capabilities: ").Append(capabilitiesText).AppendLine();
         sb.AppendLine("Modules:");
         for (int i = 0; i < Modules.Count; i++)
         {
@@ -86,6 +103,8 @@ sealed class ModuleGraph
         var payload = new
         {
             entry = FormatPath(EntryPath, displayRoot),
+            target = Target.ToCliValue(),
+            requiredCapabilities = RequiredCapabilities,
             modules = Modules.Select(module => new
             {
                 path = FormatPath(module.Path, displayRoot),
@@ -203,8 +222,9 @@ sealed record ModuleGraphEdge(string ImporterPath, string DependencyPath, string
 
 static class ModuleCompiler
 {
-    public static byte[] CompileFromSource(string source)
+    public static byte[] CompileFromSource(string source, CompileTarget target = CompileTarget.VmNative)
     {
+        _ = target; // reserved for source-level target checks when host ABI calls are introduced
         var lexer = new Lexer(source);
         var tokens = lexer.ScanTokens();
         var parser = new Parser(tokens);
@@ -220,17 +240,27 @@ static class ModuleCompiler
         return CompileFromFileWithMetadata(entryPath).Bytecode;
     }
 
+    public static byte[] CompileFromFile(string entryPath, ModuleCompileOptions options)
+    {
+        return CompileFromFileWithMetadata(entryPath, options).Bytecode;
+    }
+
     public static ModuleCompileResult CompileFromFileWithMetadata(string entryPath, ModuleCompileOptions? options = null)
     {
         string fullEntryPath = Path.GetFullPath(entryPath);
         string projectRoot = Directory.GetCurrentDirectory();
-        var linker = new ModuleLinker(projectRoot, fullEntryPath, options ?? new ModuleCompileOptions());
+        var compileOptions = options ?? new ModuleCompileOptions();
+        var linker = new ModuleLinker(projectRoot, fullEntryPath, compileOptions);
         var linkResult = linker.Link(fullEntryPath);
         var typeChecker = new TypeChecker();
         typeChecker.Check(linkResult.Statements);
         var generator = new CodeGenerator();
         var bytecode = generator.Generate(linkResult.Statements);
-        return new ModuleCompileResult(bytecode, linkResult.Graph);
+        return new ModuleCompileResult(
+            bytecode,
+            linkResult.Graph,
+            compileOptions.Target,
+            linkResult.RequiredCapabilities);
     }
 
     private sealed class ModuleLinker
@@ -244,6 +274,7 @@ static class ModuleCompiler
         private readonly List<string> _visitStack = new();
         private readonly List<string> _order = new();
         private readonly List<ModuleGraphEdge> _edges = new();
+        private readonly Dictionary<string, CapabilityUse> _requiredCapabilities = new(StringComparer.Ordinal);
 
         public ModuleLinker(string projectRoot, string entryPath, ModuleCompileOptions options)
         {
@@ -260,9 +291,11 @@ static class ModuleCompiler
             _visitStack.Clear();
             _order.Clear();
             _edges.Clear();
+            _requiredCapabilities.Clear();
 
             Trace($"Link entry module {FormatGraphPath(entryPath)}");
             Visit(entryPath);
+            ValidateTargetCapabilities();
 
             var linked = new List<Stmt>();
             var moduleNodes = new List<ModuleGraphModule>();
@@ -276,12 +309,15 @@ static class ModuleCompiler
                     module.ExportedDeclarations.Keys.OrderBy(name => name, StringComparer.Ordinal).ToList()));
             }
 
+            var requiredCapabilities = _requiredCapabilities.Keys.OrderBy(name => name, StringComparer.Ordinal).ToList();
             var graph = new ModuleGraph(
                 _entryPath,
+                _options.Target,
+                requiredCapabilities,
                 moduleNodes,
                 _edges.ToList());
 
-            return new LinkResult(linked, graph);
+            return new LinkResult(linked, graph, requiredCapabilities);
         }
 
         private ModuleInfo Visit(string modulePath)
@@ -306,8 +342,10 @@ static class ModuleCompiler
             {
                 var module = ParseModule(modulePath);
                 Trace($"Parsed {FormatGraphPath(modulePath)} (imports={module.Imports.Count}, exports={module.ExportedDeclarations.Count})");
+                RegisterCapabilityFromPackage(module.PackageName, module.Path, module.PackageLine, module.PackageColumn);
                 foreach (var import in module.Imports)
                 {
+                    RegisterCapabilityFromImport(import.SourcePath, module.Path, import.Source.Line, import.Source.Column);
                     string dependencyPath = ResolveImportPath(module.Path, import.SourcePath, import.Source);
                     _edges.Add(new ModuleGraphEdge(module.Path, dependencyPath, import.SourcePath, FormatBindingText(import.Bindings)));
                     Trace(
@@ -367,6 +405,13 @@ static class ModuleCompiler
                 _visiting.Remove(modulePath);
             }
         }
+
+        private sealed record CapabilityUse(
+            string Capability,
+            string ModulePath,
+            int Line,
+            int Column,
+            string Context);
 
         private ModuleInfo ParseModule(string modulePath)
         {
@@ -469,7 +514,16 @@ static class ModuleCompiler
                 }
             }
 
-            return new ModuleInfo(modulePath, package?.Name, imports, locals, exports, new List<Stmt>(), new Dictionary<string, string>(StringComparer.Ordinal));
+            return new ModuleInfo(
+                modulePath,
+                package?.Name,
+                package?.NameToken.Line ?? 1,
+                package?.NameToken.Column ?? 1,
+                imports,
+                locals,
+                exports,
+                new List<Stmt>(),
+                new Dictionary<string, string>(StringComparer.Ordinal));
         }
 
         private string ResolveImportPath(string importerPath, string sourcePath, Token sourceToken)
@@ -507,6 +561,126 @@ static class ModuleCompiler
                 $"Could not resolve import '{sourcePath}'",
                 sourceToken.Line,
                 sourceToken.Column);
+        }
+
+        private static readonly HashSet<string> KnownCapabilities = new(StringComparer.Ordinal)
+        {
+            "std.time",
+            "std.io",
+            "std.fs",
+            "engine.window",
+            "engine.input",
+            "engine.gfx",
+            "engine.audio"
+        };
+
+        private static readonly HashSet<string> VmWebCapabilities = new(StringComparer.Ordinal)
+        {
+            "std.time",
+            "std.io",
+            "engine.window",
+            "engine.input",
+            "engine.gfx",
+            "engine.audio"
+        };
+
+        private void RegisterCapabilityFromPackage(string? packageName, string modulePath, int line, int column)
+        {
+            if (TryInferCapabilityFromPackage(packageName, out var capability))
+                RegisterCapability(capability, modulePath, line, column, $"package '{packageName}'");
+        }
+
+        private void RegisterCapabilityFromImport(string sourcePath, string modulePath, int line, int column)
+        {
+            if (TryInferCapabilityFromImport(sourcePath, out var capability))
+                RegisterCapability(capability, modulePath, line, column, $"import \"{sourcePath}\"");
+        }
+
+        private void RegisterCapability(string capability, string modulePath, int line, int column, string context)
+        {
+            if (_requiredCapabilities.ContainsKey(capability))
+                return;
+
+            _requiredCapabilities[capability] = new CapabilityUse(capability, modulePath, line, column, context);
+            Trace($"Capability required: {capability} ({FormatGraphPath(modulePath)} {context})");
+        }
+
+        private void ValidateTargetCapabilities()
+        {
+            foreach (var capability in _requiredCapabilities.Values.OrderBy(value => value.Capability, StringComparer.Ordinal))
+            {
+                if (IsCapabilitySupported(_options.Target, capability.Capability))
+                    continue;
+
+                throw new CompilerException(
+                    $"Capability '{capability.Capability}' is not available for target '{_options.Target.ToCliValue()}'. Required by {FormatGraphPath(capability.ModulePath)} via {capability.Context}.",
+                    capability.Line,
+                    capability.Column);
+            }
+        }
+
+        private static bool IsCapabilitySupported(CompileTarget target, string capability)
+        {
+            return target switch
+            {
+                CompileTarget.VmNative => true,
+                CompileTarget.VmWeb => VmWebCapabilities.Contains(capability),
+                _ => false
+            };
+        }
+
+        private static bool TryInferCapabilityFromPackage(string? packageName, out string capability)
+        {
+            capability = string.Empty;
+            if (string.IsNullOrWhiteSpace(packageName))
+                return false;
+
+            var parts = packageName
+                .Split('.', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(part => part.ToLowerInvariant())
+                .ToArray();
+            if (parts.Length < 2)
+                return false;
+
+            string candidate = parts[0] + "." + parts[1];
+            if (!KnownCapabilities.Contains(candidate))
+                return false;
+
+            capability = candidate;
+            return true;
+        }
+
+        private static bool TryInferCapabilityFromImport(string sourcePath, out string capability)
+        {
+            capability = string.Empty;
+            if (string.IsNullOrWhiteSpace(sourcePath))
+                return false;
+
+            var parts = sourcePath
+                .Split(new[] { '.', '/', '\\' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(part => part.ToLowerInvariant())
+                .Where(part => part is not "." and not "..")
+                .ToArray();
+
+            int partCount = parts.Length;
+            if (partCount == 0)
+                return false;
+
+            // Ignore .code suffix after splitting.
+            if (parts[^1] == "code")
+                partCount--;
+
+            for (int i = 0; i + 1 < partCount; i++)
+            {
+                string candidate = parts[i] + "." + parts[i + 1];
+                if (KnownCapabilities.Contains(candidate))
+                {
+                    capability = candidate;
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private static void RegisterTopLevelName(
@@ -805,11 +979,13 @@ static class ModuleCompiler
         }
     }
 
-    private sealed record LinkResult(IList<Stmt> Statements, ModuleGraph Graph);
+    private sealed record LinkResult(IList<Stmt> Statements, ModuleGraph Graph, IReadOnlyList<string> RequiredCapabilities);
 
     private sealed record ModuleInfo(
         string Path,
         string? PackageName,
+        int PackageLine,
+        int PackageColumn,
         List<ImportDecl> Imports,
         List<Stmt> LocalStatements,
         Dictionary<string, Stmt> ExportedDeclarations,

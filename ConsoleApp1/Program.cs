@@ -20,6 +20,7 @@ internal static class Program
         string? moduleGraphOutputPath = null;
         string? moduleGraphFormat = null;
         bool traceLinker = false;
+        CompileTarget compileTarget = CompileTarget.VmNative;
 
         for (int i = 0; i < args.Length; i++)
         {
@@ -63,6 +64,12 @@ internal static class Program
                 case "--trace-linker":
                     traceLinker = true;
                     break;
+                case "--target":
+                    if (i + 1 >= args.Length) Fail("Usage: --target <vm-native|vm-web>");
+                    string targetArg = args[++i];
+                    if (!CompileTargetExtensions.TryParse(targetArg, out compileTarget))
+                        Fail($"Unsupported target '{targetArg}'. Use vm-native or vm-web.");
+                    break;
                 default:
                     if (args[i].EndsWith(".bytecode", StringComparison.OrdinalIgnoreCase))
                         bytecodePath = args[i];
@@ -99,7 +106,7 @@ internal static class Program
         if (codePath != null)
         {
             string outputPath = outPath ?? Path.ChangeExtension(codePath, ".bytecode");
-            CompileToFile(codePath, outputPath, dumpModuleGraph, moduleGraphOutputPath, moduleGraphFormat, traceLinker);
+            CompileToFile(codePath, outputPath, dumpModuleGraph, moduleGraphOutputPath, moduleGraphFormat, traceLinker, compileTarget);
             if (!compileOnly)
                 RunBytecode(outputPath);
             return;
@@ -133,19 +140,21 @@ internal static class Program
         bool dumpModuleGraph,
         string? moduleGraphOutputPath,
         string? moduleGraphFormat,
-        bool traceLinker)
+        bool traceLinker,
+        CompileTarget target)
     {
         var source = File.ReadAllText(sourcePath);
         try
         {
             var options = new ModuleCompileOptions
             {
+                Target = target,
                 TraceLinker = traceLinker,
                 TraceWriter = traceLinker ? message => Console.Error.WriteLine($"[linker] {message}") : null
             };
             var result = ModuleCompiler.CompileFromFileWithMetadata(sourcePath, options);
             File.WriteAllBytes(outputPath, result.Bytecode);
-            Console.WriteLine($"Compiled {sourcePath} -> {outputPath}");
+            Console.WriteLine($"Compiled {sourcePath} -> {outputPath} (target={target.ToCliValue()})");
             if (dumpModuleGraph)
             {
                 string graphBody = FormatModuleGraph(

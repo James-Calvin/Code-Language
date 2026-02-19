@@ -50,6 +50,8 @@ Legend:
 | `[~]` | Modules/imports | Exported declarations | `export` implemented for function/object/interface declarations |
 | `[~]` | Modules/imports | Import syntax & package declarations | `import Name [as Alias] from \"path\";` + `package Name;` implemented; package namespace semantics still minimal |
 | `[~]` | Modules/imports | Package search paths/stdlib layout/versioning | Relative-path + `lib/` ancestor search implemented; stdlib layout/versioning still deferred |
+| `[!]` | Modules/imports | Package manifest + lockfile (`code.package.json`, `code.lock.json`) | Target-aware dependency resolution and reproducible graph pinning planned |
+| `[!]` | Modules/imports | Library artifact format (`.codelib`) | Package build/load pipeline for reusable libraries |
 | `[x]` | Modules/imports | Package declarations | `package Name;` parsing + module-level validation (single declaration, ordered before imports/declarations) |
 | `[x]` | Modules/imports | Module-scope symbol conflict checks | Detect duplicate top-level declarations and import-binding collisions within a module |
 | `[x]` | Modules/imports | Import-chain diagnostics | Circular/missing-export/import resolution errors include module chain (`a -> b -> c`) |
@@ -66,6 +68,13 @@ Legend:
 | `[~]` | Compiler pipeline | Frame sizing/temp management | Function-local slots are unique; CALL uses precise frame size; temps reused within foreach; further temp reuse/liveness possible |
 | `[~]` | Compiler pipeline | Optimizations: const fold/DCE | Initial literal fold in place |
 | `[~]` | Runtime/stdlib | Basic stdlib (IO/math/time) | Print exists; extend |
+| `[x]` | Platform/targets | Compile target model (`--target vm-native|vm-web`) | Implemented: target threads through linker/codegen entry points; default `vm-native` |
+| `[x]` | Platform/targets | Target capability validation | Implemented baseline: inferred capability groups (`std.*`, `engine.*`) from package/imports with compile-time matrix checks (`vm-web` rejects `std.fs`) |
+| `[!]` | Platform/targets | Host ABI baseline | Runtime binding table + capability groups (`std.*`, `engine.*`) |
+| `[!]` | Platform/targets | Web VM target | Browser runtime (WASM/JS host bridge) with bytecode loader |
+| `[~]` | Platform/targets | Native/web parity validation | Single-source app/game runs across both targets |
+| `[~]` | Game engine | Engine core packages | `engine.math`, `engine.ecs`, `engine.scene`, `engine.loop` |
+| `[~]` | Game engine | Engine platform adapters | Window/input/gfx/audio host-backed packages |
 | `[_]` | Runtime/stdlib | REPL | Future |
 | `[x]` | Tooling/docs | Bytecode spec v0.8 (debug map + arrays/optionals/errors/objects) | Implemented |
 | `[x]` | Tooling/docs | AI context + sample programs | Implemented |
@@ -78,6 +87,8 @@ Legend:
 | `[~]` | Testing | Object-model fuzz/property domains | Constructor/field mutation/member access invariants |
 
 ## Priority Rollup (benefit/effort)
-- High (`[!]`): interface/dynamic dispatch model, type system/codegen polish (frame sizing, flow/return analysis), testing expansion, error propagation semantics.
-- Medium (`[~]`): record semantics, constant pool, optimizer expansion, stdlib basics, tooling polish.
-- Low (`[_]`): interfaces runtime dispatch, modules/packages, REPL, future stdlib/versioning, long-term runtime lifecycle strategy.
+- High (`[!]`): interface/dynamic dispatch model, type system/codegen polish (frame sizing, flow/return analysis), testing expansion, error propagation semantics, host ABI + package resolver + web VM target.
+- Medium (`[~]`): record semantics, constant pool, optimizer expansion, stdlib basics, tooling polish, engine core/adapters and cross-target parity.
+- Low (`[_]`): interfaces runtime dispatch, REPL, future stdlib/versioning, long-term runtime lifecycle strategy, remote package registry.
+
+See also: `docs/platform-roadmap.md` for ABI schema, package manifest schema, and phased execution plan.

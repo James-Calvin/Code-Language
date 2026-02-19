@@ -3,8 +3,8 @@ object Stats {
   integer defense;
 
   constructor() {
-    this.strength = 0;
-    this.defense = 0;
+    strength = 0;
+    defense = 0;
   }
 }
 

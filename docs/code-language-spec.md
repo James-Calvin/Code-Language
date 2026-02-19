@@ -1,7 +1,7 @@
 # Code Language Specification (Living Draft)
 
 Version: 1.0  
-Last updated: 2026-02-14
+Last updated: 2026-02-19
 
 ## 1. Goals and Design
 - `Code` is a general-purpose language.
@@ -442,6 +442,11 @@ real result3 = errorExample(0) on error panic("Error message {error}");
   - Module graph output format supports `text` (default), `json`, and `dot` (Graphviz).
   - Format selection: explicit `--module-graph-format <text|json|dot>` or file extension inference (`.json`, `.dot`, `.gv`).
   - `--trace-linker` prints linker visit/resolve/link steps.
+- Compile target selection is available via `--target vm-native|vm-web` (default: `vm-native`).
+- Target capability validation (current baseline):
+  - Compiler infers capability groups from module package/import namespaces (`std.*`, `engine.*`).
+  - Build fails if the selected target does not support an inferred capability (e.g., `std.fs` on `vm-web`).
+  - Module graph outputs include `target` and inferred `requiredCapabilities`.
 - Object construction and field access lower to dedicated VM opcodes (`NEW_OBJECT`, `GET_FIELD`, `SET_FIELD`).
 - Arrays: literals `{...}` create arrays; typed declarations `array<integer> xs = {1,2,3};`; dynamic `new array<integer>(n)` requires a size; `xs.length` yields length; `foreach` iterates arrays by element.
 

@@ -10,6 +10,7 @@ A tiny experimental programming language with a stack-based bytecode VM and a C#
 - Constants: `constant Type name = value;` (immutable after init)
 - Control flow: `if/then/else`, `while`, `for`, `foreach` (numeric bounds and arrays)
 - Expressions: arithmetic (including `%`), comparisons, logical `and/or/not`, enhanced assignments (`+=`, `-=`, `*=`, `/=`, `%=` and postfix `++/--`), string interpolation and concatenation
+- Time intrinsics: `unix_ms()`, `unix_us()`, `mono_ns()`, `mono_ticks()`, `mono_ticks_per_second()`
 - Functions with CALL/RET, locals, return (implicit 0)
 - File modules: `export` + imports (`import Name [as Alias] from "path";`, `import { A, B as C } from "path";`) with recursive linking and `lib/` search
 - Package manifest + lockfile baseline: nearest `code.package.json` is parsed/validated during module compile; local dependency graph resolves and `code.lock.json` is generated
@@ -107,6 +108,11 @@ dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- ConsoleApp1/examples/arit
 Module import example:
 ```
 dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- ConsoleApp1/examples/modules/main.code
+```
+
+Time intrinsics example:
+```
+dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- ConsoleApp1/examples/time.code
 ```
 
 Panic example:

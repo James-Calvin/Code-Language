@@ -25,7 +25,7 @@ Version: 0.9 (2026-02-19)
 - VM execution/disassembly tools may consume `.codelib` by decoding embedded `bytecode`.
 
 ## Stack conventions
-- Operand stack uses IEEE-754 doubles (ints are widened when pushed); strings and objects are boxed.
+- Operand stack stores numeric values as `int`, `long`, or `double` (numeric ops coerce to double math); strings and objects are boxed.
 - Locals are indexed slots separate from the operand stack; they auto-grow on demand. Functions record a high-water mark for frame size.
 - Call frames: CALL creates a new locals array sized by the callee; RET restores previous locals and IP, leaving return value on the operand stack.
 
@@ -68,6 +68,11 @@ Version: 0.9 (2026-02-19)
 | 0x22 | GET_TYPE_NAME | — | 0 | pop object, push runtime object type name string |
 | 0x23 | INTERFACE_CALL | int32 explicitArgCount, int32 entryCount, repeated `(string typeName, int32 target, int32 locals)` | -explicitArgCount-1+1 | Pop args and target object, dispatch by runtime object type to mapped method target, push return value on RET |
 | 0x24 | MOD | — | -1 | pop a,b → push (a%b), throws on modulo-by-zero |
+| 0x25 | TIME_UNIX_MS | — | +1 | push current Unix wall-clock milliseconds |
+| 0x26 | TIME_UNIX_US | — | +1 | push current Unix wall-clock microseconds |
+| 0x27 | TIME_MONO_NS | — | +1 | push process-relative monotonic nanoseconds |
+| 0x28 | TIME_MONO_TICKS | — | +1 | push runtime monotonic tick counter |
+| 0x29 | TIME_MONO_TICKS_PER_SECOND | — | +1 | push monotonic tick frequency |
 | 0xFF | HALT | — | 0 | stop execution |
 
 ## Planned additions

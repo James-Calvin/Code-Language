@@ -139,6 +139,11 @@ sealed class BytecodeBuilder
     public BytecodeBuilder NewObject(string typeName) => AddStringOperand(OpCode.NewObject, typeName);
     public BytecodeBuilder GetField(string fieldName) => AddStringOperand(OpCode.GetField, fieldName);
     public BytecodeBuilder SetField(string fieldName) => AddStringOperand(OpCode.SetField, fieldName);
+    public BytecodeBuilder TimeUnixMs() { RecordDebug(); _bytes.Add((byte)OpCode.TimeUnixMs); return this; }
+    public BytecodeBuilder TimeUnixUs() { RecordDebug(); _bytes.Add((byte)OpCode.TimeUnixUs); return this; }
+    public BytecodeBuilder TimeMonoNs() { RecordDebug(); _bytes.Add((byte)OpCode.TimeMonoNs); return this; }
+    public BytecodeBuilder TimeMonoTicks() { RecordDebug(); _bytes.Add((byte)OpCode.TimeMonoTicks); return this; }
+    public BytecodeBuilder TimeMonoTicksPerSecond() { RecordDebug(); _bytes.Add((byte)OpCode.TimeMonoTicksPerSecond); return this; }
     public BytecodeBuilder GetTypeName()
     {
         RecordDebug();

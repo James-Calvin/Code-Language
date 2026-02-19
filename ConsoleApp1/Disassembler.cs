@@ -80,6 +80,11 @@ static class Disassembler
                 case OpCode.OptionalOr:
                 case OpCode.ThrowError:
                 case OpCode.GetTypeName:
+                case OpCode.TimeUnixMs:
+                case OpCode.TimeUnixUs:
+                case OpCode.TimeMonoNs:
+                case OpCode.TimeMonoTicks:
+                case OpCode.TimeMonoTicksPerSecond:
                 case OpCode.Halt:
                     break;
                 case OpCode.PushString:

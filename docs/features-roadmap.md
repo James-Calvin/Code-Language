@@ -68,7 +68,7 @@ Legend:
 | `[!]` | Compiler pipeline | Type checker tightening (def-assignment done; improve return/flow) | Continue refining |
 | `[~]` | Compiler pipeline | Frame sizing/temp management | Function-local slots are unique; CALL uses precise frame size; temps reused within foreach; further temp reuse/liveness possible |
 | `[~]` | Compiler pipeline | Optimizations: const fold/DCE | Initial literal fold in place |
-| `[~]` | Runtime/stdlib | Basic stdlib (IO/math/time) | Print exists; extend |
+| `[~]` | Runtime/stdlib | Basic stdlib (IO/math/time) | Print + time intrinsics (`unix_ms`, `unix_us`, `mono_ns`, `mono_ticks`, `mono_ticks_per_second`) implemented; expand IO/math surface |
 | `[x]` | Platform/targets | Compile target model (`--target vm-native|vm-web`) | Implemented: target threads through linker/codegen entry points; default `vm-native` |
 | `[x]` | Platform/targets | Target capability validation | Implemented baseline: inferred capability groups (`std.*`, `engine.*`) from package/imports with compile-time matrix checks (`vm-web` rejects `std.fs`) |
 | `[!]` | Platform/targets | Host ABI baseline | Runtime binding table + capability groups (`std.*`, `engine.*`) |

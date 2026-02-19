@@ -1,0 +1,5 @@
+print("unix_ms={unix_ms()}");
+print("unix_us={unix_us()}");
+print("mono_ns={mono_ns()}");
+print("mono_ticks={mono_ticks()}");
+print("mono_ticks_per_second={mono_ticks_per_second()}");

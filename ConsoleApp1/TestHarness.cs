@@ -170,6 +170,14 @@ print(value);
 value %= 4;
 print(value);", "5\n15\n7.5\n6.5\n2.5\n"),
             ("constant-ok", @"constant real PI = 3; print(PI);", "3\n")
+            ,
+            ("time-intrinsics",
+@"print(unix_ms() > 0);
+print(unix_us() > 0);
+print(mono_ns() >= 0);
+print(mono_ticks() > 0);
+print(mono_ticks_per_second() > 0);",
+             "1\n1\n1\n1\n1\n")
         };
         var arrayCases = new List<(string Name, string Source, string Expected)>
         {
@@ -788,6 +796,7 @@ print(a.f(true));", "no matching method overload"),
 @"constant integer PI = 3;
 PI = 4;", "Cannot assign to constant 'PI'"),
             ("constant-missing-init", @"constant integer value;", "must be initialized"),
+            ("time-intrinsic-arity", @"print(unix_ms(1));", "expects 0 args"),
             ("void-return-value",
 @"function<void> nope() {
   return 1;

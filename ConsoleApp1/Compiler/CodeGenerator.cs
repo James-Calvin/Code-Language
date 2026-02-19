@@ -5,6 +5,15 @@ namespace ConsoleApp1.Compiler;
 
 sealed class CodeGenerator
 {
+    private static readonly HashSet<string> ZeroArgIntrinsics = new(StringComparer.Ordinal)
+    {
+        "unix_ms",
+        "unix_us",
+        "mono_ns",
+        "mono_ticks",
+        "mono_ticks_per_second"
+    };
+
     private readonly BytecodeBuilder _builder = BytecodeBuilder.New();
     private Dictionary<string, int> _locals = new(StringComparer.Ordinal);
     private Dictionary<string, TypeRef> _localDeclaredTypes = new(StringComparer.Ordinal);
@@ -912,6 +921,9 @@ sealed class CodeGenerator
 
     private void EmitCall(Call call)
     {
+        if (TryEmitIntrinsicCall(call))
+            return;
+
         if (!_functions.TryGetValue(call.Callee.Lexeme, out var info))
             throw new InvalidOperationException($"Call to undefined function '{call.Callee.Lexeme}' at line {call.Callee.Line}, col {call.Callee.Column}");
         foreach (var arg in call.Arguments)
@@ -920,6 +932,35 @@ sealed class CodeGenerator
         }
         int frameSize = Math.Max(info.LocalCount, info.ParamCount); // include params in frame size
         _builder.Call(info.Label, call.Arguments.Count, frameSize);
+    }
+
+    private bool TryEmitIntrinsicCall(Call call)
+    {
+        if (!ZeroArgIntrinsics.Contains(call.Callee.Lexeme))
+            return false;
+        if (call.Arguments.Count != 0)
+            throw new InvalidOperationException($"Intrinsic '{call.Callee.Lexeme}' expects 0 args.");
+
+        switch (call.Callee.Lexeme)
+        {
+            case "unix_ms":
+                _builder.TimeUnixMs();
+                return true;
+            case "unix_us":
+                _builder.TimeUnixUs();
+                return true;
+            case "mono_ns":
+                _builder.TimeMonoNs();
+                return true;
+            case "mono_ticks":
+                _builder.TimeMonoTicks();
+                return true;
+            case "mono_ticks_per_second":
+                _builder.TimeMonoTicksPerSecond();
+                return true;
+            default:
+                return false;
+        }
     }
 
     private void EmitInterpolatedString(InterpString istr)

@@ -12,6 +12,7 @@ sealed class TypeChecker
     private readonly HashSet<string> _interfaceObjectPairs = new(StringComparer.Ordinal);
     private readonly Dictionary<string, HashSet<string>> _interfaceMethodImplementers = new(StringComparer.Ordinal);
     private TypeRef? _currentReturnTypeRef;
+    private static readonly Dictionary<string, FunctionSignature> IntrinsicFunctions = BuildIntrinsicFunctions();
 
     public void Check(IList<Stmt> statements)
     {
@@ -689,7 +690,7 @@ sealed class TypeChecker
                 env.MarkAssigned(a.Name);
                 return lhsType;
             case Call c:
-                if (!_functions.TryGetValue(c.Callee.Lexeme, out var sig))
+                if (!TryGetFunctionSignature(c.Callee.Lexeme, out var sig))
                     throw new CompilerException($"Undefined function '{c.Callee.Lexeme}'", c.Callee.Line, c.Callee.Column);
                 if (sig.Params.Count != c.Arguments.Count)
                     throw new CompilerException($"Function '{c.Callee.Lexeme}' expects {sig.Params.Count} args, got {c.Arguments.Count}", c.Callee.Line, c.Callee.Column);
@@ -741,6 +742,26 @@ sealed class TypeChecker
             default:
                 throw new CompilerException($"Unhandled expression {expr.GetType().Name}", 0, 0);
         }
+    }
+
+    private bool TryGetFunctionSignature(string name, out FunctionSignature signature)
+    {
+        if (_functions.TryGetValue(name, out signature!))
+            return true;
+        return IntrinsicFunctions.TryGetValue(name, out signature!);
+    }
+
+    private static Dictionary<string, FunctionSignature> BuildIntrinsicFunctions()
+    {
+        var integerType = new TypeRef("integer", null, 0, 0);
+        return new Dictionary<string, FunctionSignature>(StringComparer.Ordinal)
+        {
+            ["unix_ms"] = new FunctionSignature(TypeSymbol.Integer, integerType, new List<TypeSymbol>(), Array.Empty<TypeRef>()),
+            ["unix_us"] = new FunctionSignature(TypeSymbol.Integer, integerType, new List<TypeSymbol>(), Array.Empty<TypeRef>()),
+            ["mono_ns"] = new FunctionSignature(TypeSymbol.Integer, integerType, new List<TypeSymbol>(), Array.Empty<TypeRef>()),
+            ["mono_ticks"] = new FunctionSignature(TypeSymbol.Integer, integerType, new List<TypeSymbol>(), Array.Empty<TypeRef>()),
+            ["mono_ticks_per_second"] = new FunctionSignature(TypeSymbol.Integer, integerType, new List<TypeSymbol>(), Array.Empty<TypeRef>())
+        };
     }
 
     private TypeSymbol MapType(TypeRef typeRef)
@@ -991,7 +1012,7 @@ sealed class TypeChecker
             case NewObjectExpr no:
                 return new TypeRef(no.TypeName.Lexeme, null, no.TypeName.Line, no.TypeName.Column);
             case Call c:
-                if (_functions.TryGetValue(c.Callee.Lexeme, out var sig))
+                if (TryGetFunctionSignature(c.Callee.Lexeme, out var sig))
                     return sig.ReturnTypeRef;
                 return null;
             case FieldAccessExpr fa:

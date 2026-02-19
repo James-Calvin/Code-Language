@@ -10,6 +10,7 @@ Read this first. Update it whenever semantics or process change.
 - Interfaces: `interface Name { function<...> method(...); }` plus explicit `implement Interface for Object { method(types...) via Object.method; }` conformance checks and runtime dispatch for interface-typed locals/params/returns/fields.
 - Control flow: if/then[/else], while, for, foreach (numeric or array), break/continue, return (implicit 0).
 - Expressions: arithmetic (including `%`), comparisons, logical and/or/not (short-circuit), assignment (including `+=`, `-=`, `*=`, `/=`, `%=` and postfix `++/--`), function calls, full-expression string interpolation/concat.
+- Time intrinsics: `unix_ms()`, `unix_us()`, `mono_ns()`, `mono_ticks()`, `mono_ticks_per_second()` available as zero-arg global calls.
 - Errors: `panic <expr>;` raises `UserError` with line/col + call stack (from bytecode debug map).
 - Bytecode/VM: header v0x05, spec v0.8; ops include strings, arrays (NEW_ARRAY/GET/LEN/SET/NEW_ARRAY_N), optionals (NONE/HAS/VALUE/OR), objects (NEW_OBJECT/GET_FIELD/SET_FIELD/GET_TYPE_NAME), interface dispatch (INTERFACE_CALL), THROW_ERROR.
 - Modules/imports: recursive file-based module linking for `.code` files with `import`/`export`, package declarations, grouped/selective imports, module-scope symbol conflict checks, import-chain diagnostics, alias imports for function/object/interface exports, and `lib/` ancestor search.
@@ -48,6 +49,7 @@ Read this first. Update it whenever semantics or process change.
 - 2026-02-19: Added package manifest baseline (`code.package.json`) parser/validator with target compatibility checks, host capability validation, and integration tests.
 - 2026-02-19: Added baseline package dependency resolver and lockfile generation (`code.lock.json`) with local package discovery, semver range validation, and lockfile integration tests.
 - 2026-02-19: Added `.codelib` library artifact format (read/write/validate), automatic artifact emission for library packages, lockfile preference for validated artifacts, and CLI support to run/disassemble `.codelib` inputs.
+- 2026-02-19: Added timing intrinsics (unix/us + monotonic ns/ticks) in type checker/codegen/VM with integration coverage and example program.
 - 2026-02-13: Implemented module linker MVP (`import`/`export`, alias imports for functions, recursive dependency loading, cycle detection, `lib/` search path) with module integration tests and examples.
 - 2026-02-12: Refined method/constructor dispatch to signature-based overload resolution with compile-time binding of call sites.
 - 2026-02-12: Added interface declarations and explicit implement blocks with compile-time method-signature and return-type conformance checks; added interface tests/example.

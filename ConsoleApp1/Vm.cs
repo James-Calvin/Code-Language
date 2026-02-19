@@ -1,6 +1,7 @@
 using System;
 using System.Buffers.Binary;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 
 namespace ConsoleApp1;
@@ -43,6 +44,11 @@ enum OpCode : byte
     SetField = 0x21,
     GetTypeName = 0x22,
     InterfaceCall = 0x23,
+    TimeUnixMs = 0x25,
+    TimeUnixUs = 0x26,
+    TimeMonoNs = 0x27,
+    TimeMonoTicks = 0x28,
+    TimeMonoTicksPerSecond = 0x29,
     Halt = 0xFF
 }
 
@@ -57,6 +63,8 @@ sealed class Vm
     private readonly Dictionary<int, (int line, int column)> _debug = new();
     private readonly Dictionary<int, InterfaceDispatchTable> _interfaceDispatchCache = new();
     private readonly int _codeEnd;
+    private readonly long _monoOriginTicks;
+    private const long UnixEpochTicks = 621355968000000000L;
 
     public Vm(byte[] code, TextWriter? output = null, int initialLocals = 8)
     {
@@ -66,6 +74,7 @@ sealed class Vm
         _codeEnd = BytecodeFormat.HeaderSize + header.CodeSize;
         _locals = new object[initialLocals];
         _output = output ?? Console.Out;
+        _monoOriginTicks = Stopwatch.GetTimestamp();
 
         int debugOffset = _codeEnd;
         for (int i = 0; i < header.DebugCount; i++)
@@ -474,6 +483,36 @@ sealed class Vm
                     break;
                 }
 
+                case OpCode.TimeUnixMs:
+                {
+                    long ms = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                    _stack.Push(ms);
+                    break;
+                }
+
+                case OpCode.TimeUnixUs:
+                {
+                    long us = (DateTime.UtcNow.Ticks - UnixEpochTicks) / 10;
+                    _stack.Push(us);
+                    break;
+                }
+
+                case OpCode.TimeMonoNs:
+                {
+                    long elapsedTicks = Stopwatch.GetTimestamp() - _monoOriginTicks;
+                    long ns = (long)(elapsedTicks * (1_000_000_000.0 / Stopwatch.Frequency));
+                    _stack.Push(ns);
+                    break;
+                }
+
+                case OpCode.TimeMonoTicks:
+                    _stack.Push(Stopwatch.GetTimestamp());
+                    break;
+
+                case OpCode.TimeMonoTicksPerSecond:
+                    _stack.Push((long)Stopwatch.Frequency);
+                    break;
+
                 case OpCode.Halt:
                     return;
 
@@ -491,7 +530,7 @@ sealed class Vm
         _stack.Push(op(a, b));
     }
 
-    private static bool IsNumber(object v) => v is int or double;
+    private static bool IsNumber(object v) => v is int or long or double;
     private static double ToDouble(object v) => v is double d ? d : Convert.ToDouble(v);
 
     private object throwRuntimeType(string message)
@@ -506,6 +545,7 @@ sealed class Vm
         {
             case double d: return d;
             case int i: return i;
+            case long l: return l;
             default:
                 ThrowRuntime($"Expected number on stack at {_ip - 1}, found {v?.GetType().Name}");
                 return 0; // unreachable

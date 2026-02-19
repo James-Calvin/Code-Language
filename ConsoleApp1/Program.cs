@@ -10,6 +10,7 @@ internal static class Program
     {
         string? disasmPath = null;
         string? bytecodePath = null;
+        string? libraryPath = null;
         string? codePath = null;
         string? outPath = null;
         bool skipTests = false;
@@ -73,6 +74,8 @@ internal static class Program
                 default:
                     if (args[i].EndsWith(".bytecode", StringComparison.OrdinalIgnoreCase))
                         bytecodePath = args[i];
+                    else if (args[i].EndsWith(".codelib", StringComparison.OrdinalIgnoreCase))
+                        libraryPath = args[i];
                     else if (args[i].EndsWith(".code", StringComparison.OrdinalIgnoreCase))
                         codePath = args[i];
                     else
@@ -92,7 +95,7 @@ internal static class Program
 
         if (disasmPath != null)
         {
-            var bytes = File.ReadAllBytes(disasmPath);
+            var bytes = LoadBytecodePayload(disasmPath);
             Console.Write(Disassembler.Disassemble(bytes));
             return;
         }
@@ -118,6 +121,12 @@ internal static class Program
         if (bytecodePath != null)
         {
             RunBytecode(bytecodePath);
+            return;
+        }
+
+        if (libraryPath != null)
+        {
+            RunBytecode(libraryPath);
             return;
         }
 
@@ -227,9 +236,10 @@ internal static class Program
 
     private static void RunBytecode(string path)
     {
-        if (!path.EndsWith(".bytecode", StringComparison.OrdinalIgnoreCase))
+        if (!path.EndsWith(".bytecode", StringComparison.OrdinalIgnoreCase) &&
+            !path.EndsWith(".codelib", StringComparison.OrdinalIgnoreCase))
         {
-            Console.Error.WriteLine("Expected a .bytecode file.");
+            Console.Error.WriteLine("Expected a .bytecode or .codelib file.");
             Environment.Exit(1);
         }
         if (!File.Exists(path))
@@ -238,7 +248,7 @@ internal static class Program
             Environment.Exit(1);
         }
 
-        var bytes = File.ReadAllBytes(path);
+        var bytes = LoadBytecodePayload(path);
         var vm = new Vm(bytes);
         try
         {
@@ -270,6 +280,13 @@ internal static class Program
     {
         Console.Error.WriteLine(message);
         Environment.Exit(1);
+    }
+
+    private static byte[] LoadBytecodePayload(string path)
+    {
+        if (path.EndsWith(".codelib", StringComparison.OrdinalIgnoreCase))
+            return CodeLibraryArtifactFormat.Read(path).Bytecode;
+        return File.ReadAllBytes(path);
     }
 
     private static void DumpTokens(string path)

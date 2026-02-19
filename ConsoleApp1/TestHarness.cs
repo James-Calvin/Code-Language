@@ -718,6 +718,47 @@ export function<string> readText() { return ""ok""; }",
                 }
             )
         };
+        var moduleArtifactCases = new List<(string Name, Compiler.CompileTarget Target, IReadOnlyDictionary<string, string> Files, string Entry, string[] ArtifactContains, string[] LockContains, string ExpectedRunOutput)>
+        {
+            (
+                "module-codelib-generated",
+                Compiler.CompileTarget.VmNative,
+                new Dictionary<string, string>
+                {
+                    ["code.package.json"] =
+@"{
+  ""schemaVersion"": 1,
+  ""name"": ""demo.lib"",
+  ""version"": ""0.2.0"",
+  ""kind"": ""library"",
+  ""entry"": ""main.code"",
+  ""hostAbi"": {
+    ""requires"": [""std.io""]
+  }
+}",
+                    ["main.code"] = "print(11); export function<integer> add(integer a, integer b) { return a + b; }",
+                },
+                "main.code",
+                new[]
+                {
+                    "\"schemaVersion\": 1",
+                    "\"name\": \"demo.lib\"",
+                    "\"version\": \"0.2.0\"",
+                    "\"kind\": \"library\"",
+                    "\"target\": \"vm-native\"",
+                    "\"requiredCapabilities\": [",
+                    "\"std.io\"",
+                    "\"bytecode\": \""
+                },
+                new[]
+                {
+                    "\"name\": \"demo.lib\"",
+                    "\"resolved\": \"demo-lib-0.2.0-vm-native.codelib\"",
+                    "\"integrity\": \"sha256-"
+                },
+                "11\n"
+            )
+        };
         // Expected error cases
         var errorCases = new List<(string Name, string Source, string ExpectedType)>
         {
@@ -1029,6 +1070,36 @@ print(add(2, 3));",
                 "main.code",
                 "does not satisfy version range '^2.0.0'"
             ),
+            (
+                "module-lockfile-invalid-codelib",
+                new Dictionary<string, string>
+                {
+                    ["code.package.json"] =
+@"{
+  ""schemaVersion"": 1,
+  ""name"": ""demo.app"",
+  ""version"": ""0.1.0"",
+  ""kind"": ""application"",
+  ""entry"": ""main.code"",
+  ""dependencies"": {
+    ""math.core"": ""^1.0.0""
+  }
+}",
+                    ["main.code"] = "print(1);",
+                    ["packages/math.core/code.package.json"] =
+@"{
+  ""schemaVersion"": 1,
+  ""name"": ""math.core"",
+  ""version"": ""1.2.0"",
+  ""kind"": ""library"",
+  ""entry"": ""src/main.code""
+}",
+                    ["packages/math.core/src/main.code"] = "print(0);",
+                    ["packages/math.core/math-core-1.2.0-vm-native.codelib"] = "{ bad json }",
+                },
+                "main.code",
+                "Library artifact 'math-core-1.2.0-vm-native.codelib'"
+            ),
         };
         var moduleTargetErrorCases = new List<(string Name, Compiler.CompileTarget Target, IReadOnlyDictionary<string, string> Files, string Entry, string ErrorContains)>
         {
@@ -1232,6 +1303,36 @@ export function<string> readText() { return ""ok""; }",
                 string lockfile = CompileModulesAndReadLockfile(files, entry, target);
                 if (!ContainsAll(name, "lockfile", lockfile, lockContains))
                 {
+                    failures++;
+                }
+                else
+                {
+                    Console.WriteLine($"[PASS] {name}");
+                }
+            }
+            catch (Exception ex)
+            {
+                failures++;
+                Console.WriteLine($"[FAIL] {name}: threw {ex.GetType().Name} - {ex.Message}");
+            }
+        }
+
+        foreach (var (name, target, files, entry, artifactContains, lockContains, expectedRunOutput) in moduleArtifactCases)
+        {
+            try
+            {
+                var outputs = CompileModulesAndReadArtifact(files, entry, target);
+                bool matched =
+                    ContainsAll(name, "artifact", outputs.ArtifactJson, artifactContains) &&
+                    ContainsAll(name, "lockfile", outputs.LockfileJson, lockContains) &&
+                    string.Equals(Normalize(outputs.RunOutput), Normalize(expectedRunOutput), StringComparison.Ordinal);
+
+                if (!matched)
+                {
+                    if (!string.Equals(Normalize(outputs.RunOutput), Normalize(expectedRunOutput), StringComparison.Ordinal))
+                    {
+                        Console.WriteLine($"[FAIL] {name}: run output expected '{Escape(Normalize(expectedRunOutput))}' got '{Escape(Normalize(outputs.RunOutput))}'");
+                    }
                     failures++;
                 }
                 else
@@ -1657,6 +1758,53 @@ print(sum);";
                 throw new Exception("Expected code.lock.json to be generated");
 
             return File.ReadAllText(lockPath);
+        }
+        finally
+        {
+            try { Directory.Delete(tempRoot, recursive: true); }
+            catch { }
+        }
+    }
+
+    private sealed record ArtifactOutputs(string ArtifactJson, string LockfileJson, string RunOutput);
+
+    private static ArtifactOutputs CompileModulesAndReadArtifact(
+        IReadOnlyDictionary<string, string> files,
+        string entryRelativePath,
+        Compiler.CompileTarget target = Compiler.CompileTarget.VmNative)
+    {
+        string tempRoot = Path.Combine(Path.GetTempPath(), "code-mod-tests-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+        try
+        {
+            foreach (var pair in files)
+            {
+                string fullPath = Path.Combine(tempRoot, pair.Key);
+                string? dir = Path.GetDirectoryName(fullPath);
+                if (!string.IsNullOrEmpty(dir))
+                    Directory.CreateDirectory(dir);
+                File.WriteAllText(fullPath, pair.Value);
+            }
+
+            string entryPath = Path.Combine(tempRoot, entryRelativePath);
+            var options = new Compiler.ModuleCompileOptions { Target = target };
+            _ = Compiler.ModuleCompiler.CompileFromFile(entryPath, options);
+
+            var artifactFiles = Directory.GetFiles(tempRoot, "*.codelib", SearchOption.TopDirectoryOnly);
+            if (artifactFiles.Length == 0)
+                throw new Exception("Expected library artifact file was not generated");
+            string artifactPath = artifactFiles[0];
+
+            string lockPath = Path.Combine(tempRoot, "code.lock.json");
+            if (!File.Exists(lockPath))
+                throw new Exception("Expected code.lock.json to be generated");
+
+            var artifact = Compiler.CodeLibraryArtifactFormat.Read(artifactPath);
+            using var sw = new StringWriter();
+            var vm = new Vm(artifact.Bytecode, sw);
+            vm.Run();
+
+            return new ArtifactOutputs(File.ReadAllText(artifactPath), File.ReadAllText(lockPath), sw.ToString());
         }
         finally
         {

@@ -49,17 +49,20 @@ sealed record PackageLockfilePackage(
 
 static class PackageDependencyResolver
 {
-    public static PackageLockfile ResolveAndWriteLockfile(
+    public static PackageLockfile Resolve(
         PackageManifest rootManifest,
         CompileTarget target,
         Action<string>? traceWriter = null)
     {
         var resolver = new Resolver(rootManifest, target, traceWriter);
-        var lockfile = resolver.Resolve();
+        return resolver.Resolve();
+    }
+
+    public static void WriteLockfile(PackageManifest rootManifest, PackageLockfile lockfile, Action<string>? traceWriter = null)
+    {
         string lockPath = Path.Combine(rootManifest.PackageRoot, PackageLockfile.FileName);
         File.WriteAllText(lockPath, lockfile.ToJsonString());
         traceWriter?.Invoke($"Wrote lockfile {PackageLockfile.FileName} ({lockfile.Packages.Count} package(s))");
-        return lockfile;
     }
 
     private sealed class Resolver
@@ -181,9 +184,45 @@ static class PackageDependencyResolver
 
         private PackageLockfilePackage ToLockfilePackage(PackageManifest manifest)
         {
-            string resolved = Path.GetRelativePath(_rootManifest.PackageRoot, manifest.Path).Replace('\\', '/');
-            string integrity = ComputeIntegrity(manifest.Path);
+            string artifactPath = Path.Combine(
+                manifest.PackageRoot,
+                CodeLibraryArtifactFormat.GetFileName(manifest.Name, manifest.Version, _target));
+
+            string resolvedPath = manifest.Path;
+            if (File.Exists(artifactPath))
+            {
+                var artifact = CodeLibraryArtifactFormat.Read(artifactPath);
+                ValidateArtifact(manifest, artifactPath, artifact);
+                resolvedPath = artifactPath;
+            }
+
+            string resolved = Path.GetRelativePath(_rootManifest.PackageRoot, resolvedPath).Replace('\\', '/');
+            string integrity = ComputeIntegrity(resolvedPath);
             return new PackageLockfilePackage(manifest.Name, manifest.Version, resolved, integrity);
+        }
+
+        private void ValidateArtifact(PackageManifest manifest, string artifactPath, CodeLibraryArtifact artifact)
+        {
+            if (!string.Equals(artifact.Name, manifest.Name, StringComparison.Ordinal))
+            {
+                throw ManifestError(
+                    manifest.Path,
+                    $"Library artifact '{Path.GetFileName(artifactPath)}' package name '{artifact.Name}' does not match manifest '{manifest.Name}'.");
+            }
+
+            if (!string.Equals(artifact.Version, manifest.Version, StringComparison.Ordinal))
+            {
+                throw ManifestError(
+                    manifest.Path,
+                    $"Library artifact '{Path.GetFileName(artifactPath)}' version '{artifact.Version}' does not match manifest '{manifest.Version}'.");
+            }
+
+            if (artifact.Target != _target)
+            {
+                throw ManifestError(
+                    manifest.Path,
+                    $"Library artifact '{Path.GetFileName(artifactPath)}' target '{artifact.Target.ToCliValue()}' does not match '{_target.ToCliValue()}'.");
+            }
         }
 
         private static string ComputeIntegrity(string path)

@@ -177,7 +177,7 @@ Legend:
 | `[!]` | Phase 1 | Host ABI v1 baseline | runtime host binding table + `HostBindingError` path |
 | `[x]` | Phase 2 | Manifest parser + validation | Implemented baseline: nearest-manifest discovery, schema v1 validation, target and host capability checks |
 | `[x]` | Phase 2 | Dependency resolver + lockfile | Implemented baseline local resolver + deterministic `code.lock.json` generation (target-scoped) |
-| `[!]` | Phase 2 | Library artifact format (`.codelib`) | package build/load in linker for both targets |
+| `[x]` | Phase 2 | Library artifact format (`.codelib`) | Implemented baseline: library manifests emit `.codelib`, resolver validates/prefer artifact paths in `code.lock.json`, CLI can run/disasm `.codelib` |
 | `[~]` | Phase 3 | Stdlib as packages | `std.core`, `std.math`, `std.time`, `std.io` packaged and importable |
 | `[!]` | Phase 4 | Web VM target runtime | VM in web runtime (WASM or JS host), bytecode loader, browser host bindings |
 | `[~]` | Phase 5 | Engine core package set | `engine.math`, `engine.ecs`, `engine.scene`, `engine.loop` |
@@ -191,7 +191,7 @@ Legend:
 2. [x] Implement host capability checker (compile-time inference from package/import usage).
 3. [x] Implement `code.package.json` parser + validator.
 4. [x] Implement local dependency resolver + `code.lock.json`.
-5. Add `.codelib` read/write and linker support.
+5. [x] Add `.codelib` read/write and linker support.
 6. Add first host ABI bindings (`std.time.now_ms`, `std.io.print`) for both `vm-native` and `vm-web`.
 
 This order gets library system + target model stable before engine work starts.

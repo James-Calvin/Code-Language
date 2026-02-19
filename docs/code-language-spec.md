@@ -458,6 +458,11 @@ real result3 = errorExample(0) on error panic("Error message {error}");
 - Dependency lockfile behavior (current baseline):
   - If a manifest exists, compile resolves `dependencies` and writes/updates `code.lock.json`.
   - Lockfile includes `schemaVersion`, selected `target`, and package entries (`name`, `version`, `resolved`, `integrity`).
+  - If a package has a matching validated `.codelib` artifact, lockfile `resolved` points to that artifact instead of the raw manifest path.
+- Library artifact behavior (current baseline):
+  - Packages with `kind: "library"` emit `<package>-<version>-<target>.codelib` in package root on compile.
+  - Artifact contains package identity, target, entry path, export map, required capabilities, and embedded bytecode payload.
+  - CLI accepts `.codelib` as executable/disassemblable input.
 - Object construction and field access lower to dedicated VM opcodes (`NEW_OBJECT`, `GET_FIELD`, `SET_FIELD`).
 - Arrays: literals `{...}` create arrays; typed declarations `array<integer> xs = {1,2,3};`; dynamic `new array<integer>(n)` requires a size; `xs.length` yields length; `foreach` iterates arrays by element.
 

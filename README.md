@@ -32,9 +32,17 @@ Or run a bytecode directly:
 ```
 dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- path/to/file.bytecode
 ```
+Or run a library artifact directly:
+```
+dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- path/to/file.codelib
+```
 Disassemble a bytecode file:
 ```
 dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- --disasm path/to/file.bytecode
+```
+Disassemble a library artifact:
+```
+dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- --disasm path/to/file.codelib
 ```
 Compile and print module graph/linker trace:
 ```
@@ -62,6 +70,7 @@ Test harness covers VM ops, compiler integration (print, arithmetic, functions, 
 
 ## Project conventions
 - Source files end with `.code`; compiled bytecode uses `.bytecode`
+- Library artifacts use `.codelib` (`<package>-<version>-<target>.codelib`)
 - Semicolons required; `then` mandatory after `if/while/for/foreach` conditions
 - Function returns: explicit `function<T> name(...)` or implicit-void `function name(...)`
 - Arrays: literals `{...}`, typed declarations `array<integer> xs = {1,2,3};`, dynamic `new array<integer>(n);`, `.length`, indexing `xs[i]`, mutation `xs[i] = value`
@@ -74,6 +83,7 @@ Test harness covers VM ops, compiler integration (print, arithmetic, functions, 
 - Package declarations: optional `package Name;` at top of module (before imports/declarations)
 - Package manifest: optional `code.package.json` (nearest ancestor) with validated fields (`schemaVersion`, `name`, `version`, `kind`, `entry`, optional `targets`, `targetOverrides`, `hostAbi.requires`, deps maps)
 - Lockfile: `code.lock.json` is written in the package root during compile when a manifest is present (schema v1, target, resolved package list with integrity hashes)
+- Library packages (`kind: "library"`) emit a `.codelib` artifact during compile; lockfile resolution prefers `.codelib` paths when present and validated
 - Import resolution: importing file directory first, then discovered ancestor `lib/` folders
 - Alias imports support exported functions, objects, and interfaces
 - Module tooling flags: `--dump-module-graph [outputPath]`, `--module-graph-format <text|json|dot>`, and `--trace-linker`

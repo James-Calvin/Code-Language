@@ -259,22 +259,92 @@ static class ModuleCompiler
             TraceLinker = baseOptions.TraceLinker,
             TraceWriter = baseOptions.TraceWriter
         };
-        if (manifest is not null)
-        {
-            Action<string>? traceWriter = compileOptions.TraceLinker ? compileOptions.TraceWriter : null;
-            _ = PackageDependencyResolver.ResolveAndWriteLockfile(manifest, compileOptions.Target, traceWriter);
-        }
         var linker = new ModuleLinker(projectRoot, fullEntryPath, compileOptions);
         var linkResult = linker.Link(fullEntryPath);
         var typeChecker = new TypeChecker();
         typeChecker.Check(linkResult.Statements);
         var generator = new CodeGenerator();
         var bytecode = generator.Generate(linkResult.Statements);
+
+        if (manifest is not null && string.Equals(manifest.Kind, "library", StringComparison.Ordinal))
+        {
+            WriteLibraryArtifact(manifest, fullEntryPath, compileOptions.Target, linkResult.Graph, linkResult.RequiredCapabilities, bytecode);
+            if (compileOptions.TraceLinker)
+            {
+                string artifactName = CodeLibraryArtifactFormat.GetFileName(manifest.Name, manifest.Version, compileOptions.Target);
+                compileOptions.TraceWriter?.Invoke($"Built library artifact {artifactName}");
+            }
+        }
+
+        if (manifest is not null)
+        {
+            Action<string>? traceWriter = compileOptions.TraceLinker ? compileOptions.TraceWriter : null;
+            var lockfile = PackageDependencyResolver.Resolve(manifest, compileOptions.Target, traceWriter);
+            PackageDependencyResolver.WriteLockfile(manifest, lockfile, traceWriter);
+        }
+
         return new ModuleCompileResult(
             bytecode,
             linkResult.Graph,
             compileOptions.Target,
             linkResult.RequiredCapabilities);
+    }
+
+    private static void WriteLibraryArtifact(
+        PackageManifest manifest,
+        string entryPath,
+        CompileTarget target,
+        ModuleGraph graph,
+        IReadOnlyList<string> requiredCapabilities,
+        byte[] bytecode)
+    {
+        string artifactPath = Path.Combine(
+            manifest.PackageRoot,
+            CodeLibraryArtifactFormat.GetFileName(manifest.Name, manifest.Version, target));
+
+        string entry = NormalizeRelativePath(manifest.PackageRoot, entryPath);
+        var exports = BuildArtifactExports(manifest, graph);
+
+        var artifact = new CodeLibraryArtifact(
+            manifest.Name,
+            manifest.Version,
+            manifest.Kind,
+            target,
+            entry,
+            exports,
+            requiredCapabilities,
+            bytecode);
+
+        CodeLibraryArtifactFormat.Write(artifactPath, artifact);
+    }
+
+    private static IReadOnlyDictionary<string, string> BuildArtifactExports(PackageManifest manifest, ModuleGraph graph)
+    {
+        if (manifest.Exports.Count > 0)
+            return new Dictionary<string, string>(manifest.Exports, StringComparer.Ordinal);
+
+        var map = new Dictionary<string, string>(StringComparer.Ordinal);
+        for (int i = 0; i < graph.Modules.Count; i++)
+        {
+            var module = graph.Modules[i];
+            string modulePath = NormalizeRelativePath(manifest.PackageRoot, module.Path);
+            for (int e = 0; e < module.Exports.Count; e++)
+            {
+                string export = module.Exports[e];
+                if (!map.ContainsKey(export))
+                    map[export] = modulePath;
+            }
+        }
+
+        return map;
+    }
+
+    private static string NormalizeRelativePath(string root, string path)
+    {
+        string fullRoot = Path.GetFullPath(root);
+        string fullPath = Path.GetFullPath(path);
+        string relative = Path.GetRelativePath(fullRoot, fullPath);
+        return relative.Replace('\\', '/');
     }
 
     private sealed class ModuleLinker

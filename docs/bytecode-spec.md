@@ -1,12 +1,28 @@
 # Bytecode Specification (draft)
 
-Version: 0.8 (2026-02-14)
+Version: 0.9 (2026-02-19)
 
 ## File format
 - Header: "CODE" ASCII (4 bytes) + version byte (0x05) + int32 codeSize + int32 debugCount.
 - Encoding: little-endian integers.
 - Layout: header, then `codeSize` bytes of opcodes/operands, followed by `debugCount` debug entries (ip, line, column; each int32).
 - Produced files should use the `.bytecode` extension.
+
+## Library artifact container (`.codelib`) (baseline)
+- Format: JSON container with schema version 1.
+- Required fields:
+  - `schemaVersion`: `1`
+  - `name`: package name
+  - `version`: package version
+  - `kind`: package kind (currently `library`)
+  - `target`: compile target (`vm-native` or `vm-web`)
+  - `entry`: package entry module path
+  - `bytecode`: base64-encoded `.bytecode` payload
+- Optional fields:
+  - `exports`: export-name to module-path map
+  - `requiredCapabilities`: capability list (`std.*`, `engine.*`)
+- Artifact filename convention: `<package>-<version>-<target>.codelib`.
+- VM execution/disassembly tools may consume `.codelib` by decoding embedded `bytecode`.
 
 ## Stack conventions
 - Operand stack uses IEEE-754 doubles (ints are widened when pushed); strings and objects are boxed.
@@ -71,3 +87,4 @@ Version: 0.8 (2026-02-14)
 - Interface declarations and `implement` mappings remain compile-time metadata in v0.8; interface-typed calls lower to `INTERFACE_CALL` dispatch tables that map runtime type names to method targets.
 - VM caches decoded `INTERFACE_CALL` tables by call-site IP to avoid reparsing dispatch metadata on hot paths.
 - Module imports/exports/package declarations are compile-time only; the linker flattens a module graph into one bytecode unit before VM execution.
+- Package lockfile resolution may reference either manifest paths or `.codelib` artifacts; when a valid artifact exists for target/version, resolver prefers `.codelib`.

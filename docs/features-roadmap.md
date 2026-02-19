@@ -51,7 +51,7 @@ Legend:
 | `[~]` | Modules/imports | Import syntax & package declarations | `import Name [as Alias] from \"path\";` + `package Name;` implemented; package namespace semantics still minimal |
 | `[~]` | Modules/imports | Package search paths/stdlib layout/versioning | Relative-path + `lib/` ancestor search implemented; stdlib layout/versioning still deferred |
 | `[x]` | Modules/imports | Package manifest parser/validator (`code.package.json`) | Implemented baseline schema v1 validation + target/capability checks + target override path validation |
-| `[!]` | Modules/imports | Package lockfile + resolver (`code.lock.json`) | Target-aware dependency resolution and reproducible graph pinning planned |
+| `[x]` | Modules/imports | Package lockfile + resolver (`code.lock.json`) | Implemented baseline local resolver (workspace `packages/` search), semver range checks (`x.y.z`, `^x.y.z`), deterministic lockfile emission with integrity hashes |
 | `[!]` | Modules/imports | Library artifact format (`.codelib`) | Package build/load pipeline for reusable libraries |
 | `[x]` | Modules/imports | Package declarations | `package Name;` parsing + module-level validation (single declaration, ordered before imports/declarations) |
 | `[x]` | Modules/imports | Module-scope symbol conflict checks | Detect duplicate top-level declarations and import-binding collisions within a module |
@@ -88,7 +88,7 @@ Legend:
 | `[~]` | Testing | Object-model fuzz/property domains | Constructor/field mutation/member access invariants |
 
 ## Priority Rollup (benefit/effort)
-- High (`[!]`): interface/dynamic dispatch model, type system/codegen polish (frame sizing, flow/return analysis), testing expansion, error propagation semantics, host ABI + package resolver + web VM target.
+- High (`[!]`): interface/dynamic dispatch model, type system/codegen polish (frame sizing, flow/return analysis), testing expansion, error propagation semantics, host ABI + web VM target.
 - Medium (`[~]`): record semantics, constant pool, optimizer expansion, stdlib basics, tooling polish, engine core/adapters and cross-target parity.
 - Low (`[_]`): interfaces runtime dispatch, REPL, future stdlib/versioning, long-term runtime lifecycle strategy, remote package registry.
 

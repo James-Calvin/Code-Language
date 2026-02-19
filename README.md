@@ -12,7 +12,7 @@ A tiny experimental programming language with a stack-based bytecode VM and a C#
 - Expressions: arithmetic (including `%`), comparisons, logical `and/or/not`, enhanced assignments (`+=`, `-=`, `*=`, `/=`, `%=` and postfix `++/--`), string interpolation and concatenation
 - Functions with CALL/RET, locals, return (implicit 0)
 - File modules: `export` + imports (`import Name [as Alias] from "path";`, `import { A, B as C } from "path";`) with recursive linking and `lib/` search
-- Package manifest baseline: nearest `code.package.json` is parsed/validated during module compile (schema v1, targets, host capabilities, overrides)
+- Package manifest + lockfile baseline: nearest `code.package.json` is parsed/validated during module compile; local dependency graph resolves and `code.lock.json` is generated
 - Runtime diagnostics: bytecode debug map → line/column stack traces
 - Error objects: `panic <expr>;` emits a `UserError` with call stack
 
@@ -73,6 +73,7 @@ Test harness covers VM ops, compiler integration (print, arithmetic, functions, 
 - Grouped/selective imports: `import { add, sub as minus } from "math.code";`
 - Package declarations: optional `package Name;` at top of module (before imports/declarations)
 - Package manifest: optional `code.package.json` (nearest ancestor) with validated fields (`schemaVersion`, `name`, `version`, `kind`, `entry`, optional `targets`, `targetOverrides`, `hostAbi.requires`, deps maps)
+- Lockfile: `code.lock.json` is written in the package root during compile when a manifest is present (schema v1, target, resolved package list with integrity hashes)
 - Import resolution: importing file directory first, then discovered ancestor `lib/` folders
 - Alias imports support exported functions, objects, and interfaces
 - Module tooling flags: `--dump-module-graph [outputPath]`, `--module-graph-format <text|json|dot>`, and `--trace-linker`

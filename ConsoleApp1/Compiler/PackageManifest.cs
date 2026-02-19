@@ -78,9 +78,7 @@ static class PackageManifestLoader
             string candidate = System.IO.Path.Combine(directory, PackageManifest.FileName);
             if (File.Exists(candidate))
             {
-                var manifest = Load(candidate);
-                ValidateForTarget(manifest, target);
-                return manifest;
+                return LoadFromPath(candidate, target);
             }
             directory = Directory.GetParent(directory)?.FullName;
         }
@@ -88,7 +86,14 @@ static class PackageManifestLoader
         return null;
     }
 
-    private static PackageManifest Load(string manifestPath)
+    public static PackageManifest LoadFromPath(string manifestPath, CompileTarget target)
+    {
+        var manifest = Parse(manifestPath);
+        ValidateForTarget(manifest, target);
+        return manifest;
+    }
+
+    private static PackageManifest Parse(string manifestPath)
     {
         JsonDocument document;
         try

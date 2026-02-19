@@ -259,6 +259,11 @@ static class ModuleCompiler
             TraceLinker = baseOptions.TraceLinker,
             TraceWriter = baseOptions.TraceWriter
         };
+        if (manifest is not null)
+        {
+            Action<string>? traceWriter = compileOptions.TraceLinker ? compileOptions.TraceWriter : null;
+            _ = PackageDependencyResolver.ResolveAndWriteLockfile(manifest, compileOptions.Target, traceWriter);
+        }
         var linker = new ModuleLinker(projectRoot, fullEntryPath, compileOptions);
         var linkResult = linker.Link(fullEntryPath);
         var typeChecker = new TypeChecker();

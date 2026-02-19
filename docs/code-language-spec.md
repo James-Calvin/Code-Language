@@ -374,6 +374,8 @@ function method(string name) {
   - Manifest schema v1 is validated (`schemaVersion`, `name`, `version`, `kind`, `entry`; optional exports/deps/target overrides/host capabilities).
   - Optional `targets` must include selected compile target; optional `hostAbi.requires` capabilities must be valid for the target.
   - Manifest `entry` and target override entry paths must reference existing `.code` files.
+  - Declared `dependencies` are resolved from local package folders and must satisfy manifest version ranges (`x.y.z` exact or `^x.y.z` caret).
+  - Compiler emits `code.lock.json` in the package root with deterministic target-specific resolution results.
 
 ```code
 import anotherIdentifier from "FilePath";
@@ -453,6 +455,9 @@ real result3 = errorExample(0) on error panic("Error message {error}");
   - Compiler merges inferred capabilities with manifest-declared `hostAbi.requires`.
   - Build fails if the selected target does not support an inferred capability (e.g., `std.fs` on `vm-web`).
   - Module graph outputs include `target` and inferred `requiredCapabilities`.
+- Dependency lockfile behavior (current baseline):
+  - If a manifest exists, compile resolves `dependencies` and writes/updates `code.lock.json`.
+  - Lockfile includes `schemaVersion`, selected `target`, and package entries (`name`, `version`, `resolved`, `integrity`).
 - Object construction and field access lower to dedicated VM opcodes (`NEW_OBJECT`, `GET_FIELD`, `SET_FIELD`).
 - Arrays: literals `{...}` create arrays; typed declarations `array<integer> xs = {1,2,3};`; dynamic `new array<integer>(n)` requires a size; `xs.length` yields length; `foreach` iterates arrays by element.
 

@@ -176,7 +176,7 @@ Legend:
 | `[x]` | Phase 1 | Target flag + capability validation | Implemented: `--target vm-native|vm-web` with compile-time capability matrix checks |
 | `[!]` | Phase 1 | Host ABI v1 baseline | runtime host binding table + `HostBindingError` path |
 | `[x]` | Phase 2 | Manifest parser + validation | Implemented baseline: nearest-manifest discovery, schema v1 validation, target and host capability checks |
-| `[!]` | Phase 2 | Dependency resolver + lockfile | deterministic graph + `code.lock.json` generation |
+| `[x]` | Phase 2 | Dependency resolver + lockfile | Implemented baseline local resolver + deterministic `code.lock.json` generation (target-scoped) |
 | `[!]` | Phase 2 | Library artifact format (`.codelib`) | package build/load in linker for both targets |
 | `[~]` | Phase 3 | Stdlib as packages | `std.core`, `std.math`, `std.time`, `std.io` packaged and importable |
 | `[!]` | Phase 4 | Web VM target runtime | VM in web runtime (WASM or JS host), bytecode loader, browser host bindings |
@@ -190,7 +190,7 @@ Legend:
 1. [x] Add `--target` and target metadata threading through compile/link pipeline.
 2. [x] Implement host capability checker (compile-time inference from package/import usage).
 3. [x] Implement `code.package.json` parser + validator.
-4. Implement local dependency resolver + `code.lock.json`.
+4. [x] Implement local dependency resolver + `code.lock.json`.
 5. Add `.codelib` read/write and linker support.
 6. Add first host ABI bindings (`std.time.now_ms`, `std.io.print`) for both `vm-native` and `vm-web`.
 

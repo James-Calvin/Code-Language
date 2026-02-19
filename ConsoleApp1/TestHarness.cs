@@ -518,6 +518,16 @@ export function<integer> add(integer a, integer b) {
                     ["main.code"] = "print(7);",
                     ["main_web.code"] = "print(8);",
                     ["math.code"] = "export function<integer> noop() { return 0; }",
+                    ["packages/std.core/code.package.json"] =
+@"{
+  ""schemaVersion"": 1,
+  ""name"": ""std.core"",
+  ""version"": ""0.1.3"",
+  ""kind"": ""library"",
+  ""entry"": ""src/main.code"",
+  ""targets"": [""vm-native"", ""vm-web""]
+}",
+                    ["packages/std.core/src/main.code"] = "print(0);",
                 },
                 "main.code",
                 "7\n"
@@ -664,6 +674,48 @@ export function<string> readText() { return ""ok""; }",
                 },
                 "main.code",
                 "7\n"
+            )
+        };
+        var moduleLockfileCases = new List<(string Name, Compiler.CompileTarget Target, IReadOnlyDictionary<string, string> Files, string Entry, string[] LockContains)>
+        {
+            (
+                "module-lockfile-generated",
+                Compiler.CompileTarget.VmNative,
+                new Dictionary<string, string>
+                {
+                    ["code.package.json"] =
+@"{
+  ""schemaVersion"": 1,
+  ""name"": ""demo.app"",
+  ""version"": ""0.1.0"",
+  ""kind"": ""application"",
+  ""entry"": ""main.code"",
+  ""dependencies"": {
+    ""math.core"": ""^1.0.0""
+  }
+}",
+                    ["main.code"] = "print(1);",
+                    ["packages/math.core/code.package.json"] =
+@"{
+  ""schemaVersion"": 1,
+  ""name"": ""math.core"",
+  ""version"": ""1.2.0"",
+  ""kind"": ""library"",
+  ""entry"": ""src/main.code""
+}",
+                    ["packages/math.core/src/main.code"] = "print(0);",
+                },
+                "main.code",
+                new[]
+                {
+                    "\"schemaVersion\": 1",
+                    "\"target\": \"vm-native\"",
+                    "\"name\": \"demo.app\"",
+                    "\"name\": \"math.core\"",
+                    "\"version\": \"1.2.0\"",
+                    "\"resolved\": \"packages/math.core/code.package.json\"",
+                    "\"integrity\": \"sha256-"
+                }
             )
         };
         // Expected error cases
@@ -948,6 +1000,35 @@ print(add(2, 3));",
                 "main.code",
                 "Invalid JSON"
             ),
+            (
+                "module-lockfile-version-mismatch",
+                new Dictionary<string, string>
+                {
+                    ["code.package.json"] =
+@"{
+  ""schemaVersion"": 1,
+  ""name"": ""demo.app"",
+  ""version"": ""0.1.0"",
+  ""kind"": ""application"",
+  ""entry"": ""main.code"",
+  ""dependencies"": {
+    ""math.core"": ""^2.0.0""
+  }
+}",
+                    ["main.code"] = "print(1);",
+                    ["packages/math.core/code.package.json"] =
+@"{
+  ""schemaVersion"": 1,
+  ""name"": ""math.core"",
+  ""version"": ""1.2.0"",
+  ""kind"": ""library"",
+  ""entry"": ""src/main.code""
+}",
+                    ["packages/math.core/src/main.code"] = "print(0);",
+                },
+                "main.code",
+                "does not satisfy version range '^2.0.0'"
+            ),
         };
         var moduleTargetErrorCases = new List<(string Name, Compiler.CompileTarget Target, IReadOnlyDictionary<string, string> Files, string Entry, string ErrorContains)>
         {
@@ -1131,6 +1212,27 @@ export function<string> readText() { return ""ok""; }",
                 {
                     failures++;
                     Console.WriteLine($"[FAIL] {name}: expected '{Escape(expectNorm)}' got '{Escape(output)}'");
+                }
+                else
+                {
+                    Console.WriteLine($"[PASS] {name}");
+                }
+            }
+            catch (Exception ex)
+            {
+                failures++;
+                Console.WriteLine($"[FAIL] {name}: threw {ex.GetType().Name} - {ex.Message}");
+            }
+        }
+
+        foreach (var (name, target, files, entry, lockContains) in moduleLockfileCases)
+        {
+            try
+            {
+                string lockfile = CompileModulesAndReadLockfile(files, entry, target);
+                if (!ContainsAll(name, "lockfile", lockfile, lockContains))
+                {
+                    failures++;
                 }
                 else
                 {
@@ -1520,6 +1622,41 @@ print(sum);";
                 result.Graph.ToJsonString(tempRoot),
                 result.Graph.ToDotString(tempRoot),
                 string.Join("\n", traceLines));
+        }
+        finally
+        {
+            try { Directory.Delete(tempRoot, recursive: true); }
+            catch { }
+        }
+    }
+
+    private static string CompileModulesAndReadLockfile(
+        IReadOnlyDictionary<string, string> files,
+        string entryRelativePath,
+        Compiler.CompileTarget target = Compiler.CompileTarget.VmNative)
+    {
+        string tempRoot = Path.Combine(Path.GetTempPath(), "code-mod-tests-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+        try
+        {
+            foreach (var pair in files)
+            {
+                string fullPath = Path.Combine(tempRoot, pair.Key);
+                string? dir = Path.GetDirectoryName(fullPath);
+                if (!string.IsNullOrEmpty(dir))
+                    Directory.CreateDirectory(dir);
+                File.WriteAllText(fullPath, pair.Value);
+            }
+
+            string entryPath = Path.Combine(tempRoot, entryRelativePath);
+            var options = new Compiler.ModuleCompileOptions { Target = target };
+            _ = Compiler.ModuleCompiler.CompileFromFile(entryPath, options);
+
+            string lockPath = Path.Combine(tempRoot, "code.lock.json");
+            if (!File.Exists(lockPath))
+                throw new Exception("Expected code.lock.json to be generated");
+
+            return File.ReadAllText(lockPath);
         }
         finally
         {

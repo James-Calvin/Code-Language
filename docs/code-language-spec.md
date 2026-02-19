@@ -369,6 +369,11 @@ function method(string name) {
   - at most one per module;
   - must appear before imports/declarations;
   - package names are currently metadata only (namespace enforcement deferred).
+- Package manifest baseline (current implementation):
+  - Compiler auto-discovers nearest ancestor `code.package.json` from the entry module.
+  - Manifest schema v1 is validated (`schemaVersion`, `name`, `version`, `kind`, `entry`; optional exports/deps/target overrides/host capabilities).
+  - Optional `targets` must include selected compile target; optional `hostAbi.requires` capabilities must be valid for the target.
+  - Manifest `entry` and target override entry paths must reference existing `.code` files.
 
 ```code
 import anotherIdentifier from "FilePath";
@@ -445,6 +450,7 @@ real result3 = errorExample(0) on error panic("Error message {error}");
 - Compile target selection is available via `--target vm-native|vm-web` (default: `vm-native`).
 - Target capability validation (current baseline):
   - Compiler infers capability groups from module package/import namespaces (`std.*`, `engine.*`).
+  - Compiler merges inferred capabilities with manifest-declared `hostAbi.requires`.
   - Build fails if the selected target does not support an inferred capability (e.g., `std.fs` on `vm-web`).
   - Module graph outputs include `target` and inferred `requiredCapabilities`.
 - Object construction and field access lower to dedicated VM opcodes (`NEW_OBJECT`, `GET_FIELD`, `SET_FIELD`).

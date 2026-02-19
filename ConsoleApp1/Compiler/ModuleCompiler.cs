@@ -10,6 +10,7 @@ namespace ConsoleApp1.Compiler;
 sealed class ModuleCompileOptions
 {
     public CompileTarget Target { get; init; } = CompileTarget.VmNative;
+    public PackageManifest? PackageManifest { get; init; }
     public bool TraceLinker { get; init; }
     public Action<string>? TraceWriter { get; init; }
 }
@@ -248,8 +249,16 @@ static class ModuleCompiler
     public static ModuleCompileResult CompileFromFileWithMetadata(string entryPath, ModuleCompileOptions? options = null)
     {
         string fullEntryPath = Path.GetFullPath(entryPath);
-        string projectRoot = Directory.GetCurrentDirectory();
-        var compileOptions = options ?? new ModuleCompileOptions();
+        var baseOptions = options ?? new ModuleCompileOptions();
+        var manifest = baseOptions.PackageManifest ?? PackageManifestLoader.TryLoadNearest(fullEntryPath, baseOptions.Target);
+        string projectRoot = manifest?.PackageRoot ?? Directory.GetCurrentDirectory();
+        var compileOptions = new ModuleCompileOptions
+        {
+            Target = baseOptions.Target,
+            PackageManifest = manifest,
+            TraceLinker = baseOptions.TraceLinker,
+            TraceWriter = baseOptions.TraceWriter
+        };
         var linker = new ModuleLinker(projectRoot, fullEntryPath, compileOptions);
         var linkResult = linker.Link(fullEntryPath);
         var typeChecker = new TypeChecker();
@@ -292,6 +301,7 @@ static class ModuleCompiler
             _order.Clear();
             _edges.Clear();
             _requiredCapabilities.Clear();
+            RegisterManifestCapabilities();
 
             Trace($"Link entry module {FormatGraphPath(entryPath)}");
             Visit(entryPath);
@@ -563,26 +573,23 @@ static class ModuleCompiler
                 sourceToken.Column);
         }
 
-        private static readonly HashSet<string> KnownCapabilities = new(StringComparer.Ordinal)
+        private void RegisterManifestCapabilities()
         {
-            "std.time",
-            "std.io",
-            "std.fs",
-            "engine.window",
-            "engine.input",
-            "engine.gfx",
-            "engine.audio"
-        };
+            if (_options.PackageManifest is null)
+                return;
 
-        private static readonly HashSet<string> VmWebCapabilities = new(StringComparer.Ordinal)
-        {
-            "std.time",
-            "std.io",
-            "engine.window",
-            "engine.input",
-            "engine.gfx",
-            "engine.audio"
-        };
+            var manifest = _options.PackageManifest;
+            Trace($"Load manifest {PackageManifest.FileName} name={manifest.Name} target={_options.Target.ToCliValue()}");
+            for (int i = 0; i < manifest.RequiredCapabilities.Count; i++)
+            {
+                RegisterCapability(
+                    manifest.RequiredCapabilities[i],
+                    manifest.Path,
+                    1,
+                    1,
+                    "manifest hostAbi.requires");
+            }
+        }
 
         private void RegisterCapabilityFromPackage(string? packageName, string modulePath, int line, int column)
         {
@@ -609,7 +616,7 @@ static class ModuleCompiler
         {
             foreach (var capability in _requiredCapabilities.Values.OrderBy(value => value.Capability, StringComparer.Ordinal))
             {
-                if (IsCapabilitySupported(_options.Target, capability.Capability))
+                if (CapabilityCatalog.IsSupported(_options.Target, capability.Capability))
                     continue;
 
                 throw new CompilerException(
@@ -617,16 +624,6 @@ static class ModuleCompiler
                     capability.Line,
                     capability.Column);
             }
-        }
-
-        private static bool IsCapabilitySupported(CompileTarget target, string capability)
-        {
-            return target switch
-            {
-                CompileTarget.VmNative => true,
-                CompileTarget.VmWeb => VmWebCapabilities.Contains(capability),
-                _ => false
-            };
         }
 
         private static bool TryInferCapabilityFromPackage(string? packageName, out string capability)
@@ -643,7 +640,7 @@ static class ModuleCompiler
                 return false;
 
             string candidate = parts[0] + "." + parts[1];
-            if (!KnownCapabilities.Contains(candidate))
+            if (!CapabilityCatalog.IsKnown(candidate))
                 return false;
 
             capability = candidate;
@@ -673,7 +670,7 @@ static class ModuleCompiler
             for (int i = 0; i + 1 < partCount; i++)
             {
                 string candidate = parts[i] + "." + parts[i + 1];
-                if (KnownCapabilities.Contains(candidate))
+                if (CapabilityCatalog.IsKnown(candidate))
                 {
                     capability = candidate;
                     return true;

@@ -50,7 +50,8 @@ Legend:
 | `[~]` | Modules/imports | Exported declarations | `export` implemented for function/object/interface declarations |
 | `[~]` | Modules/imports | Import syntax & package declarations | `import Name [as Alias] from \"path\";` + `package Name;` implemented; package namespace semantics still minimal |
 | `[~]` | Modules/imports | Package search paths/stdlib layout/versioning | Relative-path + `lib/` ancestor search implemented; stdlib layout/versioning still deferred |
-| `[!]` | Modules/imports | Package manifest + lockfile (`code.package.json`, `code.lock.json`) | Target-aware dependency resolution and reproducible graph pinning planned |
+| `[x]` | Modules/imports | Package manifest parser/validator (`code.package.json`) | Implemented baseline schema v1 validation + target/capability checks + target override path validation |
+| `[!]` | Modules/imports | Package lockfile + resolver (`code.lock.json`) | Target-aware dependency resolution and reproducible graph pinning planned |
 | `[!]` | Modules/imports | Library artifact format (`.codelib`) | Package build/load pipeline for reusable libraries |
 | `[x]` | Modules/imports | Package declarations | `package Name;` parsing + module-level validation (single declaration, ordered before imports/declarations) |
 | `[x]` | Modules/imports | Module-scope symbol conflict checks | Detect duplicate top-level declarations and import-binding collisions within a module |

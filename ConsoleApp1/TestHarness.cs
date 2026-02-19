@@ -492,6 +492,35 @@ export function<integer> add(integer a, integer b) {
                 },
                 "main.code",
                 "3\n"
+            ),
+            (
+                "module-package-manifest-valid",
+                new Dictionary<string, string>
+                {
+                    ["code.package.json"] =
+@"{
+  ""schemaVersion"": 1,
+  ""name"": ""demo.app"",
+  ""version"": ""0.1.0"",
+  ""kind"": ""application"",
+  ""entry"": ""main.code"",
+  ""exports"": { ""math"": ""math.code"" },
+  ""targets"": [""vm-native"", ""vm-web""],
+  ""dependencies"": { ""std.core"": ""^0.1.0"" },
+  ""devDependencies"": { ""test.assert"": ""^0.1.0"" },
+  ""targetOverrides"": {
+    ""vm-web"": { ""entry"": ""main_web.code"" }
+  },
+  ""hostAbi"": {
+    ""requires"": [""std.time""]
+  }
+}",
+                    ["main.code"] = "print(7);",
+                    ["main_web.code"] = "print(8);",
+                    ["math.code"] = "export function<integer> noop() { return 0; }",
+                },
+                "main.code",
+                "7\n"
             )
         };
         var moduleToolingCases = new List<(string Name, IReadOnlyDictionary<string, string> Files, string Entry, string[] GraphContains, string[] JsonContains, string[] DotContains, string[] TraceContains)>
@@ -539,6 +568,50 @@ export function<integer> sub(integer a, integer b) { return a - b; }",
                     "Resolve import { add, sub as minus } from \"math.code\" in main.code -> math.code",
                     "Linked main.code"
                 }
+            ),
+            (
+                "module-graph-manifest-capabilities",
+                new Dictionary<string, string>
+                {
+                    ["code.package.json"] =
+@"{
+  ""schemaVersion"": 1,
+  ""name"": ""demo.app"",
+  ""version"": ""0.1.0"",
+  ""kind"": ""application"",
+  ""entry"": ""main.code"",
+  ""hostAbi"": {
+    ""requires"": [""std.time"", ""std.io""]
+  }
+}",
+                    ["main.code"] = "print(1);",
+                },
+                "main.code",
+                new[]
+                {
+                    "Entry: main.code",
+                    "Target: vm-native",
+                    "Capabilities: std.io, std.time"
+                },
+                new[]
+                {
+                    "\"entry\": \"main.code\"",
+                    "\"target\": \"vm-native\"",
+                    "\"requiredCapabilities\": [",
+                    "\"std.io\"",
+                    "\"std.time\""
+                },
+                new[]
+                {
+                    "digraph ModuleGraph {",
+                    "main.code"
+                },
+                new[]
+                {
+                    "Load manifest code.package.json name=demo.app target=vm-native",
+                    "Capability required: std.time",
+                    "Capability required: std.io"
+                }
             )
         };
         var moduleTargetCases = new List<(string Name, Compiler.CompileTarget Target, IReadOnlyDictionary<string, string> Files, string Entry, string Expected)>
@@ -568,6 +641,29 @@ export function<string> readText() { return ""ok""; }",
                 },
                 "main.code",
                 "ok\n"
+            ),
+            (
+                "module-target-web-manifest-parse-overrides",
+                Compiler.CompileTarget.VmWeb,
+                new Dictionary<string, string>
+                {
+                    ["code.package.json"] =
+@"{
+  ""schemaVersion"": 1,
+  ""name"": ""demo.app"",
+  ""version"": ""0.1.0"",
+  ""kind"": ""application"",
+  ""entry"": ""main.code"",
+  ""targets"": [""vm-native"", ""vm-web""],
+  ""targetOverrides"": {
+    ""vm-web"": { ""entry"": ""main_web.code"" }
+  }
+}",
+                    ["main.code"] = "print(7);",
+                    ["main_web.code"] = "print(8);",
+                },
+                "main.code",
+                "7\n"
             )
         };
         // Expected error cases
@@ -826,6 +922,32 @@ print(add(2, 3));",
                 "main.code",
                 "Import chain: main.code -> a.code -> b.code"
             ),
+            (
+                "module-manifest-missing-field",
+                new Dictionary<string, string>
+                {
+                    ["code.package.json"] =
+@"{
+  ""schemaVersion"": 1,
+  ""version"": ""0.1.0"",
+  ""kind"": ""application"",
+  ""entry"": ""main.code""
+}",
+                    ["main.code"] = "print(1);",
+                },
+                "main.code",
+                "Missing required field 'name'"
+            ),
+            (
+                "module-manifest-invalid-json",
+                new Dictionary<string, string>
+                {
+                    ["code.package.json"] = "{ invalid json }",
+                    ["main.code"] = "print(1);",
+                },
+                "main.code",
+                "Invalid JSON"
+            ),
         };
         var moduleTargetErrorCases = new List<(string Name, Compiler.CompileTarget Target, IReadOnlyDictionary<string, string> Files, string Entry, string ErrorContains)>
         {
@@ -841,6 +963,46 @@ export function<string> readText() { return ""ok""; }",
                 },
                 "main.code",
                 "Capability 'std.fs' is not available for target 'vm-web'"
+            ),
+            (
+                "module-target-web-rejects-manifest-unsupported-target",
+                Compiler.CompileTarget.VmWeb,
+                new Dictionary<string, string>
+                {
+                    ["code.package.json"] =
+@"{
+  ""schemaVersion"": 1,
+  ""name"": ""demo.native"",
+  ""version"": ""0.1.0"",
+  ""kind"": ""application"",
+  ""entry"": ""main.code"",
+  ""targets"": [""vm-native""]
+}",
+                    ["main.code"] = "print(1);",
+                },
+                "main.code",
+                "does not support target 'vm-web'"
+            ),
+            (
+                "module-target-web-rejects-manifest-host-requirement",
+                Compiler.CompileTarget.VmWeb,
+                new Dictionary<string, string>
+                {
+                    ["code.package.json"] =
+@"{
+  ""schemaVersion"": 1,
+  ""name"": ""demo.fs"",
+  ""version"": ""0.1.0"",
+  ""kind"": ""application"",
+  ""entry"": ""main.code"",
+  ""hostAbi"": {
+    ""requires"": [""std.fs""]
+  }
+}",
+                    ["main.code"] = "print(1);",
+                },
+                "main.code",
+                "hostAbi.requires"
             )
         };
 

@@ -469,6 +469,9 @@ real result3 = errorExample(0) on error panic("Error message {error}");
   - `mono_ns() -> integer` (monotonic process-relative nanoseconds)
   - `mono_ticks() -> integer`
   - `mono_ticks_per_second() -> integer`
+  - These currently lower through host ABI symbols (`std.time.*`) rather than dedicated language-level stdlib modules.
+- Print lowering (current baseline):
+  - `print(expr);` lowers through host ABI symbol `std.io.print`.
   - Note: high-range timing values may eventually need dedicated 64-bit numeric/value support for full precision guarantees.
 - Object construction and field access lower to dedicated VM opcodes (`NEW_OBJECT`, `GET_FIELD`, `SET_FIELD`).
 - Arrays: literals `{...}` create arrays; typed declarations `array<integer> xs = {1,2,3};`; dynamic `new array<integer>(n)` requires a size; `xs.length` yields length; `foreach` iterates arrays by element.

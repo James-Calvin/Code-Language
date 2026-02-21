@@ -299,7 +299,8 @@ sealed class CodeGenerator
 
             case PrintStmt p:
                 Emit(p.Value);
-                _builder.Print();
+                _builder.HostCall("std.io.print", 1);
+                _builder.Pop(); // host calls always return a value; discard print's void-like return
                 break;
 
             case PanicStmt p:
@@ -944,19 +945,19 @@ sealed class CodeGenerator
         switch (call.Callee.Lexeme)
         {
             case "unix_ms":
-                _builder.TimeUnixMs();
+                _builder.HostCall("std.time.unix_ms", 0);
                 return true;
             case "unix_us":
-                _builder.TimeUnixUs();
+                _builder.HostCall("std.time.unix_us", 0);
                 return true;
             case "mono_ns":
-                _builder.TimeMonoNs();
+                _builder.HostCall("std.time.mono_ns", 0);
                 return true;
             case "mono_ticks":
-                _builder.TimeMonoTicks();
+                _builder.HostCall("std.time.mono_ticks", 0);
                 return true;
             case "mono_ticks_per_second":
-                _builder.TimeMonoTicksPerSecond();
+                _builder.HostCall("std.time.mono_ticks_per_second", 0);
                 return true;
             default:
                 return false;

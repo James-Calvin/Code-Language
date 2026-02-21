@@ -73,6 +73,7 @@ Version: 0.9 (2026-02-19)
 | 0x27 | TIME_MONO_NS | — | +1 | push process-relative monotonic nanoseconds |
 | 0x28 | TIME_MONO_TICKS | — | +1 | push runtime monotonic tick counter |
 | 0x29 | TIME_MONO_TICKS_PER_SECOND | — | +1 | push monotonic tick frequency |
+| 0x2A | HOST_CALL | string symbol, int32 argc | -argc+1 | invoke host binding by symbol; pushes one return value (void-like calls return 0) |
 | 0xFF | HALT | — | 0 | stop execution |
 
 ## Planned additions
@@ -93,3 +94,4 @@ Version: 0.9 (2026-02-19)
 - VM caches decoded `INTERFACE_CALL` tables by call-site IP to avoid reparsing dispatch metadata on hot paths.
 - Module imports/exports/package declarations are compile-time only; the linker flattens a module graph into one bytecode unit before VM execution.
 - Package lockfile resolution may reference either manifest paths or `.codelib` artifacts; when a valid artifact exists for target/version, resolver prefers `.codelib`.
+- Current compiler lowering routes `print(...)` statements and time intrinsics through `HOST_CALL` symbols (`std.io.print`, `std.time.*`).

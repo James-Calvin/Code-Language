@@ -91,12 +91,19 @@ static class Disassembler
                 case OpCode.NewObject:
                 case OpCode.GetField:
                 case OpCode.SetField:
+                case OpCode.HostCall:
                     if (ip + 4 > codeEnd) throw new InvalidOperationException("Truncated string length");
                     int len = BitConverter.ToInt32(bytes, ip); ip += 4;
                     if (ip + len > codeEnd) throw new InvalidOperationException("Truncated string data");
                     string str = Encoding.UTF8.GetString(bytes, ip, len);
                     ip += len;
                     sb.AppendFormat(" \"{0}\"", str);
+                    if (op == OpCode.HostCall)
+                    {
+                        if (ip + 4 > codeEnd) throw new InvalidOperationException("Truncated host call arg count");
+                        int argc = BitConverter.ToInt32(bytes, ip); ip += 4;
+                        sb.AppendFormat(" argc={0}", argc);
+                    }
                     break;
                 default:
                     throw new InvalidOperationException($"Unknown opcode {op} at {offset}");

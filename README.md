@@ -14,6 +14,7 @@ A tiny experimental programming language with a stack-based bytecode VM and a C#
 - Functions with CALL/RET, locals, return (implicit 0)
 - File modules: `export` + imports (`import Name [as Alias] from "path";`, `import { A, B as C } from "path";`) with recursive linking and `lib/` search
 - Package manifest + lockfile baseline: nearest `code.package.json` is parsed/validated during module compile; local dependency graph resolves and `code.lock.json` is generated
+- Host ABI baseline: compiler emits `HOST_CALL` for `print`/time intrinsics (`std.io.print`, `std.time.*`), VM resolves through runtime host bindings
 - Runtime diagnostics: bytecode debug map → line/column stack traces
 - Error objects: `panic <expr>;` emits a `UserError` with call stack
 

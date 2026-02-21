@@ -49,6 +49,7 @@ enum OpCode : byte
     TimeMonoNs = 0x27,
     TimeMonoTicks = 0x28,
     TimeMonoTicksPerSecond = 0x29,
+    HostCall = 0x2A,
     Halt = 0xFF
 }
 
@@ -62,6 +63,7 @@ sealed class Vm
     private readonly Stack<(int returnIp, int callIp, object[] locals)> _callStack = new();
     private readonly Dictionary<int, (int line, int column)> _debug = new();
     private readonly Dictionary<int, InterfaceDispatchTable> _interfaceDispatchCache = new();
+    private readonly Dictionary<string, HostBinding> _hostBindings = new(StringComparer.Ordinal);
     private readonly int _codeEnd;
     private readonly long _monoOriginTicks;
     private const long UnixEpochTicks = 621355968000000000L;
@@ -75,6 +77,7 @@ sealed class Vm
         _locals = new object[initialLocals];
         _output = output ?? Console.Out;
         _monoOriginTicks = Stopwatch.GetTimestamp();
+        InitializeDefaultHostBindings();
 
         int debugOffset = _codeEnd;
         for (int i = 0; i < header.DebugCount; i++)
@@ -513,6 +516,34 @@ sealed class Vm
                     _stack.Push((long)Stopwatch.Frequency);
                     break;
 
+                case OpCode.HostCall:
+                {
+                    string symbol = ReadStringOperand();
+                    int argCount = ReadIntOperand();
+                    if (!_hostBindings.TryGetValue(symbol, out var binding))
+                    {
+                        ThrowRuntime($"Missing host binding '{symbol}'", type: "HostBindingError");
+                        break;
+                    }
+
+                    if (binding.ArgCount != argCount)
+                    {
+                        ThrowRuntime(
+                            $"Host binding '{symbol}' expects {binding.ArgCount} args, got {argCount}",
+                            type: "HostBindingError");
+                        break;
+                    }
+
+                    EnsureStack(argCount);
+                    var args = new object?[argCount];
+                    for (int i = argCount - 1; i >= 0; i--)
+                        args[i] = _stack.Pop();
+
+                    object? result = binding.Handler(args);
+                    _stack.Push(result ?? 0);
+                    break;
+                }
+
                 case OpCode.Halt:
                     return;
 
@@ -532,6 +563,31 @@ sealed class Vm
 
     private static bool IsNumber(object v) => v is int or long or double;
     private static double ToDouble(object v) => v is double d ? d : Convert.ToDouble(v);
+
+    private sealed record HostBinding(int ArgCount, Func<object?[], object?> Handler);
+
+    private void InitializeDefaultHostBindings()
+    {
+        _hostBindings["std.io.print"] = new HostBinding(1, args =>
+        {
+            var value = args[0];
+            if (value is VmError err)
+                _output.WriteLine(err.ToString());
+            else
+                _output.WriteLine(value);
+            return 0;
+        });
+
+        _hostBindings["std.time.unix_ms"] = new HostBinding(0, _ => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+        _hostBindings["std.time.unix_us"] = new HostBinding(0, _ => (DateTime.UtcNow.Ticks - UnixEpochTicks) / 10);
+        _hostBindings["std.time.mono_ns"] = new HostBinding(0, _ =>
+        {
+            long elapsedTicks = Stopwatch.GetTimestamp() - _monoOriginTicks;
+            return (long)(elapsedTicks * (1_000_000_000.0 / Stopwatch.Frequency));
+        });
+        _hostBindings["std.time.mono_ticks"] = new HostBinding(0, _ => Stopwatch.GetTimestamp());
+        _hostBindings["std.time.mono_ticks_per_second"] = new HostBinding(0, _ => (long)Stopwatch.Frequency);
+    }
 
     private object throwRuntimeType(string message)
     {

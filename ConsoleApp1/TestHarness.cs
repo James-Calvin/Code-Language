@@ -67,7 +67,11 @@ internal static class TestHarness
                 .Label("add")
                     .Load(0).Load(1).Add().Ret()
                 .ToArray(),
-                "5" + nl)
+                "5" + nl),
+
+            ("hostcall-print", BytecodeBuilder.New()
+                .PushString("hi").HostCall("std.io.print", 1).Pop().Halt().ToArray(),
+                "hi" + nl)
         };
 
         int failures = 0;

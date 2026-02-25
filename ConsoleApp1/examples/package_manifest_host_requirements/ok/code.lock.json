@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "target": "vm-web",
+  "packages": [
+    {
+      "name": "examples.host.requirements.ok",
+      "version": "0.1.0",
+      "resolved": "code.package.json",
+      "integrity": "sha256-1344b2ecfe55a519f480240a43e603220591b5dc02e5d80f2d3a8b4752720203"
+    }
+  ]
+}

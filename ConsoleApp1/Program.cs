@@ -111,7 +111,7 @@ internal static class Program
             string outputPath = outPath ?? Path.ChangeExtension(codePath, ".bytecode");
             CompileToFile(codePath, outputPath, dumpModuleGraph, moduleGraphOutputPath, moduleGraphFormat, traceLinker, compileTarget);
             if (!compileOnly)
-                RunBytecode(outputPath);
+                RunBytecode(outputPath, MapHostTarget(compileTarget));
             return;
         }
 
@@ -120,13 +120,13 @@ internal static class Program
 
         if (bytecodePath != null)
         {
-            RunBytecode(bytecodePath);
+            RunBytecode(bytecodePath, MapHostTarget(compileTarget));
             return;
         }
 
         if (libraryPath != null)
         {
-            RunBytecode(libraryPath);
+            RunBytecode(libraryPath, MapHostTarget(compileTarget));
             return;
         }
 
@@ -234,7 +234,7 @@ internal static class Program
         };
     }
 
-    private static void RunBytecode(string path)
+    private static void RunBytecode(string path, VmHostTarget hostTarget)
     {
         if (!path.EndsWith(".bytecode", StringComparison.OrdinalIgnoreCase) &&
             !path.EndsWith(".codelib", StringComparison.OrdinalIgnoreCase))
@@ -249,7 +249,7 @@ internal static class Program
         }
 
         var bytes = LoadBytecodePayload(path);
-        var vm = new Vm(bytes);
+        var vm = new Vm(bytes, hostTarget: hostTarget);
         try
         {
             vm.Run();
@@ -288,6 +288,13 @@ internal static class Program
             return CodeLibraryArtifactFormat.Read(path).Bytecode;
         return File.ReadAllBytes(path);
     }
+
+    private static VmHostTarget MapHostTarget(CompileTarget target) => target switch
+    {
+        CompileTarget.VmNative => VmHostTarget.Native,
+        CompileTarget.VmWeb => VmHostTarget.Web,
+        _ => VmHostTarget.Native
+    };
 
     private static void DumpTokens(string path)
     {

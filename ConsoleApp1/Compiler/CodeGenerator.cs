@@ -5,15 +5,6 @@ namespace ConsoleApp1.Compiler;
 
 sealed class CodeGenerator
 {
-    private static readonly HashSet<string> ZeroArgIntrinsics = new(StringComparer.Ordinal)
-    {
-        "unix_ms",
-        "unix_us",
-        "mono_ns",
-        "mono_ticks",
-        "mono_ticks_per_second"
-    };
-
     private readonly BytecodeBuilder _builder = BytecodeBuilder.New();
     private Dictionary<string, int> _locals = new(StringComparer.Ordinal);
     private Dictionary<string, TypeRef> _localDeclaredTypes = new(StringComparer.Ordinal);
@@ -299,7 +290,7 @@ sealed class CodeGenerator
 
             case PrintStmt p:
                 Emit(p.Value);
-                _builder.HostCall("std.io.print", 1);
+                _builder.HostCall(HostAbiCatalog.StdIoPrint.Symbol, HostAbiCatalog.StdIoPrint.Arity);
                 _builder.Pop(); // host calls always return a value; discard print's void-like return
                 break;
 
@@ -937,31 +928,13 @@ sealed class CodeGenerator
 
     private bool TryEmitIntrinsicCall(Call call)
     {
-        if (!ZeroArgIntrinsics.Contains(call.Callee.Lexeme))
+        if (!HostAbiCatalog.TryGetIntrinsic(call.Callee.Lexeme, out var symbol))
             return false;
-        if (call.Arguments.Count != 0)
-            throw new InvalidOperationException($"Intrinsic '{call.Callee.Lexeme}' expects 0 args.");
+        if (call.Arguments.Count != symbol.Arity)
+            throw new InvalidOperationException($"Intrinsic '{call.Callee.Lexeme}' expects {symbol.Arity} args.");
 
-        switch (call.Callee.Lexeme)
-        {
-            case "unix_ms":
-                _builder.HostCall("std.time.unix_ms", 0);
-                return true;
-            case "unix_us":
-                _builder.HostCall("std.time.unix_us", 0);
-                return true;
-            case "mono_ns":
-                _builder.HostCall("std.time.mono_ns", 0);
-                return true;
-            case "mono_ticks":
-                _builder.HostCall("std.time.mono_ticks", 0);
-                return true;
-            case "mono_ticks_per_second":
-                _builder.HostCall("std.time.mono_ticks_per_second", 0);
-                return true;
-            default:
-                return false;
-        }
+        _builder.HostCall(symbol.Symbol, symbol.Arity);
+        return true;
     }
 
     private void EmitInterpolatedString(InterpString istr)

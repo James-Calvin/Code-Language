@@ -451,7 +451,7 @@ real result3 = errorExample(0) on error panic("Error message {error}");
   - `--trace-linker` prints linker visit/resolve/link steps.
 - Compile target selection is available via `--target vm-native|vm-web` (default: `vm-native`).
 - Target capability validation (current baseline):
-  - Compiler infers capability groups from module package/import namespaces (`std.*`, `engine.*`).
+  - Compiler infers capability groups from module package/import namespaces (`std.*`, `engine.*`) and from host-lowered language features (`print`, time intrinsics).
   - Compiler merges inferred capabilities with manifest-declared `hostAbi.requires`.
   - Build fails if the selected target does not support an inferred capability (e.g., `std.fs` on `vm-web`).
   - Module graph outputs include `target` and inferred `requiredCapabilities`.
@@ -472,6 +472,7 @@ real result3 = errorExample(0) on error panic("Error message {error}");
   - These currently lower through host ABI symbols (`std.time.*`) rather than dedicated language-level stdlib modules.
 - Print lowering (current baseline):
   - `print(expr);` lowers through host ABI symbol `std.io.print`.
+  - VM host binding mismatch (missing symbol/arity) raises `HostBindingError` at runtime.
   - Note: high-range timing values may eventually need dedicated 64-bit numeric/value support for full precision guarantees.
 - Object construction and field access lower to dedicated VM opcodes (`NEW_OBJECT`, `GET_FIELD`, `SET_FIELD`).
 - Arrays: literals `{...}` create arrays; typed declarations `array<integer> xs = {1,2,3};`; dynamic `new array<integer>(n)` requires a size; `xs.length` yields length; `foreach` iterates arrays by element.

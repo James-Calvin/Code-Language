@@ -174,7 +174,7 @@ Legend:
 | Priority | Phase | Work Item | Deliverable / Exit Criteria |
 | --- | --- | --- | --- |
 | `[x]` | Phase 1 | Target flag + capability validation | Implemented: `--target vm-native|vm-web` with compile-time capability matrix checks |
-| `[~]` | Phase 1 | Host ABI v1 baseline | Implemented baseline `HOST_CALL` + native runtime binding table + `HostBindingError`; extend coverage and add web host implementation |
+| `[~]` | Phase 1 | Host ABI v1 baseline | Implemented baseline `HOST_CALL` + native/web host tables + `HostBindingError`; extend surface to broader stdlib + engine capabilities and browser host runtime |
 | `[x]` | Phase 2 | Manifest parser + validation | Implemented baseline: nearest-manifest discovery, schema v1 validation, target and host capability checks |
 | `[x]` | Phase 2 | Dependency resolver + lockfile | Implemented baseline local resolver + deterministic `code.lock.json` generation (target-scoped) |
 | `[x]` | Phase 2 | Library artifact format (`.codelib`) | Implemented baseline: library manifests emit `.codelib`, resolver validates/prefer artifact paths in `code.lock.json`, CLI can run/disasm `.codelib` |

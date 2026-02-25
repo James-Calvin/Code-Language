@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "name": "examples.host.requirements.webblocked",
+  "version": "0.1.0",
+  "kind": "application",
+  "entry": "main.code",
+  "targets": ["vm-native", "vm-web"],
+  "hostAbi": {
+    "requires": ["std.fs"]
+  }
+}

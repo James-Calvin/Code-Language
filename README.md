@@ -54,6 +54,10 @@ Compile for a specific target:
 ```
 dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- --target vm-web --compile-only path/to/file.code
 ```
+Compile and run using web host bindings:
+```
+dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- --target vm-web path/to/file.code
+```
 Write module graph to file (format inferred from extension: `.json`, `.dot`, `.gv`; default text):
 ```
 dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- --compile-only --dump-module-graph graph.json path/to/file.code
@@ -91,6 +95,7 @@ Test harness covers VM ops, compiler integration (print, arithmetic, functions, 
 - Module tooling flags: `--dump-module-graph [outputPath]`, `--module-graph-format <text|json|dot>`, and `--trace-linker`
 - Compile target flag: `--target vm-native|vm-web` (default `vm-native`)
 - Capability checks: package/import namespaces under `std.*` and `engine.*` are validated against the selected target (e.g., `std.fs` is rejected on `vm-web`)
+- Runtime host mode follows `--target` when executing `.code`/`.bytecode`/`.codelib` in CLI (`vm-native` vs `vm-web` host binding table)
 - Linker diagnostics include import chains for cycles/missing exports
 - Method/constructor overload resolution: compile-time signature-based dispatch (with best-match conversions)
 - Constructor rules: objects with fields must define constructors, and constructors must assign all fields

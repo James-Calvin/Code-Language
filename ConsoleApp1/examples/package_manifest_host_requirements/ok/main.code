@@ -1,0 +1,3 @@
+print("ok package");
+print(unix_ms() > 0);
+print(unix_us() > 0);

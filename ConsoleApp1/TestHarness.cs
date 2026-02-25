@@ -108,6 +108,7 @@ internal static class TestHarness
         }
 
         failures += RunCompilerIntegrationTests();
+        failures += RunTargetParityTests();
         failures += RunArithmeticFuzz();
         failures += RunBooleanFuzz();
         failures += RunStringConcatFuzz();
@@ -562,7 +563,7 @@ export function<integer> sub(integer a, integer b) { return a - b; }",
                 {
                     "Entry: main.code",
                     "Target: vm-native",
-                    "Capabilities: (none)",
+                    "Capabilities: std.io",
                     "main.code -> math.code",
                     "{ add, sub as minus } from \"math.code\"",
                     "math.code package=app.math exports=add, sub"
@@ -571,7 +572,8 @@ export function<integer> sub(integer a, integer b) { return a - b; }",
                 {
                     "\"entry\": \"main.code\"",
                     "\"target\": \"vm-native\"",
-                    "\"requiredCapabilities\": []",
+                    "\"requiredCapabilities\": [",
+                    "\"std.io\"",
                     "\"path\": \"math.code\"",
                     "\"package\": \"app.math\"",
                     "\"binding\": \"{ add, sub as minus }\""
@@ -633,6 +635,35 @@ export function<integer> sub(integer a, integer b) { return a - b; }",
                     "Load manifest code.package.json name=demo.app target=vm-native",
                     "Capability required: std.time",
                     "Capability required: std.io"
+                }
+            ),
+            (
+                "module-graph-hostcall-capabilities",
+                new Dictionary<string, string>
+                {
+                    ["main.code"] = "print(unix_ms());",
+                },
+                "main.code",
+                new[]
+                {
+                    "Entry: main.code",
+                    "Capabilities: std.io, std.time"
+                },
+                new[]
+                {
+                    "\"requiredCapabilities\": [",
+                    "\"std.io\"",
+                    "\"std.time\""
+                },
+                new[]
+                {
+                    "digraph ModuleGraph {",
+                    "main.code"
+                },
+                new[]
+                {
+                    "Capability required: std.io",
+                    "Capability required: std.time"
                 }
             )
         };
@@ -1446,6 +1477,39 @@ export function<string> readText() { return ""ok""; }",
         return failures;
     }
 
+    private static int RunTargetParityTests()
+    {
+        int failures = 0;
+        string source =
+@"print(unix_ms() > 0);
+print(unix_us() > 0);
+print(mono_ns() >= 0);
+print(mono_ticks() > 0);
+print(mono_ticks_per_second() > 0);";
+
+        try
+        {
+            string nativeOutput = Normalize(CompileAndRun(source, Compiler.CompileTarget.VmNative, VmHostTarget.Native));
+            string webOutput = Normalize(CompileAndRun(source, Compiler.CompileTarget.VmWeb, VmHostTarget.Web));
+            if (!string.Equals(nativeOutput, webOutput, StringComparison.Ordinal))
+            {
+                failures++;
+                Console.WriteLine($"[FAIL] target-parity-time-print: native '{Escape(nativeOutput)}' web '{Escape(webOutput)}'");
+            }
+            else
+            {
+                Console.WriteLine("[PASS] target-parity-time-print");
+            }
+        }
+        catch (Exception ex)
+        {
+            failures++;
+            Console.WriteLine($"[FAIL] target-parity-time-print: threw {ex.GetType().Name} - {ex.Message}");
+        }
+
+        return failures;
+    }
+
     private static int RunArithmeticFuzz(int iterations = 50)
     {
         int failures = 0;
@@ -1662,11 +1726,14 @@ print(sum);";
         return string.Join(" + ", pieces);
     }
 
-    private static string CompileAndRun(string source)
+    private static string CompileAndRun(
+        string source,
+        Compiler.CompileTarget target = Compiler.CompileTarget.VmNative,
+        VmHostTarget hostTarget = VmHostTarget.Native)
     {
-        var bytes = Compiler.ModuleCompiler.CompileFromSource(source);
+        var bytes = Compiler.ModuleCompiler.CompileFromSource(source, target);
         using var sw = new StringWriter();
-        var vm = new Vm(bytes, sw);
+        var vm = new Vm(bytes, sw, hostTarget: hostTarget);
         vm.Run();
         return sw.ToString();
     }

@@ -95,3 +95,4 @@ Version: 0.9 (2026-02-19)
 - Module imports/exports/package declarations are compile-time only; the linker flattens a module graph into one bytecode unit before VM execution.
 - Package lockfile resolution may reference either manifest paths or `.codelib` artifacts; when a valid artifact exists for target/version, resolver prefers `.codelib`.
 - Current compiler lowering routes `print(...)` statements and time intrinsics through `HOST_CALL` symbols (`std.io.print`, `std.time.*`).
+- Runtime host mode (`vm-native`/`vm-web`) selects the host binding table used by `HOST_CALL`; missing symbol/arity mismatches raise `HostBindingError`.

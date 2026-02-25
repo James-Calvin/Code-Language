@@ -428,6 +428,7 @@ static class ModuleCompiler
                 var module = ParseModule(modulePath);
                 Trace($"Parsed {FormatGraphPath(modulePath)} (imports={module.Imports.Count}, exports={module.ExportedDeclarations.Count})");
                 RegisterCapabilityFromPackage(module.PackageName, module.Path, module.PackageLine, module.PackageColumn);
+                RegisterCapabilitiesFromStatements(module.LocalStatements, module.Path);
                 foreach (var import in module.Imports)
                 {
                     RegisterCapabilityFromImport(import.SourcePath, module.Path, import.Source.Line, import.Source.Column);
@@ -677,6 +678,227 @@ static class ModuleCompiler
             if (TryInferCapabilityFromImport(sourcePath, out var capability))
                 RegisterCapability(capability, modulePath, line, column, $"import \"{sourcePath}\"");
         }
+
+        private void RegisterCapabilitiesFromStatements(IReadOnlyList<Stmt> statements, string modulePath)
+        {
+            for (int i = 0; i < statements.Count; i++)
+                ScanStmtForCapabilities(statements[i], modulePath);
+        }
+
+        private void ScanStmtForCapabilities(Stmt stmt, string modulePath)
+        {
+            switch (stmt)
+            {
+                case VarDecl v:
+                    if (v.Initializer is not null)
+                        ScanExprForCapabilities(v.Initializer, modulePath);
+                    break;
+
+                case ExprStmt e:
+                    ScanExprForCapabilities(e.Expression, modulePath);
+                    break;
+
+                case Block b:
+                    for (int i = 0; i < b.Statements.Count; i++)
+                        ScanStmtForCapabilities(b.Statements[i], modulePath);
+                    break;
+
+                case IfStmt i:
+                    ScanExprForCapabilities(i.Condition, modulePath);
+                    ScanStmtForCapabilities(i.ThenBranch, modulePath);
+                    if (i.ElseBranch is not null)
+                        ScanStmtForCapabilities(i.ElseBranch, modulePath);
+                    break;
+
+                case WhileStmt w:
+                    ScanExprForCapabilities(w.Condition, modulePath);
+                    ScanStmtForCapabilities(w.Body, modulePath);
+                    break;
+
+                case ReturnStmt r:
+                    if (r.Value is not null)
+                        ScanExprForCapabilities(r.Value, modulePath);
+                    break;
+
+                case PrintStmt p:
+                    RegisterCapability(
+                        HostAbiCatalog.StdIoPrint.Capability,
+                        modulePath,
+                        GetExprLine(p.Value),
+                        GetExprColumn(p.Value),
+                        "print statement");
+                    ScanExprForCapabilities(p.Value, modulePath);
+                    break;
+
+                case PanicStmt p:
+                    ScanExprForCapabilities(p.Value, modulePath);
+                    break;
+
+                case ForStmt f:
+                    if (f.Initializer is not null)
+                        ScanStmtForCapabilities(f.Initializer, modulePath);
+                    ScanExprForCapabilities(f.Condition, modulePath);
+                    if (f.Increment is not null)
+                        ScanExprForCapabilities(f.Increment, modulePath);
+                    ScanStmtForCapabilities(f.Body, modulePath);
+                    break;
+
+                case ForeachStmt fe:
+                    ScanExprForCapabilities(fe.Iterable, modulePath);
+                    ScanStmtForCapabilities(fe.Body, modulePath);
+                    break;
+
+                case FunctionDecl fn:
+                    ScanStmtForCapabilities(fn.Body, modulePath);
+                    break;
+
+                case ObjectDecl obj:
+                    for (int i = 0; i < obj.Constructors.Count; i++)
+                        ScanStmtForCapabilities(obj.Constructors[i].Body, modulePath);
+                    for (int i = 0; i < obj.Methods.Count; i++)
+                        ScanStmtForCapabilities(obj.Methods[i].Body, modulePath);
+                    break;
+
+                case ExportDecl ex:
+                    ScanStmtForCapabilities(ex.Declaration, modulePath);
+                    break;
+
+                default:
+                    break;
+            }
+        }
+
+        private void ScanExprForCapabilities(Expr expr, string modulePath)
+        {
+            switch (expr)
+            {
+                case Binary b:
+                    ScanExprForCapabilities(b.Left, modulePath);
+                    ScanExprForCapabilities(b.Right, modulePath);
+                    break;
+                case Unary u:
+                    ScanExprForCapabilities(u.Right, modulePath);
+                    break;
+                case InterpString s:
+                    for (int i = 0; i < s.Parts.Count; i++)
+                    {
+                        if (s.Parts[i] is Expr partExpr)
+                            ScanExprForCapabilities(partExpr, modulePath);
+                    }
+                    break;
+                case ArrayLiteral a:
+                    for (int i = 0; i < a.Elements.Count; i++)
+                        ScanExprForCapabilities(a.Elements[i], modulePath);
+                    break;
+                case NewArrayExpr na:
+                    ScanExprForCapabilities(na.Size, modulePath);
+                    break;
+                case ArrayLengthExpr al:
+                    ScanExprForCapabilities(al.Target, modulePath);
+                    break;
+                case ArrayIndexExpr ai:
+                    ScanExprForCapabilities(ai.Array, modulePath);
+                    ScanExprForCapabilities(ai.Index, modulePath);
+                    break;
+                case OptionalOrExpr o:
+                    ScanExprForCapabilities(o.Optional, modulePath);
+                    ScanExprForCapabilities(o.Fallback, modulePath);
+                    break;
+                case OptionalHasValueExpr o:
+                    ScanExprForCapabilities(o.Target, modulePath);
+                    break;
+                case OptionalValueExpr o:
+                    ScanExprForCapabilities(o.Target, modulePath);
+                    break;
+                case FieldAccessExpr f:
+                    ScanExprForCapabilities(f.Target, modulePath);
+                    break;
+                case FieldSetExpr f:
+                    ScanExprForCapabilities(f.Target.Target, modulePath);
+                    ScanExprForCapabilities(f.Value, modulePath);
+                    break;
+                case NewObjectExpr n:
+                    for (int i = 0; i < n.Arguments.Count; i++)
+                        ScanExprForCapabilities(n.Arguments[i], modulePath);
+                    break;
+                case ArraySetExpr a:
+                    ScanExprForCapabilities(a.Target.Array, modulePath);
+                    ScanExprForCapabilities(a.Target.Index, modulePath);
+                    ScanExprForCapabilities(a.Value, modulePath);
+                    break;
+                case Assign a:
+                    ScanExprForCapabilities(a.Value, modulePath);
+                    break;
+                case Call c:
+                    if (HostAbiCatalog.TryGetIntrinsic(c.Callee.Lexeme, out var symbol))
+                    {
+                        RegisterCapability(
+                            symbol.Capability,
+                            modulePath,
+                            c.Callee.Line,
+                            c.Callee.Column,
+                            $"call '{c.Callee.Lexeme}()'");
+                    }
+                    for (int i = 0; i < c.Arguments.Count; i++)
+                        ScanExprForCapabilities(c.Arguments[i], modulePath);
+                    break;
+                case MethodCallExpr m:
+                    ScanExprForCapabilities(m.Target, modulePath);
+                    for (int i = 0; i < m.Arguments.Count; i++)
+                        ScanExprForCapabilities(m.Arguments[i], modulePath);
+                    break;
+                default:
+                    break;
+            }
+        }
+
+        private static int GetExprLine(Expr expr) => expr switch
+        {
+            Literal l => l.Line,
+            InterpString i => i.Line,
+            ArrayLiteral a => a.Line,
+            NewArrayExpr n => n.Line,
+            Variable v => v.Name.Line,
+            Assign a => a.Name.Line,
+            Call c => c.Callee.Line,
+            MethodCallExpr m => m.MethodName.Line,
+            FieldAccessExpr f => f.Name.Line,
+            FieldSetExpr f => f.Target.Name.Line,
+            NewObjectExpr n => n.TypeName.Line,
+            Binary b => GetExprLine(b.Left),
+            Unary u => GetExprLine(u.Right),
+            ArrayIndexExpr a => GetExprLine(a.Array),
+            ArraySetExpr a => GetExprLine(a.Target.Array),
+            OptionalOrExpr o => GetExprLine(o.Optional),
+            OptionalHasValueExpr o => GetExprLine(o.Target),
+            OptionalValueExpr o => GetExprLine(o.Target),
+            ArrayLengthExpr a => GetExprLine(a.Target),
+            _ => 1
+        };
+
+        private static int GetExprColumn(Expr expr) => expr switch
+        {
+            Literal l => l.Column,
+            InterpString i => i.Column,
+            ArrayLiteral a => a.Column,
+            NewArrayExpr n => n.Column,
+            Variable v => v.Name.Column,
+            Assign a => a.Name.Column,
+            Call c => c.Callee.Column,
+            MethodCallExpr m => m.MethodName.Column,
+            FieldAccessExpr f => f.Name.Column,
+            FieldSetExpr f => f.Target.Name.Column,
+            NewObjectExpr n => n.TypeName.Column,
+            Binary b => GetExprColumn(b.Left),
+            Unary u => GetExprColumn(u.Right),
+            ArrayIndexExpr a => GetExprColumn(a.Array),
+            ArraySetExpr a => GetExprColumn(a.Target.Array),
+            OptionalOrExpr o => GetExprColumn(o.Optional),
+            OptionalHasValueExpr o => GetExprColumn(o.Target),
+            OptionalValueExpr o => GetExprColumn(o.Target),
+            ArrayLengthExpr a => GetExprColumn(a.Target),
+            _ => 1
+        };
 
         private void RegisterCapability(string capability, string modulePath, int line, int column, string context)
         {

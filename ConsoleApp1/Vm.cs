@@ -53,6 +53,12 @@ enum OpCode : byte
     Halt = 0xFF
 }
 
+enum VmHostTarget
+{
+    Native,
+    Web
+}
+
 sealed class Vm
 {
     private readonly byte[] _code;
@@ -65,10 +71,11 @@ sealed class Vm
     private readonly Dictionary<int, InterfaceDispatchTable> _interfaceDispatchCache = new();
     private readonly Dictionary<string, HostBinding> _hostBindings = new(StringComparer.Ordinal);
     private readonly int _codeEnd;
+    private readonly VmHostTarget _hostTarget;
     private readonly long _monoOriginTicks;
     private const long UnixEpochTicks = 621355968000000000L;
 
-    public Vm(byte[] code, TextWriter? output = null, int initialLocals = 8)
+    public Vm(byte[] code, TextWriter? output = null, int initialLocals = 8, VmHostTarget hostTarget = VmHostTarget.Native)
     {
         var header = BytecodeFormat.ReadHeader(code);
         _code = code;
@@ -76,6 +83,7 @@ sealed class Vm
         _codeEnd = BytecodeFormat.HeaderSize + header.CodeSize;
         _locals = new object[initialLocals];
         _output = output ?? Console.Out;
+        _hostTarget = hostTarget;
         _monoOriginTicks = Stopwatch.GetTimestamp();
         InitializeDefaultHostBindings();
 
@@ -567,6 +575,19 @@ sealed class Vm
     private sealed record HostBinding(int ArgCount, Func<object?[], object?> Handler);
 
     private void InitializeDefaultHostBindings()
+    {
+        switch (_hostTarget)
+        {
+            case VmHostTarget.Native:
+            case VmHostTarget.Web:
+                InitializeCommonHostBindings();
+                break;
+            default:
+                throw new InvalidOperationException($"Unsupported host target '{_hostTarget}'.");
+        }
+    }
+
+    private void InitializeCommonHostBindings()
     {
         _hostBindings["std.io.print"] = new HostBinding(1, args =>
         {

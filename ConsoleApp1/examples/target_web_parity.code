@@ -1,0 +1,11 @@
+integer ms = unix_ms();
+integer us = unix_us();
+integer ns = mono_ns();
+integer ticks = mono_ticks();
+integer freq = mono_ticks_per_second();
+
+print(ms > 0);
+print(us >= ms * 1000);
+print(ns >= 0);
+print(ticks > 0);
+print(freq > 0);

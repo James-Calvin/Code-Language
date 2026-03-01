@@ -1,0 +1,5 @@
+print("native-only host abi");
+sleep_ms(1);
+print("enter text:");
+string line = read_line();
+print("you typed: {line}");

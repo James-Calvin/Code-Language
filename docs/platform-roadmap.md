@@ -1,6 +1,6 @@
 # Platform, Libraries, and Targets Roadmap
 
-Last updated: 2026-02-19
+Last updated: 2026-02-25
 
 This roadmap is specifically for:
 1) library/package system,
@@ -33,7 +33,7 @@ Host calls are explicit, capability-scoped bindings provided by the runtime host
 
 ### 2.1 ABI symbol naming
 - Fully qualified symbol: `<namespace>.<member>`
-- Examples: `std.time.now_ms`, `engine.gfx.clear`
+- Examples: `std.time.unix_ms`, `engine.gfx.clear`
 
 ### 2.2 Value model
 - ABI uses existing VM value domain:
@@ -55,7 +55,11 @@ Host calls are explicit, capability-scoped bindings provided by the runtime host
 
 ### 2.4 Capability groups
 - `std.time`
-  - `now_ms() -> integer`
+  - `unix_ms() -> integer`
+  - `unix_us() -> integer`
+  - `mono_ns() -> integer`
+  - `mono_ticks() -> integer`
+  - `mono_ticks_per_second() -> integer`
   - `sleep_ms(integer ms) -> void` (`vm-native` only in v1)
 - `std.io`
   - `print(string value) -> void`
@@ -174,12 +178,12 @@ Legend:
 | Priority | Phase | Work Item | Deliverable / Exit Criteria |
 | --- | --- | --- | --- |
 | `[x]` | Phase 1 | Target flag + capability validation | Implemented: `--target vm-native|vm-web` with compile-time capability matrix checks |
-| `[~]` | Phase 1 | Host ABI v1 baseline | Implemented baseline `HOST_CALL` + native/web host tables + `HostBindingError`; extend surface to broader stdlib + engine capabilities and browser host runtime |
+| `[~]` | Phase 1 | Host ABI v1 baseline | Implemented baseline `HOST_CALL` + native/web host tables + `HostBindingError`; includes `std.io.print`, `std.time.*`, native-only `read_line`/`sleep_ms` diagnostics, and engine window/input/gfx no-op stubs |
 | `[x]` | Phase 2 | Manifest parser + validation | Implemented baseline: nearest-manifest discovery, schema v1 validation, target and host capability checks |
 | `[x]` | Phase 2 | Dependency resolver + lockfile | Implemented baseline local resolver + deterministic `code.lock.json` generation (target-scoped) |
 | `[x]` | Phase 2 | Library artifact format (`.codelib`) | Implemented baseline: library manifests emit `.codelib`, resolver validates/prefer artifact paths in `code.lock.json`, CLI can run/disasm `.codelib` |
 | `[~]` | Phase 3 | Stdlib as packages | `std.core`, `std.math`, `std.time`, `std.io` packaged and importable |
-| `[!]` | Phase 4 | Web VM target runtime | VM in web runtime (WASM or JS host), bytecode loader, browser host bindings |
+| `[!]` | Phase 4 | Web VM target runtime | Browser runtime preview is in place (`web-runtime/` JS bytecode harness + web host bindings); continue toward production WASM/JS target packaging and runtime parity |
 | `[~]` | Phase 5 | Engine core package set | `engine.math`, `engine.ecs`, `engine.scene`, `engine.loop` |
 | `[~]` | Phase 5 | Engine platform adapters | `engine.window/input/gfx/audio` host-backed packages for native+web |
 | `[~]` | Phase 6 | Vertical slice game | one small game running on native and web from same Code sources |
@@ -192,6 +196,6 @@ Legend:
 3. [x] Implement `code.package.json` parser + validator.
 4. [x] Implement local dependency resolver + `code.lock.json`.
 5. [x] Add `.codelib` read/write and linker support.
-6. Add first host ABI bindings (`std.time.now_ms`, `std.io.print`) for both `vm-native` and `vm-web`.
+6. [x] Add first host ABI bindings (`std.io.print`, `std.time.*`) for both `vm-native` and `vm-web`, then extend native-only APIs (`read_line`, `sleep_ms`) with target diagnostics.
 
 This order gets library system + target model stable before engine work starts.

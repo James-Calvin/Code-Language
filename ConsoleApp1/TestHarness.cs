@@ -71,7 +71,12 @@ internal static class TestHarness
 
             ("hostcall-print", BytecodeBuilder.New()
                 .PushString("hi").HostCall("std.io.print", 1).Pop().Halt().ToArray(),
-                "hi" + nl)
+                "hi" + nl),
+
+            ("hostcall-engine-window-create", BytecodeBuilder.New()
+                .PushString("demo").PushInt(640).PushInt(480)
+                .HostCall("engine.window.create", 3).Print().Halt().ToArray(),
+                "1" + nl)
         };
 
         int failures = 0;
@@ -108,6 +113,7 @@ internal static class TestHarness
         }
 
         failures += RunCompilerIntegrationTests();
+        failures += RunHostAbiSurfaceTests();
         failures += RunTargetParityTests();
         failures += RunArithmeticFuzz();
         failures += RunBooleanFuzz();
@@ -665,6 +671,37 @@ export function<integer> sub(integer a, integer b) { return a - b; }",
                     "Capability required: std.io",
                     "Capability required: std.time"
                 }
+            ),
+            (
+                "module-graph-hostcall-native-only-capabilities",
+                new Dictionary<string, string>
+                {
+                    ["main.code"] = "sleep_ms(0);\nprint(read_line());",
+                },
+                "main.code",
+                new[]
+                {
+                    "Entry: main.code",
+                    "Capabilities: std.io, std.io.read_line, std.time.sleep_ms"
+                },
+                new[]
+                {
+                    "\"requiredCapabilities\": [",
+                    "\"std.io\"",
+                    "\"std.io.read_line\"",
+                    "\"std.time.sleep_ms\""
+                },
+                new[]
+                {
+                    "digraph ModuleGraph {",
+                    "main.code"
+                },
+                new[]
+                {
+                    "Capability required: std.io",
+                    "Capability required: std.io.read_line",
+                    "Capability required: std.time.sleep_ms"
+                }
             )
         };
         var moduleTargetCases = new List<(string Name, Compiler.CompileTarget Target, IReadOnlyDictionary<string, string> Files, string Entry, string Expected)>
@@ -1161,6 +1198,26 @@ export function<string> readText() { return ""ok""; }",
                 "Capability 'std.fs' is not available for target 'vm-web'"
             ),
             (
+                "module-target-web-rejects-read-line-intrinsic",
+                Compiler.CompileTarget.VmWeb,
+                new Dictionary<string, string>
+                {
+                    ["main.code"] = "print(read_line());",
+                },
+                "main.code",
+                "Capability 'std.io.read_line' is not available for target 'vm-web'"
+            ),
+            (
+                "module-target-web-rejects-sleep-ms-intrinsic",
+                Compiler.CompileTarget.VmWeb,
+                new Dictionary<string, string>
+                {
+                    ["main.code"] = "sleep_ms(1); print(1);",
+                },
+                "main.code",
+                "Capability 'std.time.sleep_ms' is not available for target 'vm-web'"
+            ),
+            (
                 "module-target-web-rejects-manifest-unsupported-target",
                 Compiler.CompileTarget.VmWeb,
                 new Dictionary<string, string>
@@ -1507,6 +1564,173 @@ print(mono_ticks_per_second() > 0);";
             Console.WriteLine($"[FAIL] target-parity-time-print: threw {ex.GetType().Name} - {ex.Message}");
         }
 
+        string engineSource =
+@"whole window = window_create(""demo"", 320, 200);
+print(window > 0);
+print(window_should_close(window));
+print(input_key_down(window, 13));
+gfx_clear(window, 0, 0, 0, 1);
+gfx_draw_rect(window, 1, 2, 3, 4, 1, 0, 0, 1);
+window_present(window);
+print(1);";
+
+        try
+        {
+            string nativeOutput = Normalize(CompileAndRun(engineSource, Compiler.CompileTarget.VmNative, VmHostTarget.Native));
+            string webOutput = Normalize(CompileAndRun(engineSource, Compiler.CompileTarget.VmWeb, VmHostTarget.Web));
+            if (!string.Equals(nativeOutput, webOutput, StringComparison.Ordinal))
+            {
+                failures++;
+                Console.WriteLine($"[FAIL] target-parity-engine-stubs: native '{Escape(nativeOutput)}' web '{Escape(webOutput)}'");
+            }
+            else
+            {
+                Console.WriteLine("[PASS] target-parity-engine-stubs");
+            }
+        }
+        catch (Exception ex)
+        {
+            failures++;
+            Console.WriteLine($"[FAIL] target-parity-engine-stubs: threw {ex.GetType().Name} - {ex.Message}");
+        }
+
+        return failures;
+    }
+
+    private static int RunHostAbiSurfaceTests()
+    {
+        int failures = 0;
+
+        try
+        {
+            string output = Normalize(CompileAndRun("print(read_line());", input: "hello\n"));
+            if (!string.Equals(output, "hello\n", StringComparison.Ordinal))
+            {
+                failures++;
+                Console.WriteLine($"[FAIL] read-line-native: expected 'hello\\n' got '{Escape(output)}'");
+            }
+            else
+            {
+                Console.WriteLine("[PASS] read-line-native");
+            }
+        }
+        catch (Exception ex)
+        {
+            failures++;
+            Console.WriteLine($"[FAIL] read-line-native: threw {ex.GetType().Name} - {ex.Message}");
+        }
+
+        try
+        {
+            string output = Normalize(CompileAndRun("sleep_ms(0); print(1);"));
+            if (!string.Equals(output, "1\n", StringComparison.Ordinal))
+            {
+                failures++;
+                Console.WriteLine($"[FAIL] sleep-ms-native: expected '1\\n' got '{Escape(output)}'");
+            }
+            else
+            {
+                Console.WriteLine("[PASS] sleep-ms-native");
+            }
+        }
+        catch (Exception ex)
+        {
+            failures++;
+            Console.WriteLine($"[FAIL] sleep-ms-native: threw {ex.GetType().Name} - {ex.Message}");
+        }
+
+        string engineSource =
+@"whole window = window_create(""demo"", 640, 480);
+print(window > 0);
+print(window_should_close(window));
+print(input_key_down(window, 32));
+gfx_clear(window, 0, 0, 0, 1);
+gfx_draw_rect(window, 0, 0, 10, 10, 1, 0, 0, 1);
+window_present(window);
+print(1);";
+
+        try
+        {
+            string output = Normalize(CompileAndRun(engineSource));
+            const string expected = "1\n1\n0\n1\n";
+            if (!string.Equals(output, expected, StringComparison.Ordinal))
+            {
+                failures++;
+                Console.WriteLine($"[FAIL] engine-host-stubs-native: expected '{Escape(expected)}' got '{Escape(output)}'");
+            }
+            else
+            {
+                Console.WriteLine("[PASS] engine-host-stubs-native");
+            }
+        }
+        catch (Exception ex)
+        {
+            failures++;
+            Console.WriteLine($"[FAIL] engine-host-stubs-native: threw {ex.GetType().Name} - {ex.Message}");
+        }
+
+        try
+        {
+            _ = CompileAndRun(
+                "print(read_line());",
+                Compiler.CompileTarget.VmNative,
+                VmHostTarget.Web);
+            failures++;
+            Console.WriteLine("[FAIL] read-line-web-runtime-diagnostic: expected runtime error");
+        }
+        catch (VmRuntimeException vex)
+        {
+            bool okType = string.Equals(vex.Error.Type, "HostBindingError", StringComparison.Ordinal);
+            bool okMessage =
+                vex.Message.Contains("vm-web", StringComparison.Ordinal) &&
+                vex.Message.Contains("native-only", StringComparison.Ordinal);
+            if (!okType || !okMessage)
+            {
+                failures++;
+                Console.WriteLine($"[FAIL] read-line-web-runtime-diagnostic: unexpected error '{vex.Error.Type}' '{vex.Message}'");
+            }
+            else
+            {
+                Console.WriteLine("[PASS] read-line-web-runtime-diagnostic");
+            }
+        }
+        catch (Exception ex)
+        {
+            failures++;
+            Console.WriteLine($"[FAIL] read-line-web-runtime-diagnostic: threw {ex.GetType().Name} - {ex.Message}");
+        }
+
+        try
+        {
+            _ = CompileAndRun(
+                "sleep_ms(1); print(1);",
+                Compiler.CompileTarget.VmNative,
+                VmHostTarget.Web);
+            failures++;
+            Console.WriteLine("[FAIL] sleep-ms-web-runtime-diagnostic: expected runtime error");
+        }
+        catch (VmRuntimeException vex)
+        {
+            bool okType = string.Equals(vex.Error.Type, "HostBindingError", StringComparison.Ordinal);
+            bool okMessage =
+                vex.Message.Contains("vm-web", StringComparison.Ordinal) &&
+                vex.Message.Contains("native-only", StringComparison.Ordinal);
+            if (!okType || !okMessage)
+            {
+                failures++;
+                Console.WriteLine($"[FAIL] sleep-ms-web-runtime-diagnostic: unexpected error '{vex.Error.Type}' '{vex.Message}'");
+            }
+            else
+            {
+                Console.WriteLine("[PASS] sleep-ms-web-runtime-diagnostic");
+            }
+        }
+        catch (Exception ex)
+        {
+            failures++;
+            Console.WriteLine($"[FAIL] sleep-ms-web-runtime-diagnostic: threw {ex.GetType().Name} - {ex.Message}");
+        }
+
         return failures;
     }
 
@@ -1729,11 +1953,13 @@ print(sum);";
     private static string CompileAndRun(
         string source,
         Compiler.CompileTarget target = Compiler.CompileTarget.VmNative,
-        VmHostTarget hostTarget = VmHostTarget.Native)
+        VmHostTarget hostTarget = VmHostTarget.Native,
+        string? input = null)
     {
         var bytes = Compiler.ModuleCompiler.CompileFromSource(source, target);
         using var sw = new StringWriter();
-        var vm = new Vm(bytes, sw, hostTarget: hostTarget);
+        using var sr = input is null ? null : new StringReader(input);
+        var vm = new Vm(bytes, sw, hostTarget: hostTarget, input: sr);
         vm.Run();
         return sw.ToString();
     }

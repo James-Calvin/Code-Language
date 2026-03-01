@@ -1,6 +1,6 @@
 # Bytecode Specification (draft)
 
-Version: 0.9 (2026-02-19)
+Version: 0.9 (2026-02-25)
 
 ## File format
 - Header: "CODE" ASCII (4 bytes) + version byte (0x05) + int32 codeSize + int32 debugCount.
@@ -94,5 +94,9 @@ Version: 0.9 (2026-02-19)
 - VM caches decoded `INTERFACE_CALL` tables by call-site IP to avoid reparsing dispatch metadata on hot paths.
 - Module imports/exports/package declarations are compile-time only; the linker flattens a module graph into one bytecode unit before VM execution.
 - Package lockfile resolution may reference either manifest paths or `.codelib` artifacts; when a valid artifact exists for target/version, resolver prefers `.codelib`.
-- Current compiler lowering routes `print(...)` statements and time intrinsics through `HOST_CALL` symbols (`std.io.print`, `std.time.*`).
+- Current compiler lowering routes host-facing language features through `HOST_CALL` symbols:
+  - print/time: `std.io.print`, `std.time.*`
+  - native-only APIs: `std.io.read_line`, `std.time.sleep_ms`
+  - engine stubs: `engine.window.*`, `engine.input.*`, `engine.gfx.*`
 - Runtime host mode (`vm-native`/`vm-web`) selects the host binding table used by `HOST_CALL`; missing symbol/arity mismatches raise `HostBindingError`.
+- Native-only symbols are expected to raise target-specific `HostBindingError` diagnostics when executed on `vm-web`.

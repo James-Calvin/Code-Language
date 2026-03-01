@@ -58,3 +58,4 @@ publish/
 
 # Syntax highlighting wip
 syntax/
+.fake

@@ -928,12 +928,17 @@ sealed class CodeGenerator
 
     private bool TryEmitIntrinsicCall(Call call)
     {
-        if (!HostAbiCatalog.TryGetIntrinsic(call.Callee.Lexeme, out var symbol))
+        if (!HostAbiCatalog.TryGetIntrinsic(call.Callee.Lexeme, out var intrinsic))
             return false;
-        if (call.Arguments.Count != symbol.Arity)
-            throw new InvalidOperationException($"Intrinsic '{call.Callee.Lexeme}' expects {symbol.Arity} args.");
+        if (call.Arguments.Count != intrinsic.Arity)
+            throw new InvalidOperationException($"Intrinsic '{call.Callee.Lexeme}' expects {intrinsic.Arity} args.");
 
-        _builder.HostCall(symbol.Symbol, symbol.Arity);
+        for (int i = 0; i < call.Arguments.Count; i++)
+        {
+            Emit(call.Arguments[i]);
+        }
+
+        _builder.HostCall(intrinsic.Symbol.Symbol, intrinsic.Arity);
         return true;
     }
 

@@ -1,7 +1,7 @@
 # Code Language Specification (Living Draft)
 
 Version: 1.0  
-Last updated: 2026-02-19
+Last updated: 2026-02-25
 
 ## 1. Goals and Design
 - `Code` is a general-purpose language.
@@ -451,7 +451,7 @@ real result3 = errorExample(0) on error panic("Error message {error}");
   - `--trace-linker` prints linker visit/resolve/link steps.
 - Compile target selection is available via `--target vm-native|vm-web` (default: `vm-native`).
 - Target capability validation (current baseline):
-  - Compiler infers capability groups from module package/import namespaces (`std.*`, `engine.*`) and from host-lowered language features (`print`, time intrinsics).
+  - Compiler infers capability groups from module package/import namespaces (`std.*`, `engine.*`) and from host-lowered language features (`print`, time intrinsics, native-only host intrinsics, and engine host stubs).
   - Compiler merges inferred capabilities with manifest-declared `hostAbi.requires`.
   - Build fails if the selected target does not support an inferred capability (e.g., `std.fs` on `vm-web`).
   - Module graph outputs include `target` and inferred `requiredCapabilities`.
@@ -469,10 +469,18 @@ real result3 = errorExample(0) on error panic("Error message {error}");
   - `mono_ns() -> integer` (monotonic process-relative nanoseconds)
   - `mono_ticks() -> integer`
   - `mono_ticks_per_second() -> integer`
+  - `sleep_ms(integer ms) -> void` (native-only host API; compile-time target check rejects it for `vm-web`)
+  - `read_line() -> string` (native-only host API; compile-time target check rejects it for `vm-web`)
   - These currently lower through host ABI symbols (`std.time.*`) rather than dedicated language-level stdlib modules.
 - Print lowering (current baseline):
   - `print(expr);` lowers through host ABI symbol `std.io.print`.
   - VM host binding mismatch (missing symbol/arity) raises `HostBindingError` at runtime.
+  - Native-only host calls include target-specific runtime diagnostics when executed on `vm-web` host tables.
+  - Engine-facing host stubs are available through intrinsics:
+    - `window_create(...)`, `window_should_close(...)`, `window_present(...)`
+    - `input_key_down(...)`
+    - `gfx_clear(...)`, `gfx_draw_rect(...)`
+    - Current runtime behavior for these engine intrinsics is prototype/no-op on both native and web hosts.
   - Note: high-range timing values may eventually need dedicated 64-bit numeric/value support for full precision guarantees.
 - Object construction and field access lower to dedicated VM opcodes (`NEW_OBJECT`, `GET_FIELD`, `SET_FIELD`).
 - Arrays: literals `{...}` create arrays; typed declarations `array<integer> xs = {1,2,3};`; dynamic `new array<integer>(n)` requires a size; `xs.length` yields length; `foreach` iterates arrays by element.

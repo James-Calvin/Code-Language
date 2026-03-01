@@ -753,11 +753,23 @@ sealed class TypeChecker
 
     private static Dictionary<string, FunctionSignature> BuildIntrinsicFunctions()
     {
-        var integerType = new TypeRef("integer", null, 0, 0);
         var map = new Dictionary<string, FunctionSignature>(StringComparer.Ordinal);
-        foreach (var name in HostAbiCatalog.IntrinsicNames)
+        foreach (var intrinsic in HostAbiCatalog.IntrinsicSignatures)
         {
-            map[name] = new FunctionSignature(TypeSymbol.Integer, integerType, new List<TypeSymbol>(), Array.Empty<TypeRef>());
+            var returnType = new TypeRef(intrinsic.ReturnTypeName, null, 0, 0);
+            var paramTypes = new List<TypeSymbol>(intrinsic.ParameterTypes.Count);
+            var paramTypeRefs = new List<TypeRef>(intrinsic.ParameterTypeNames.Count);
+            for (int i = 0; i < intrinsic.ParameterTypes.Count; i++)
+            {
+                paramTypes.Add(intrinsic.ParameterTypes[i]);
+                paramTypeRefs.Add(new TypeRef(intrinsic.ParameterTypeNames[i], null, 0, 0));
+            }
+
+            map[intrinsic.Name] = new FunctionSignature(
+                intrinsic.ReturnType,
+                returnType,
+                paramTypes,
+                paramTypeRefs);
         }
         return map;
     }

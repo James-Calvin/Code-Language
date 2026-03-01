@@ -10,11 +10,13 @@ A tiny experimental programming language with a stack-based bytecode VM and a C#
 - Constants: `constant Type name = value;` (immutable after init)
 - Control flow: `if/then/else`, `while`, `for`, `foreach` (numeric bounds and arrays)
 - Expressions: arithmetic (including `%`), comparisons, logical `and/or/not`, enhanced assignments (`+=`, `-=`, `*=`, `/=`, `%=` and postfix `++/--`), string interpolation and concatenation
-- Time intrinsics: `unix_ms()`, `unix_us()`, `mono_ns()`, `mono_ticks()`, `mono_ticks_per_second()`
+- Time intrinsics: `unix_ms()`, `unix_us()`, `mono_ns()`, `mono_ticks()`, `mono_ticks_per_second()`, `sleep_ms(ms)`
+- Native-only IO intrinsic: `read_line()`
 - Functions with CALL/RET, locals, return (implicit 0)
 - File modules: `export` + imports (`import Name [as Alias] from "path";`, `import { A, B as C } from "path";`) with recursive linking and `lib/` search
 - Package manifest + lockfile baseline: nearest `code.package.json` is parsed/validated during module compile; local dependency graph resolves and `code.lock.json` is generated
-- Host ABI baseline: compiler emits `HOST_CALL` for `print`/time intrinsics (`std.io.print`, `std.time.*`), VM resolves through runtime host bindings
+- Host ABI baseline: compiler emits `HOST_CALL` for `print`, time intrinsics, native-only APIs (`std.io.read_line`, `std.time.sleep_ms`), and engine stubs (`engine.window/*`, `engine.input/*`, `engine.gfx/*`)
+- Browser runtime harness (`web-runtime/`): JavaScript VM + web host bindings for `std.io.print` and `std.time.*`
 - Runtime diagnostics: bytecode debug map → line/column stack traces
 - Error objects: `panic <expr>;` emits a `UserError` with call stack
 
@@ -58,6 +60,11 @@ Compile and run using web host bindings:
 ```
 dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- --target vm-web path/to/file.code
 ```
+Compile for web and run in browser harness:
+```
+dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- --target vm-web --compile-only path/to/file.code
+# then load the generated .bytecode in web-runtime/index.html
+```
 Write module graph to file (format inferred from extension: `.json`, `.dot`, `.gv`; default text):
 ```
 dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- --compile-only --dump-module-graph graph.json path/to/file.code
@@ -95,6 +102,7 @@ Test harness covers VM ops, compiler integration (print, arithmetic, functions, 
 - Module tooling flags: `--dump-module-graph [outputPath]`, `--module-graph-format <text|json|dot>`, and `--trace-linker`
 - Compile target flag: `--target vm-native|vm-web` (default `vm-native`)
 - Capability checks: package/import namespaces under `std.*` and `engine.*` are validated against the selected target (e.g., `std.fs` is rejected on `vm-web`)
+- Native-only host APIs are rejected on web target at compile time (`read_line`, `sleep_ms`) and raise target-specific `HostBindingError` if forced at runtime
 - Runtime host mode follows `--target` when executing `.code`/`.bytecode`/`.codelib` in CLI (`vm-native` vs `vm-web` host binding table)
 - Linker diagnostics include import chains for cycles/missing exports
 - Method/constructor overload resolution: compile-time signature-based dispatch (with best-match conversions)
@@ -119,6 +127,16 @@ dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- ConsoleApp1/examples/modu
 Time intrinsics example:
 ```
 dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- ConsoleApp1/examples/time.code
+```
+
+Engine host stub example:
+```
+dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- --target vm-web ConsoleApp1/examples/engine_stubs.code
+```
+
+Native-only host API example:
+```
+dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- ConsoleApp1/examples/host_abi_native_only.code
 ```
 
 Panic example:

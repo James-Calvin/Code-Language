@@ -8,7 +8,9 @@ static class CapabilityCatalog
     public static readonly IReadOnlySet<string> Known = new HashSet<string>(StringComparer.Ordinal)
     {
         "std.time",
+        "std.time.sleep_ms",
         "std.io",
+        "std.io.read_line",
         "std.fs",
         "engine.window",
         "engine.input",

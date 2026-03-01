@@ -3,6 +3,7 @@ using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Threading;
 
 namespace ConsoleApp1;
 
@@ -66,6 +67,7 @@ sealed class Vm
     private object[] _locals;
     private int _ip;
     private readonly TextWriter _output;
+    private readonly TextReader _input;
     private readonly Stack<(int returnIp, int callIp, object[] locals)> _callStack = new();
     private readonly Dictionary<int, (int line, int column)> _debug = new();
     private readonly Dictionary<int, InterfaceDispatchTable> _interfaceDispatchCache = new();
@@ -73,9 +75,15 @@ sealed class Vm
     private readonly int _codeEnd;
     private readonly VmHostTarget _hostTarget;
     private readonly long _monoOriginTicks;
+    private long _nextWindowHandle = 1;
     private const long UnixEpochTicks = 621355968000000000L;
 
-    public Vm(byte[] code, TextWriter? output = null, int initialLocals = 8, VmHostTarget hostTarget = VmHostTarget.Native)
+    public Vm(
+        byte[] code,
+        TextWriter? output = null,
+        int initialLocals = 8,
+        VmHostTarget hostTarget = VmHostTarget.Native,
+        TextReader? input = null)
     {
         var header = BytecodeFormat.ReadHeader(code);
         _code = code;
@@ -83,6 +91,7 @@ sealed class Vm
         _codeEnd = BytecodeFormat.HeaderSize + header.CodeSize;
         _locals = new object[initialLocals];
         _output = output ?? Console.Out;
+        _input = input ?? Console.In;
         _hostTarget = hostTarget;
         _monoOriginTicks = Stopwatch.GetTimestamp();
         InitializeDefaultHostBindings();
@@ -576,11 +585,15 @@ sealed class Vm
 
     private void InitializeDefaultHostBindings()
     {
+        InitializeCommonHostBindings();
+
         switch (_hostTarget)
         {
             case VmHostTarget.Native:
+                InitializeNativeHostBindings();
+                break;
             case VmHostTarget.Web:
-                InitializeCommonHostBindings();
+                InitializeWebHostBindings();
                 break;
             default:
                 throw new InvalidOperationException($"Unsupported host target '{_hostTarget}'.");
@@ -608,6 +621,102 @@ sealed class Vm
         });
         _hostBindings["std.time.mono_ticks"] = new HostBinding(0, _ => Stopwatch.GetTimestamp());
         _hostBindings["std.time.mono_ticks_per_second"] = new HostBinding(0, _ => (long)Stopwatch.Frequency);
+
+        _hostBindings["engine.window.create"] = new HostBinding(3, _ => _nextWindowHandle++);
+        _hostBindings["engine.window.should_close"] = new HostBinding(1, _ => 1);
+        _hostBindings["engine.window.present"] = new HostBinding(1, _ => 0);
+
+        _hostBindings["engine.input.key_down"] = new HostBinding(2, _ => 0);
+
+        _hostBindings["engine.gfx.clear"] = new HostBinding(5, _ => 0);
+        _hostBindings["engine.gfx.draw_rect"] = new HostBinding(9, _ => 0);
+    }
+
+    private void InitializeNativeHostBindings()
+    {
+        _hostBindings["std.io.read_line"] = new HostBinding(0, _ => _input.ReadLine() ?? string.Empty);
+        _hostBindings["std.time.sleep_ms"] = new HostBinding(1, args =>
+        {
+            int ms = CoerceNonNegativeIntArg(args[0], "std.time.sleep_ms");
+            Thread.Sleep(ms);
+            return 0;
+        });
+    }
+
+    private void InitializeWebHostBindings()
+    {
+        RegisterUnsupportedBinding(
+            "std.io.read_line",
+            0,
+            "this host API is native-only and cannot run on vm-web.");
+
+        RegisterUnsupportedBinding(
+            "std.time.sleep_ms",
+            1,
+            "this host API is native-only and cannot run on vm-web.");
+    }
+
+    private void RegisterUnsupportedBinding(string symbol, int arity, string reason)
+    {
+        _hostBindings[symbol] = new HostBinding(arity, _ =>
+        {
+            ThrowRuntime(
+                $"Host binding '{symbol}' is not available on target '{HostTargetName()}': {reason}",
+                type: "HostBindingError");
+            return 0;
+        });
+    }
+
+    private int CoerceNonNegativeIntArg(object? value, string symbol)
+    {
+        double numeric = value switch
+        {
+            int i => i,
+            long l => l,
+            double d => d,
+            _ => ThrowHostBindingArgumentType(symbol)
+        };
+
+        if (double.IsNaN(numeric) || double.IsInfinity(numeric))
+        {
+            ThrowRuntime(
+                $"Host binding '{symbol}' expected a finite numeric argument",
+                type: "HostBindingError");
+        }
+
+        if (numeric < 0)
+        {
+            ThrowRuntime(
+                $"Host binding '{symbol}' expected a non-negative argument",
+                type: "HostBindingError");
+        }
+
+        try
+        {
+            return checked((int)Math.Truncate(numeric));
+        }
+        catch (OverflowException)
+        {
+            ThrowRuntime(
+                $"Host binding '{symbol}' argument was out of range",
+                type: "HostBindingError");
+            return 0; // unreachable
+        }
+    }
+
+    private string HostTargetName() => _hostTarget switch
+    {
+        VmHostTarget.Native => "vm-native",
+        VmHostTarget.Web => "vm-web",
+        _ => _hostTarget.ToString()
+    };
+
+    private double ThrowHostBindingArgumentType(string symbol)
+    {
+        ThrowRuntime(
+            $"Host binding '{symbol}' expected numeric argument",
+            type: "HostBindingError");
+        return 0; // unreachable
     }
 
     private object throwRuntimeType(string message)

@@ -830,10 +830,10 @@ static class ModuleCompiler
                     ScanExprForCapabilities(a.Value, modulePath);
                     break;
                 case Call c:
-                    if (HostAbiCatalog.TryGetIntrinsic(c.Callee.Lexeme, out var symbol))
+                    if (HostAbiCatalog.TryGetIntrinsic(c.Callee.Lexeme, out var intrinsic))
                     {
                         RegisterCapability(
-                            symbol.Capability,
+                            intrinsic.Symbol.Capability,
                             modulePath,
                             c.Callee.Line,
                             c.Callee.Column,

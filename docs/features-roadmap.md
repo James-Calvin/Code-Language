@@ -68,11 +68,11 @@ Legend:
 | `[!]` | Compiler pipeline | Type checker tightening (def-assignment done; improve return/flow) | Continue refining |
 | `[~]` | Compiler pipeline | Frame sizing/temp management | Function-local slots are unique; CALL uses precise frame size; temps reused within foreach; further temp reuse/liveness possible |
 | `[~]` | Compiler pipeline | Optimizations: const fold/DCE | Initial literal fold in place |
-| `[~]` | Runtime/stdlib | Basic stdlib (IO/math/time) | Print + time intrinsics (`unix_ms`, `unix_us`, `mono_ns`, `mono_ticks`, `mono_ticks_per_second`) implemented; expand IO/math surface |
+| `[~]` | Runtime/stdlib | Basic stdlib (IO/math/time) | Print + time intrinsics (`unix_ms`, `unix_us`, `mono_ns`, `mono_ticks`, `mono_ticks_per_second`) implemented; native-only `read_line` + `sleep_ms` added with target checks; expand broader IO/math surface |
 | `[x]` | Platform/targets | Compile target model (`--target vm-native|vm-web`) | Implemented: target threads through linker/codegen entry points; default `vm-native` |
 | `[x]` | Platform/targets | Target capability validation | Implemented baseline: inferred capability groups (`std.*`, `engine.*`) from package/imports with compile-time matrix checks (`vm-web` rejects `std.fs`) |
-| `[~]` | Platform/targets | Host ABI baseline | Implemented baseline `HOST_CALL` opcode + host binding tables for native/web modes (`std.io.print`, `std.time.*`), with compile-time capability inference from host-lowered features; expand to engine capabilities and browser host |
-| `[!]` | Platform/targets | Web VM target | Browser runtime (WASM/JS host bridge) with bytecode loader |
+| `[~]` | Platform/targets | Host ABI baseline | Implemented baseline `HOST_CALL` opcode + host binding tables for native/web modes (`std.io.print`, `std.time.*`, native-only `std.io.read_line`/`std.time.sleep_ms` with diagnostics) and engine stubs (`engine.window/input/gfx`); compile-time capability inference includes host-lowered intrinsics |
+| `[!]` | Platform/targets | Web VM target | Browser runtime preview implemented (`web-runtime/` JS bytecode harness + web host binding table for `std.io.print`/`std.time.*`); continue toward production loader/packaging |
 | `[~]` | Platform/targets | Native/web parity validation | Single-source app/game runs across both targets |
 | `[~]` | Game engine | Engine core packages | `engine.math`, `engine.ecs`, `engine.scene`, `engine.loop` |
 | `[~]` | Game engine | Engine platform adapters | Window/input/gfx/audio host-backed packages |
@@ -81,7 +81,7 @@ Legend:
 | `[x]` | Tooling/docs | AI context + sample programs | Implemented |
 | `[~]` | Tooling/docs | Disassembler/trace polish; CLI trace flags | Linker trace flags implemented; disassembler/trace polish remains |
 | `[~]` | Tooling/docs | Formatter/linter for `.code` | Medium priority |
-| `[x]` | Testing | VM harness tests | Implemented |
+| `[x]` | Testing | VM harness tests | Implemented; includes host ABI conformance checks (native-only diagnostics, engine stubs, target parity) |
 | `[x]` | Testing | Compiler integration suite | Includes print, arithmetic, functions, loops, foreach, strings |
 | `[x]` | Testing | Property/fuzz tests (parser/VM) | Arithmetic, boolean logic, string concat, loop sums |
 | `[!]` | Testing | Object-model integration suite | Constructor/new/field/method paths + compile-time/runtime interface diagnostics (including interface-typed fields) covered; expand for records and interface collections |

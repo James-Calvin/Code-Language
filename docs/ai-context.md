@@ -1,5 +1,5 @@
 # AI Context — Draive / Code Language
-Updated: 2026-02-19
+Updated: 2026-02-25
 
 Read this first. Update it whenever semantics or process change.
 
@@ -10,8 +10,11 @@ Read this first. Update it whenever semantics or process change.
 - Interfaces: `interface Name { function<...> method(...); }` plus explicit `implement Interface for Object { method(types...) via Object.method; }` conformance checks and runtime dispatch for interface-typed locals/params/returns/fields.
 - Control flow: if/then[/else], while, for, foreach (numeric or array), break/continue, return (implicit 0).
 - Expressions: arithmetic (including `%`), comparisons, logical and/or/not (short-circuit), assignment (including `+=`, `-=`, `*=`, `/=`, `%=` and postfix `++/--`), function calls, full-expression string interpolation/concat.
-- Time intrinsics: `unix_ms()`, `unix_us()`, `mono_ns()`, `mono_ticks()`, `mono_ticks_per_second()` available as zero-arg global calls.
-- Host ABI baseline: compiler lowers `print` and time intrinsics to `HOST_CALL` symbols (`std.io.print`, `std.time.*`), and capability inference includes these lowered features; VM resolves via native/web host binding tables and throws `HostBindingError` on missing/arity mismatch.
+- Time intrinsics: `unix_ms()`, `unix_us()`, `mono_ns()`, `mono_ticks()`, `mono_ticks_per_second()`, plus `sleep_ms(integer)` (native-only).
+- IO intrinsic: `read_line() -> string` (native-only).
+- Host ABI baseline: compiler lowers print/time/native-only/engine intrinsic calls to `HOST_CALL` symbols; capability inference includes lowered host features (`std.io.read_line`, `std.time.sleep_ms`, `engine.window/input/gfx`); VM resolves via native/web host binding tables and throws target-aware `HostBindingError` on unsupported host calls.
+- Engine ABI stubs: `window_create`, `window_should_close`, `window_present`, `input_key_down`, `gfx_clear`, `gfx_draw_rect` are wired as no-op prototypes on native/web hosts.
+- Web harness: `web-runtime/` contains a JavaScript bytecode runner + browser host binding table for `std.io.print` and `std.time.*`.
 - Errors: `panic <expr>;` raises `UserError` with line/col + call stack (from bytecode debug map).
 - Bytecode/VM: header v0x05, spec v0.8; ops include strings, arrays (NEW_ARRAY/GET/LEN/SET/NEW_ARRAY_N), optionals (NONE/HAS/VALUE/OR), objects (NEW_OBJECT/GET_FIELD/SET_FIELD/GET_TYPE_NAME), interface dispatch (INTERFACE_CALL), THROW_ERROR.
 - Modules/imports: recursive file-based module linking for `.code` files with `import`/`export`, package declarations, grouped/selective imports, module-scope symbol conflict checks, import-chain diagnostics, alias imports for function/object/interface exports, and `lib/` ancestor search.
@@ -20,7 +23,7 @@ Read this first. Update it whenever semantics or process change.
 - Module tooling: `--dump-module-graph [outputPath]` emits entry/modules/import edges; supports text/json/dot output (via `--module-graph-format` or output extension inference); `--trace-linker` emits linker resolution steps.
 - Targets/capabilities: `--target vm-native|vm-web` (default `vm-native`) threads through module compilation; linker infers capability groups from package/import namespaces and rejects unsupported target capabilities (e.g., `std.fs` on `vm-web`).
 - CLI flags: `--run-tests`, `--skip-tests`, `--disasm`, `--dump-tokens`, `--out`, `--compile-only`, `--dump-module-graph`, `--module-graph-format`, `--trace-linker`, `--target`.
-- Tests: integration (core features, arrays, optionals, objects, interfaces, modules/imports, target capability validation, panic) + fuzz (arith, boolean, strings, loop sums, panic). Run `dotnet run --project ConsoleApp1/ConsoleApp1.csproj --run-tests`.
+- Tests: integration (core features, arrays, optionals, objects, interfaces, modules/imports, host ABI surfaces, target capability validation, panic) + fuzz (arith, boolean, strings, loop sums, panic). Run `dotnet run --project ConsoleApp1/ConsoleApp1.csproj --run-tests`.
 
 ## Not Implemented (yet)
 - User-defined data remaining: records, visibility enforcement, broader interface container/module surfaces, and dispatch optimization beyond baseline tables.
@@ -33,6 +36,7 @@ Read this first. Update it whenever semantics or process change.
 - Bytecode spec: `docs/bytecode-spec.md`
 - Roadmap/status: `docs/features-roadmap.md`
 - Platform/package plan: `docs/platform-roadmap.md`
+- Browser harness: `web-runtime/index.html`, `web-runtime/code-vm-web.js`
 - Examples: `ConsoleApp1/examples/*.code`
 - README: build/run quickstart
 
@@ -53,6 +57,8 @@ Read this first. Update it whenever semantics or process change.
 - 2026-02-19: Added timing intrinsics (unix/us + monotonic ns/ticks) in type checker/codegen/VM with integration coverage and example program.
 - 2026-02-19: Added `HOST_CALL` opcode and native host binding table; migrated compiler lowering for `print` + time intrinsics to host ABI symbols (`std.io.*`, `std.time.*`).
 - 2026-02-19: Added host-mode parity scaffold (`vm-native` vs `vm-web`) in VM/CLI and parity test coverage for `print` + time host calls.
+- 2026-02-25: Added native-only host ABI intrinsics (`read_line`, `sleep_ms`) with compile-time target gating and web runtime diagnostics; added engine window/input/gfx host stubs and conformance tests.
+- 2026-02-25: Added first browser harness in `web-runtime/` (JavaScript bytecode VM + web host binding table for print/time).
 - 2026-02-13: Implemented module linker MVP (`import`/`export`, alias imports for functions, recursive dependency loading, cycle detection, `lib/` search path) with module integration tests and examples.
 - 2026-02-12: Refined method/constructor dispatch to signature-based overload resolution with compile-time binding of call sites.
 - 2026-02-12: Added interface declarations and explicit implement blocks with compile-time method-signature and return-type conformance checks; added interface tests/example.

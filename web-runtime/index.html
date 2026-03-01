@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Code VM Web Harness</title>
+    <style>
+      :root {
+        color-scheme: light;
+      }
+      body {
+        margin: 0;
+        font-family: "Segoe UI", Arial, sans-serif;
+        background: linear-gradient(180deg, #f7f9fc 0%, #edf3fa 100%);
+        color: #0f172a;
+      }
+      .wrap {
+        max-width: 900px;
+        margin: 40px auto;
+        padding: 0 20px;
+      }
+      .card {
+        background: #ffffff;
+        border: 1px solid #dbe4ef;
+        border-radius: 12px;
+        padding: 20px;
+        box-shadow: 0 6px 20px rgba(15, 23, 42, 0.07);
+      }
+      h1 {
+        margin: 0 0 8px 0;
+        font-size: 1.5rem;
+      }
+      p {
+        margin: 0 0 16px 0;
+        color: #334155;
+      }
+      .controls {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-bottom: 12px;
+      }
+      button {
+        border: 1px solid #93a7c3;
+        background: #e8f0fa;
+        color: #0f172a;
+        border-radius: 8px;
+        padding: 8px 12px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+      #status {
+        margin: 0 0 10px 0;
+        min-height: 1.4em;
+        color: #1d4ed8;
+      }
+      pre {
+        background: #0f172a;
+        color: #e2e8f0;
+        border-radius: 10px;
+        padding: 14px;
+        min-height: 220px;
+        overflow: auto;
+        margin: 0;
+        white-space: pre-wrap;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="wrap">
+      <section class="card">
+        <h1>Code VM Web Harness</h1>
+        <p>Load a compiled <code>.bytecode</code> (or <code>.codelib</code>) file and run it with the browser host ABI.</p>
+        <div class="controls">
+          <input id="fileInput" type="file" accept=".bytecode,.codelib,application/octet-stream,application/json" />
+          <button id="runButton" disabled>Run</button>
+          <button id="clearButton">Clear Output</button>
+        </div>
+        <div id="status"></div>
+        <pre id="output"></pre>
+      </section>
+    </main>
+
+    <script type="module">
+      import { WebVm, VmRuntimeError, extractBytecodePayload } from "./code-vm-web.js";
+
+      const fileInput = document.getElementById("fileInput");
+      const runButton = document.getElementById("runButton");
+      const clearButton = document.getElementById("clearButton");
+      const output = document.getElementById("output");
+      const status = document.getElementById("status");
+
+      fileInput.addEventListener("change", () => {
+        runButton.disabled = fileInput.files.length === 0;
+        if (fileInput.files.length > 0) {
+          status.textContent = `Ready: ${fileInput.files[0].name}`;
+        } else {
+          status.textContent = "";
+        }
+      });
+
+      clearButton.addEventListener("click", () => {
+        output.textContent = "";
+        status.textContent = "";
+      });
+
+      runButton.addEventListener("click", async () => {
+        const file = fileInput.files[0];
+        if (!file) {
+          return;
+        }
+
+        output.textContent = "";
+        status.textContent = `Running ${file.name}...`;
+        runButton.disabled = true;
+
+        try {
+          const raw = new Uint8Array(await file.arrayBuffer());
+          const payload = extractBytecodePayload(raw, file.name);
+          const vm = new WebVm(payload, {
+            output: line => {
+              output.textContent += `${line}\n`;
+            }
+          });
+          vm.run();
+          status.textContent = `Completed: ${file.name}`;
+        } catch (error) {
+          if (error instanceof VmRuntimeError) {
+            const line = error.payload?.line ?? -1;
+            const column = error.payload?.column ?? -1;
+            status.textContent = `Runtime error at ${line}:${column}`;
+            output.textContent += `Runtime error: ${error.message}\n`;
+            const frames = error.payload?.callStack ?? [];
+            if (frames.length > 0) {
+              output.textContent += "Stack trace (most recent call first):\n";
+              for (const frame of frames) {
+                output.textContent += `  at ip ${frame.ip} (${frame.line}:${frame.column})\n`;
+              }
+            }
+          } else {
+            status.textContent = "Failed to run bytecode.";
+            output.textContent += `${error.message}\n`;
+          }
+        } finally {
+          runButton.disabled = false;
+        }
+      });
+    </script>
+  </body>
+</html>

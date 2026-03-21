@@ -1,6 +1,6 @@
 # Platform, Libraries, and Targets Roadmap
 
-Last updated: 2026-02-25
+Last updated: 2026-02-28
 
 This roadmap is specifically for:
 1) library/package system,
@@ -8,6 +8,17 @@ This roadmap is specifically for:
 3) web deployment target for the VM.
 
 It is intentionally staged so each step de-risks the next one.
+
+## 0) Strategic intent (web-first, platform-agnostic)
+
+Primary product direction:
+- First-class support for web-hosted workloads (simulation, ML experiments, computationally heavy apps).
+- Keep Code source portable across `vm-web` and `vm-native`.
+
+Architecture rule:
+- Language-facing APIs stay backend-agnostic (for example `engine.gfx`, later `engine.gpu`).
+- Runtime host bindings map those APIs to concrete platform backends (WebGPU/WebGL/Canvas on web, native GPU stacks on desktop).
+- Capability discovery + explicit fallback policy is required so behavior is predictable, not implicit magic.
 
 ## 1) Build Model (target interaction)
 
@@ -78,11 +89,26 @@ Host calls are explicit, capability-scoped bindings provided by the runtime host
   - `draw_rect(whole window, real x, real y, real w, real h, real r, real g, real b, real a) -> void`
 - `engine.audio`
   - `play_sfx(string id, real volume) -> void`
+- `engine.gpu` (planned)
+  - adapter/device discovery, capability query, and limits
+  - buffer/texture creation and updates
+  - render/compute pipeline creation
+  - command encoding + submission
+  - compute dispatch and GPU timing/query hooks
 
 ### 2.5 Target capability matrix (v1)
 - `vm-native`: all capability groups above
 - `vm-web`: `std.time`, `std.io.print`, `engine.window`, `engine.input`, `engine.gfx`, `engine.audio`
 - compile-time rule: fail build if package requires unsupported capability for selected target.
+
+### 2.6 Backend policy (WebGPU compatibility)
+- Current JS web runtime does **not** block a WebGPU future; it is a bootstrap runtime for ABI bring-up.
+- The long-term design keeps `engine.*` APIs backend-agnostic and maps them per target/backend.
+- Web target backend preference:
+  1) WebGPU when available,
+  2) fallback backend (for example WebGL2/Canvas) when policy allows,
+  3) deterministic diagnostic when required capability is unavailable.
+- Native target uses the same ABI contract with a native backend implementation for parity.
 
 ## 3) Package Manifest Schema (concrete draft)
 
@@ -184,8 +210,13 @@ Legend:
 | `[x]` | Phase 2 | Library artifact format (`.codelib`) | Implemented baseline: library manifests emit `.codelib`, resolver validates/prefer artifact paths in `code.lock.json`, CLI can run/disasm `.codelib` |
 | `[~]` | Phase 3 | Stdlib as packages | `std.core`, `std.math`, `std.time`, `std.io` packaged and importable |
 | `[!]` | Phase 4 | Web VM target runtime | Browser runtime preview is in place (`web-runtime/` JS bytecode harness + web host bindings); continue toward production WASM/JS target packaging and runtime parity |
+| `[!]` | Phase 4 | Web engine host bindings (real impl) | Replace window/input/gfx no-op web stubs with concrete browser bindings and conformance tests |
+| `[!]` | Phase 4 | Backend-agnostic API contract | Freeze capability-query and fallback semantics so one Code source can target multiple backends predictably |
 | `[~]` | Phase 5 | Engine core package set | `engine.math`, `engine.ecs`, `engine.scene`, `engine.loop` |
 | `[~]` | Phase 5 | Engine platform adapters | `engine.window/input/gfx/audio` host-backed packages for native+web |
+| `[~]` | Phase 5 | `engine.gpu` ABI v1 | Add GPU resource/pipeline/dispatch ABI for compute-heavy and graphics-heavy workloads |
+| `[~]` | Phase 5 | WebGPU backend | Implement `engine.gpu` on `vm-web` with explicit fallback policy when WebGPU is unavailable |
+| `[~]` | Phase 5 | Native GPU backend parity | Implement the same `engine.gpu` ABI on `vm-native` backend(s) for parity and performance |
 | `[~]` | Phase 6 | Vertical slice game | one small game running on native and web from same Code sources |
 | `[_]` | Phase 6 | Registry and remote publishing | package publish/install workflow beyond local workspace |
 
@@ -199,3 +230,17 @@ Legend:
 6. [x] Add first host ABI bindings (`std.io.print`, `std.time.*`) for both `vm-native` and `vm-web`, then extend native-only APIs (`read_line`, `sleep_ms`) with target diagnostics.
 
 This order gets library system + target model stable before engine work starts.
+
+## 7) Near-term execution milestones (web-first)
+
+1. **Real web engine host bindings**
+   - Implement browser-backed `engine.window`, `engine.input`, and `engine.gfx` handlers.
+   - Exit criteria: a Code sample renders and responds to keyboard input in browser.
+
+2. **Engine packages + loop contract**
+   - Add importable `engine.window`, `engine.input`, `engine.gfx`, `engine.loop` packages over host ABI.
+   - Exit criteria: same source compiles/runs on both targets with documented behavior.
+
+3. **Web bundle workflow**
+   - Add a CLI web bundle mode that outputs bytecode + loader + HTML scaffold.
+   - Exit criteria: one command produces a runnable browser folder for a sample app.

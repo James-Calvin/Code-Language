@@ -73,9 +73,14 @@ Legend:
 | `[x]` | Platform/targets | Target capability validation | Implemented baseline: inferred capability groups (`std.*`, `engine.*`) from package/imports with compile-time matrix checks (`vm-web` rejects `std.fs`) |
 | `[~]` | Platform/targets | Host ABI baseline | Implemented baseline `HOST_CALL` opcode + host binding tables for native/web modes (`std.io.print`, `std.time.*`, native-only `std.io.read_line`/`std.time.sleep_ms` with diagnostics) and engine stubs (`engine.window/input/gfx`); compile-time capability inference includes host-lowered intrinsics |
 | `[!]` | Platform/targets | Web VM target | Browser runtime preview implemented (`web-runtime/` JS bytecode harness + web host binding table for `std.io.print`/`std.time.*`); continue toward production loader/packaging |
-| `[~]` | Platform/targets | Native/web parity validation | Single-source app/game runs across both targets |
+| `[!]` | Platform/targets | Web engine host bindings | Replace browser window/input/gfx no-op stubs with concrete host implementations + conformance tests |
+| `[!]` | Platform/targets | Backend-agnostic engine API contract | Lock capability-query + fallback semantics so Code source remains portable across web/native backends |
+| `[~]` | Platform/targets | Native/web parity validation | Single-source app/game runs across both targets with explicit capability fallback behavior |
 | `[~]` | Game engine | Engine core packages | `engine.math`, `engine.ecs`, `engine.scene`, `engine.loop` |
 | `[~]` | Game engine | Engine platform adapters | Window/input/gfx/audio host-backed packages |
+| `[~]` | Game engine | `engine.gpu` ABI v1 | GPU resource/pipeline/dispatch API for simulation/ML/graphics workloads |
+| `[~]` | Game engine | WebGPU backend | Implement `engine.gpu` via WebGPU on `vm-web` with fallback policy |
+| `[~]` | Game engine | Native GPU backend parity | Implement same `engine.gpu` ABI on `vm-native` backend(s) |
 | `[_]` | Runtime/stdlib | REPL | Future |
 | `[x]` | Tooling/docs | Bytecode spec v0.8 (debug map + arrays/optionals/errors/objects) | Implemented |
 | `[x]` | Tooling/docs | AI context + sample programs | Implemented |
@@ -88,8 +93,8 @@ Legend:
 | `[~]` | Testing | Object-model fuzz/property domains | Constructor/field mutation/member access invariants |
 
 ## Priority Rollup (benefit/effort)
-- High (`[!]`): interface/dynamic dispatch model, type system/codegen polish (frame sizing, flow/return analysis), testing expansion, error propagation semantics, host ABI + web VM target.
-- Medium (`[~]`): record semantics, constant pool, optimizer expansion, stdlib basics, tooling polish, engine core/adapters and cross-target parity.
+- High (`[!]`): interface/dynamic dispatch model, type system/codegen polish (frame sizing, flow/return analysis), testing expansion, error propagation semantics, host ABI + web VM target, and backend-agnostic web engine host bindings.
+- Medium (`[~]`): record semantics, constant pool, optimizer expansion, stdlib basics, tooling polish, engine core/adapters, `engine.gpu` ABI, and native/web GPU backend parity.
 - Low (`[_]`): interfaces runtime dispatch, REPL, future stdlib/versioning, long-term runtime lifecycle strategy, remote package registry.
 
 See also: `docs/platform-roadmap.md` for ABI schema, package manifest schema, and phased execution plan.

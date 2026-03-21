@@ -1,7 +1,13 @@
 # AI Context — Draive / Code Language
-Updated: 2026-02-25
+Updated: 2026-02-28
 
 Read this first. Update it whenever semantics or process change.
+
+## Strategic Direction (active)
+- Web-first for computationally heavy workloads (simulation/ML/graphics), while preserving native portability.
+- Keep language-facing engine APIs backend-agnostic; host bindings provide platform-specific implementations.
+- Current web JS runtime is a bootstrap/prototyping runtime; it does not block a future WebGPU or WASM-hosted VM path.
+- Capability query + explicit fallback policy is a required design constraint for predictable cross-target behavior.
 
 ## Current Capability Snapshot
 - Types: integer/whole/real, boolean, string, array<T> (literals `{...}`, `new array<T>(n)`, `.length`, indexing, mutation), optional<T> (`none`, `.hasValue`, `.value`, `.or(fallback)`), constants, typed/void functions, object types.
@@ -13,7 +19,7 @@ Read this first. Update it whenever semantics or process change.
 - Time intrinsics: `unix_ms()`, `unix_us()`, `mono_ns()`, `mono_ticks()`, `mono_ticks_per_second()`, plus `sleep_ms(integer)` (native-only).
 - IO intrinsic: `read_line() -> string` (native-only).
 - Host ABI baseline: compiler lowers print/time/native-only/engine intrinsic calls to `HOST_CALL` symbols; capability inference includes lowered host features (`std.io.read_line`, `std.time.sleep_ms`, `engine.window/input/gfx`); VM resolves via native/web host binding tables and throws target-aware `HostBindingError` on unsupported host calls.
-- Engine ABI stubs: `window_create`, `window_should_close`, `window_present`, `input_key_down`, `gfx_clear`, `gfx_draw_rect` are wired as no-op prototypes on native/web hosts.
+- Engine ABI stubs: `window_create`, `window_should_close`, `window_present`, `input_key_down`, `gfx_clear`, `gfx_draw_rect` are wired as no-op prototypes on native/web hosts; next step is real browser-backed implementations.
 - Web harness: `web-runtime/` contains a JavaScript bytecode runner + browser host binding table for `std.io.print` and `std.time.*`.
 - Errors: `panic <expr>;` raises `UserError` with line/col + call stack (from bytecode debug map).
 - Bytecode/VM: header v0x05, spec v0.8; ops include strings, arrays (NEW_ARRAY/GET/LEN/SET/NEW_ARRAY_N), optionals (NONE/HAS/VALUE/OR), objects (NEW_OBJECT/GET_FIELD/SET_FIELD/GET_TYPE_NAME), interface dispatch (INTERFACE_CALL), THROW_ERROR.
@@ -30,6 +36,9 @@ Read this first. Update it whenever semantics or process change.
 - Module namespaces and stdlib versioning/layout.
 - Typed array element enforcement, constant pool, formatter/linter, REPL.
 - Typed error values / `fallible<T>` semantics wired to VM errors.
+- Engine web runtime maturation: real browser `engine.window`/`engine.input`/`engine.gfx` bindings, engine package wrappers, and web bundle workflow.
+- GPU roadmap: `engine.gpu` ABI v1 + WebGPU backend (`vm-web`) + native GPU backend parity (`vm-native`).
+- Capability query/fallback APIs for deterministic backend negotiation.
 
 ## Canonical Docs
 - Language spec: `docs/code-language-spec.md`
@@ -46,6 +55,8 @@ Read this first. Update it whenever semantics or process change.
 - Preserve prior decisions; ask user when unclear.
 
 ## Change Log
+- 2026-02-28: Synced AI context with web-first strategy and backend-agnostic engine API goals; documented capability/fallback policy requirement.
+- 2026-02-28: Added near-term platform focus: real browser engine host bindings, engine package wrappers/loop contract, and web bundle workflow.
 - 2026-02-13: Added `package` declarations, module-level import/declaration conflict checks, and chained import diagnostics (`a -> b -> c`) for linker errors.
 - 2026-02-13: Added module graph tooling (`--dump-module-graph`) and linker tracing (`--trace-linker`) with integration coverage.
 - 2026-02-13: Added file-based machine-readable module graph export (JSON/DOT) with `--dump-module-graph <file>` and `--module-graph-format` override.

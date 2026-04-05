@@ -54,7 +54,7 @@ sealed class Parser
         return Statement();
     }
 
-    private Stmt ImportDeclaration()
+    private Stmt ImportDeclaration(bool isExported = false)
     {
         var bindings = new List<ImportBinding>();
         if (Match(TokenType.LeftBrace))
@@ -67,6 +67,15 @@ sealed class Parser
             } while (Match(TokenType.Comma));
             Consume(TokenType.RightBrace, "Expect '}' after grouped import bindings.");
         }
+        else if (Check(TokenType.Identifier) &&
+                 string.Equals(Peek().Lexeme, "everything", System.StringComparison.Ordinal) &&
+                 CheckNext(TokenType.As))
+        {
+            Token everything = Advance();
+            Consume(TokenType.As, "Expect 'as' after 'everything' in namespace import.");
+            Token alias = Consume(TokenType.Identifier, "Expect namespace alias after 'as'.");
+            bindings.Add(new ImportBinding(everything, alias, IsNamespace: true));
+        }
         else
         {
             bindings.Add(ParseImportBinding());
@@ -74,7 +83,7 @@ sealed class Parser
         Consume(TokenType.From, "Expect 'from' in import declaration.");
         Token source = Consume(TokenType.String, "Expect string module path in import declaration.");
         Consume(TokenType.Semicolon, "Expect ';' after import declaration.");
-        return new ImportDecl(bindings, source);
+        return new ImportDecl(bindings, source, isExported);
     }
 
     private ImportBinding ParseImportBinding()
@@ -86,8 +95,17 @@ sealed class Parser
         return new ImportBinding(name, alias);
     }
 
+    private bool CheckNext(TokenType type)
+    {
+        if (_current + 1 >= _tokens.Count)
+            return false;
+        return _tokens[_current + 1].Type == type;
+    }
+
     private Stmt ExportDeclaration()
     {
+        if (Match(TokenType.Import))
+            return ImportDeclaration(isExported: true);
         if (Match(TokenType.Function))
             return new ExportDecl(FunctionDeclaration());
         if (Match(TokenType.Object))
@@ -218,6 +236,7 @@ sealed class Parser
         var fields = new List<FieldDecl>();
         var constructors = new List<ConstructorDecl>();
         var methods = new List<MethodDecl>();
+        var inlineInterfaceMethods = new List<InlineImplementMethodDecl>();
         while (!Check(TokenType.RightBrace) && !IsAtEnd())
         {
             if (Match(TokenType.Constructor))
@@ -230,6 +249,11 @@ sealed class Parser
                 methods.Add(ParseMethodDeclaration());
                 continue;
             }
+            if (Match(TokenType.Implement))
+            {
+                inlineInterfaceMethods.Add(ParseInlineImplementMethod());
+                continue;
+            }
 
             var fType = ParseTypeRef();
             Token fname = Consume(TokenType.Identifier, "Expect field name.");
@@ -237,7 +261,28 @@ sealed class Parser
             fields.Add(new FieldDecl(fType, fname));
         }
         Consume(TokenType.RightBrace, "Expect '}' after object fields.");
-        return new ObjectDecl(name, fields, constructors, methods);
+        return new ObjectDecl(name, fields, constructors, methods, inlineInterfaceMethods);
+    }
+
+    private InlineImplementMethodDecl ParseInlineImplementMethod()
+    {
+        Token interfaceName = Consume(TokenType.Identifier, "Expect interface name after 'implement'.");
+        Consume(TokenType.Dot, "Expect '.' after interface name in inline implement method.");
+        Token methodName = Consume(TokenType.Identifier, "Expect interface method name after '.'.");
+        Consume(TokenType.LeftParen, "Expect '(' after interface method name.");
+        var parameters = new List<Parameter>();
+        if (!Check(TokenType.RightParen))
+        {
+            do
+            {
+                TypeRef parameterType = ParseTypeRef();
+                Token parameterName = Consume(TokenType.Identifier, "Expect inline implement parameter name.");
+                parameters.Add(new Parameter(parameterType, parameterName));
+            } while (Match(TokenType.Comma));
+        }
+        Consume(TokenType.RightParen, "Expect ')' after inline implement parameters.");
+        Block body = ParseCallableBody("inline implement method");
+        return new InlineImplementMethodDecl(interfaceName, methodName, parameters, body);
     }
 
     private Stmt InterfaceDeclaration()

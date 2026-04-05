@@ -1,0 +1,57 @@
+package engine.viewport;
+
+export function<real> view_left() {
+  return camera_view_left();
+}
+
+export function<real> view_top() {
+  return camera_view_top();
+}
+
+export function<real> view_width() {
+  return camera_view_width();
+}
+
+export function<real> view_height() {
+  return camera_view_height();
+}
+
+export function<real> view_right() {
+  return camera_view_right();
+}
+
+export function<real> view_bottom() {
+  return camera_view_bottom();
+}
+
+export function<real> safe_left() {
+  return camera_safe_left();
+}
+
+export function<real> safe_top() {
+  return camera_safe_top();
+}
+
+export function<real> safe_width() {
+  return camera_safe_width();
+}
+
+export function<real> safe_height() {
+  return camera_safe_height();
+}
+
+export function<real> safe_right() {
+  return camera_safe_right();
+}
+
+export function<real> safe_bottom() {
+  return camera_safe_bottom();
+}
+
+export function<real> hud_width() {
+  return screen_width();
+}
+
+export function<real> hud_height() {
+  return screen_height();
+}

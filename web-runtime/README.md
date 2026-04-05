@@ -55,7 +55,8 @@ Compatibility note:
 
 The generated web app path is now the main workflow for browser apps.
 - Current generated runtime behavior: full-bleed browser canvas, centered `640x360` safe area, hybrid-expanded world framing, optional `draw_hud()` for screen-edge HUD work, scene primitives for rectangles, outlines, lines, circles, polygons, text, images, and sprites, and copied `assets/` content in the generated site output when present.
-- The repo also ships a wrapper layer in `lib/engine/` so scene apps can import `engine.colors`, `engine.drawing`, `engine.input`, `engine.view`, `engine.scene`, and `engine.loop` instead of relying on the raw helper surface.
+- The repo also ships a wrapper layer in `lib/engine/` so scene apps can import canonical modules `engine.colors`, `engine.drawing`, `engine.input`, `engine.viewport`, and `engine.scene` instead of relying on the raw helper surface. `engine.view` and `engine.loop` remain as compatibility re-exports.
+- The generated runtime is currently JavaScript, not Wasm. Wasm remains a future option if performance or parity data justifies the extra build complexity.
 
 ## Harness quick start
 1. Compile a program for web:

@@ -237,6 +237,7 @@ static class ModuleCompiler
         var tokens = lexer.ScanTokens();
         var parser = new Parser(tokens);
         var ast = parser.Parse();
+        ast = LowerInlineInterfaceImplementations(ast);
         var typeChecker = new TypeChecker();
         typeChecker.Check(ast);
         var generator = new CodeGenerator();
@@ -268,10 +269,11 @@ static class ModuleCompiler
         };
         var linker = new ModuleLinker(projectRoot, fullEntryPath, compileOptions);
         var linkResult = linker.Link(fullEntryPath);
+        var loweredStatements = LowerInlineInterfaceImplementations(linkResult.Statements);
         var typeChecker = new TypeChecker();
-        typeChecker.Check(linkResult.Statements);
+        typeChecker.Check(loweredStatements);
         var generator = new CodeGenerator();
-        var generated = generator.GenerateWithMetadata(linkResult.Statements);
+        var generated = generator.GenerateWithMetadata(loweredStatements);
         var bytecode = generated.Bytecode;
 
         if (manifest is not null && string.Equals(manifest.Kind, "library", StringComparison.Ordinal))
@@ -355,6 +357,128 @@ static class ModuleCompiler
         string relative = Path.GetRelativePath(fullRoot, fullPath);
         return relative.Replace('\\', '/');
     }
+
+    private static IList<Stmt> LowerInlineInterfaceImplementations(IList<Stmt> statements)
+    {
+        bool hasInlineImplementations = statements.Any(stmt => stmt is ObjectDecl obj && obj.InlineInterfaceMethods.Count > 0);
+        if (!hasInlineImplementations)
+            return statements;
+
+        var interfaces = new Dictionary<string, InterfaceDecl>(StringComparer.Ordinal);
+        for (int i = 0; i < statements.Count; i++)
+        {
+            if (statements[i] is InterfaceDecl iface && !interfaces.ContainsKey(iface.Name.Lexeme))
+                interfaces[iface.Name.Lexeme] = iface;
+        }
+
+        var lowered = new List<Stmt>(statements.Count);
+        var generatedImplements = new Dictionary<string, GeneratedImplementGroup>(StringComparer.Ordinal);
+
+        for (int i = 0; i < statements.Count; i++)
+        {
+            if (statements[i] is not ObjectDecl obj || obj.InlineInterfaceMethods.Count == 0)
+            {
+                lowered.Add(statements[i]);
+                continue;
+            }
+
+            var methods = new List<MethodDecl>(obj.Methods);
+            for (int m = 0; m < obj.InlineInterfaceMethods.Count; m++)
+            {
+                var inline = obj.InlineInterfaceMethods[m];
+                if (!interfaces.TryGetValue(inline.InterfaceName.Lexeme, out var iface))
+                {
+                    throw new CompilerException(
+                        $"Unknown interface '{inline.InterfaceName.Lexeme}'",
+                        inline.InterfaceName.Line,
+                        inline.InterfaceName.Column);
+                }
+
+                var interfaceMethod = FindMatchingInterfaceMethod(iface, inline);
+                if (interfaceMethod is null)
+                {
+                    throw new CompilerException(
+                        $"Interface '{iface.Name.Lexeme}' has no method '{inline.MethodName.Lexeme}' with this signature",
+                        inline.MethodName.Line,
+                        inline.MethodName.Column);
+                }
+
+                methods.Add(new MethodDecl(
+                    inline.MethodName,
+                    interfaceMethod.ReturnType,
+                    inline.Parameters,
+                    inline.Body));
+
+                string pairKey = $"{iface.Name.Lexeme}->{obj.Name.Lexeme}";
+                if (!generatedImplements.TryGetValue(pairKey, out var group))
+                {
+                    group = new GeneratedImplementGroup(inline.InterfaceName, obj.Name, new List<ImplementMethodMap>());
+                    generatedImplements[pairKey] = group;
+                }
+
+                group.Methods.Add(new ImplementMethodMap(
+                    inline.MethodName,
+                    inline.Parameters,
+                    obj.Name,
+                    inline.MethodName));
+            }
+
+            lowered.Add(new ObjectDecl(obj.Name, obj.Fields, obj.Constructors, methods));
+        }
+
+        foreach (var key in generatedImplements.Keys.OrderBy(value => value, StringComparer.Ordinal))
+        {
+            var group = generatedImplements[key];
+            lowered.Add(new ImplementDecl(group.InterfaceName, group.ObjectName, group.Methods));
+        }
+
+        return lowered;
+    }
+
+    private static InterfaceMethodDecl? FindMatchingInterfaceMethod(InterfaceDecl iface, InlineImplementMethodDecl inline)
+    {
+        for (int i = 0; i < iface.Methods.Count; i++)
+        {
+            var method = iface.Methods[i];
+            if (!string.Equals(method.Name.Lexeme, inline.MethodName.Lexeme, StringComparison.Ordinal))
+                continue;
+            if (method.Parameters.Count != inline.Parameters.Count)
+                continue;
+
+            bool matches = true;
+            for (int p = 0; p < method.Parameters.Count; p++)
+            {
+                var interfaceParamType = method.Parameters[p].Type ?? throw new InvalidOperationException("Interface parameters must be typed.");
+                var inlineParamType = inline.Parameters[p].Type ?? throw new InvalidOperationException("Inline implement parameters must be typed.");
+                if (!TypeRefEquals(interfaceParamType, inlineParamType))
+                {
+                    matches = false;
+                    break;
+                }
+            }
+
+            if (matches)
+                return method;
+        }
+
+        return null;
+    }
+
+    private static bool TypeRefEquals(TypeRef left, TypeRef right)
+    {
+        if (!string.Equals(left.Name, right.Name, StringComparison.Ordinal))
+            return false;
+        if (left.TypeArguments.Count != right.TypeArguments.Count)
+            return false;
+        for (int i = 0; i < left.TypeArguments.Count; i++)
+        {
+            if (!TypeRefEquals(left.TypeArguments[i], right.TypeArguments[i]))
+                return false;
+        }
+        return true;
+    }
+
+    private sealed record GeneratedImplementGroup(Token InterfaceName, Token ObjectName, List<ImplementMethodMap> Methods);
 
     private sealed class ModuleLinker
     {
@@ -449,6 +573,36 @@ static class ModuleCompiler
                     for (int i = 0; i < import.Bindings.Count; i++)
                     {
                         var binding = import.Bindings[i];
+                        if (binding.IsNamespace)
+                        {
+                            if (import.IsExported)
+                            {
+                                throw new CompilerException(
+                                    "Namespace imports cannot be exported.",
+                                    binding.Alias?.Line ?? binding.Name.Line,
+                                    binding.Alias?.Column ?? binding.Name.Column);
+                            }
+
+                            string aliasName = binding.Alias?.Lexeme ?? throw new CompilerException(
+                                "Namespace imports require an alias.",
+                                binding.Name.Line,
+                                binding.Name.Column);
+
+                            var namespaceMembers = new Dictionary<string, string>(StringComparer.Ordinal);
+                            foreach (var exportedPair in dependency.ExportedDeclarations.OrderBy(pair => pair.Key, StringComparer.Ordinal))
+                            {
+                                if (exportedPair.Value is not FunctionDecl exportedFunction)
+                                    continue;
+
+                                string wrapperName = BuildNamespaceWrapperName(aliasName, exportedFunction.Name.Lexeme, binding.Alias ?? binding.Name);
+                                module.LinkedStatements.Add(BuildNamespaceWrapper(wrapperName, exportedFunction, binding.Alias ?? binding.Name));
+                                namespaceMembers[exportedPair.Key] = wrapperName;
+                            }
+
+                            module.NamespaceAliases[aliasName] = namespaceMembers;
+                            continue;
+                        }
+
                         if (!dependency.ExportedDeclarations.TryGetValue(binding.Name.Lexeme, out var exported))
                         {
                             var chain = BuildImportChain(dependencyPath);
@@ -477,10 +631,24 @@ static class ModuleCompiler
                                         binding.Alias.Column);
                             }
                         }
+
+                        if (import.IsExported)
+                        {
+                            string exportName = binding.Alias?.Lexeme ?? binding.Name.Lexeme;
+                            if (module.ExportedDeclarations.ContainsKey(exportName))
+                            {
+                                throw new CompilerException(
+                                    $"Module export '{exportName}' is already declared",
+                                    binding.Alias?.Line ?? binding.Name.Line,
+                                    binding.Alias?.Column ?? binding.Name.Column);
+                            }
+
+                            module.ExportedDeclarations[exportName] = exported;
+                        }
                     }
                 }
 
-                module.LinkedStatements.AddRange(RewriteTypeAliases(module.LocalStatements, module.TypeAliases));
+                module.LinkedStatements.AddRange(RewriteModuleStatements(module.LocalStatements, module.TypeAliases, module.NamespaceAliases));
                 _modules[modulePath] = module;
                 _order.Add(modulePath);
                 Trace($"Linked {FormatGraphPath(modulePath)}");
@@ -618,7 +786,8 @@ static class ModuleCompiler
                 locals,
                 exports,
                 new List<Stmt>(),
-                new Dictionary<string, string>(StringComparer.Ordinal));
+                new Dictionary<string, string>(StringComparer.Ordinal),
+                new Dictionary<string, Dictionary<string, string>>(StringComparer.Ordinal));
         }
 
         private string ResolveImportPath(string importerPath, string sourcePath, Token sourceToken)
@@ -766,6 +935,8 @@ static class ModuleCompiler
                         ScanStmtForCapabilities(obj.Constructors[i].Body, modulePath);
                     for (int i = 0; i < obj.Methods.Count; i++)
                         ScanStmtForCapabilities(obj.Methods[i].Body, modulePath);
+                    for (int i = 0; i < obj.InlineInterfaceMethods.Count; i++)
+                        ScanStmtForCapabilities(obj.InlineInterfaceMethods[i].Body, modulePath);
                     break;
 
                 case ExportDecl ex:
@@ -1053,6 +1224,38 @@ static class ModuleCompiler
             return new FunctionDecl(aliasName, fn.ReturnType, parameters, body);
         }
 
+        private static string BuildNamespaceWrapperName(string aliasName, string exportName, Token token)
+        {
+            static string Sanitize(string value)
+            {
+                var chars = value.Select(ch => char.IsLetterOrDigit(ch) ? ch : '_').ToArray();
+                return new string(chars);
+            }
+
+            return $"__namespace_{Sanitize(aliasName)}_{Sanitize(exportName)}_{token.Line}_{token.Column}";
+        }
+
+        private static Stmt BuildNamespaceWrapper(string wrapperName, FunctionDecl exportedFunction, Token token)
+        {
+            var aliasName = new Token(TokenType.Identifier, wrapperName, null, token.Line, token.Column);
+            var callName = new Token(TokenType.Identifier, exportedFunction.Name.Lexeme, null, exportedFunction.Name.Line, exportedFunction.Name.Column);
+            var parameters = new List<Parameter>(exportedFunction.Parameters.Count);
+            var callArgs = new List<Expr>(exportedFunction.Parameters.Count);
+            for (int i = 0; i < exportedFunction.Parameters.Count; i++)
+            {
+                var sourceParam = exportedFunction.Parameters[i];
+                var parameterToken = new Token(TokenType.Identifier, sourceParam.Name.Lexeme, null, token.Line, token.Column);
+                parameters.Add(new Parameter(sourceParam.Type, parameterToken));
+                callArgs.Add(new Variable(parameterToken));
+            }
+
+            var call = new Call(callName, callArgs);
+            var body = exportedFunction.ReturnType is null
+                ? new Block([new ExprStmt(call)])
+                : new Block([new ReturnStmt(call)]);
+            return new FunctionDecl(aliasName, exportedFunction.ReturnType, parameters, body);
+        }
+
         private static string GetExportName(Stmt declaration) => declaration switch
         {
             FunctionDecl fn => fn.Name.Lexeme,
@@ -1135,9 +1338,16 @@ static class ModuleCompiler
             for (int i = 0; i < bindings.Count; i++)
             {
                 var binding = bindings[i];
-                names.Add(binding.Alias is null
-                    ? binding.Name.Lexeme
-                    : $"{binding.Name.Lexeme} as {binding.Alias.Lexeme}");
+                if (binding.IsNamespace)
+                {
+                    names.Add($"everything as {binding.Alias?.Lexeme ?? binding.Name.Lexeme}");
+                }
+                else
+                {
+                    names.Add(binding.Alias is null
+                        ? binding.Name.Lexeme
+                        : $"{binding.Name.Lexeme} as {binding.Alias.Lexeme}");
+                }
             }
 
             if (names.Count == 1)
@@ -1179,105 +1389,196 @@ static class ModuleCompiler
             return string.IsNullOrEmpty(file) ? path : file;
         }
 
-        private static IList<Stmt> RewriteTypeAliases(IList<Stmt> statements, IReadOnlyDictionary<string, string> aliases)
+        private static IList<Stmt> RewriteModuleStatements(
+            IList<Stmt> statements,
+            IReadOnlyDictionary<string, string> typeAliases,
+            IReadOnlyDictionary<string, Dictionary<string, string>> namespaceAliases)
         {
-            if (aliases.Count == 0) return statements;
+            if (typeAliases.Count == 0 && namespaceAliases.Count == 0)
+                return statements;
+
             var rewritten = new List<Stmt>(statements.Count);
             for (int i = 0; i < statements.Count; i++)
             {
-                rewritten.Add(RewriteStmt(statements[i], aliases));
+                rewritten.Add(RewriteStmt(statements[i], typeAliases, namespaceAliases));
             }
             return rewritten;
         }
 
-        private static Stmt RewriteStmt(Stmt stmt, IReadOnlyDictionary<string, string> aliases) => stmt switch
+        private static Stmt RewriteStmt(
+            Stmt stmt,
+            IReadOnlyDictionary<string, string> typeAliases,
+            IReadOnlyDictionary<string, Dictionary<string, string>> namespaceAliases) => stmt switch
         {
-            VarDecl v => new VarDecl(RewriteTypeRef(v.Type, aliases), v.Name, v.Initializer is null ? null : RewriteExpr(v.Initializer, aliases), v.IsConstant),
-            ExprStmt e => new ExprStmt(RewriteExpr(e.Expression, aliases)),
-            Block b => new Block(b.Statements.Select(s => RewriteStmt(s, aliases)).ToList()),
-            IfStmt i => new IfStmt(RewriteExpr(i.Condition, aliases), RewriteStmt(i.ThenBranch, aliases), i.ElseBranch is null ? null : RewriteStmt(i.ElseBranch, aliases)),
-            WhileStmt w => new WhileStmt(RewriteExpr(w.Condition, aliases), RewriteStmt(w.Body, aliases)),
-            ReturnStmt r => new ReturnStmt(r.Value is null ? null : RewriteExpr(r.Value, aliases)),
-            PrintStmt p => new PrintStmt(RewriteExpr(p.Value, aliases)),
-            PanicStmt p => new PanicStmt(RewriteExpr(p.Value, aliases)),
+            VarDecl v => new VarDecl(RewriteTypeRef(v.Type, typeAliases), v.Name, v.Initializer is null ? null : RewriteExpr(v.Initializer, typeAliases, namespaceAliases), v.IsConstant),
+            ExprStmt e => new ExprStmt(RewriteExpr(e.Expression, typeAliases, namespaceAliases)),
+            Block b => new Block(b.Statements.Select(s => RewriteStmt(s, typeAliases, namespaceAliases)).ToList()),
+            IfStmt i => new IfStmt(
+                RewriteExpr(i.Condition, typeAliases, namespaceAliases),
+                RewriteStmt(i.ThenBranch, typeAliases, namespaceAliases),
+                i.ElseBranch is null ? null : RewriteStmt(i.ElseBranch, typeAliases, namespaceAliases)),
+            WhileStmt w => new WhileStmt(RewriteExpr(w.Condition, typeAliases, namespaceAliases), RewriteStmt(w.Body, typeAliases, namespaceAliases)),
+            ReturnStmt r => new ReturnStmt(r.Value is null ? null : RewriteExpr(r.Value, typeAliases, namespaceAliases)),
+            PrintStmt p => new PrintStmt(RewriteExpr(p.Value, typeAliases, namespaceAliases)),
+            PanicStmt p => new PanicStmt(RewriteExpr(p.Value, typeAliases, namespaceAliases)),
             ForStmt f => new ForStmt(
-                f.Initializer is null ? null : RewriteStmt(f.Initializer, aliases),
-                RewriteExpr(f.Condition, aliases),
-                f.Increment is null ? null : RewriteExpr(f.Increment, aliases),
-                RewriteStmt(f.Body, aliases)),
-            ForeachStmt fe => new ForeachStmt(fe.Iterator, RewriteExpr(fe.Iterable, aliases), RewriteStmt(fe.Body, aliases)) { IsArray = fe.IsArray },
+                f.Initializer is null ? null : RewriteStmt(f.Initializer, typeAliases, namespaceAliases),
+                RewriteExpr(f.Condition, typeAliases, namespaceAliases),
+                f.Increment is null ? null : RewriteExpr(f.Increment, typeAliases, namespaceAliases),
+                RewriteStmt(f.Body, typeAliases, namespaceAliases)),
+            ForeachStmt fe => new ForeachStmt(fe.Iterator, RewriteExpr(fe.Iterable, typeAliases, namespaceAliases), RewriteStmt(fe.Body, typeAliases, namespaceAliases)) { IsArray = fe.IsArray },
             FunctionDecl fn => new FunctionDecl(
                 fn.Name,
-                fn.ReturnType is null ? null : RewriteTypeRef(fn.ReturnType, aliases),
-                fn.Parameters.Select(p => new Parameter(p.Type is null ? null : RewriteTypeRef(p.Type, aliases), p.Name)).ToList(),
-                (Block)RewriteStmt(fn.Body, aliases)),
+                fn.ReturnType is null ? null : RewriteTypeRef(fn.ReturnType, typeAliases),
+                fn.Parameters.Select(p => new Parameter(p.Type is null ? null : RewriteTypeRef(p.Type, typeAliases), p.Name)).ToList(),
+                (Block)RewriteStmt(fn.Body, typeAliases, namespaceAliases)),
             ObjectDecl obj => new ObjectDecl(
                 obj.Name,
-                obj.Fields.Select(f => new FieldDecl(RewriteTypeRef(f.Type, aliases), f.Name)).ToList(),
+                obj.Fields.Select(f => new FieldDecl(RewriteTypeRef(f.Type, typeAliases), f.Name)).ToList(),
                 obj.Constructors.Select(c => new ConstructorDecl(
                     c.Keyword,
-                    c.Parameters.Select(p => new Parameter(p.Type is null ? null : RewriteTypeRef(p.Type, aliases), p.Name)).ToList(),
-                    (Block)RewriteStmt(c.Body, aliases))).ToList(),
+                    c.Parameters.Select(p => new Parameter(p.Type is null ? null : RewriteTypeRef(p.Type, typeAliases), p.Name)).ToList(),
+                    (Block)RewriteStmt(c.Body, typeAliases, namespaceAliases))).ToList(),
                 obj.Methods.Select(m => new MethodDecl(
                     m.Name,
-                    m.ReturnType is null ? null : RewriteTypeRef(m.ReturnType, aliases),
-                    m.Parameters.Select(p => new Parameter(p.Type is null ? null : RewriteTypeRef(p.Type, aliases), p.Name)).ToList(),
-                    (Block)RewriteStmt(m.Body, aliases))).ToList()),
+                    m.ReturnType is null ? null : RewriteTypeRef(m.ReturnType, typeAliases),
+                    m.Parameters.Select(p => new Parameter(p.Type is null ? null : RewriteTypeRef(p.Type, typeAliases), p.Name)).ToList(),
+                    (Block)RewriteStmt(m.Body, typeAliases, namespaceAliases))).ToList(),
+                obj.InlineInterfaceMethods.Select(m => new InlineImplementMethodDecl(
+                    RewriteTypeToken(m.InterfaceName, typeAliases),
+                    m.MethodName,
+                    m.Parameters.Select(p => new Parameter(p.Type is null ? null : RewriteTypeRef(p.Type, typeAliases), p.Name)).ToList(),
+                    (Block)RewriteStmt(m.Body, typeAliases, namespaceAliases))).ToList()),
             InterfaceDecl iface => new InterfaceDecl(
                 iface.Name,
                 iface.Methods.Select(m => new InterfaceMethodDecl(
                     m.Name,
-                    RewriteTypeRef(m.ReturnType, aliases),
-                    m.Parameters.Select(p => new Parameter(p.Type is null ? null : RewriteTypeRef(p.Type, aliases), p.Name)).ToList())).ToList()),
+                    RewriteTypeRef(m.ReturnType, typeAliases),
+                    m.Parameters.Select(p => new Parameter(p.Type is null ? null : RewriteTypeRef(p.Type, typeAliases), p.Name)).ToList())).ToList()),
             ImplementDecl impl => new ImplementDecl(
-                RewriteTypeToken(impl.InterfaceName, aliases),
-                RewriteTypeToken(impl.ObjectName, aliases),
+                RewriteTypeToken(impl.InterfaceName, typeAliases),
+                RewriteTypeToken(impl.ObjectName, typeAliases),
                 impl.Methods.Select(m => new ImplementMethodMap(
                     m.InterfaceMethodName,
-                    m.Parameters.Select(p => new Parameter(p.Type is null ? null : RewriteTypeRef(p.Type, aliases), p.Name)).ToList(),
-                    RewriteTypeToken(m.ViaObjectName, aliases),
+                    m.Parameters.Select(p => new Parameter(p.Type is null ? null : RewriteTypeRef(p.Type, typeAliases), p.Name)).ToList(),
+                    RewriteTypeToken(m.ViaObjectName, typeAliases),
                     m.ViaMethodName)).ToList()),
             _ => stmt
         };
 
-        private static Expr RewriteExpr(Expr expr, IReadOnlyDictionary<string, string> aliases) => expr switch
+        private static Expr RewriteExpr(
+            Expr expr,
+            IReadOnlyDictionary<string, string> typeAliases,
+            IReadOnlyDictionary<string, Dictionary<string, string>> namespaceAliases) => expr switch
         {
-            Binary b => new Binary(RewriteExpr(b.Left, aliases), b.Operator, RewriteExpr(b.Right, aliases)),
-            Unary u => new Unary(u.Operator, RewriteExpr(u.Right, aliases)),
+            Binary b => new Binary(RewriteExpr(b.Left, typeAliases, namespaceAliases), b.Operator, RewriteExpr(b.Right, typeAliases, namespaceAliases)),
+            Unary u => new Unary(u.Operator, RewriteExpr(u.Right, typeAliases, namespaceAliases)),
             Literal l => l,
-            InterpString s => new InterpString(s.Parts.Select(p => p is Expr e ? (object)RewriteExpr(e, aliases) : p).ToList(), s.Line, s.Column),
-            ArrayLiteral a => new ArrayLiteral(a.Elements.Select(e => RewriteExpr(e, aliases)).ToList(), a.Line, a.Column)
+            InterpString s => new InterpString(s.Parts.Select(p => p is Expr e ? (object)RewriteExpr(e, typeAliases, namespaceAliases) : p).ToList(), s.Line, s.Column),
+            ArrayLiteral a => new ArrayLiteral(a.Elements.Select(e => RewriteExpr(e, typeAliases, namespaceAliases)).ToList(), a.Line, a.Column)
             {
-                ResolvedTypeRef = a.ResolvedTypeRef is null ? null : RewriteTypeRef(a.ResolvedTypeRef, aliases)
+                ResolvedTypeRef = a.ResolvedTypeRef is null ? null : RewriteTypeRef(a.ResolvedTypeRef, typeAliases)
             },
-            NewArrayExpr na => new NewArrayExpr(RewriteTypeRef(na.ElementType, aliases), RewriteExpr(na.Size, aliases), na.Line, na.Column),
-            ArrayLengthExpr al => new ArrayLengthExpr(RewriteExpr(al.Target, aliases), al.DotToken),
-            ArrayIndexExpr ai => new ArrayIndexExpr(RewriteExpr(ai.Array, aliases), RewriteExpr(ai.Index, aliases))
+            NewArrayExpr na => new NewArrayExpr(RewriteTypeRef(na.ElementType, typeAliases), RewriteExpr(na.Size, typeAliases, namespaceAliases), na.Line, na.Column),
+            ArrayLengthExpr al => new ArrayLengthExpr(RewriteExpr(al.Target, typeAliases, namespaceAliases), al.DotToken),
+            ArrayIndexExpr ai => new ArrayIndexExpr(RewriteExpr(ai.Array, typeAliases, namespaceAliases), RewriteExpr(ai.Index, typeAliases, namespaceAliases))
             {
-                ResolvedElementTypeRef = ai.ResolvedElementTypeRef is null ? null : RewriteTypeRef(ai.ResolvedElementTypeRef, aliases)
+                ResolvedElementTypeRef = ai.ResolvedElementTypeRef is null ? null : RewriteTypeRef(ai.ResolvedElementTypeRef, typeAliases)
             },
-            OptionalOrExpr o => new OptionalOrExpr(RewriteExpr(o.Optional, aliases), RewriteExpr(o.Fallback, aliases)),
-            OptionalHasValueExpr o => new OptionalHasValueExpr(RewriteExpr(o.Target, aliases)),
-            OptionalValueExpr o => new OptionalValueExpr(RewriteExpr(o.Target, aliases)),
-            FieldAccessExpr f => new FieldAccessExpr(RewriteExpr(f.Target, aliases), f.Name),
-            FieldSetExpr f => new FieldSetExpr((FieldAccessExpr)RewriteExpr(f.Target, aliases), RewriteExpr(f.Value, aliases)),
-            NewObjectExpr no => new NewObjectExpr(RewriteTypeToken(no.TypeName, aliases), no.Arguments.Select(a => RewriteExpr(a, aliases)).ToList()),
-            ArraySetExpr a => new ArraySetExpr((ArrayIndexExpr)RewriteExpr(a.Target, aliases), RewriteExpr(a.Value, aliases)),
-            Variable v => v,
-            Assign a => new Assign(a.Name, RewriteExpr(a.Value, aliases)),
-            CompoundAssignExpr c => new CompoundAssignExpr(RewriteExpr(c.Target, aliases), c.Operator, RewriteExpr(c.Value, aliases)),
-            Call c => new Call(c.Callee, c.Arguments.Select(a => RewriteExpr(a, aliases)).ToList()),
-            MethodCallExpr m => new MethodCallExpr(RewriteExpr(m.Target, aliases), m.MethodName, m.Arguments.Select(a => RewriteExpr(a, aliases)).ToList())
-            {
-                ResolvedArrayMethodName = m.ResolvedArrayMethodName,
-                ResolvedArrayElementTypeRef = m.ResolvedArrayElementTypeRef is null ? null : RewriteTypeRef(m.ResolvedArrayElementTypeRef, aliases),
-                ResolvedMethodKey = m.ResolvedMethodKey,
-                ResolvedInterfaceName = m.ResolvedInterfaceName,
-                ResolvedInterfaceMethodKey = m.ResolvedInterfaceMethodKey,
-                ResolvedReturnTypeRef = m.ResolvedReturnTypeRef is null ? null : RewriteTypeRef(m.ResolvedReturnTypeRef, aliases)
-            },
+            OptionalOrExpr o => new OptionalOrExpr(RewriteExpr(o.Optional, typeAliases, namespaceAliases), RewriteExpr(o.Fallback, typeAliases, namespaceAliases)),
+            OptionalHasValueExpr o => new OptionalHasValueExpr(RewriteExpr(o.Target, typeAliases, namespaceAliases)),
+            OptionalValueExpr o => new OptionalValueExpr(RewriteExpr(o.Target, typeAliases, namespaceAliases)),
+            FieldAccessExpr f => RewriteFieldAccessExpr(f, typeAliases, namespaceAliases),
+            FieldSetExpr f => new FieldSetExpr((FieldAccessExpr)RewriteExpr(f.Target, typeAliases, namespaceAliases), RewriteExpr(f.Value, typeAliases, namespaceAliases)),
+            NewObjectExpr no => new NewObjectExpr(RewriteTypeToken(no.TypeName, typeAliases), no.Arguments.Select(a => RewriteExpr(a, typeAliases, namespaceAliases)).ToList()),
+            ArraySetExpr a => new ArraySetExpr((ArrayIndexExpr)RewriteExpr(a.Target, typeAliases, namespaceAliases), RewriteExpr(a.Value, typeAliases, namespaceAliases)),
+            Variable v => RewriteVariableExpr(v, namespaceAliases),
+            Assign a => RewriteAssignExpr(a, typeAliases, namespaceAliases),
+            CompoundAssignExpr c => new CompoundAssignExpr(RewriteExpr(c.Target, typeAliases, namespaceAliases), c.Operator, RewriteExpr(c.Value, typeAliases, namespaceAliases)),
+            Call c => new Call(c.Callee, c.Arguments.Select(a => RewriteExpr(a, typeAliases, namespaceAliases)).ToList()),
+            MethodCallExpr m => RewriteMethodCallExpr(m, typeAliases, namespaceAliases),
             _ => expr
         };
+
+        private static Variable RewriteVariableExpr(Variable variable, IReadOnlyDictionary<string, Dictionary<string, string>> namespaceAliases)
+        {
+            if (namespaceAliases.ContainsKey(variable.Name.Lexeme))
+            {
+                throw new CompilerException(
+                    $"Namespace '{variable.Name.Lexeme}' cannot be used as a runtime value.",
+                    variable.Name.Line,
+                    variable.Name.Column);
+            }
+
+            return variable;
+        }
+
+        private static Assign RewriteAssignExpr(
+            Assign assign,
+            IReadOnlyDictionary<string, string> typeAliases,
+            IReadOnlyDictionary<string, Dictionary<string, string>> namespaceAliases)
+        {
+            if (namespaceAliases.ContainsKey(assign.Name.Lexeme))
+            {
+                throw new CompilerException(
+                    $"Namespace '{assign.Name.Lexeme}' cannot be assigned to.",
+                    assign.Name.Line,
+                    assign.Name.Column);
+            }
+
+            return new Assign(assign.Name, RewriteExpr(assign.Value, typeAliases, namespaceAliases));
+        }
+
+        private static Expr RewriteFieldAccessExpr(
+            FieldAccessExpr fieldAccess,
+            IReadOnlyDictionary<string, string> typeAliases,
+            IReadOnlyDictionary<string, Dictionary<string, string>> namespaceAliases)
+        {
+            if (fieldAccess.Target is Variable variable &&
+                namespaceAliases.TryGetValue(variable.Name.Lexeme, out _))
+            {
+                throw new CompilerException(
+                    $"Namespace member '{variable.Name.Lexeme}.{fieldAccess.Name.Lexeme}' cannot be used as a runtime value.",
+                    fieldAccess.Name.Line,
+                    fieldAccess.Name.Column);
+            }
+
+            return new FieldAccessExpr(RewriteExpr(fieldAccess.Target, typeAliases, namespaceAliases), fieldAccess.Name);
+        }
+
+        private static Expr RewriteMethodCallExpr(
+            MethodCallExpr methodCall,
+            IReadOnlyDictionary<string, string> typeAliases,
+            IReadOnlyDictionary<string, Dictionary<string, string>> namespaceAliases)
+        {
+            if (methodCall.Target is Variable variable &&
+                namespaceAliases.TryGetValue(variable.Name.Lexeme, out var namespaceMembers))
+            {
+                if (!namespaceMembers.TryGetValue(methodCall.MethodName.Lexeme, out var wrapperName))
+                {
+                    throw new CompilerException(
+                        $"Namespace '{variable.Name.Lexeme}' does not export function '{methodCall.MethodName.Lexeme}'.",
+                        methodCall.MethodName.Line,
+                        methodCall.MethodName.Column);
+                }
+
+                var callee = new Token(TokenType.Identifier, wrapperName, null, methodCall.MethodName.Line, methodCall.MethodName.Column);
+                return new Call(callee, methodCall.Arguments.Select(a => RewriteExpr(a, typeAliases, namespaceAliases)).ToList());
+            }
+
+            return new MethodCallExpr(
+                RewriteExpr(methodCall.Target, typeAliases, namespaceAliases),
+                methodCall.MethodName,
+                methodCall.Arguments.Select(a => RewriteExpr(a, typeAliases, namespaceAliases)).ToList())
+            {
+                ResolvedArrayMethodName = methodCall.ResolvedArrayMethodName,
+                ResolvedArrayElementTypeRef = methodCall.ResolvedArrayElementTypeRef is null ? null : RewriteTypeRef(methodCall.ResolvedArrayElementTypeRef, typeAliases),
+                ResolvedMethodKey = methodCall.ResolvedMethodKey,
+                ResolvedInterfaceName = methodCall.ResolvedInterfaceName,
+                ResolvedInterfaceMethodKey = methodCall.ResolvedInterfaceMethodKey,
+                ResolvedReturnTypeRef = methodCall.ResolvedReturnTypeRef is null ? null : RewriteTypeRef(methodCall.ResolvedReturnTypeRef, typeAliases)
+            };
+        }
 
         private static TypeRef RewriteTypeRef(TypeRef type, IReadOnlyDictionary<string, string> aliases)
         {
@@ -1308,5 +1609,6 @@ static class ModuleCompiler
         List<Stmt> LocalStatements,
         Dictionary<string, Stmt> ExportedDeclarations,
         List<Stmt> LinkedStatements,
-        Dictionary<string, string> TypeAliases);
+        Dictionary<string, string> TypeAliases,
+        Dictionary<string, Dictionary<string, string>> NamespaceAliases);
 }

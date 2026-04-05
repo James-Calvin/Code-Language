@@ -271,18 +271,20 @@ numbers.remove_at(0);
 
 ## 9. Object Model and Interfaces
 - Current implementation status:
-  - Implemented: object declarations with fields/constructors/methods, `new Type(...)`, object field read/write (`obj.field`, `obj.field = value`), method calls (`obj.method(args)`), explicit interface conformance checks via `implement Interface for Object`, and interface-typed locals/parameters/returns/fields/arrays with runtime-dispatched interface method calls.
+  - Implemented: object declarations with fields/constructors/methods, `new Type(...)`, object field read/write (`obj.field`, `obj.field = value`), method calls (`obj.method(args)`), interface conformance checks via either inline interface methods or `implement Interface for Object`, and interface-typed locals/parameters/returns/fields/arrays with runtime-dispatched interface method calls.
   - Not yet implemented: non-array container types, visibility enforcement, records.
 - No inheritance.
 - Contracts are declared as `interface`.
 - Concrete types are declared as `object`.
 - Objects can implement multiple interfaces.
-- `implement Interface for Object` is required for interface fulfillment.
+- Interface fulfillment may be expressed either inline inside the object body or through `implement Interface for Object`.
 - Interface methods must declare explicit return and parameter types; `void` is allowed when written explicitly.
 - Methods may also be declared directly inside the `object` body.
-- Interface fulfillment maps interface signatures to object methods via `interfaceMethod(parameterTypes...) via ObjectName.methodName;`.
+- External interface fulfillment maps interface signatures to object methods via `interfaceMethod(parameterTypes...) via ObjectName.methodName;`.
 - Mapping includes parameter types/signature to support overload resolution.
 - The mapped object method must have a compatible signature.
+- Inline interface methods use `implement InterfaceName.methodName(parameterTypes...) { ... }`.
+- Inline interface methods define the object method body directly and inherit the return type from the matched interface method signature.
 - Constructor overloading is supported by typed signatures.
 - Method overloading is supported by typed signatures.
 - Object fields must be initialized either:
@@ -348,6 +350,24 @@ implement Methodable for Person {
 }
 ```
 
+Inline interface implementation:
+
+```code
+object Person {
+  string name;
+
+  constructor(string name) {
+    this.name = name;
+  }
+
+  implement Methodable.method(string other_name) {
+    print(other_name);
+    print(name);
+    return 1;
+  }
+}
+```
+
 Current limitation:
 - Interface dispatch currently covers direct interface-typed values and arrays of interface-typed values. Wider container types beyond arrays are still being expanded.
 
@@ -379,10 +399,14 @@ function method(string name) {
   - `import identifier from "FilePath";`
   - Alias form: `import sourceName as localName from "FilePath";`
   - Grouped/selective form: `import { name1, name2 as alias2 } from "FilePath";`
+  - Namespace form: `import everything as Namespace from "FilePath";`
+  - Re-export form: `export import identifier from "FilePath";`
+  - Grouped re-export form: `export import { name1, name2 } from "FilePath";`
 - String-path imports resolve relative to the file containing the `import`.
 - Import resolution order (current implementation): current file directory, then `lib/` folders discovered while walking ancestor directories (including project root `lib/` when present).
 - Imported symbol must be exported by the target module.
 - Alias imports support exported `function`, `object`, and `interface` declarations.
+- Namespace imports currently support exported functions in member-call position only and are compile-time aliases, not runtime values.
 - Source file extension is `.code`.
 - Package declaration syntax: `package Name;` (dot-separated segments allowed).
 - Package declaration rules (current implementation):
@@ -401,6 +425,7 @@ function method(string name) {
 import anotherIdentifier from "FilePath";
 import exportedFunction as errorExample from "PathToExampleAbove";
 import { add, subtract as minus } from "math.code";
+import everything as Draw from "engine/drawing.code";
 package Example.Package;
 ```
 
@@ -505,7 +530,7 @@ real result3 = errorExample(0) on error panic("Error message {error}");
   - Scene-oriented browser/runtime intrinsics are also available for the generated web app path:
     - input/view: `key_down(...)`, `camera_view_*()`, `camera_safe_*()`, `screen_width()`, `screen_height()`
     - drawing: `clear(...)`, `draw_rectangle(...)`, `draw_rectangle_outline(...)`, `draw_line(...)`, `draw_circle(...)`, `draw_circle_outline(...)`, `draw_polygon(...)`, `draw_polygon_outline(...)`, `draw_text(...)`, `draw_image(...)`, `draw_sprite(...)`
-  - The current repo ships a wrapper layer in `lib/engine/` over those scene/runtime intrinsics: `engine.colors`, `engine.drawing`, `engine.input`, `engine.view`, `engine.scene`, and `engine.loop`.
+  - The current repo ships a wrapper layer in `lib/engine/` over those scene/runtime intrinsics: canonical modules `engine.colors`, `engine.drawing`, `engine.input`, `engine.viewport`, and `engine.scene`, with compatibility re-export modules `engine.view` and `engine.loop`.
   - Note: high-range timing values may eventually need dedicated 64-bit numeric/value support for full precision guarantees.
 - Object construction and field access lower to dedicated VM opcodes (`NEW_OBJECT`, `GET_FIELD`, `SET_FIELD`).
 - Arrays: literals `{...}` create arrays; typed declarations `array<integer> xs = {1,2,3};`; dynamic `new array<integer>(n)` requires a size; `xs.length` yields length; `xs.append(value)` and `xs.remove_at(index)` grow/shrink arrays; `foreach` iterates arrays by element.

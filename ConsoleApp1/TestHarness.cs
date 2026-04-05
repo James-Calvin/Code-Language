@@ -632,6 +632,23 @@ items.append(new One());
 items.append(new Two());
 print(items[0].read());
 foreach item in items then print(item.read());", "1\n1\n2\n"),
+            ("interface-inline-implement-method",
+@"interface IValue {
+  function<integer> read();
+}
+object Counter {
+  integer count;
+
+  constructor(integer initial) {
+    this.count = initial;
+  }
+
+  implement IValue.read() {
+    return count;
+  }
+}
+IValue item = new Counter(7);
+print(item.read());", "7\n"),
         };
         var moduleCases = new List<(string Name, IReadOnlyDictionary<string, string> Files, string Entry, string Expected)>
         {
@@ -668,6 +685,21 @@ export function<integer> sub(integer a, integer b) { return a - b; }",
                 "9\n5\n"
             ),
             (
+                "module-namespace-import-functions",
+                new Dictionary<string, string>
+                {
+                    ["main.code"] =
+@"import everything as Math from ""math.code"";
+print(Math.add(7, 2));
+print(Math.sub(7, 2));",
+                    ["math.code"] =
+@"export function<integer> add(integer a, integer b) { return a + b; }
+export function<integer> sub(integer a, integer b) { return a - b; }",
+                },
+                "main.code",
+                "9\n5\n"
+            ),
+            (
                 "module-lib-search-path",
                 new Dictionary<string, string>
                 {
@@ -682,24 +714,48 @@ export function<integer> sub(integer a, integer b) { return a - b; }",
                 new Dictionary<string, string>
                 {
                     ["main.code"] =
-@"import { rgb } from ""engine/colors.code"";
-import { circle, clear_screen, image, line, polygon, rectangle, sprite, text } from ""engine/drawing.code"";
+@"import everything as Draw from ""engine/drawing.code"";
+import everything as Viewport from ""engine/viewport.code"";
+import { rgb } from ""engine/colors.code"";
 import { key_is_down } from ""engine/input.code"";
-import { hud_width } from ""engine/view.code"";
-clear_screen(rgb(0, 0, 0));
-rectangle(10, 10, 12, 14, rgb(1, 1, 1));
-line(0, 0, 10, 10, rgb(1, 1, 1));
-circle(20, 20, 8, rgb(1, 1, 1));
-polygon({0, 0, 12, 0, 6, 12}, rgb(1, 1, 1));
-image(""assets/test.svg"", 0, 0, 16, 16, 1);
-sprite(""assets/test.svg"", 0, 0, 8, 8, 20, 20, 8, 8, 1);
-text(""ok"", hud_width() - 10, 10, 12, ""right"", ""top"", rgb(1, 1, 1));
-print(hud_width());
+Draw.clear_screen(rgb(0, 0, 0));
+Draw.rectangle(10, 10, 12, 14, rgb(1, 1, 1));
+Draw.line(0, 0, 10, 10, rgb(1, 1, 1));
+Draw.circle(20, 20, 8, rgb(1, 1, 1));
+Draw.polygon({0, 0, 12, 0, 6, 12}, rgb(1, 1, 1));
+Draw.image(""assets/test.svg"", 0, 0, 16, 16, 1);
+Draw.sprite(""assets/test.svg"", 0, 0, 8, 8, 20, 20, 8, 8, 1);
+Draw.text(""ok"", Viewport.hud_width() - 10, 10, 12, ""right"", ""top"", rgb(1, 1, 1));
+print(Viewport.hud_width());
 print(key_is_down(37));",
                     ["assets/test.svg"] = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\"></svg>",
                 },
                 "main.code",
                 "640\n0\n"
+            ),
+            (
+                "module-scene-canonical-import",
+                new Dictionary<string, string>
+                {
+                    ["main.code"] =
+@"import { Scene, SceneLoop, WorldDrawable } from ""engine/scene.code"";
+
+object Layer {
+  constructor() { }
+
+  implement WorldDrawable.draw() {
+    print(""draw"");
+  }
+}
+
+Scene scene = new Scene();
+SceneLoop loop = new SceneLoop(scene);
+scene.add_world_drawable(new Layer(), 0);
+loop.start();
+loop.draw();",
+                },
+                "main.code",
+                "draw\n"
             ),
             (
                 "module-scene-loop-layered-draw-order",
@@ -1410,6 +1466,19 @@ object Thing {
 implement IThing for Thing {
   id() via Thing.id;
 }", "does not map interface method"),
+            ("interface-inline-and-external-duplicate",
+@"interface IThing {
+  function<integer> id();
+}
+object Thing {
+  constructor() { }
+  implement IThing.id() {
+    return 1;
+  }
+}
+implement IThing for Thing {
+  id() via Thing.id;
+}", "mapped more than once"),
             ("interface-assign-non-implementer",
 @"interface IThing {
   function<integer> id();
@@ -1499,6 +1568,30 @@ h.current = new Other();", "Field assignment type mismatch"),
                 },
                 "main.code",
                 "Circular import detected"
+            ),
+            (
+                "module-namespace-import-runtime-value-error",
+                new Dictionary<string, string>
+                {
+                    ["main.code"] =
+@"import everything as Math from ""math.code"";
+print(Math);",
+                    ["math.code"] = "export function<integer> add(integer a, integer b) { return a + b; }",
+                },
+                "main.code",
+                "cannot be used as a runtime value"
+            ),
+            (
+                "module-namespace-import-missing-member",
+                new Dictionary<string, string>
+                {
+                    ["main.code"] =
+@"import everything as Math from ""math.code"";
+print(Math.mul(2, 3));",
+                    ["math.code"] = "export function<integer> add(integer a, integer b) { return a + b; }",
+                },
+                "main.code",
+                "does not export function 'mul'"
             ),
             (
                 "module-package-duplicate",
@@ -2013,10 +2106,10 @@ export function<string> readText() { return ""ok""; }",
                     ["assets/code-sheet.svg"] =
 "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"64\" height=\"32\"><rect width=\"32\" height=\"32\" fill=\"#0b1020\"/><rect x=\"32\" width=\"32\" height=\"32\" fill=\"#1d4ed8\"/></svg>",
                     ["main.code"] =
-@"import { rgb } from ""engine/colors.code"";
-import { circle, clear_screen, image, line, polygon, rectangle, sprite, text } from ""engine/drawing.code"";
+@"import everything as Draw from ""engine/drawing.code"";
+import everything as Viewport from ""engine/viewport.code"";
+import { rgb } from ""engine/colors.code"";
 import { key_is_down } from ""engine/input.code"";
-import { hud_width, safe_bottom, safe_left, safe_right, safe_top, view_left, view_right } from ""engine/view.code"";
 
 export object MainScene {
   integer x;
@@ -2040,20 +2133,20 @@ export object MainScene {
   }
 
   function draw() {
-    clear_screen(rgb(0, 0, 0));
-    line(safe_left(), safe_top(), safe_right(), safe_bottom(), rgb(1, 1, 1));
-    polygon({300, 80, 340, 92, 352, 120, 304, 124, 284, 100}, rgb(1, 1, 1));
-    circle(124, 84, 16, rgb(1, 1, 1));
-    image(""assets/code-sheet.svg"", 24, 220, 64, 32, 1);
-    sprite(""assets/code-sheet.svg"", 32, 0, 32, 32, 104, 210, 64, 64, 1);
-    if this.x > view_left() - 24 and this.x < view_right() then {
-      rectangle(this.x, this.y, 24, 24, rgb(1, 1, 1));
+    Draw.clear_screen(rgb(0, 0, 0));
+    Draw.line(Viewport.safe_left(), Viewport.safe_top(), Viewport.safe_right(), Viewport.safe_bottom(), rgb(1, 1, 1));
+    Draw.polygon({300, 80, 340, 92, 352, 120, 304, 124, 284, 100}, rgb(1, 1, 1));
+    Draw.circle(124, 84, 16, rgb(1, 1, 1));
+    Draw.image(""assets/code-sheet.svg"", 24, 220, 64, 32, 1);
+    Draw.sprite(""assets/code-sheet.svg"", 32, 0, 32, 32, 104, 210, 64, 64, 1);
+    if this.x > Viewport.view_left() - 24 and this.x < Viewport.view_right() then {
+      Draw.rectangle(this.x, this.y, 24, 24, rgb(1, 1, 1));
     }
   }
 
   function draw_hud() {
-    text(""Code"", 16, 16, 18, ""left"", ""top"", rgb(1, 1, 1));
-    text(""Arrow keys move"", hud_width() - 16, 16, 16, ""right"", ""top"", rgb(1, 1, 1));
+    Draw.text(""Code"", 16, 16, 18, ""left"", ""top"", rgb(1, 1, 1));
+    Draw.text(""Arrow keys move"", Viewport.hud_width() - 16, 16, 16, ""right"", ""top"", rgb(1, 1, 1));
   }
 }"
                 },
@@ -2833,12 +2926,7 @@ print(sum);";
     {
         try
         {
-            var lexer = new Compiler.Lexer(source);
-            var tokens = lexer.ScanTokens();
-            var parser = new Compiler.Parser(tokens);
-            var ast = parser.Parse();
-            var typeChecker = new Compiler.TypeChecker();
-            typeChecker.Check(ast);
+            _ = Compiler.ModuleCompiler.CompileFromSource(source);
             throw new Exception("Expected compile error was not thrown");
         }
         catch (Compiler.CompilerException ex)

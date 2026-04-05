@@ -183,14 +183,15 @@ sealed class ImportDecl : Stmt
 {
     public IReadOnlyList<ImportBinding> Bindings { get; }
     public Token Source { get; }
+    public bool IsExported { get; }
     public string SourcePath => Source.Literal?.ToString() ?? string.Empty;
-    public ImportDecl(IReadOnlyList<ImportBinding> bindings, Token source)
+    public ImportDecl(IReadOnlyList<ImportBinding> bindings, Token source, bool isExported = false)
     {
-        Bindings = bindings; Source = source;
+        Bindings = bindings; Source = source; IsExported = isExported;
     }
 }
 
-sealed record ImportBinding(Token Name, Token? Alias);
+sealed record ImportBinding(Token Name, Token? Alias, bool IsNamespace = false);
 
 sealed class ExportDecl : Stmt
 {
@@ -327,9 +328,19 @@ sealed class ObjectDecl : Stmt
     public IReadOnlyList<FieldDecl> Fields { get; }
     public IReadOnlyList<ConstructorDecl> Constructors { get; }
     public IReadOnlyList<MethodDecl> Methods { get; }
-    public ObjectDecl(Token name, IReadOnlyList<FieldDecl> fields, IReadOnlyList<ConstructorDecl> constructors, IReadOnlyList<MethodDecl> methods)
+    public IReadOnlyList<InlineImplementMethodDecl> InlineInterfaceMethods { get; }
+    public ObjectDecl(
+        Token name,
+        IReadOnlyList<FieldDecl> fields,
+        IReadOnlyList<ConstructorDecl> constructors,
+        IReadOnlyList<MethodDecl> methods,
+        IReadOnlyList<InlineImplementMethodDecl>? inlineInterfaceMethods = null)
     {
-        Name = name; Fields = fields; Constructors = constructors; Methods = methods;
+        Name = name;
+        Fields = fields;
+        Constructors = constructors;
+        Methods = methods;
+        InlineInterfaceMethods = inlineInterfaceMethods ?? [];
     }
 }
 
@@ -353,6 +364,21 @@ sealed class MethodDecl
     public MethodDecl(Token name, TypeRef? returnType, IReadOnlyList<Parameter> parameters, Block body)
     {
         Name = name; ReturnType = returnType; Parameters = parameters; Body = body;
+    }
+}
+
+sealed class InlineImplementMethodDecl
+{
+    public Token InterfaceName { get; }
+    public Token MethodName { get; }
+    public IReadOnlyList<Parameter> Parameters { get; }
+    public Block Body { get; }
+    public InlineImplementMethodDecl(Token interfaceName, Token methodName, IReadOnlyList<Parameter> parameters, Block body)
+    {
+        InterfaceName = interfaceName;
+        MethodName = methodName;
+        Parameters = parameters;
+        Body = body;
     }
 }
 

@@ -38,7 +38,7 @@ Current state:
 - The default web build output is `dist/`, unless `--out` is provided.
 - The generated app page owns the browser canvas and runtime bootstrap.
 - The current browser-backed V1 slice supports `MainScene`, `start()`, `update()`, `draw()`, optional `draw_hud()`, full-window presentation, hybrid-expanded framing around a fixed `640x360` safe area, `key_down()`, `clear()`, `draw_rectangle()`, `draw_rectangle_outline()`, `draw_line()`, `draw_circle()`, `draw_circle_outline()`, `draw_polygon()`, `draw_polygon_outline()`, `draw_text()`, `draw_image()`, `draw_sprite()`, `camera_view_*()`, `camera_safe_*()`, `screen_width()`, and `screen_height()`.
-- A higher-level wrapper layer now exists under `lib/engine/`: `engine.colors`, `engine.drawing`, `engine.input`, `engine.view`, `engine.scene`, and `engine.loop`.
+- A higher-level wrapper layer now exists under `lib/engine/`: canonical modules `engine.colors`, `engine.drawing`, `engine.input`, `engine.viewport`, and `engine.scene`, with compatibility re-export modules `engine.view` and `engine.loop`.
 - Scene composition is now supported through explicit child-object registration against `Scene`.
 - `web-runtime/index.html` still exists as a lower-level harness for loading raw `.bytecode` / `.codelib` files during debugging and bring-up.
 - Legacy window-handle engine host bindings still exist, but they are not the default scene-object workflow.
@@ -83,21 +83,23 @@ Scene composition:
 - Child-object lifecycle is split across `Startable`, `Updatable`, `WorldDrawable`, and `HudDrawable`.
 - Registration is explicit; there is no field auto-discovery in V1.
 - Registration changes are staged and applied at the start of the next `update()` phase.
+- `SceneLoop` is now part of the canonical `engine.scene` public surface; `engine.loop` remains as a temporary compatibility re-export.
 
 Important implementation note:
 - Object methods now support the same implicit-void authoring style as top-level functions.
 - Object constructors and methods also support implicit `this` lookup for unshadowed fields and bare method calls.
+- Interface methods can now be implemented inline inside object bodies with `implement InterfaceName.methodName(...) { ... }`.
+- Function-heavy wrapper modules can be imported as compile-time namespaces with `import everything as Draw from "engine/drawing.code";`.
 - The scene lifecycle is therefore expressed directly as `function start()`, `function update()`, and `function draw()`.
 
 Example target authoring shape:
 
 ```code
+import everything as Draw from "engine/drawing.code";
+import everything as Viewport from "engine/viewport.code";
 import { rgb, rgba } from "engine/colors.code";
-import { circle, circle_outline, clear_screen, image, line, polygon, polygon_outline, rectangle, rectangle_outline, sprite, text } from "engine/drawing.code";
 import { key_is_down } from "engine/input.code";
-import { SceneLoop } from "engine/loop.code";
-import { HudDrawable, Scene, Updatable, WorldDrawable } from "engine/scene.code";
-import { hud_width, safe_bottom, safe_left, safe_right, safe_top, view_left, view_right } from "engine/view.code";
+import { HudDrawable, Scene, SceneLoop, Updatable, WorldDrawable } from "engine/scene.code";
 
 object Player {
   integer x;
@@ -110,50 +112,35 @@ object Player {
     speed = 2;
   }
 
-  function start() {
-  }
-
-  function update() {
+  implement Updatable.update() {
     if key_is_down(37) then x -= speed;
     if key_is_down(39) then x += speed;
     if key_is_down(38) then y -= speed;
     if key_is_down(40) then y += speed;
   }
 
-  function draw() {
-    if x > view_left() - 24 and x < view_right() then {
-      rectangle(x, y, 24, 24, rgb(1, 1, 1));
-      rectangle_outline(x - 4, y - 4, 32, 32, 2, rgba(1 / 4, 1 / 2, 1, 2 / 3));
+  implement WorldDrawable.draw() {
+    if x > Viewport.view_left() - 24 and x < Viewport.view_right() then {
+      Draw.rectangle(x, y, 24, 24, rgb(1, 1, 1));
+      Draw.rectangle_outline(x - 4, y - 4, 32, 32, 2, rgba(1 / 4, 1 / 2, 1, 2 / 3));
     }
   }
-}
-
-implement Updatable for Player {
-  update() via Player.update;
-}
-
-implement WorldDrawable for Player {
-  draw() via Player.draw;
 }
 
 object BackgroundLayer {
   constructor() {
   }
 
-  function draw() {
-    clear_screen(rgb(0, 0, 0));
-    line(safe_left(), safe_top(), safe_right(), safe_bottom(), rgba(1, 1, 1, 1 / 3));
-    polygon({300, 80, 340, 92, 352, 120, 304, 124, 284, 100}, rgba(0, 1 / 2, 1, 1 / 3));
-    polygon_outline({300, 80, 340, 92, 352, 120, 304, 124, 284, 100}, 2, rgb(1, 1, 1));
-    circle(124, 84, 16, rgba(1, 1 / 2, 1 / 4, 1 / 2));
-    circle_outline(124, 84, 24, 2, rgb(1, 1, 1));
-    image("assets/code-sheet.svg", 24, 220, 64, 32, 1);
-    sprite("assets/code-sheet.svg", 32, 0, 32, 32, 104, 210, 64, 64, 1);
+  implement WorldDrawable.draw() {
+    Draw.clear_screen(rgb(0, 0, 0));
+    Draw.line(Viewport.safe_left(), Viewport.safe_top(), Viewport.safe_right(), Viewport.safe_bottom(), rgba(1, 1, 1, 1 / 3));
+    Draw.polygon({300, 80, 340, 92, 352, 120, 304, 124, 284, 100}, rgba(0, 1 / 2, 1, 1 / 3));
+    Draw.polygon_outline({300, 80, 340, 92, 352, 120, 304, 124, 284, 100}, 2, rgb(1, 1, 1));
+    Draw.circle(124, 84, 16, rgba(1, 1 / 2, 1 / 4, 1 / 2));
+    Draw.circle_outline(124, 84, 24, 2, rgb(1, 1, 1));
+    Draw.image("assets/code-sheet.svg", 24, 220, 64, 32, 1);
+    Draw.sprite("assets/code-sheet.svg", 32, 0, 32, 32, 104, 210, 64, 64, 1);
   }
-}
-
-implement WorldDrawable for BackgroundLayer {
-  draw() via BackgroundLayer.draw;
 }
 
 object HeadsUpDisplay {
@@ -163,15 +150,11 @@ object HeadsUpDisplay {
     this.player = player;
   }
 
-  function draw_hud() {
-    text("Code", 16, 16, 18, "left", "top", rgb(1, 1, 1));
-    text("Arrow keys move", hud_width() - 16, 16, 16, "right", "top", rgb(1, 1, 1));
-    text("Player X: {player.x}", 16, 40, 14, "left", "top", rgb(1, 1, 1));
+  implement HudDrawable.draw_hud() {
+    Draw.text("Code", 16, 16, 18, "left", "top", rgb(1, 1, 1));
+    Draw.text("Arrow keys move", Viewport.hud_width() - 16, 16, 16, "right", "top", rgb(1, 1, 1));
+    Draw.text("Player X: {player.x}", 16, 40, 14, "left", "top", rgb(1, 1, 1));
   }
-}
-
-implement HudDrawable for HeadsUpDisplay {
-  draw_hud() via HeadsUpDisplay.draw_hud;
 }
 
 export object MainScene {
@@ -296,7 +279,7 @@ Current wrapper layer:
   - `sprite(...)`
 - `engine.input`
   - `key_is_down(integer keycode) -> boolean`
-- `engine.view`
+- `engine.viewport`
   - `view_*()`
   - `safe_*()`
   - `hud_width()`
@@ -304,13 +287,11 @@ Current wrapper layer:
 - `engine.scene`
   - `Startable`, `Updatable`, `WorldDrawable`, `HudDrawable`
   - `Scene`
-  - explicit staged registration methods for start/update/world-draw/hud-draw lifecycles
-- `engine.loop`
   - `SceneLoop`
-  - `start()`
-  - `update()`
-  - `draw()`
-  - `draw_hud()`
+  - explicit staged registration methods for start/update/world-draw/hud-draw lifecycles
+- Compatibility modules
+  - `engine.view`
+  - `engine.loop`
 
 Behavior rules:
 - `clear(...)` clears the full visible browser canvas for the current frame.
@@ -347,6 +328,7 @@ Current implementation output:
 - `app.bytecode`
 - copied `assets/` directory when present beside the entry file or in the package root
 - The runtime loader is currently inlined into `index.html`.
+- The browser VM/runtime is currently JavaScript. Wasm is deferred until measured performance or parity work justifies the extra build/tooling complexity.
 
 Required behavior:
 - Opening `dist/index.html` runs the app directly.
@@ -383,7 +365,7 @@ Implementation note:
 ## Non-Goals for This Document
 
 This document does not define:
-- the broader engine package taxonomy beyond the current `engine.colors`, `engine.drawing`, `engine.input`, and `engine.view` wrappers
+- the broader engine package taxonomy beyond the current `engine.colors`, `engine.drawing`, `engine.input`, `engine.viewport`, and `engine.scene` wrappers
 - editor or IDE integration
 - audio APIs
 - native app shell behavior beyond keeping portability in mind

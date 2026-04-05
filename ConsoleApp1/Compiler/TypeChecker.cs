@@ -148,74 +148,90 @@ sealed class TypeChecker
             }
         }
 
-        // Validate explicit interface implementation blocks.
+        // Validate interface implementation blocks, allowing multiple declarations to contribute to the same pair.
+        var implementGroups = new Dictionary<string, List<ImplementDecl>>(StringComparer.Ordinal);
         foreach (var stmt in statements)
         {
             if (stmt is not ImplementDecl impl)
                 continue;
 
-            if (!_interfaces.TryGetValue(impl.InterfaceName.Lexeme, out var iface))
-                throw new CompilerException($"Unknown interface '{impl.InterfaceName.Lexeme}'", impl.InterfaceName.Line, impl.InterfaceName.Column);
-            if (!_objects.TryGetValue(impl.ObjectName.Lexeme, out var obj))
-                throw new CompilerException($"Unknown object '{impl.ObjectName.Lexeme}'", impl.ObjectName.Line, impl.ObjectName.Column);
             string pairKey = $"{impl.InterfaceName.Lexeme}->{impl.ObjectName.Lexeme}";
-            if (!_interfaceObjectPairs.Add(pairKey))
-                throw new CompilerException($"Interface '{impl.InterfaceName.Lexeme}' is already implemented for object '{impl.ObjectName.Lexeme}'", impl.ObjectName.Line, impl.ObjectName.Column);
+            if (!implementGroups.TryGetValue(pairKey, out var group))
+            {
+                group = [];
+                implementGroups[pairKey] = group;
+            }
+            group.Add(impl);
+        }
+
+        foreach (var pair in implementGroups)
+        {
+            var first = pair.Value[0];
+            if (!_interfaces.TryGetValue(first.InterfaceName.Lexeme, out var iface))
+                throw new CompilerException($"Unknown interface '{first.InterfaceName.Lexeme}'", first.InterfaceName.Line, first.InterfaceName.Column);
+            if (!_objects.TryGetValue(first.ObjectName.Lexeme, out var obj))
+                throw new CompilerException($"Unknown object '{first.ObjectName.Lexeme}'", first.ObjectName.Line, first.ObjectName.Column);
 
             var mapped = new HashSet<string>(StringComparer.Ordinal);
-            foreach (var map in impl.Methods)
+            for (int declIndex = 0; declIndex < pair.Value.Count; declIndex++)
             {
-                if (!string.Equals(map.ViaObjectName.Lexeme, impl.ObjectName.Lexeme, StringComparison.Ordinal))
+                var impl = pair.Value[declIndex];
+                foreach (var map in impl.Methods)
                 {
-                    throw new CompilerException(
-                        $"Implement block for '{impl.ObjectName.Lexeme}' cannot map via '{map.ViaObjectName.Lexeme}'",
-                        map.ViaObjectName.Line,
-                        map.ViaObjectName.Column);
+                    if (!string.Equals(map.ViaObjectName.Lexeme, impl.ObjectName.Lexeme, StringComparison.Ordinal))
+                    {
+                        throw new CompilerException(
+                            $"Implement block for '{impl.ObjectName.Lexeme}' cannot map via '{map.ViaObjectName.Lexeme}'",
+                            map.ViaObjectName.Line,
+                            map.ViaObjectName.Column);
+                    }
+
+                    var mapParamTypeRefs = new List<TypeRef>(map.Parameters.Count);
+                    for (int i = 0; i < map.Parameters.Count; i++)
+                    {
+                        var p = map.Parameters[i];
+                        if (p.Type is null)
+                            throw new CompilerException("Implementation mapping parameters must be typed", p.Name.Line, p.Name.Column);
+                        ValidateTypeRef(p.Type);
+                        EnsureNotVoidTypeRef(p.Type, "Implementation mapping parameters cannot be void", p.Name.Line, p.Name.Column);
+                        mapParamTypeRefs.Add(p.Type);
+                    }
+
+                    string ifaceKey = InterfaceMethodKey(map.InterfaceMethodName.Lexeme, mapParamTypeRefs);
+                    if (!iface.Methods.TryGetValue(ifaceKey, out var ifaceMethod))
+                        throw new CompilerException($"Interface '{iface.Name.Lexeme}' has no method '{map.InterfaceMethodName.Lexeme}' with this signature", map.InterfaceMethodName.Line, map.InterfaceMethodName.Column);
+                    if (!mapped.Add(ifaceKey))
+                        throw new CompilerException($"Interface method '{map.InterfaceMethodName.Lexeme}' is mapped more than once", map.InterfaceMethodName.Line, map.InterfaceMethodName.Column);
+
+                    string objectMethodKey = MethodDispatchKey(impl.ObjectName.Lexeme, map.ViaMethodName.Lexeme, mapParamTypeRefs);
+                    if (!obj.Methods.TryGetValue(objectMethodKey, out var objectMethod))
+                        throw new CompilerException($"Object '{impl.ObjectName.Lexeme}' has no method '{map.ViaMethodName.Lexeme}' with this signature", map.ViaMethodName.Line, map.ViaMethodName.Column);
+
+                    if (!IsCompatibleInterfaceReturn(ifaceMethod, objectMethod))
+                    {
+                        throw new CompilerException(
+                            $"Method '{impl.ObjectName.Lexeme}.{map.ViaMethodName.Lexeme}' return type does not satisfy interface '{impl.InterfaceName.Lexeme}'",
+                            map.ViaMethodName.Line,
+                            map.ViaMethodName.Column);
+                    }
+
+                    string ifaceDispatchKey = InterfaceDispatchKey(impl.InterfaceName.Lexeme, ifaceKey);
+                    if (!_interfaceMethodImplementers.TryGetValue(ifaceDispatchKey, out var implementers))
+                    {
+                        implementers = new HashSet<string>(StringComparer.Ordinal);
+                        _interfaceMethodImplementers[ifaceDispatchKey] = implementers;
+                    }
+                    implementers.Add(impl.ObjectName.Lexeme);
                 }
-
-                var mapParamTypeRefs = new List<TypeRef>(map.Parameters.Count);
-                for (int i = 0; i < map.Parameters.Count; i++)
-                {
-                    var p = map.Parameters[i];
-                    if (p.Type is null)
-                        throw new CompilerException("Implementation mapping parameters must be typed", p.Name.Line, p.Name.Column);
-                    ValidateTypeRef(p.Type);
-                    EnsureNotVoidTypeRef(p.Type, "Implementation mapping parameters cannot be void", p.Name.Line, p.Name.Column);
-                    mapParamTypeRefs.Add(p.Type);
-                }
-
-                string ifaceKey = InterfaceMethodKey(map.InterfaceMethodName.Lexeme, mapParamTypeRefs);
-                if (!iface.Methods.TryGetValue(ifaceKey, out var ifaceMethod))
-                    throw new CompilerException($"Interface '{iface.Name.Lexeme}' has no method '{map.InterfaceMethodName.Lexeme}' with this signature", map.InterfaceMethodName.Line, map.InterfaceMethodName.Column);
-                if (!mapped.Add(ifaceKey))
-                    throw new CompilerException($"Interface method '{map.InterfaceMethodName.Lexeme}' is mapped more than once", map.InterfaceMethodName.Line, map.InterfaceMethodName.Column);
-
-                string objectMethodKey = MethodDispatchKey(impl.ObjectName.Lexeme, map.ViaMethodName.Lexeme, mapParamTypeRefs);
-                if (!obj.Methods.TryGetValue(objectMethodKey, out var objectMethod))
-                    throw new CompilerException($"Object '{impl.ObjectName.Lexeme}' has no method '{map.ViaMethodName.Lexeme}' with this signature", map.ViaMethodName.Line, map.ViaMethodName.Column);
-
-                if (!IsCompatibleInterfaceReturn(ifaceMethod, objectMethod))
-                {
-                    throw new CompilerException(
-                        $"Method '{impl.ObjectName.Lexeme}.{map.ViaMethodName.Lexeme}' return type does not satisfy interface '{impl.InterfaceName.Lexeme}'",
-                        map.ViaMethodName.Line,
-                        map.ViaMethodName.Column);
-                }
-
-                string ifaceDispatchKey = InterfaceDispatchKey(impl.InterfaceName.Lexeme, ifaceKey);
-                if (!_interfaceMethodImplementers.TryGetValue(ifaceDispatchKey, out var implementers))
-                {
-                    implementers = new HashSet<string>(StringComparer.Ordinal);
-                    _interfaceMethodImplementers[ifaceDispatchKey] = implementers;
-                }
-                implementers.Add(impl.ObjectName.Lexeme);
             }
 
             foreach (var ifaceMethod in iface.Methods.Values)
             {
                 if (!mapped.Contains(ifaceMethod.SignatureKey))
-                    throw new CompilerException($"Object '{impl.ObjectName.Lexeme}' does not map interface method '{ifaceMethod.Name.Lexeme}'", impl.ObjectName.Line, impl.ObjectName.Column);
+                    throw new CompilerException($"Object '{first.ObjectName.Lexeme}' does not map interface method '{ifaceMethod.Name.Lexeme}'", first.ObjectName.Line, first.ObjectName.Column);
             }
+
+            _interfaceObjectPairs.Add(pair.Key);
         }
 
         // Collect function signatures.

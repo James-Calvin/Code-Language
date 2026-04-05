@@ -25,7 +25,7 @@ Legend:
 | `[x]` | Core language | Function decls/calls, typed params/returns | CALL/RET |
 | `[x]` | Core language | Void functions | `void` return type + implicit-void `function name(...)` supported |
 | `[x]` | Core language | Return statements (implicit 0 if missing) | Implemented |
-| `[x]` | Core language | Collections: literals + foreach over collections | Array literals + array foreach + typed array declarations/new(size) + `.length` + indexing + mutation |
+| `[x]` | Core language | Collections: literals + foreach over collections | Array literals + array foreach + typed array declarations/new(size) + `.length` + indexing + mutation + `append` / `remove_at` with preserved element typing |
 | `[x]` | Core language | Optionals | `optional<T>` with `none`, `.hasValue`, `.value`, `.or(fallback)` |
 | `[~]` | Core language | Structs/records (user types) | Planned via object-model build-out below |
 | `[~]` | Type system | Sized numerics & literal suffixes (`i8/w8/r32` etc.) | Lexer/parser/type support pending |
@@ -45,7 +45,7 @@ Legend:
 | `[~]` | Object model | `record` declaration + value semantics (copy on assignment/pass/return) | Add `record` parser/type model first, then non-reference copy semantics |
 | `[~]` | Object model | Visibility enforcement (`public/package/private`) | Permanent; phase in from parser -> checker -> codegen |
 | `[x]` | Object model | Interfaces + `implement ... for ...` conformance checks | Compile-time interface declarations + explicit `implement Interface for Object { ... via Object.method; }` mapping with signature/return checks |
-| `[~]` | Object model | Interface dispatch lowering/runtime model | Baseline runtime dispatch table opcode implemented for interface-typed locals/params/returns/fields; extend to interface collections and optimizer-grade fast paths |
+| `[~]` | Object model | Interface dispatch lowering/runtime model | Baseline runtime dispatch table opcode implemented for interface-typed locals/params/returns/fields/arrays; extend to broader container types and optimizer-grade fast paths |
 | `[_]` | Object model | Lifecycle/perf plan for heap instances (GC/ownership strategy) | Permanent runtime design decision; defer until objects are exercised |
 | `[~]` | Modules/imports | Exported declarations | `export` implemented for function/object/interface declarations |
 | `[~]` | Modules/imports | Import syntax & package declarations | `import Name [as Alias] from \"path\";` + `package Name;` implemented; package namespace semantics still minimal |
@@ -78,8 +78,8 @@ Legend:
 | `[~]` | Platform/targets | Web engine host bindings | Implemented current scene-runtime bindings for `key_down`, `clear`, `draw_rectangle`, `draw_rectangle_outline`, `draw_line`, `draw_circle`, `draw_circle_outline`, `draw_polygon`, `draw_polygon_outline`, `draw_text`, `draw_image`, `draw_sprite`, `camera_view_*`, `camera_safe_*`, and `screen_width` / `screen_height`; legacy window/input/gfx handle-based stubs still need real browser-backed behavior or wrappers |
 | `[!]` | Platform/targets | Backend-agnostic engine API contract | Lock capability-query + fallback semantics so Code source remains portable across web/native backends |
 | `[~]` | Platform/targets | Native/web parity validation | Single-source app/game runs across both targets with explicit capability fallback behavior |
-| `[~]` | Game engine | Engine core packages | `engine.math`, `engine.ecs`, `engine.scene`, `engine.loop` |
-| `[~]` | Game engine | Engine platform adapters | First wrapper layer exists in `lib/engine/` (`engine.colors`, `engine.drawing`, `engine.input`, `engine.view`); still need fuller host-backed packages including audio |
+| `[~]` | Game engine | Engine core packages | `engine.scene` and `engine.loop` implemented for explicit child-object composition; `engine.math` / broader engine packages still pending |
+| `[~]` | Game engine | Engine platform adapters | Wrapper layer now includes `engine.colors`, `engine.drawing`, `engine.input`, `engine.view`, `engine.scene`, and `engine.loop`; still need fuller host-backed packages including audio |
 | `[~]` | Game engine | `engine.gpu` ABI v1 | GPU resource/pipeline/dispatch API for simulation/ML/graphics workloads |
 | `[~]` | Game engine | WebGPU backend | Implement `engine.gpu` via WebGPU on `vm-web` with fallback policy |
 | `[~]` | Game engine | Native GPU backend parity | Implement same `engine.gpu` ABI on `vm-native` backend(s) |
@@ -91,7 +91,7 @@ Legend:
 | `[x]` | Testing | VM harness tests | Implemented; includes host ABI conformance checks (native-only diagnostics, engine stubs, target parity) |
 | `[x]` | Testing | Compiler integration suite | Includes print, arithmetic, functions, loops, foreach, strings |
 | `[x]` | Testing | Property/fuzz tests (parser/VM) | Arithmetic, boolean logic, string concat, loop sums |
-| `[!]` | Testing | Object-model integration suite | Constructor/new/field/method paths + compile-time/runtime interface diagnostics (including interface-typed fields) covered; expand for records and interface collections |
+| `[!]` | Testing | Object-model integration suite | Constructor/new/field/method paths + compile-time/runtime interface diagnostics (including interface-typed fields/arrays and scene composition registries) covered; expand for records and broader containers |
 | `[~]` | Testing | Object-model fuzz/property domains | Constructor/field mutation/member access invariants |
 
 ## Priority Rollup (benefit/effort)

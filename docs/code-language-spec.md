@@ -202,7 +202,7 @@ while value != someValue then {
 }
 ```
 
-- Arrays (current impl): array literal syntax `{a, b, c}` builds a runtime array; typed declarations `array<integer> xs = {1,2,3};`; dynamic `new array<integer>(n)` requires a size; `xs.length` yields length; `xs[index]` reads an element; `xs[index] = value` writes an element; `foreach` can iterate arrays by element in addition to numeric bounds.
+- Arrays (current impl): array literal syntax `{a, b, c}` builds a runtime array; typed declarations `array<integer> xs = {1,2,3};`; dynamic `new array<integer>(n)` requires a size; `xs.length` yields length; `xs[index]` reads an element; `xs[index] = value` writes an element; `xs.append(value)` grows the array; `xs.remove_at(index)` removes an element; `foreach` can iterate arrays by element in addition to numeric bounds.
 - Optionals (current impl): `optional<T>` types store `none` or a value; `none` literal; `opt.hasValue` returns boolean; `opt.value` returns contained value or panics if empty; `opt.or(fallback)` returns value or fallback without panicking.
 
 ```code
@@ -244,6 +244,7 @@ if not isReady then {
   - Binary operators are left-associative except assignment, which is right-associative.
   - Parentheses may be used to override precedence.
 - Arithmetic includes modulo (`%`).
+- Equality (`==`, `!=`) supports numeric values plus compatible reference/value types such as strings, booleans, objects, interfaces, and arrays.
 - Enhanced assignments are supported for assignable targets:
   - variables
   - object fields
@@ -255,22 +256,29 @@ if not isReady then {
 - Generic array type syntax: `array<Type>`.
 - Array literal syntax uses braces.
 - Arrays can be allocated with `new array<Type>(size)`.
+- Array element types are preserved through declarations, indexing, mutation, and `foreach`.
+- Arrays are currently the built-in growable collection type.
+- Growable array methods:
+  - `items.append(value)`
+  - `items.remove_at(index)`
 
 ```code
 array<integer> numbers = {1, 1, 2, 3, 5, 8, 13};
 array<integer> otherNumbers = new array<integer>(10);
+numbers.append(21);
+numbers.remove_at(0);
 ```
 
 ## 9. Object Model and Interfaces
 - Current implementation status:
-  - Implemented: object declarations with fields/constructors/methods, `new Type(...)`, object field read/write (`obj.field`, `obj.field = value`), method calls (`obj.method(args)`), explicit interface conformance checks via `implement Interface for Object`, and interface-typed locals/parameters/returns/fields with runtime-dispatched interface method calls.
-  - Not yet implemented: interface-typed collection/container surfaces, visibility enforcement, records.
+  - Implemented: object declarations with fields/constructors/methods, `new Type(...)`, object field read/write (`obj.field`, `obj.field = value`), method calls (`obj.method(args)`), explicit interface conformance checks via `implement Interface for Object`, and interface-typed locals/parameters/returns/fields/arrays with runtime-dispatched interface method calls.
+  - Not yet implemented: non-array container types, visibility enforcement, records.
 - No inheritance.
 - Contracts are declared as `interface`.
 - Concrete types are declared as `object`.
 - Objects can implement multiple interfaces.
 - `implement Interface for Object` is required for interface fulfillment.
-- Interface methods must declare explicit return and parameter types.
+- Interface methods must declare explicit return and parameter types; `void` is allowed when written explicitly.
 - Methods may also be declared directly inside the `object` body.
 - Interface fulfillment maps interface signatures to object methods via `interfaceMethod(parameterTypes...) via ObjectName.methodName;`.
 - Mapping includes parameter types/signature to support overload resolution.
@@ -283,12 +291,13 @@ array<integer> otherNumbers = new array<integer>(10);
 - Current constructor rules (implemented):
   - If an object has fields, it must declare at least one constructor.
   - Constructor overloads resolve by parameter-type signatures with best-match conversion scoring.
-  - Each constructor must definitely assign all declared fields via `this.field = ...`.
+  - Each constructor must definitely assign all declared fields via either `this.field = ...` or implicit field assignment (`field = ...`) inside the constructor body.
   - `return` is not currently allowed in constructors.
 - Current method lowering (implemented):
   - Methods are lowered to hidden callable bodies with implicit `this` as the first argument.
   - Method resolution uses object type + method name + parameter-type signature with best-match conversion scoring.
   - Methods may use either `function<ReturnType> name(...)` or implicit-void `function name(...)`.
+  - Inside constructors and methods, unshadowed bare field names resolve to the current object (`field` -> `this.field`), and bare method calls resolve to the current object before top-level/intrinsic functions.
 - Reserved field names (currently disallowed): `length`, `hasValue`, `value`, `or`.
 - `record` is a type like `object`, but passed by value.
 - `object` instances are passed by reference.
@@ -340,7 +349,7 @@ implement Methodable for Person {
 ```
 
 Current limitation:
-- Interface dispatch currently covers direct interface-typed values (including locals, parameters, returns, and object fields). Wider integration (arrays/containers of interfaces and package/module boundaries) is still being expanded.
+- Interface dispatch currently covers direct interface-typed values and arrays of interface-typed values. Wider container types beyond arrays are still being expanded.
 
 Instantiation:
 
@@ -356,6 +365,7 @@ Person instance = new Person("Ada");
 - Field access allows both unqualified and `this.`-qualified forms.
 - If a local variable shadows a field, unqualified access resolves to the local variable.
 - Use `this.fieldName` to reference the shadowed member field.
+- Bare method calls inside object bodies also use implicit `this` lookup before top-level or intrinsic functions.
 
 ```code
 function method(string name) {
@@ -452,6 +462,7 @@ real result3 = errorExample(0) on error panic("Error message {error}");
 - Constructor symbols are collected and used for `new Type(...)` arity/type validation.
 - Method symbols are collected and used for `obj.method(args)` arity/type validation.
 - Interface symbols and `implement` mappings are validated, and interface-typed method calls are lowered to runtime dispatch tables over mapped object methods.
+- Arrays preserve element `TypeRef` metadata through declarations, indexing, mutation, `foreach`, and array method calls, which enables interface-typed arrays and scene registries in `lib/engine/scene.code`.
 - File compilation performs module linking: recursive import graph load, export-name validation, module-scope import/declaration conflict checks, cycle detection, and flattening to a single bytecode unit.
 - Module diagnostics include import-chain context (`entry -> dep1 -> dep2`) for unresolved imports/exports and cycles.
 - Compiler tooling includes module graph and linker trace output:
@@ -494,10 +505,10 @@ real result3 = errorExample(0) on error panic("Error message {error}");
   - Scene-oriented browser/runtime intrinsics are also available for the generated web app path:
     - input/view: `key_down(...)`, `camera_view_*()`, `camera_safe_*()`, `screen_width()`, `screen_height()`
     - drawing: `clear(...)`, `draw_rectangle(...)`, `draw_rectangle_outline(...)`, `draw_line(...)`, `draw_circle(...)`, `draw_circle_outline(...)`, `draw_polygon(...)`, `draw_polygon_outline(...)`, `draw_text(...)`, `draw_image(...)`, `draw_sprite(...)`
-  - The current repo ships a first wrapper layer in `lib/engine/` over those scene/runtime intrinsics: `engine.colors`, `engine.drawing`, `engine.input`, and `engine.view`.
+  - The current repo ships a wrapper layer in `lib/engine/` over those scene/runtime intrinsics: `engine.colors`, `engine.drawing`, `engine.input`, `engine.view`, `engine.scene`, and `engine.loop`.
   - Note: high-range timing values may eventually need dedicated 64-bit numeric/value support for full precision guarantees.
 - Object construction and field access lower to dedicated VM opcodes (`NEW_OBJECT`, `GET_FIELD`, `SET_FIELD`).
-- Arrays: literals `{...}` create arrays; typed declarations `array<integer> xs = {1,2,3};`; dynamic `new array<integer>(n)` requires a size; `xs.length` yields length; `foreach` iterates arrays by element.
+- Arrays: literals `{...}` create arrays; typed declarations `array<integer> xs = {1,2,3};`; dynamic `new array<integer>(n)` requires a size; `xs.length` yields length; `xs.append(value)` and `xs.remove_at(index)` grow/shrink arrays; `foreach` iterates arrays by element.
 
 ```code
 function<fallible<real>> run(string input, real count) {

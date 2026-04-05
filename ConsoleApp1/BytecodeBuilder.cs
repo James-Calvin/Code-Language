@@ -136,6 +136,20 @@ sealed class BytecodeBuilder
         return this;
     }
 
+    public BytecodeBuilder ArrayAppend()
+    {
+        RecordDebug();
+        _bytes.Add((byte)OpCode.ArrayAppend);
+        return this;
+    }
+
+    public BytecodeBuilder ArrayRemoveAt()
+    {
+        RecordDebug();
+        _bytes.Add((byte)OpCode.ArrayRemoveAt);
+        return this;
+    }
+
     public BytecodeBuilder NewObject(string typeName) => AddStringOperand(OpCode.NewObject, typeName);
     public BytecodeBuilder GetField(string fieldName) => AddStringOperand(OpCode.GetField, fieldName);
     public BytecodeBuilder SetField(string fieldName) => AddStringOperand(OpCode.SetField, fieldName);

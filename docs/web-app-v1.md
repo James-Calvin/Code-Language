@@ -38,7 +38,8 @@ Current state:
 - The default web build output is `dist/`, unless `--out` is provided.
 - The generated app page owns the browser canvas and runtime bootstrap.
 - The current browser-backed V1 slice supports `MainScene`, `start()`, `update()`, `draw()`, optional `draw_hud()`, full-window presentation, hybrid-expanded framing around a fixed `640x360` safe area, `key_down()`, `clear()`, `draw_rectangle()`, `draw_rectangle_outline()`, `draw_line()`, `draw_circle()`, `draw_circle_outline()`, `draw_polygon()`, `draw_polygon_outline()`, `draw_text()`, `draw_image()`, `draw_sprite()`, `camera_view_*()`, `camera_safe_*()`, `screen_width()`, and `screen_height()`.
-- A first wrapper layer now exists under `lib/engine/`: `engine.colors`, `engine.drawing`, `engine.input`, and `engine.view`.
+- A higher-level wrapper layer now exists under `lib/engine/`: `engine.colors`, `engine.drawing`, `engine.input`, `engine.view`, `engine.scene`, and `engine.loop`.
+- Scene composition is now supported through explicit child-object registration against `Scene`.
 - `web-runtime/index.html` still exists as a lower-level harness for loading raw `.bytecode` / `.codelib` files during debugging and bring-up.
 - Legacy window-handle engine host bindings still exist, but they are not the default scene-object workflow.
 
@@ -76,8 +77,16 @@ Method intent:
 - `draw()` is for rendering the current world/gameplay state.
 - `draw_hud()` is for screen-edge-attached HUD or overlay work that should not move with the expanded world view.
 
+Scene composition:
+- `MainScene` remains the required exported entry object for web builds.
+- Larger projects are now expected to keep `MainScene` thin and register child objects through `engine.scene.Scene`.
+- Child-object lifecycle is split across `Startable`, `Updatable`, `WorldDrawable`, and `HudDrawable`.
+- Registration is explicit; there is no field auto-discovery in V1.
+- Registration changes are staged and applied at the start of the next `update()` phase.
+
 Important implementation note:
 - Object methods now support the same implicit-void authoring style as top-level functions.
+- Object constructors and methods also support implicit `this` lookup for unshadowed fields and bare method calls.
 - The scene lifecycle is therefore expressed directly as `function start()`, `function update()`, and `function draw()`.
 
 Example target authoring shape:
@@ -86,27 +95,49 @@ Example target authoring shape:
 import { rgb, rgba } from "engine/colors.code";
 import { circle, circle_outline, clear_screen, image, line, polygon, polygon_outline, rectangle, rectangle_outline, sprite, text } from "engine/drawing.code";
 import { key_is_down } from "engine/input.code";
+import { SceneLoop } from "engine/loop.code";
+import { HudDrawable, Scene, Updatable, WorldDrawable } from "engine/scene.code";
 import { hud_width, safe_bottom, safe_left, safe_right, safe_top, view_left, view_right } from "engine/view.code";
 
-export object MainScene {
+object Player {
   integer x;
   integer y;
   integer speed;
 
   constructor() {
-    this.x = 100;
-    this.y = 100;
-    this.speed = 2;
+    x = 100;
+    y = 100;
+    speed = 2;
   }
 
   function start() {
   }
 
   function update() {
-    if key_is_down(37) then this.x -= this.speed;
-    if key_is_down(39) then this.x += this.speed;
-    if key_is_down(38) then this.y -= this.speed;
-    if key_is_down(40) then this.y += this.speed;
+    if key_is_down(37) then x -= speed;
+    if key_is_down(39) then x += speed;
+    if key_is_down(38) then y -= speed;
+    if key_is_down(40) then y += speed;
+  }
+
+  function draw() {
+    if x > view_left() - 24 and x < view_right() then {
+      rectangle(x, y, 24, 24, rgb(1, 1, 1));
+      rectangle_outline(x - 4, y - 4, 32, 32, 2, rgba(1 / 4, 1 / 2, 1, 2 / 3));
+    }
+  }
+}
+
+implement Updatable for Player {
+  update() via Player.update;
+}
+
+implement WorldDrawable for Player {
+  draw() via Player.draw;
+}
+
+object BackgroundLayer {
+  constructor() {
   }
 
   function draw() {
@@ -118,21 +149,69 @@ export object MainScene {
     circle_outline(124, 84, 24, 2, rgb(1, 1, 1));
     image("assets/code-sheet.svg", 24, 220, 64, 32, 1);
     sprite("assets/code-sheet.svg", 32, 0, 32, 32, 104, 210, 64, 64, 1);
+  }
+}
 
-    if this.x > view_left() - 24 and this.x < view_right() then {
-      rectangle(this.x, this.y, 24, 24, rgb(1, 1, 1));
-      rectangle_outline(this.x - 4, this.y - 4, 32, 32, 2, rgba(1 / 4, 1 / 2, 1, 2 / 3));
-    }
+implement WorldDrawable for BackgroundLayer {
+  draw() via BackgroundLayer.draw;
+}
+
+object HeadsUpDisplay {
+  Player player;
+
+  constructor(Player player) {
+    this.player = player;
   }
 
   function draw_hud() {
     text("Code", 16, 16, 18, "left", "top", rgb(1, 1, 1));
     text("Arrow keys move", hud_width() - 16, 16, 16, "right", "top", rgb(1, 1, 1));
+    text("Player X: {player.x}", 16, 40, 14, "left", "top", rgb(1, 1, 1));
+  }
+}
+
+implement HudDrawable for HeadsUpDisplay {
+  draw_hud() via HeadsUpDisplay.draw_hud;
+}
+
+export object MainScene {
+  Scene scene;
+  SceneLoop loop;
+  BackgroundLayer background_layer;
+  Player player;
+  HeadsUpDisplay heads_up_display;
+
+  constructor() {
+    scene = new Scene();
+    loop = new SceneLoop(scene);
+    background_layer = new BackgroundLayer();
+    player = new Player();
+    heads_up_display = new HeadsUpDisplay(player);
+  }
+
+  function start() {
+    scene.add_world_drawable(background_layer, 0);
+    scene.add_updatable(player);
+    scene.add_world_drawable(player, 10);
+    scene.add_hud_drawable(heads_up_display, 0);
+    loop.start();
+  }
+
+  function update() {
+    loop.update();
+  }
+
+  function draw() {
+    loop.draw();
+  }
+
+  function draw_hud() {
+    loop.draw_hud();
   }
 }
 ```
 
-The example above matches the current first implementation slice and is checked in as `ConsoleApp1/examples/web_scene.code`.
+The example above matches the current recommended larger-project shape and is checked in as `ConsoleApp1/examples/web_scene.code`.
 
 ## Runtime Behavior
 
@@ -165,6 +244,7 @@ Loop behavior:
 - `draw()` runs once per presented frame.
 - `draw_hud()` runs once per presented frame after `draw()` when present.
 - If rendering is slower than updates for a short period, simulation remains fixed-step and presentation may skip frames rather than change game speed.
+- `engine.scene` registration changes are staged; adds/removes made during `update()`, `draw()`, or `draw_hud()` do not take effect until the next `update()` phase.
 
 ## V1 API Surface
 
@@ -221,6 +301,16 @@ Current wrapper layer:
   - `safe_*()`
   - `hud_width()`
   - `hud_height()`
+- `engine.scene`
+  - `Startable`, `Updatable`, `WorldDrawable`, `HudDrawable`
+  - `Scene`
+  - explicit staged registration methods for start/update/world-draw/hud-draw lifecycles
+- `engine.loop`
+  - `SceneLoop`
+  - `start()`
+  - `update()`
+  - `draw()`
+  - `draw_hud()`
 
 Behavior rules:
 - `clear(...)` clears the full visible browser canvas for the current frame.

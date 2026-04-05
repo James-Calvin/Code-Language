@@ -1246,10 +1246,16 @@ static class ModuleCompiler
             Unary u => new Unary(u.Operator, RewriteExpr(u.Right, aliases)),
             Literal l => l,
             InterpString s => new InterpString(s.Parts.Select(p => p is Expr e ? (object)RewriteExpr(e, aliases) : p).ToList(), s.Line, s.Column),
-            ArrayLiteral a => new ArrayLiteral(a.Elements.Select(e => RewriteExpr(e, aliases)).ToList(), a.Line, a.Column),
+            ArrayLiteral a => new ArrayLiteral(a.Elements.Select(e => RewriteExpr(e, aliases)).ToList(), a.Line, a.Column)
+            {
+                ResolvedTypeRef = a.ResolvedTypeRef is null ? null : RewriteTypeRef(a.ResolvedTypeRef, aliases)
+            },
             NewArrayExpr na => new NewArrayExpr(RewriteTypeRef(na.ElementType, aliases), RewriteExpr(na.Size, aliases), na.Line, na.Column),
             ArrayLengthExpr al => new ArrayLengthExpr(RewriteExpr(al.Target, aliases), al.DotToken),
-            ArrayIndexExpr ai => new ArrayIndexExpr(RewriteExpr(ai.Array, aliases), RewriteExpr(ai.Index, aliases)),
+            ArrayIndexExpr ai => new ArrayIndexExpr(RewriteExpr(ai.Array, aliases), RewriteExpr(ai.Index, aliases))
+            {
+                ResolvedElementTypeRef = ai.ResolvedElementTypeRef is null ? null : RewriteTypeRef(ai.ResolvedElementTypeRef, aliases)
+            },
             OptionalOrExpr o => new OptionalOrExpr(RewriteExpr(o.Optional, aliases), RewriteExpr(o.Fallback, aliases)),
             OptionalHasValueExpr o => new OptionalHasValueExpr(RewriteExpr(o.Target, aliases)),
             OptionalValueExpr o => new OptionalValueExpr(RewriteExpr(o.Target, aliases)),
@@ -1263,6 +1269,8 @@ static class ModuleCompiler
             Call c => new Call(c.Callee, c.Arguments.Select(a => RewriteExpr(a, aliases)).ToList()),
             MethodCallExpr m => new MethodCallExpr(RewriteExpr(m.Target, aliases), m.MethodName, m.Arguments.Select(a => RewriteExpr(a, aliases)).ToList())
             {
+                ResolvedArrayMethodName = m.ResolvedArrayMethodName,
+                ResolvedArrayElementTypeRef = m.ResolvedArrayElementTypeRef is null ? null : RewriteTypeRef(m.ResolvedArrayElementTypeRef, aliases),
                 ResolvedMethodKey = m.ResolvedMethodKey,
                 ResolvedInterfaceName = m.ResolvedInterfaceName,
                 ResolvedInterfaceMethodKey = m.ResolvedInterfaceMethodKey,

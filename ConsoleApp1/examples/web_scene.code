@@ -1,27 +1,12 @@
 import { rgb, rgba } from "engine/colors.code";
 import { circle, circle_outline, clear_screen, image, line, polygon, polygon_outline, rectangle, rectangle_outline, sprite, text } from "engine/drawing.code";
 import { key_is_down } from "engine/input.code";
+import { SceneLoop } from "engine/loop.code";
+import { HudDrawable, Scene, Updatable, WorldDrawable } from "engine/scene.code";
 import { hud_width, safe_bottom, safe_left, safe_right, safe_top, view_left, view_right } from "engine/view.code";
 
-export object MainScene {
-  integer x;
-  integer y;
-  integer speed;
-
+object BackgroundLayer {
   constructor() {
-    this.x = 100;
-    this.y = 100;
-    this.speed = 2;
-  }
-
-  function start() {
-  }
-
-  function update() {
-    if key_is_down(37) then this.x -= this.speed;
-    if key_is_down(39) then this.x += this.speed;
-    if key_is_down(38) then this.y -= this.speed;
-    if key_is_down(40) then this.y += this.speed;
   }
 
   function draw() {
@@ -33,15 +18,98 @@ export object MainScene {
     circle_outline(124, 84, 24, 2, rgb(1, 1, 1));
     image("assets/code-sheet.svg", 24, 220, 64, 32, 1);
     sprite("assets/code-sheet.svg", 32, 0, 32, 32, 104, 210, 64, 64, 1);
+  }
+}
 
-    if this.x > view_left() - 24 and this.x < view_right() then {
-      rectangle(this.x, this.y, 24, 24, rgb(1, 1, 1));
-      rectangle_outline(this.x - 4, this.y - 4, 32, 32, 2, rgba(1 / 4, 1 / 2, 1, 2 / 3));
+implement WorldDrawable for BackgroundLayer {
+  draw() via BackgroundLayer.draw;
+}
+
+object Player {
+  integer x;
+  integer y;
+  integer speed;
+
+  constructor() {
+    x = 100;
+    y = 100;
+    speed = 2;
+  }
+
+  function update() {
+    if key_is_down(37) then x -= speed;
+    if key_is_down(39) then x += speed;
+    if key_is_down(38) then y -= speed;
+    if key_is_down(40) then y += speed;
+  }
+
+  function draw() {
+    if x > view_left() - 24 and x < view_right() then {
+      rectangle(x, y, 24, 24, rgb(1, 1, 1));
+      rectangle_outline(x - 4, y - 4, 32, 32, 2, rgba(1 / 4, 1 / 2, 1, 2 / 3));
     }
+  }
+}
+
+implement Updatable for Player {
+  update() via Player.update;
+}
+
+implement WorldDrawable for Player {
+  draw() via Player.draw;
+}
+
+object HeadsUpDisplay {
+  Player player;
+
+  constructor(Player player) {
+    this.player = player;
   }
 
   function draw_hud() {
     text("Code", 16, 16, 18, "left", "top", rgb(1, 1, 1));
     text("Arrow keys move", hud_width() - 16, 16, 16, "right", "top", rgb(1, 1, 1));
+    text("Player X: {player.x}", 16, 40, 14, "left", "top", rgb(1, 1, 1));
+    text("Player Y: {player.y}", 16, 64, 14, "left", "top", rgb(1, 1, 1));
+  }
+}
+
+implement HudDrawable for HeadsUpDisplay {
+  draw_hud() via HeadsUpDisplay.draw_hud;
+}
+
+export object MainScene {
+  Scene scene;
+  SceneLoop loop;
+  BackgroundLayer background_layer;
+  Player player;
+  HeadsUpDisplay heads_up_display;
+
+  constructor() {
+    scene = new Scene();
+    loop = new SceneLoop(scene);
+    background_layer = new BackgroundLayer();
+    player = new Player();
+    heads_up_display = new HeadsUpDisplay(player);
+  }
+
+  function start() {
+    scene.add_world_drawable(background_layer, 0);
+    scene.add_updatable(player);
+    scene.add_world_drawable(player, 10);
+    scene.add_hud_drawable(heads_up_display, 0);
+    loop.start();
+  }
+
+  function update() {
+    loop.update();
+  }
+
+  function draw() {
+    loop.draw();
+  }
+
+  function draw_hud() {
+    loop.draw_hud();
   }
 }

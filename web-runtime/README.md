@@ -55,7 +55,7 @@ Compatibility note:
 
 The generated web app path is now the main workflow for browser apps.
 - Current generated runtime behavior: full-bleed browser canvas, centered `640x360` safe area, hybrid-expanded world framing, optional `draw_hud()` for screen-edge HUD work, scene primitives for rectangles, outlines, lines, circles, polygons, text, images, and sprites, and copied `assets/` content in the generated site output when present.
-- The repo also ships a first wrapper layer in `lib/engine/` so scene apps can import `engine.colors`, `engine.drawing`, `engine.input`, and `engine.view` instead of relying on the raw helper surface.
+- The repo also ships a wrapper layer in `lib/engine/` so scene apps can import `engine.colors`, `engine.drawing`, `engine.input`, `engine.view`, `engine.scene`, and `engine.loop` instead of relying on the raw helper surface.
 
 ## Harness quick start
 1. Compile a program for web:

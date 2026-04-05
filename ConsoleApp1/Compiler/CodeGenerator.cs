@@ -489,13 +489,31 @@ sealed class CodeGenerator
                 break;
             case Variable v:
                 SetLoc(v.Name);
-                _builder.Load(GetSlot(v.Name));
+                if (v.ResolvesToImplicitField)
+                {
+                    EmitCurrentObject();
+                    _builder.GetField(v.Name.Lexeme);
+                }
+                else
+                {
+                    _builder.Load(GetSlot(v.Name));
+                }
                 break;
 
             case Assign a:
-                Emit(a.Value);
                 SetLoc(a.Name);
-                _builder.Store(GetSlot(a.Name));
+                if (a.ResolvesToImplicitField)
+                {
+                    EmitCurrentObject();
+                    Emit(a.Value);
+                    _builder.SetField(a.Name.Lexeme);
+                    _builder.Pop();
+                }
+                else
+                {
+                    Emit(a.Value);
+                    _builder.Store(GetSlot(a.Name));
+                }
                 break;
             case CompoundAssignExpr c:
                 EmitCompoundAssignment(c);
@@ -518,7 +536,11 @@ sealed class CodeGenerator
                 if (targetType is null)
                     throw new InvalidOperationException($"Unable to resolve method target type for '{mc.MethodName.Lexeme}'");
 
-                if (mc.ResolvedInterfaceName is not null || _interfaceNames.Contains(targetType.Name))
+                if (mc.ResolvesToArrayMethod || targetType.IsArray)
+                {
+                    EmitArrayMethodCall(mc);
+                }
+                else if (mc.ResolvedInterfaceName is not null || _interfaceNames.Contains(targetType.Name))
                 {
                     EmitInterfaceMethodCall(mc, targetType);
                 }
@@ -737,10 +759,20 @@ sealed class CodeGenerator
     {
         switch (expr)
         {
+            case ArrayLiteral al:
+                return al.ResolvedTypeRef;
+            case NewArrayExpr na:
+                return new TypeRef("array", [na.ElementType], na.Line, na.Column);
             case Variable v:
+                if (v.ResolvedImplicitFieldTypeRef is not null)
+                    return v.ResolvedImplicitFieldTypeRef;
                 return _localDeclaredTypes.TryGetValue(v.Name.Lexeme, out var t) ? t : null;
             case NewObjectExpr no:
                 return new TypeRef(no.TypeName.Lexeme, null, no.TypeName.Line, no.TypeName.Column);
+            case Call c:
+                return c.ResolvedImplicitMethodReturnTypeRef;
+            case ArrayIndexExpr ai:
+                return ai.ResolvedElementTypeRef;
             case FieldAccessExpr fa:
             {
                 var ownerType = TryResolveTypeRef(fa.Target);
@@ -754,6 +786,8 @@ sealed class CodeGenerator
             }
             case MethodCallExpr mc:
                 return mc.ResolvedReturnTypeRef;
+            case ArraySetExpr aset:
+                return TryResolveTypeRef(aset.Target);
             default:
                 return null;
         }
@@ -769,11 +803,31 @@ sealed class CodeGenerator
             case Variable variable:
             {
                 SetLoc(variable.Name);
-                _builder.Load(GetSlot(variable.Name));
-                Emit(expr.Value);
-                EmitBinaryOperator(expr.Operator);
-                _builder.Dup();
-                _builder.Store(GetSlot(variable.Name));
+                if (variable.ResolvesToImplicitField)
+                {
+                    int objectSlot = AllocateTemp();
+                    int valueSlot = AllocateTemp();
+                    EmitCurrentObject();
+                    _builder.Store(objectSlot);
+                    _builder.Load(objectSlot);
+                    _builder.GetField(variable.Name.Lexeme);
+                    Emit(expr.Value);
+                    EmitBinaryOperator(expr.Operator);
+                    _builder.Store(valueSlot);
+                    _builder.Load(objectSlot);
+                    _builder.Load(valueSlot);
+                    _builder.SetField(variable.Name.Lexeme);
+                    ReleaseTemp(valueSlot);
+                    ReleaseTemp(objectSlot);
+                }
+                else
+                {
+                    _builder.Load(GetSlot(variable.Name));
+                    Emit(expr.Value);
+                    EmitBinaryOperator(expr.Operator);
+                    _builder.Dup();
+                    _builder.Store(GetSlot(variable.Name));
+                }
                 break;
             }
             case FieldAccessExpr fieldAccess:
@@ -847,6 +901,30 @@ sealed class CodeGenerator
         }
     }
 
+    private void EmitArrayMethodCall(MethodCallExpr mc)
+    {
+        if (mc.ResolvedArrayMethodName is null)
+            throw new InvalidOperationException($"Missing resolved array method for '{mc.MethodName.Lexeme}'");
+
+        Emit(mc.Target);
+        foreach (var arg in mc.Arguments)
+        {
+            Emit(arg);
+        }
+
+        switch (mc.ResolvedArrayMethodName)
+        {
+            case "append":
+                _builder.ArrayAppend();
+                break;
+            case "remove_at":
+                _builder.ArrayRemoveAt();
+                break;
+            default:
+                throw new InvalidOperationException($"Unsupported array method '{mc.ResolvedArrayMethodName}'");
+        }
+    }
+
     private void EmitObjectMethodCall(MethodCallExpr mc, TypeRef targetType)
     {
         Emit(mc.Target);
@@ -863,14 +941,32 @@ sealed class CodeGenerator
         _builder.Call(info.Label, info.ParamCount, frameSize);
     }
 
+    private void EmitImplicitMethodCall(Call call)
+    {
+        if (call.ResolvedImplicitMethodOwnerTypeName is null || call.ResolvedImplicitMethodKey is null)
+            throw new InvalidOperationException($"Missing implicit method resolution for '{call.Callee.Lexeme}'");
+
+        EmitCurrentObject();
+        foreach (var arg in call.Arguments)
+        {
+            Emit(arg);
+        }
+
+        if (!_methods.TryGetValue(call.ResolvedImplicitMethodKey, out var info))
+            throw new InvalidOperationException($"Undefined method '{call.ResolvedImplicitMethodOwnerTypeName}.{call.Callee.Lexeme}' with {call.Arguments.Count} args");
+
+        int frameSize = Math.Max(info.LocalCount, info.ParamCount);
+        _builder.Call(info.Label, info.ParamCount, frameSize);
+    }
+
     private void EmitInterfaceMethodCall(MethodCallExpr mc, TypeRef interfaceType)
     {
         if (mc.ResolvedInterfaceMethodKey is null)
             throw new InvalidOperationException($"Missing resolved interface method key for '{interfaceType.Name}.{mc.MethodName.Lexeme}'");
         string ifaceMethodKey = mc.ResolvedInterfaceMethodKey;
         string dispatchKey = InterfaceDispatchKey(interfaceType.Name, ifaceMethodKey);
-        if (!_interfaceDispatch.TryGetValue(dispatchKey, out var targets) || targets.Count == 0)
-            throw new InvalidOperationException($"No dispatch targets for interface method '{interfaceType.Name}.{mc.MethodName.Lexeme}'");
+        if (!_interfaceDispatch.TryGetValue(dispatchKey, out var targets))
+            targets = [];
 
         Emit(mc.Target);
         foreach (var arg in mc.Arguments)
@@ -943,6 +1039,8 @@ sealed class CodeGenerator
         int idxSlot = AllocateTemp();
         int arrSlot = AllocateTemp();
         int iterSlot = GetOrAllocate(fe.Iterator.Lexeme);
+        if (fe.IteratorTypeRef is not null)
+            _localDeclaredTypes[fe.Iterator.Lexeme] = fe.IteratorTypeRef;
 
         Emit(fe.Iterable);
         _builder.Store(arrSlot);
@@ -986,6 +1084,7 @@ sealed class CodeGenerator
         int endSlot = AllocateTemp();
         int idxSlot = AllocateTemp();
         int iterSlot = GetOrAllocate(fe.Iterator.Lexeme);
+        _localDeclaredTypes[fe.Iterator.Lexeme] = new TypeRef("integer", null, fe.Iterator.Line, fe.Iterator.Column);
 
         Emit(fe.Iterable);
         _builder.Store(endSlot);
@@ -1058,6 +1157,12 @@ sealed class CodeGenerator
 
     private void EmitCall(Call call)
     {
+        if (call.ResolvesToImplicitMethod)
+        {
+            EmitImplicitMethodCall(call);
+            return;
+        }
+
         if (TryEmitIntrinsicCall(call))
             return;
 
@@ -1085,6 +1190,18 @@ sealed class CodeGenerator
 
         _builder.HostCall(intrinsic.Symbol.Symbol, intrinsic.Arity);
         return true;
+    }
+
+    private int GetThisSlot()
+    {
+        if (!_locals.TryGetValue("this", out var slot))
+            throw new InvalidOperationException("Implicit 'this' is not available in the current scope.");
+        return slot;
+    }
+
+    private void EmitCurrentObject()
+    {
+        _builder.Load(GetThisSlot());
     }
 
     private void EmitInterpolatedString(InterpString istr)

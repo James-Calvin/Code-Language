@@ -48,6 +48,8 @@ const OpCode = {
   TimeMonoTicks: 0x28,
   TimeMonoTicksPerSecond: 0x29,
   HostCall: 0x2a,
+  ArrayAppend: 0x2b,
+  ArrayRemoveAt: 0x2c,
   Halt: 0xff
 };
 
@@ -1340,6 +1342,33 @@ export class WebVm {
           }
           arr[index] = value;
           this.stack.push(value);
+          break;
+        }
+
+        case OpCode.ArrayAppend: {
+          this.ensureStack(2);
+          const value = this.stack.pop();
+          const arr = this.stack.pop();
+          if (!Array.isArray(arr)) {
+            this.throwRuntime("ArrayAppend expects array");
+          }
+          arr.push(value);
+          this.stack.push(0);
+          break;
+        }
+
+        case OpCode.ArrayRemoveAt: {
+          this.ensureStack(2);
+          const index = Math.trunc(this.popNumber());
+          const arr = this.stack.pop();
+          if (!Array.isArray(arr)) {
+            this.throwRuntime("ArrayRemoveAt expects array");
+          }
+          if (index < 0 || index >= arr.length) {
+            this.throwRuntime("Array index out of range");
+          }
+          arr.splice(index, 1);
+          this.stack.push(0);
           break;
         }
 

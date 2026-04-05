@@ -1,6 +1,6 @@
 # Bytecode Specification (draft)
 
-Version: 0.9 (2026-02-25)
+Version: 0.9 (2026-04-05)
 
 ## File format
 - Header: "CODE" ASCII (4 bytes) + version byte (0x05) + int32 codeSize + int32 debugCount.
@@ -74,6 +74,8 @@ Version: 0.9 (2026-02-25)
 | 0x28 | TIME_MONO_TICKS | — | +1 | push runtime monotonic tick counter |
 | 0x29 | TIME_MONO_TICKS_PER_SECOND | — | +1 | push monotonic tick frequency |
 | 0x2A | HOST_CALL | string symbol, int32 argc | -argc+1 | invoke host binding by symbol; pushes one return value (void-like calls return 0) |
+| 0x2B | ARRAY_APPEND | — | -1 | pop value, pop array, append element, push 0 |
+| 0x2C | ARRAY_REMOVE_AT | — | -2+1 | pop index, pop array, remove element, push 0 |
 | 0xFF | HALT | — | 0 | stop execution |
 
 ## Planned additions
@@ -88,9 +90,11 @@ Version: 0.9 (2026-02-25)
 - Debug entries map instruction pointer offsets (absolute byte positions) back to source line/column for runtime stack traces; entries are optional per instruction but recorded when available.
 - Arrays are stored as VM-managed lists; NEW_ARRAY pops pre-pushed elements, NEW_ARRAY_N allocates default-filled arrays of length N, ARRAY_LENGTH/GET operate on them (GET pops index then array).
 - ARRAY_SET pops value, index, array; writes in place; returns the value.
+- ARRAY_APPEND pops value then array, mutates the array in place, and returns `0`.
+- ARRAY_REMOVE_AT pops index then array, removes the indexed element in place, and returns `0`.
 - Objects are stored as VM-managed instances with a type name and field dictionary; field access is name-based via GET_FIELD/SET_FIELD.
 - Object methods currently lower to regular CALL sites with implicit `this` prepended to explicit arguments; overload choice is resolved at compile time.
-- Interface declarations and `implement` mappings remain compile-time metadata in v0.8; interface-typed calls lower to `INTERFACE_CALL` dispatch tables that map runtime type names to method targets.
+- Interface declarations and `implement` mappings remain compile-time metadata in v0.8; interface-typed calls lower to `INTERFACE_CALL` dispatch tables that map runtime type names to method targets. Dispatch tables may be empty when no implementers are present in the current compile; runtime then raises a missing-implementation error if the call executes.
 - VM caches decoded `INTERFACE_CALL` tables by call-site IP to avoid reparsing dispatch metadata on hot paths.
 - Module imports/exports/package declarations are compile-time only; the linker flattens a module graph into one bytecode unit before VM execution.
 - Package lockfile resolution may reference either manifest paths or `.codelib` artifacts; when a valid artifact exists for target/version, resolver prefers `.codelib`.

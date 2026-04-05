@@ -22,7 +22,7 @@ The repo contains:
 - Package manifest + lockfile baseline: nearest `code.package.json` is parsed/validated during module compile; local dependency graph resolves and `code.lock.json` is generated
 - Host ABI baseline: compiler emits `HOST_CALL` for `print`, time intrinsics, native-only APIs (`standard.input_output.read_line`, `std.time.sleep_ms`), and engine stubs (`engine.window/*`, `engine.input/*`, `engine.gfx/*`)
 - Web app build/runtime V1 slice: `--build-web` emits a runnable static site folder with `index.html`, `app.bytecode`, copied `assets/` content when present, a full-bleed canvas runtime, `MainScene` scene-object lifecycle (`start/update/draw` plus optional `draw_hud()`), guaranteed `640x360` safe area, hybrid-expand world framing, HUD screen-space, and browser-backed `key_down()`/`clear()`/`draw_rectangle()`/`draw_rectangle_outline()`/`draw_line()`/`draw_circle()`/`draw_circle_outline()`/`draw_polygon()`/`draw_polygon_outline()`/`draw_text()`/`draw_image()`/`draw_sprite()`
-- First higher-level engine wrapper layer: root `lib/engine/` modules now provide `engine.colors`, `engine.drawing`, `engine.input`, and `engine.view` wrappers over the raw scene-runtime helpers
+- Higher-level engine wrapper layer: root `lib/engine/` modules now provide `engine.colors`, `engine.drawing`, `engine.input`, `engine.view`, `engine.scene`, and `engine.loop`, including explicit child-object scene composition over split lifecycle interfaces
 - Browser runtime harness (`web-runtime/`): lower-level JavaScript VM harness for loading raw `.bytecode` / `.codelib` files during bring-up and debugging
 - Runtime diagnostics: bytecode debug map -> line/column stack traces
 - Error objects: `panic <expr>;` emits a `UserError` with call stack
@@ -32,7 +32,8 @@ See [the language spec](docs/code-language-spec.md), [the feature roadmap](docs/
 ## Current State vs Target Workflow
 - Current state: scene-object web apps can now be built with `--build-web` into a runnable static site folder, defaulting to `dist/`.
 - Current state: the generated browser runtime owns the canvas, fills the window edge-to-edge, preserves aspect ratio with a guaranteed `640x360` safe area, expands the visible world on wider/taller screens, and supports `MainScene.start()`, `update()`, `draw()`, optional `draw_hud()`, `key_down()`, `clear()`, `draw_rectangle()`, `draw_rectangle_outline()`, `draw_line()`, `draw_circle()`, `draw_circle_outline()`, `draw_polygon()`, `draw_polygon_outline()`, `draw_text()`, `draw_image()`, `draw_sprite()`, `camera_view_*()`, `camera_safe_*()`, `screen_width()`, and `screen_height()`.
-- Current state: the repo also ships a first wrapper layer in `lib/engine/` so scene apps can import `engine.colors`, `engine.drawing`, `engine.input`, and `engine.view` instead of calling the raw helpers directly.
+- Current state: the repo also ships a wrapper layer in `lib/engine/` so scene apps can import `engine.colors`, `engine.drawing`, `engine.input`, `engine.view`, `engine.scene`, and `engine.loop` instead of calling the raw helpers directly.
+- Current state: larger apps can now keep behavior in separate child objects and explicitly register them with `Scene` through `Startable`, `Updatable`, `WorldDrawable`, and `HudDrawable`.
 - Current state: `web-runtime/index.html` still exists as a lower-level preview/debug harness for raw `.bytecode` / `.codelib` loading.
 - Target workflow: expand this slice into higher-level engine packages and richer rendering/input/audio without forcing raw window-handle management into the default authoring model.
 
@@ -116,11 +117,11 @@ Test harness covers VM ops, compiler integration (print, arithmetic, functions, 
 - Semicolons required; `then` mandatory after `if/while/for/foreach` conditions
 - Function returns: explicit `function<T> name(...)` or implicit-void `function name(...)`
 - Naming rule: user-facing APIs prefer fully spelled-out words; accepted domain terms like `hud` remain allowed
-- Arrays: literals `{...}`, typed declarations `array<integer> xs = {1,2,3};`, dynamic `new array<integer>(n);`, `.length`, indexing `xs[i]`, mutation `xs[i] = value`
+- Arrays: literals `{...}`, typed declarations `array<integer> xs = {1,2,3};`, dynamic `new array<integer>(n);`, `.length`, indexing `xs[i]`, mutation `xs[i] = value`, and growable methods `xs.append(value)` / `xs.remove_at(index)`
 - Optionals: `optional<T>` with `none`, `.hasValue`, `.value`, `.or(fallback)`
-- Objects: `object` declarations with constructors/methods, `new Type(...)`, field access/assignment (`obj.field`, `obj.field = ...`), method calls (`obj.method(...)`)
+- Objects: `object` declarations with constructors/methods, `new Type(...)`, field access/assignment (`obj.field`, `obj.field = ...`), method calls (`obj.method(...)`), and implicit `this` lookup inside object bodies for unshadowed fields and bare method calls
 - Interfaces: `interface` declarations + explicit `implement Interface for Object { ... via Object.method; }` conformance checks
-- Interface-typed locals/params/returns/fields and runtime-dispatched interface method calls
+- Interface-typed locals/params/returns/fields/arrays and runtime-dispatched interface method calls
 - Modules: `export` for top-level function/object/interface declarations; `import Name [as Alias] from "path";`
 - Grouped/selective imports: `import { add, sub as minus } from "math.code";`
 - Package declarations: optional `package Name;` at top of module (before imports/declarations)
@@ -128,7 +129,7 @@ Test harness covers VM ops, compiler integration (print, arithmetic, functions, 
 - Lockfile: `code.lock.json` is written in the package root during compile when a manifest is present (schema v1, target, resolved package list with integrity hashes)
 - Library packages (`kind: "library"`) emit a `.codelib` artifact during compile; lockfile resolution prefers `.codelib` paths when present and validated
 - Import resolution: importing file directory first, then discovered ancestor `lib/` folders
-- Current engine wrapper modules live under `lib/engine/` and are imported as `"engine/colors.code"`, `"engine/drawing.code"`, `"engine/input.code"`, and `"engine/view.code"`
+- Current engine wrapper modules live under `lib/engine/` and are imported as `"engine/colors.code"`, `"engine/drawing.code"`, `"engine/input.code"`, `"engine/view.code"`, `"engine/scene.code"`, and `"engine/loop.code"`
 - Alias imports support exported functions, objects, and interfaces
 - Module tooling flags: `--dump-module-graph [outputPath]`, `--module-graph-format <text|json|dot>`, and `--trace-linker`
 - Compile target flag: `--target vm-native|vm-web` (default `vm-native`)
@@ -139,10 +140,10 @@ Test harness covers VM ops, compiler integration (print, arithmetic, functions, 
 - Method/constructor overload resolution: compile-time signature-based dispatch (with best-match conversions)
 - Constructor rules: objects with fields must define constructors, and constructors must assign all fields
 - Errors are reported with line/column and call stack when possible
-- Current interface dispatch scope: direct interface-typed values (locals/params/returns/fields); broader container/module surfaces are still planned
+- Interface-typed arrays now participate in type checking, indexing, `foreach`, and runtime dispatch; broader container types beyond arrays are still planned
 
 ## Roadmap (high level)
-Active priorities: grow the first `lib/engine/` wrapper layer into a fuller engine-facing API, continue replacing raw engine stubs with real browser-backed implementations, and expand the browser runtime beyond the current primitives/keyboard/image-sprite slice into richer rendering, input, and audio. Full detail is in [docs/features-roadmap.md](docs/features-roadmap.md) and [docs/platform-roadmap.md](docs/platform-roadmap.md).
+Active priorities: grow the current `lib/engine/` wrapper layer beyond scene composition into a fuller engine-facing API, continue replacing raw engine stubs with real browser-backed implementations, and expand the browser runtime beyond the current primitives/keyboard/image-sprite slice into richer rendering, input, and audio. Full detail is in [docs/features-roadmap.md](docs/features-roadmap.md) and [docs/platform-roadmap.md](docs/platform-roadmap.md).
 
 ## Examples
 Compile + run an example:

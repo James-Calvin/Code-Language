@@ -48,6 +48,7 @@ Near-term web build goal:
 - A dedicated web build mode now emits a deployable static site folder via `--build-web`.
 - Default output directory: `dist/` in the package root when a manifest exists, otherwise `dist/` beside the entry `.code` file.
 - Current output: `index.html` + `app.bytecode`, with the runtime loader inlined into `index.html`.
+- Current recommended authoring model: keep `MainScene` thin and compose child objects through `engine.scene.Scene` and `engine.loop.SceneLoop`.
 - The current `web-runtime/index.html` upload flow remains preview-only bootstrap tooling for raw bytecode bring-up and is no longer the primary workflow.
 
 ## 2) Host ABI v1 (concrete draft)
@@ -98,7 +99,7 @@ Host calls are explicit, capability-scoped bindings provided by the runtime host
   - `key_down(whole window, integer keycode) -> boolean`
 - `engine.gfx`
   - `clear(whole window, real r, real g, real b, real a) -> void`
-  - `draw_rect(whole window, real x, real y, real w, real h, real r, real g, real b, real a) -> void`
+  - `draw_rectangle(whole window, real x, real y, real w, real h, real r, real g, real b, real a) -> void`
 - `engine.audio`
   - `play_sfx(string id, real volume) -> void`
 - `engine.gpu` (planned)
@@ -226,8 +227,8 @@ Legend:
 | `[~]` | Phase 4 | Browser-backed web app runtime | Implemented current slice: generated full-window canvas runtime, `MainScene` lifecycle (`start/update/draw` plus optional `draw_hud`), fixed-step loop, centered `640x360` safe area, hybrid-expanded world framing, copied `assets/` output, and browser-backed rectangles/outlines/lines/circles/polygons/text/images/sprites; expand richer input/audio/content handling |
 | `[~]` | Phase 4 | Web engine host bindings (real impl) | Implemented current scene-runtime bindings for `key_down`, `clear`, `draw_rectangle`, `draw_rectangle_outline`, `draw_line`, `draw_circle`, `draw_circle_outline`, `draw_polygon`, `draw_polygon_outline`, `draw_text`, `draw_image`, `draw_sprite`, `camera_view_*`, `camera_safe_*`, and `screen_width` / `screen_height`; legacy window-handle web stubs still need real implementations or package-level wrappers |
 | `[!]` | Phase 4 | Backend-agnostic API contract | Freeze capability-query and fallback semantics so one Code source can target multiple backends predictably |
-| `[~]` | Phase 5 | Engine core package set | `engine.math`, `engine.ecs`, `engine.scene`, `engine.loop` |
-| `[~]` | Phase 5 | Engine platform adapters | First wrapper layer exists in `lib/engine/` (`engine.colors`, `engine.drawing`, `engine.input`, `engine.view`); still need fuller host-backed package taxonomy for native+web, plus audio |
+| `[~]` | Phase 5 | Engine core package set | `engine.scene` and `engine.loop` implemented for explicit child-object composition; `engine.math`, `engine.ecs`, and broader engine packages still pending |
+| `[~]` | Phase 5 | Engine platform adapters | Wrapper layer now includes `engine.colors`, `engine.drawing`, `engine.input`, `engine.view`, `engine.scene`, and `engine.loop`; still need fuller host-backed package taxonomy for native+web, plus audio |
 | `[~]` | Phase 5 | `engine.gpu` ABI v1 | Add GPU resource/pipeline/dispatch ABI for compute-heavy and graphics-heavy workloads |
 | `[~]` | Phase 5 | WebGPU backend | Implement `engine.gpu` on `vm-web` with explicit fallback policy when WebGPU is unavailable |
 | `[~]` | Phase 5 | Native GPU backend parity | Implement the same `engine.gpu` ABI on `vm-native` backend(s) for parity and performance |
@@ -260,7 +261,7 @@ This order gets library system + target model stable before engine work starts.
    - Next step: expand richer input/audio/content handling while keeping the higher-level engine-facing API off raw window handles.
 
 4. **Engine packages + loop contract**
-   - Implemented first slice: importable wrapper modules now exist for colors, drawing, input, and view queries under `lib/engine/`.
-   - Next step: grow that wrapper layer into broader `engine.window`, `engine.input`, `engine.gfx`, and `engine.loop` package surfaces with scene lifecycle integration.
+   - Implemented current slice: importable wrapper modules now exist for colors, drawing, input, view, scene composition, and scene-loop execution under `lib/engine/`.
+   - Next step: grow that wrapper layer into broader `engine.window`, `engine.input`, `engine.gfx`, audio, and higher-level content helpers without collapsing back to raw host symbols.
    - Exit criteria: the runtime contract is reflected in engine-facing modules rather than only raw host ABI symbols.
 

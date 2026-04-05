@@ -12,6 +12,8 @@ sealed class TypeChecker
     private readonly HashSet<string> _interfaceObjectPairs = new(StringComparer.Ordinal);
     private readonly Dictionary<string, HashSet<string>> _interfaceMethodImplementers = new(StringComparer.Ordinal);
     private TypeRef? _currentReturnTypeRef;
+    private ObjectSymbol? _currentObjectSymbol;
+    private TypeRef? _currentObjectTypeRef;
     private static readonly Dictionary<string, FunctionSignature> IntrinsicFunctions = BuildIntrinsicFunctions();
 
     public void Check(IList<Stmt> statements)
@@ -58,7 +60,6 @@ sealed class TypeChecker
             foreach (var method in iface.Methods)
             {
                 ValidateTypeRef(method.ReturnType);
-                EnsureNotVoidTypeRef(method.ReturnType, "Interface method return type cannot be void", method.Name.Line, method.Name.Column);
                 var paramTypeRefs = new List<TypeRef>(method.Parameters.Count);
                 var paramTypes = new List<TypeSymbol>(method.Parameters.Count);
                 for (int i = 0; i < method.Parameters.Count; i++)
@@ -296,25 +297,38 @@ sealed class TypeChecker
         if (!_objects.TryGetValue(obj.Name.Lexeme, out var symbol))
             return;
 
-        for (int i = 0; i < obj.Constructors.Count; i++)
-        {
-            var ctor = obj.Constructors[i];
-            var ctorSig = symbol.Constructors[i];
-            var env = new TypeEnvironment();
-            var thisType = new TypeRef(obj.Name.Lexeme, null, obj.Name.Line, obj.Name.Column);
-            env.Define("this", TypeSymbol.Object, thisType, ctor.Keyword.Line, ctor.Keyword.Column, assigned: true);
-            foreach (var param in ctor.Parameters)
-            {
-                var pType = MapType(param.Type!);
-                env.Define(param.Name.Lexeme, pType, param.Type, param.Name.Line, param.Name.Column, assigned: true);
-            }
+        var previousObjectSymbol = _currentObjectSymbol;
+        var previousObjectTypeRef = _currentObjectTypeRef;
+        _currentObjectSymbol = symbol;
+        _currentObjectTypeRef = new TypeRef(obj.Name.Lexeme, null, obj.Name.Line, obj.Name.Column);
 
-            // Constructor bodies are type-checked like regular blocks. Explicit return is currently not supported.
-            var previousReturnRef = _currentReturnTypeRef;
-            _currentReturnTypeRef = null;
-            CheckStmt(ctorSig.Body, env, currentReturn: null);
-            _currentReturnTypeRef = previousReturnRef;
-            EnsureAllFieldsInitialized(obj, ctorSig.Body);
+        try
+        {
+            for (int i = 0; i < obj.Constructors.Count; i++)
+            {
+                var ctor = obj.Constructors[i];
+                var ctorSig = symbol.Constructors[i];
+                var env = new TypeEnvironment();
+                var thisType = new TypeRef(obj.Name.Lexeme, null, obj.Name.Line, obj.Name.Column);
+                env.Define("this", TypeSymbol.Object, thisType, ctor.Keyword.Line, ctor.Keyword.Column, assigned: true);
+                foreach (var param in ctor.Parameters)
+                {
+                    var pType = MapType(param.Type!);
+                    env.Define(param.Name.Lexeme, pType, param.Type, param.Name.Line, param.Name.Column, assigned: true);
+                }
+
+                // Constructor bodies are type-checked like regular blocks. Explicit return is currently not supported.
+                var previousReturnRef = _currentReturnTypeRef;
+                _currentReturnTypeRef = null;
+                CheckStmt(ctorSig.Body, env, currentReturn: null);
+                _currentReturnTypeRef = previousReturnRef;
+                EnsureAllFieldsInitialized(obj, ctorSig.Body);
+            }
+        }
+        finally
+        {
+            _currentObjectSymbol = previousObjectSymbol;
+            _currentObjectTypeRef = previousObjectTypeRef;
         }
     }
 
@@ -323,25 +337,38 @@ sealed class TypeChecker
         if (!_objects.TryGetValue(obj.Name.Lexeme, out var symbol))
             return;
 
-        foreach (var method in symbol.Methods.Values)
+        var previousObjectSymbol = _currentObjectSymbol;
+        var previousObjectTypeRef = _currentObjectTypeRef;
+        _currentObjectSymbol = symbol;
+        _currentObjectTypeRef = new TypeRef(obj.Name.Lexeme, null, obj.Name.Line, obj.Name.Column);
+
+        try
         {
-            var env = new TypeEnvironment();
-            var thisType = new TypeRef(obj.Name.Lexeme, null, obj.Name.Line, obj.Name.Column);
-            env.Define("this", TypeSymbol.Object, thisType, method.Name.Line, method.Name.Column, assigned: true);
-            var previousReturnRef = _currentReturnTypeRef;
-            _currentReturnTypeRef = method.ReturnTypeRef;
-
-            for (int i = 0; i < method.Parameters.Count; i++)
+            foreach (var method in symbol.Methods.Values)
             {
-                var paramDecl = method.Parameters[i];
-                var pType = method.ParamTypes[i];
-                env.Define(paramDecl.Name.Lexeme, pType, paramDecl.Type, paramDecl.Name.Line, paramDecl.Name.Column, assigned: true);
-            }
+                var env = new TypeEnvironment();
+                var thisType = new TypeRef(obj.Name.Lexeme, null, obj.Name.Line, obj.Name.Column);
+                env.Define("this", TypeSymbol.Object, thisType, method.Name.Line, method.Name.Column, assigned: true);
+                var previousReturnRef = _currentReturnTypeRef;
+                _currentReturnTypeRef = method.ReturnTypeRef;
 
-            bool allPathsReturn = CheckStmt(method.Body, env, method.ReturnType);
-            _currentReturnTypeRef = previousReturnRef;
-            if (method.ReturnType != TypeSymbol.Void && !allPathsReturn)
-                throw new CompilerException($"Method '{obj.Name.Lexeme}.{method.Name.Lexeme}' may not return a value on all paths", method.Name.Line, method.Name.Column);
+                for (int i = 0; i < method.Parameters.Count; i++)
+                {
+                    var paramDecl = method.Parameters[i];
+                    var pType = method.ParamTypes[i];
+                    env.Define(paramDecl.Name.Lexeme, pType, paramDecl.Type, paramDecl.Name.Line, paramDecl.Name.Column, assigned: true);
+                }
+
+                bool allPathsReturn = CheckStmt(method.Body, env, method.ReturnType);
+                _currentReturnTypeRef = previousReturnRef;
+                if (method.ReturnType != TypeSymbol.Void && !allPathsReturn)
+                    throw new CompilerException($"Method '{obj.Name.Lexeme}.{method.Name.Lexeme}' may not return a value on all paths", method.Name.Line, method.Name.Column);
+            }
+        }
+        finally
+        {
+            _currentObjectSymbol = previousObjectSymbol;
+            _currentObjectTypeRef = previousObjectTypeRef;
         }
     }
 
@@ -402,12 +429,41 @@ sealed class TypeChecker
     private static bool TryGetThisFieldName(Expr expr, out string fieldName)
     {
         fieldName = string.Empty;
+        if (expr is Assign implicitFieldAssign && implicitFieldAssign.ResolvesToImplicitField)
+        {
+            fieldName = implicitFieldAssign.Name.Lexeme;
+            return true;
+        }
         if (expr is not FieldSetExpr set)
             return false;
         if (set.Target.Target is not Variable thisVar || !string.Equals(thisVar.Name.Lexeme, "this", StringComparison.Ordinal))
             return false;
         fieldName = set.Target.Name.Lexeme;
         return true;
+    }
+
+    private bool TryResolveImplicitField(Token name, TypeEnvironment env, out TypeSymbol type, out TypeRef? typeRef)
+    {
+        type = TypeSymbol.Unknown;
+        typeRef = null;
+
+        if (_currentObjectSymbol is null || _currentObjectTypeRef is null)
+            return false;
+
+        if (env.Contains(name.Lexeme))
+            return false;
+
+        if (!_currentObjectSymbol.Fields.TryGetValue(name.Lexeme, out typeRef))
+            return false;
+
+        type = MapType(typeRef);
+        return true;
+    }
+
+    private bool CurrentObjectHasMethodNamed(string methodName)
+    {
+        return _currentObjectSymbol is not null &&
+               _currentObjectSymbol.Methods.Values.Any(method => string.Equals(method.Name.Lexeme, methodName, StringComparison.Ordinal));
     }
 
     private bool CheckStmt(Stmt stmt, TypeEnvironment env, TypeSymbol? currentReturn)
@@ -472,7 +528,20 @@ sealed class TypeChecker
                 Require(IsNumeric(iterType) || iterType == TypeSymbol.Array, fe.Iterable, "foreach iterable must be numeric (count) or array");
                 fe.IsArray = iterType == TypeSymbol.Array;
                 var feEnv = env.CreateChild();
-                feEnv.Define(fe.Iterator.Lexeme, TypeSymbol.Integer, null, fe.Iterator.Line, fe.Iterator.Column, assigned: true);
+                if (fe.IsArray)
+                {
+                    var iterableTypeRef = ResolveExprTypeRef(fe.Iterable, env);
+                    if (iterableTypeRef is null || !iterableTypeRef.IsArray || iterableTypeRef.TypeArguments.Count != 1)
+                        throw new CompilerException("Could not resolve array element type for foreach", fe.Iterator.Line, fe.Iterator.Column);
+                    var iteratorTypeRef = iterableTypeRef.TypeArguments[0];
+                    fe.IteratorTypeRef = iteratorTypeRef;
+                    feEnv.Define(fe.Iterator.Lexeme, MapType(iteratorTypeRef), iteratorTypeRef, fe.Iterator.Line, fe.Iterator.Column, assigned: true);
+                }
+                else
+                {
+                    fe.IteratorTypeRef = null;
+                    feEnv.Define(fe.Iterator.Lexeme, TypeSymbol.Integer, null, fe.Iterator.Line, fe.Iterator.Column, assigned: true);
+                }
                 CheckStmt(fe.Body, feEnv, currentReturn);
                 return false;
 
@@ -541,6 +610,7 @@ sealed class TypeChecker
                 return TypeSymbol.String;
             case ArrayLiteral al:
                 foreach (var e in al.Elements) CheckExpr(e, env, currentReturn);
+                al.ResolvedTypeRef = InferArrayLiteralTypeRef(al, env, currentReturn);
                 return TypeSymbol.Array;
             case NewArrayExpr na:
                 var sizeType = CheckExpr(na.Size, env, currentReturn);
@@ -581,8 +651,11 @@ sealed class TypeChecker
                 Require(arrType == TypeSymbol.Array, aidx.Array, "Indexing requires an array");
                 var idxType = CheckExpr(aidx.Index, env, currentReturn);
                 Require(IsNumeric(idxType), aidx.Index, "Array index must be numeric");
-                // Element typing not tracked; default to integer
-                return TypeSymbol.Integer;
+                var arrayTypeRef = ResolveExprTypeRef(aidx.Array, env);
+                if (arrayTypeRef is null || !arrayTypeRef.IsArray || arrayTypeRef.TypeArguments.Count != 1)
+                    throw new CompilerException("Could not resolve array element type", GetLine(aidx.Array), GetCol(aidx.Array));
+                aidx.ResolvedElementTypeRef = arrayTypeRef.TypeArguments[0];
+                return MapType(aidx.ResolvedElementTypeRef);
             case OptionalHasValueExpr ohv:
                 CheckExpr(ohv.Target, env, currentReturn);
                 return TypeSymbol.Boolean;
@@ -606,7 +679,13 @@ sealed class TypeChecker
                 var idxT = CheckExpr(aset.Target.Index, env, currentReturn);
                 Require(IsNumeric(idxT), aset.Target.Index, "Array index must be numeric");
                 var valT = CheckExpr(aset.Value, env, currentReturn);
-                return valT;
+                var targetElementType = CheckExpr(aset.Target, env, currentReturn);
+                var targetElementTypeRef = ResolveExprTypeRef(aset.Target, env);
+                if (targetElementTypeRef is null)
+                    throw new CompilerException("Could not resolve array element type", GetLine(aset.Target.Array), GetCol(aset.Target.Array));
+                var valueTypeRef = ResolveExprTypeRef(aset.Value, env);
+                RequireAssignable(targetElementType, targetElementTypeRef, valT, valueTypeRef, GetLine(aset.Target), GetCol(aset.Target), "Array assignment type mismatch");
+                return targetElementType;
             case FieldSetExpr fset:
             {
                 var targetType = CheckExpr(fset.Target.Target, env, currentReturn);
@@ -624,7 +703,6 @@ sealed class TypeChecker
             case MethodCallExpr mc:
             {
                 var targetType = CheckExpr(mc.Target, env, currentReturn);
-                Require(targetType == TypeSymbol.Object || targetType == TypeSymbol.Interface, mc.Target, "Method call target must be an object or interface");
                 var targetTypeRef = ResolveExprTypeRef(mc.Target, env);
                 if (targetTypeRef is null)
                     throw new CompilerException("Could not resolve method target type", mc.MethodName.Line, mc.MethodName.Column);
@@ -638,6 +716,15 @@ sealed class TypeChecker
                     argTypes.Add((argType, argTypeRef));
                 }
 
+                if (targetType == TypeSymbol.Array)
+                {
+                    return CheckArrayMethodCall(mc, targetTypeRef, argTypes);
+                }
+
+                mc.ResolvedArrayMethodName = null;
+                mc.ResolvedArrayElementTypeRef = null;
+                Require(targetType == TypeSymbol.Object || targetType == TypeSymbol.Interface, mc.Target, "Method call target must be an object, interface, or array");
+
                 if (_interfaces.TryGetValue(targetTypeRef.Name, out var iface))
                 {
                     if (!TryResolveBestInterfaceMethod(iface, mc.MethodName.Lexeme, argTypes, out var ifaceMethod, out bool ambiguousIface))
@@ -646,20 +733,13 @@ sealed class TypeChecker
                             throw new CompilerException($"Ambiguous method call '{targetTypeRef.Name}.{mc.MethodName.Lexeme}'", mc.MethodName.Line, mc.MethodName.Column);
                         throw new CompilerException($"Interface '{targetTypeRef.Name}' has no matching method overload '{mc.MethodName.Lexeme}'", mc.MethodName.Line, mc.MethodName.Column);
                     }
-
-                    if (!HasAnyImplementationForMethod(targetTypeRef.Name, ifaceMethod!.SignatureKey))
-                    {
-                        throw new CompilerException(
-                            $"No object implements interface method '{targetTypeRef.Name}.{mc.MethodName.Lexeme}' with this signature",
-                            mc.MethodName.Line,
-                            mc.MethodName.Column);
-                    }
+                    var resolvedInterfaceMethod = ifaceMethod!;
 
                     mc.ResolvedMethodKey = null;
                     mc.ResolvedInterfaceName = targetTypeRef.Name;
-                    mc.ResolvedInterfaceMethodKey = ifaceMethod.SignatureKey;
-                    mc.ResolvedReturnTypeRef = ifaceMethod.ReturnTypeRef;
-                    return ifaceMethod.ReturnType;
+                    mc.ResolvedInterfaceMethodKey = resolvedInterfaceMethod.SignatureKey;
+                    mc.ResolvedReturnTypeRef = resolvedInterfaceMethod.ReturnTypeRef;
+                    return resolvedInterfaceMethod.ReturnType;
                 }
 
                 if (!_objects.TryGetValue(targetTypeRef.Name, out var obj))
@@ -679,16 +759,41 @@ sealed class TypeChecker
                 return method.ReturnType;
             }
             case Variable v:
-                return env.LookupForRead(v.Name);
+                if (env.TryLookupForRead(v.Name, out var localType))
+                {
+                    v.ResolvedImplicitFieldTypeRef = null;
+                    return localType;
+                }
+                if (TryResolveImplicitField(v.Name, env, out var fieldType, out var fieldTypeRef))
+                {
+                    v.ResolvedImplicitFieldTypeRef = fieldTypeRef;
+                    return fieldType;
+                }
+                throw new CompilerException($"Undefined variable '{v.Name.Lexeme}'", v.Name.Line, v.Name.Column);
             case Assign a:
-                env.EnsureCanAssign(a.Name);
+            {
                 var rhs = CheckExpr(a.Value, env, currentReturn);
-                var lhsType = env.LookupForReadOrWrite(a.Name, requireAssigned: false);
-                var lhsTypeRef = env.TryGetDeclaredType(a.Name);
                 var rhsTypeRef = ResolveExprTypeRef(a.Value, env);
-                RequireAssignable(lhsType, lhsTypeRef, rhs, rhsTypeRef, a.Name.Line, a.Name.Column, "Assignment type mismatch");
-                env.MarkAssigned(a.Name);
-                return lhsType;
+
+                if (env.TryLookupForReadOrWrite(a.Name, out var lhsType, requireAssigned: false))
+                {
+                    a.ResolvedImplicitFieldTypeRef = null;
+                    env.EnsureCanAssign(a.Name);
+                    var lhsTypeRef = env.TryGetDeclaredType(a.Name);
+                    RequireAssignable(lhsType, lhsTypeRef, rhs, rhsTypeRef, a.Name.Line, a.Name.Column, "Assignment type mismatch");
+                    env.MarkAssigned(a.Name);
+                    return lhsType;
+                }
+
+                if (TryResolveImplicitField(a.Name, env, out var implicitFieldType, out var implicitFieldTypeRef))
+                {
+                    a.ResolvedImplicitFieldTypeRef = implicitFieldTypeRef;
+                    RequireAssignable(implicitFieldType, implicitFieldTypeRef, rhs, rhsTypeRef, a.Name.Line, a.Name.Column, "Assignment type mismatch");
+                    return implicitFieldType;
+                }
+
+                throw new CompilerException($"Undefined variable '{a.Name.Lexeme}'", a.Name.Line, a.Name.Column);
+            }
             case CompoundAssignExpr c:
             {
                 var (targetType, targetTypeRef, assignToken) = CheckCompoundAssignmentTarget(c.Target, env, currentReturn);
@@ -707,22 +812,48 @@ sealed class TypeChecker
                     assignToken.Line,
                     assignToken.Column,
                     "Assignment type mismatch");
-                if (c.Target is Variable variableTarget)
+                if (c.Target is Variable variableTarget && env.Contains(variableTarget.Name.Lexeme))
                     env.MarkAssigned(variableTarget.Name);
                 return targetType;
             }
             case Call c:
+            {
+                var argTypes = new List<(TypeSymbol Symbol, TypeRef? Ref)>(c.Arguments.Count);
+                for (int i = 0; i < c.Arguments.Count; i++)
+                {
+                    var argType = CheckExpr(c.Arguments[i], env, currentReturn);
+                    var argTypeRef = ResolveExprTypeRef(c.Arguments[i], env);
+                    argTypes.Add((argType, argTypeRef));
+                }
+
+                if (_currentObjectSymbol is not null && _currentObjectTypeRef is not null && CurrentObjectHasMethodNamed(c.Callee.Lexeme))
+                {
+                    if (!TryResolveBestMethod(_currentObjectSymbol, c.Callee.Lexeme, argTypes, out var method, out bool ambiguousMethod))
+                    {
+                        if (ambiguousMethod)
+                            throw new CompilerException($"Ambiguous method call '{_currentObjectTypeRef.Name}.{c.Callee.Lexeme}'", c.Callee.Line, c.Callee.Column);
+                        throw new CompilerException($"Object '{_currentObjectTypeRef.Name}' has no matching method overload '{c.Callee.Lexeme}'", c.Callee.Line, c.Callee.Column);
+                    }
+
+                    c.ResolvedImplicitMethodOwnerTypeName = _currentObjectTypeRef.Name;
+                    c.ResolvedImplicitMethodKey = method!.DispatchKey;
+                    c.ResolvedImplicitMethodReturnTypeRef = method.ReturnTypeRef;
+                    return method.ReturnType;
+                }
+
                 if (!TryGetFunctionSignature(c.Callee.Lexeme, out var sig))
                     throw new CompilerException($"Undefined function '{c.Callee.Lexeme}'", c.Callee.Line, c.Callee.Column);
                 if (sig.Params.Count != c.Arguments.Count)
                     throw new CompilerException($"Function '{c.Callee.Lexeme}' expects {sig.Params.Count} args, got {c.Arguments.Count}", c.Callee.Line, c.Callee.Column);
                 for (int i = 0; i < c.Arguments.Count; i++)
                 {
-                    var argType = CheckExpr(c.Arguments[i], env, currentReturn);
-                    var argTypeRef = ResolveExprTypeRef(c.Arguments[i], env);
-                    RequireAssignable(sig.Params[i], sig.ParamTypeRefs[i], argType, argTypeRef, c.Callee.Line, c.Callee.Column, $"Argument {i} type mismatch for '{c.Callee.Lexeme}'");
+                    RequireAssignable(sig.Params[i], sig.ParamTypeRefs[i], argTypes[i].Symbol, argTypes[i].Ref, c.Callee.Line, c.Callee.Column, $"Argument {i} type mismatch for '{c.Callee.Lexeme}'");
                 }
+                c.ResolvedImplicitMethodOwnerTypeName = null;
+                c.ResolvedImplicitMethodKey = null;
+                c.ResolvedImplicitMethodReturnTypeRef = null;
                 return sig.Return;
+            }
             case Unary u:
                 var ut = CheckExpr(u.Right, env, currentReturn);
                 if (u.Operator.Type == TokenType.Not)
@@ -733,6 +864,8 @@ sealed class TypeChecker
             case Binary b:
                 var lt = CheckExpr(b.Left, env, currentReturn);
                 var rt = CheckExpr(b.Right, env, currentReturn);
+                var leftRef = ResolveExprTypeRef(b.Left, env);
+                var rightRef = ResolveExprTypeRef(b.Right, env);
                 switch (b.Operator.Type)
                 {
                     case TokenType.And:
@@ -752,6 +885,8 @@ sealed class TypeChecker
                         return Promote(lt, rt);
                     case TokenType.EqualEqual:
                     case TokenType.BangEqual:
+                        Require(CanCompareForEquality(lt, leftRef, rt, rightRef), b.Left, "Equality requires compatible types");
+                        return TypeSymbol.Boolean;
                     case TokenType.Less:
                     case TokenType.Greater:
                     case TokenType.LessEqual:
@@ -771,6 +906,97 @@ sealed class TypeChecker
         if (_functions.TryGetValue(name, out signature!))
             return true;
         return IntrinsicFunctions.TryGetValue(name, out signature!);
+    }
+
+    private TypeSymbol CheckArrayMethodCall(
+        MethodCallExpr methodCall,
+        TypeRef arrayTypeRef,
+        IReadOnlyList<(TypeSymbol Symbol, TypeRef? Ref)> arguments)
+    {
+        if (!arrayTypeRef.IsArray || arrayTypeRef.TypeArguments.Count != 1)
+            throw new CompilerException("Could not resolve array element type", methodCall.MethodName.Line, methodCall.MethodName.Column);
+
+        var elementTypeRef = arrayTypeRef.TypeArguments[0];
+        var elementType = MapType(elementTypeRef);
+        methodCall.ResolvedArrayElementTypeRef = elementTypeRef;
+        methodCall.ResolvedMethodKey = null;
+        methodCall.ResolvedInterfaceName = null;
+        methodCall.ResolvedInterfaceMethodKey = null;
+
+        if (string.Equals(methodCall.MethodName.Lexeme, "append", StringComparison.Ordinal))
+        {
+            if (arguments.Count != 1)
+                throw new CompilerException("Array method 'append' expects 1 argument", methodCall.MethodName.Line, methodCall.MethodName.Column);
+            RequireAssignable(
+                elementType,
+                elementTypeRef,
+                arguments[0].Symbol,
+                arguments[0].Ref,
+                methodCall.MethodName.Line,
+                methodCall.MethodName.Column,
+                "Array append element type mismatch");
+            methodCall.ResolvedArrayMethodName = "append";
+            methodCall.ResolvedReturnTypeRef = BuildImplicitVoidTypeRef(methodCall.MethodName);
+            return TypeSymbol.Void;
+        }
+
+        if (string.Equals(methodCall.MethodName.Lexeme, "remove_at", StringComparison.Ordinal))
+        {
+            if (arguments.Count != 1)
+                throw new CompilerException("Array method 'remove_at' expects 1 argument", methodCall.MethodName.Line, methodCall.MethodName.Column);
+            Require(IsNumeric(arguments[0].Symbol), methodCall.Arguments[0], "Array method 'remove_at' index must be numeric");
+            methodCall.ResolvedArrayMethodName = "remove_at";
+            methodCall.ResolvedReturnTypeRef = BuildImplicitVoidTypeRef(methodCall.MethodName);
+            return TypeSymbol.Void;
+        }
+
+        throw new CompilerException($"Array has no method '{methodCall.MethodName.Lexeme}'", methodCall.MethodName.Line, methodCall.MethodName.Column);
+    }
+
+    private TypeRef InferArrayLiteralTypeRef(ArrayLiteral arrayLiteral, TypeEnvironment env, TypeSymbol? currentReturn)
+    {
+        if (arrayLiteral.Elements.Count == 0)
+            return new TypeRef("array", [new TypeRef("integer", null, arrayLiteral.Line, arrayLiteral.Column)], arrayLiteral.Line, arrayLiteral.Column);
+
+        var firstExpr = arrayLiteral.Elements[0];
+        var currentType = CheckExpr(firstExpr, env, currentReturn);
+        var currentTypeRef = ResolveExprTypeRef(firstExpr, env) ?? BuildTypeRefForSymbol(currentType, GetLine(firstExpr), GetCol(firstExpr));
+
+        for (int i = 1; i < arrayLiteral.Elements.Count; i++)
+        {
+            var elementExpr = arrayLiteral.Elements[i];
+            var elementType = CheckExpr(elementExpr, env, currentReturn);
+            var elementTypeRef = ResolveExprTypeRef(elementExpr, env) ?? BuildTypeRefForSymbol(elementType, GetLine(elementExpr), GetCol(elementExpr));
+
+            if (TryConversionCost(currentType, currentTypeRef, elementType, elementTypeRef, out _))
+                continue;
+
+            if (TryConversionCost(elementType, elementTypeRef, currentType, currentTypeRef, out _))
+            {
+                currentType = elementType;
+                currentTypeRef = elementTypeRef;
+                continue;
+            }
+
+            throw new CompilerException("Array literal elements must share a compatible element type", GetLine(elementExpr), GetCol(elementExpr));
+        }
+
+        return new TypeRef("array", [currentTypeRef], arrayLiteral.Line, arrayLiteral.Column);
+    }
+
+    private TypeRef BuildTypeRefForSymbol(TypeSymbol type, int line, int column)
+    {
+        string name = type switch
+        {
+            TypeSymbol.Integer => "integer",
+            TypeSymbol.Whole => "whole",
+            TypeSymbol.Real => "real",
+            TypeSymbol.Boolean => "boolean",
+            TypeSymbol.String => "string",
+            TypeSymbol.Void => "void",
+            _ => throw new CompilerException("Could not infer concrete type", line, column)
+        };
+        return new TypeRef(name, null, line, column);
     }
 
     private static Dictionary<string, FunctionSignature> BuildIntrinsicFunctions()
@@ -909,12 +1135,6 @@ sealed class TypeChecker
     private bool ImplementsInterface(string objectTypeName, string interfaceName) =>
         _interfaceObjectPairs.Contains($"{interfaceName}->{objectTypeName}");
 
-    private bool HasAnyImplementationForMethod(string interfaceName, string interfaceMethodKey)
-    {
-        string dispatchKey = InterfaceDispatchKey(interfaceName, interfaceMethodKey);
-        return _interfaceMethodImplementers.TryGetValue(dispatchKey, out var implementers) && implementers.Count > 0;
-    }
-
     private bool TryCandidateCost(
         IList<TypeSymbol> expectedSymbols,
         IReadOnlyList<TypeRef> expectedTypeRefs,
@@ -943,6 +1163,8 @@ sealed class TypeChecker
         cost = int.MaxValue;
         if (expected == actual)
         {
+            if (expected == TypeSymbol.Array)
+                return TryArrayConversionCost(expectedRef, actualRef, out cost);
             if (expected is TypeSymbol.Object or TypeSymbol.Interface)
             {
                 return TryReferenceConversionCost(expectedRef, actualRef, out cost);
@@ -950,6 +1172,9 @@ sealed class TypeChecker
             cost = 0;
             return true;
         }
+
+        if (expected == TypeSymbol.Array && actual == TypeSymbol.Array)
+            return TryArrayConversionCost(expectedRef, actualRef, out cost);
 
         if (expected is TypeSymbol.Object or TypeSymbol.Interface)
         {
@@ -975,6 +1200,44 @@ sealed class TypeChecker
         }
 
         return false;
+    }
+
+    private bool TryArrayConversionCost(TypeRef expectedRef, TypeRef? actualRef, out int cost)
+    {
+        cost = int.MaxValue;
+        if (actualRef is null || !expectedRef.IsArray || !actualRef.IsArray ||
+            expectedRef.TypeArguments.Count != 1 || actualRef.TypeArguments.Count != 1)
+            return false;
+
+        var expectedElementRef = expectedRef.TypeArguments[0];
+        var actualElementRef = actualRef.TypeArguments[0];
+        return TryConversionCost(
+            MapType(expectedElementRef),
+            expectedElementRef,
+            MapType(actualElementRef),
+            actualElementRef,
+            out cost);
+    }
+
+    private bool CanCompareForEquality(TypeSymbol left, TypeRef? leftRef, TypeSymbol right, TypeRef? rightRef)
+    {
+        if (left == right)
+        {
+            if (left == TypeSymbol.Array)
+                return leftRef is not null && rightRef is not null && TryArrayConversionCost(leftRef, rightRef, out _);
+            if (left is TypeSymbol.Object or TypeSymbol.Interface)
+                return leftRef is not null && rightRef is not null && TryReferenceConversionCost(leftRef, rightRef, out _);
+            return left != TypeSymbol.Void;
+        }
+
+        if (IsNumeric(left) && IsNumeric(right))
+            return true;
+
+        if (leftRef is null || rightRef is null)
+            return false;
+
+        return TryConversionCost(left, leftRef, right, rightRef, out _) ||
+               TryConversionCost(right, rightRef, left, leftRef, out _);
     }
 
     private bool TryReferenceConversionCost(TypeRef expectedRef, TypeRef? actualRef, out int cost)
@@ -1039,11 +1302,21 @@ sealed class TypeChecker
     {
         switch (expr)
         {
+            case ArrayLiteral al:
+                return al.ResolvedTypeRef;
+            case NewArrayExpr na:
+                return new TypeRef("array", [na.ElementType], na.Line, na.Column);
             case Variable v:
-                return env.TryGetDeclaredType(v.Name);
+                if (v.ResolvedImplicitFieldTypeRef is not null)
+                    return v.ResolvedImplicitFieldTypeRef;
+                if (env.TryGetDeclaredType(v.Name, out var declaredType))
+                    return declaredType;
+                return null;
             case NewObjectExpr no:
                 return new TypeRef(no.TypeName.Lexeme, null, no.TypeName.Line, no.TypeName.Column);
             case Call c:
+                if (c.ResolvedImplicitMethodReturnTypeRef is not null)
+                    return c.ResolvedImplicitMethodReturnTypeRef;
                 if (TryGetFunctionSignature(c.Callee.Lexeme, out var sig))
                     return sig.ReturnTypeRef;
                 return null;
@@ -1058,6 +1331,10 @@ sealed class TypeChecker
             }
             case MethodCallExpr mc:
                 return mc.ResolvedReturnTypeRef;
+            case ArrayIndexExpr ai:
+                return ai.ResolvedElementTypeRef;
+            case ArraySetExpr aset:
+                return ResolveExprTypeRef(aset.Target, env);
             default:
                 return null;
         }
@@ -1071,8 +1348,20 @@ sealed class TypeChecker
         switch (target)
         {
             case Variable variable:
-                env.EnsureCanAssign(variable.Name);
-                return (env.LookupForRead(variable.Name), env.TryGetDeclaredType(variable.Name), variable.Name);
+                if (env.TryLookupForRead(variable.Name, out var variableType))
+                {
+                    variable.ResolvedImplicitFieldTypeRef = null;
+                    env.EnsureCanAssign(variable.Name);
+                    return (variableType, env.TryGetDeclaredType(variable.Name), variable.Name);
+                }
+
+                if (TryResolveImplicitField(variable.Name, env, out var implicitFieldType, out var implicitFieldTypeRef))
+                {
+                    variable.ResolvedImplicitFieldTypeRef = implicitFieldTypeRef;
+                    return (implicitFieldType, implicitFieldTypeRef, variable.Name);
+                }
+
+                throw new CompilerException($"Undefined variable '{variable.Name.Lexeme}'", variable.Name.Line, variable.Name.Column);
             case FieldAccessExpr fieldAccess:
             {
                 var targetType = CheckExpr(fieldAccess.Target, env, currentReturn);
@@ -1088,9 +1377,13 @@ sealed class TypeChecker
                 Require(arrayType == TypeSymbol.Array, arrayIndex.Array, "Indexing requires an array");
                 var indexType = CheckExpr(arrayIndex.Index, env, currentReturn);
                 Require(IsNumeric(indexType), arrayIndex.Index, "Array index must be numeric");
+                var elementType = CheckExpr(arrayIndex, env, currentReturn);
+                var elementTypeRef = ResolveExprTypeRef(arrayIndex, env);
+                if (elementTypeRef is null)
+                    throw new CompilerException("Could not resolve array element type", GetLine(arrayIndex.Array), GetCol(arrayIndex.Array));
                 return (
-                    TypeSymbol.Integer,
-                    null,
+                    elementType,
+                    elementTypeRef,
                     arrayIndex.Array is Variable variableArray ? variableArray.Name : BuildSyntheticToken(GetLine(arrayIndex), GetCol(arrayIndex)));
             }
             default:
@@ -1368,12 +1661,42 @@ sealed class TypeChecker
             return info.type;
         }
 
+        public bool TryLookupForRead(Token name, out TypeSymbol type)
+        {
+            if (!TryFind(name.Lexeme, out var info))
+            {
+                type = TypeSymbol.Unknown;
+                return false;
+            }
+
+            if (!info.assigned)
+                throw new CompilerException($"Variable '{name.Lexeme}' is used before being assigned", name.Line, name.Column);
+
+            type = info.type;
+            return true;
+        }
+
         public TypeSymbol LookupForReadOrWrite(Token name, bool requireAssigned = true)
         {
             var info = Find(name);
             if (requireAssigned && !info.assigned)
                 throw new CompilerException($"Variable '{name.Lexeme}' is used before being assigned", name.Line, name.Column);
             return info.type;
+        }
+
+        public bool TryLookupForReadOrWrite(Token name, out TypeSymbol type, bool requireAssigned = true)
+        {
+            if (!TryFind(name.Lexeme, out var info))
+            {
+                type = TypeSymbol.Unknown;
+                return false;
+            }
+
+            if (requireAssigned && !info.assigned)
+                throw new CompilerException($"Variable '{name.Lexeme}' is used before being assigned", name.Line, name.Column);
+
+            type = info.type;
+            return true;
         }
 
         public void MarkAssigned(Token name)
@@ -1397,10 +1720,37 @@ sealed class TypeChecker
             return info.declaredType.Name;
         }
 
+        public bool Contains(string name)
+        {
+            return TryFind(name, out _);
+        }
+
         public TypeRef? TryGetDeclaredType(Token name)
         {
             var info = Find(name);
             return info.declaredType;
+        }
+
+        public bool TryGetDeclaredType(Token name, out TypeRef? declaredType)
+        {
+            if (!TryFind(name.Lexeme, out var info))
+            {
+                declaredType = null;
+                return false;
+            }
+
+            declaredType = info.declaredType;
+            return true;
+        }
+
+        private bool TryFind(string name, out VarInfo info)
+        {
+            if (_vars.TryGetValue(name, out info))
+                return true;
+            if (_parent is not null)
+                return _parent.TryFind(name, out info);
+            info = default;
+            return false;
         }
 
         private VarInfo Find(Token name)

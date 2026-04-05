@@ -51,6 +51,8 @@ enum OpCode : byte
     TimeMonoTicks = 0x28,
     TimeMonoTicksPerSecond = 0x29,
     HostCall = 0x2A,
+    ArrayAppend = 0x2B,
+    ArrayRemoveAt = 0x2C,
     Halt = 0xFF
 }
 
@@ -350,6 +352,39 @@ sealed class Vm
                         ThrowRuntime("Array index out of range");
                     arr[idx] = value;
                     _stack.Push(value);
+                    break;
+                }
+
+                case OpCode.ArrayAppend:
+                {
+                    EnsureStack(2);
+                    var value = _stack.Pop();
+                    var arrObj = _stack.Pop();
+                    if (arrObj is not List<object> arr)
+                    {
+                        throwRuntimeType("ArrayAppend expects array");
+                        break;
+                    }
+                    arr.Add(value);
+                    _stack.Push(0);
+                    break;
+                }
+
+                case OpCode.ArrayRemoveAt:
+                {
+                    EnsureStack(2);
+                    double idxNum = PopNumber();
+                    var arrObj = _stack.Pop();
+                    if (arrObj is not List<object> arr)
+                    {
+                        throwRuntimeType("ArrayRemoveAt expects array");
+                        break;
+                    }
+                    int idx = (int)idxNum;
+                    if (idx < 0 || idx >= arr.Count)
+                        ThrowRuntime("Array index out of range");
+                    arr.RemoveAt(idx);
+                    _stack.Push(0);
                     break;
                 }
 

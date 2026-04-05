@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Text.RegularExpressions;
 
 namespace ConsoleApp1;
 
@@ -118,6 +119,7 @@ internal static class TestHarness
 
         failures += RunCompilerIntegrationTests();
         failures += RunWebBuildTests();
+        failures += RunWebRuntimeParityTests();
         failures += RunHostAbiSurfaceTests();
         failures += RunTargetParityTests();
         failures += RunArithmeticFuzz();
@@ -243,6 +245,7 @@ print(1);", "1\n")
             ("array-index", @"array<integer> items = {10,20,30}; print(items[0]); print(items[2]);", "10\n30\n"),
             ("array-set", @"array<integer> items = {10,20,30}; items[1] = 99; print(items[0]); print(items[1]); print(items[2]);", "10\n99\n30\n"),
             ("array-compound-assignment", @"array<integer> items = {10,20,30}; integer index = 1; items[index] += 5; items[index]--; print(items[index]);", "24\n"),
+            ("array-append-remove", @"array<integer> items = new array<integer>(0); items.append(10); items.append(20); items.remove_at(0); print(items.length); print(items[0]);", "1\n20\n"),
             ("optional-hasvalue", @"optional<integer> v; print(v.hasValue);", "0\n"),
             ("optional-or", @"optional<integer> v; print(v.or(42));", "42\n"),
             ("optional-some", @"optional<integer> v = 5; print(v.hasValue); print(v.value);", "1\n5\n")
@@ -374,6 +377,107 @@ print(b.count);", "3\n999\n"),
 }
 Logger logger = new Logger();
 logger.ping();", "ok\n"),
+            ("object-implicit-this-field-read-write",
+@"object Counter {
+  integer count;
+  constructor() {
+    count = 1;
+  }
+  function bump() {
+    count += 4;
+    count--;
+  }
+  function<integer> read() {
+    return count;
+  }
+}
+Counter c = new Counter();
+c.bump();
+print(c.read());", "4\n"),
+            ("object-implicit-this-shadow-local-and-explicit-this",
+@"object Counter {
+  integer count;
+  constructor() {
+    count = 9;
+  }
+  function<integer> read() {
+    integer count = 3;
+    print(count);
+    return this.count;
+  }
+}
+Counter c = new Counter();
+print(c.read());", "3\n9\n"),
+            ("object-implicit-this-shadow-parameter",
+@"object Counter {
+  integer count;
+  constructor() {
+    count = 9;
+  }
+  function<integer> choose(integer count) {
+    return count;
+  }
+}
+Counter c = new Counter();
+print(c.choose(4));
+print(c.count);", "4\n9\n"),
+            ("object-implicit-this-method-call",
+@"object Greeter {
+  integer calls;
+  constructor() {
+    calls = 0;
+    ping();
+  }
+  function ping() {
+    calls += 1;
+  }
+  function<integer> read() {
+    ping();
+    return calls;
+  }
+}
+Greeter g = new Greeter();
+print(g.read());", "2\n"),
+            ("object-implicit-this-field-object-method-target",
+@"object Child {
+  integer data;
+  constructor(integer v) {
+    data = v;
+  }
+  function<integer> read() {
+    return data;
+  }
+}
+object Parent {
+  Child child;
+  constructor() {
+    child = new Child(7);
+  }
+  function<integer> read() {
+    return child.read();
+  }
+}
+Parent p = new Parent();
+print(p.read());", "7\n"),
+            ("object-implicit-this-method-precedence",
+@"function<integer> move() {
+  return 100;
+}
+object Walker {
+  integer steps;
+  constructor() {
+    steps = 0;
+  }
+  function move() {
+    steps += 1;
+  }
+  function<integer> read() {
+    move();
+    return steps;
+  }
+}
+Walker w = new Walker();
+print(w.read());", "1\n"),
             ("scene-intrinsics-native-stubs",
 @"object MainScene {
   constructor() { }
@@ -501,6 +605,33 @@ object Holder {
 }
 Holder h = new Holder(new One());
 print(h.get());", "1\n"),
+            ("interface-array-container-dispatch",
+@"interface IValue {
+  function<integer> read();
+}
+object One {
+  constructor() { }
+  function<integer> read() {
+    return 1;
+  }
+}
+object Two {
+  constructor() { }
+  function<integer> read() {
+    return 2;
+  }
+}
+implement IValue for One {
+  read() via One.read;
+}
+implement IValue for Two {
+  read() via Two.read;
+}
+array<IValue> items = new array<IValue>(0);
+items.append(new One());
+items.append(new Two());
+print(items[0].read());
+foreach item in items then print(item.read());", "1\n1\n2\n"),
         };
         var moduleCases = new List<(string Name, IReadOnlyDictionary<string, string> Files, string Entry, string Expected)>
         {
@@ -569,6 +700,186 @@ print(key_is_down(37));",
                 },
                 "main.code",
                 "640\n0\n"
+            ),
+            (
+                "module-scene-loop-layered-draw-order",
+                new Dictionary<string, string>
+                {
+                    ["main.code"] =
+@"import { SceneLoop } from ""engine/loop.code"";
+import { Scene, Updatable, WorldDrawable } from ""engine/scene.code"";
+
+object Lower {
+  constructor() { }
+  function draw() {
+    print(""lower"");
+  }
+}
+
+object Upper {
+  constructor() { }
+  function draw() {
+    print(""upper"");
+  }
+}
+
+object Counter {
+  integer updates;
+
+  constructor() {
+    updates = 0;
+  }
+
+  function update() {
+    updates += 1;
+    print(""update="" + updates);
+  }
+}
+
+implement WorldDrawable for Lower {
+  draw() via Lower.draw;
+}
+
+implement WorldDrawable for Upper {
+  draw() via Upper.draw;
+}
+
+implement Updatable for Counter {
+  update() via Counter.update;
+}
+
+Scene scene = new Scene();
+SceneLoop loop = new SceneLoop(scene);
+scene.add_world_drawable(new Upper(), 10);
+scene.add_world_drawable(new Lower(), 0);
+scene.add_updatable(new Counter());
+loop.start();
+loop.update();
+loop.draw();",
+                },
+                "main.code",
+                "update=1\nlower\nupper\n"
+            ),
+            (
+                "module-scene-loop-staged-add-and-start",
+                new Dictionary<string, string>
+                {
+                    ["main.code"] =
+@"import { SceneLoop } from ""engine/loop.code"";
+import { Scene, Startable, Updatable } from ""engine/scene.code"";
+
+object Child {
+  constructor() { }
+
+  function start() {
+    print(""child-start"");
+  }
+
+  function update() {
+    print(""child-update"");
+  }
+}
+
+object Spawner {
+  Scene scene;
+  Child child;
+  boolean spawned;
+
+  constructor(Scene scene, Child child) {
+    this.scene = scene;
+    this.child = child;
+    spawned = false;
+  }
+
+  function update() {
+    print(""spawner-update"");
+    if not spawned then {
+      scene.add_startable(child);
+      scene.add_updatable(child);
+      spawned = true;
+    }
+  }
+}
+
+implement Startable for Child {
+  start() via Child.start;
+}
+
+implement Updatable for Child {
+  update() via Child.update;
+}
+
+implement Updatable for Spawner {
+  update() via Spawner.update;
+}
+
+Scene scene = new Scene();
+SceneLoop loop = new SceneLoop(scene);
+Child child = new Child();
+Spawner spawner = new Spawner(scene, child);
+scene.add_updatable(spawner);
+loop.start();
+loop.update();
+loop.update();",
+                },
+                "main.code",
+                "spawner-update\nchild-start\nspawner-update\nchild-update\n"
+            ),
+            (
+                "module-scene-loop-staged-remove",
+                new Dictionary<string, string>
+                {
+                    ["main.code"] =
+@"import { SceneLoop } from ""engine/loop.code"";
+import { Scene, Updatable } from ""engine/scene.code"";
+
+object Child {
+  constructor() { }
+  function update() {
+    print(""child"");
+  }
+}
+
+object Remover {
+  Scene scene;
+  Child child;
+  boolean removed;
+
+  constructor(Scene scene, Child child) {
+    this.scene = scene;
+    this.child = child;
+    removed = false;
+  }
+
+  function update() {
+    if not removed then {
+      scene.remove_updatable(child);
+      removed = true;
+    }
+    print(""remover"");
+  }
+}
+
+implement Updatable for Child {
+  update() via Child.update;
+}
+
+implement Updatable for Remover {
+  update() via Remover.update;
+}
+
+Scene scene = new Scene();
+SceneLoop loop = new SceneLoop(scene);
+Child child = new Child();
+Remover remover = new Remover(scene, child);
+scene.add_updatable(child);
+scene.add_updatable(remover);
+loop.start();
+loop.update();
+loop.update();",
+                },
+                "main.code",
+                "child\nremover\nremover\n"
             ),
             (
                 "module-import-object-interface",
@@ -997,6 +1308,29 @@ export function<string> readText() { return ""ok""; }",
 }
 A a = new A(0);
 print(a.f(true));", "no matching method overload"),
+            ("object-implicit-this-method-no-fallback",
+@"function<integer> move() {
+  return 100;
+}
+object Walker {
+  constructor() { }
+  function move(integer steps) {
+  }
+  function<integer> read() {
+    return move();
+  }
+}
+Walker w = new Walker();
+print(w.read());", "no matching method overload"),
+            ("object-implicit-this-undefined-still-errors",
+@"object Walker {
+  constructor() { }
+  function<integer> read() {
+    return speed;
+  }
+}
+Walker w = new Walker();
+print(w.read());", "Undefined variable"),
             ("constant-reassign",
 @"constant integer PI = 3;
 PI = 4;", "Cannot assign to constant 'PI'"),
@@ -1849,6 +2183,67 @@ print(1);";
         {
             failures++;
             Console.WriteLine($"[FAIL] target-parity-engine-stubs: threw {ex.GetType().Name} - {ex.Message}");
+        }
+
+        return failures;
+    }
+
+    private static int RunWebRuntimeParityTests()
+    {
+        int failures = 0;
+
+        try
+        {
+            string runtimePath = Path.Combine(Directory.GetCurrentDirectory(), "web-runtime", "code-vm-web.js");
+            string runtimeText = File.ReadAllText(runtimePath);
+
+            var opcodeBlockMatch = Regex.Match(
+                runtimeText,
+                @"const\s+OpCode\s*=\s*\{(?<body>.*?)\n\};",
+                RegexOptions.Singleline | RegexOptions.CultureInvariant);
+
+            if (!opcodeBlockMatch.Success)
+                throw new Exception("Could not find OpCode table in web runtime.");
+
+            var jsOpcodeMap = new Dictionary<string, byte>(StringComparer.Ordinal);
+            foreach (Match match in Regex.Matches(
+                opcodeBlockMatch.Groups["body"].Value,
+                @"(?m)^\s*([A-Za-z][A-Za-z0-9_]*)\s*:\s*0x([0-9a-fA-F]+)\s*,?\s*$",
+                RegexOptions.CultureInvariant))
+            {
+                jsOpcodeMap[match.Groups[1].Value] = Convert.ToByte(match.Groups[2].Value, 16);
+            }
+
+            var jsSwitchCases = new HashSet<string>(StringComparer.Ordinal);
+            foreach (Match match in Regex.Matches(
+                runtimeText,
+                @"case\s+OpCode\.([A-Za-z][A-Za-z0-9_]*)\s*:",
+                RegexOptions.CultureInvariant))
+            {
+                jsSwitchCases.Add(match.Groups[1].Value);
+            }
+
+            foreach (OpCode opcode in Enum.GetValues<OpCode>())
+            {
+                string name = opcode.ToString();
+                byte expectedValue = (byte)opcode;
+
+                if (!jsOpcodeMap.TryGetValue(name, out var actualValue))
+                    throw new Exception($"Web runtime is missing opcode table entry '{name}'.");
+
+                if (actualValue != expectedValue)
+                    throw new Exception($"Web runtime opcode '{name}' has value 0x{actualValue:X2}, expected 0x{expectedValue:X2}.");
+
+                if (!jsSwitchCases.Contains(name))
+                    throw new Exception($"Web runtime is missing switch handler for opcode '{name}'.");
+            }
+
+            Console.WriteLine("[PASS] web-runtime-opcode-parity");
+        }
+        catch (Exception ex)
+        {
+            failures++;
+            Console.WriteLine($"[FAIL] web-runtime-opcode-parity: {ex.GetType().Name} - {ex.Message}");
         }
 
         return failures;

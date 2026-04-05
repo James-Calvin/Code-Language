@@ -12,10 +12,10 @@ Read this first. Update it whenever semantics or process change.
 - Default web runtime target: full-window browser app, centered `640x360` safe area with hybrid-expanded world framing, scene-object authoring, separate HUD space, a first wrapper layer in `lib/engine/`, and browser-backed drawing/image-sprite/keyboard support for V1.
 
 ## Current Capability Snapshot
-- Types: integer/whole/real, boolean, string, array<T> (literals `{...}`, `new array<T>(n)`, `.length`, indexing, mutation), optional<T> (`none`, `.hasValue`, `.value`, `.or(fallback)`), constants, typed/void functions, object types.
+- Types: integer/whole/real, boolean, string, array<T> (literals `{...}`, `new array<T>(n)`, `.length`, indexing, mutation, `append`, `remove_at`, preserved element typing through indexing/foreach), optional<T> (`none`, `.hasValue`, `.value`, `.or(fallback)`), constants, typed/void functions, object types.
 - Compiler type model: AST/parser/type-checker use `TypeRef`; named object types resolve via object symbol tables (fields + constructors + forward refs).
-- Object rules: fields require constructor initialization; constructor/method overloads resolve by typed signature (best-match conversions), methods lower to hidden static call targets with implicit `this`, and object methods support implicit-void authoring; reserved field names are `length`, `hasValue`, `value`, `or`.
-- Interfaces: `interface Name { function<...> method(...); }` plus explicit `implement Interface for Object { method(types...) via Object.method; }` conformance checks and runtime dispatch for interface-typed locals/params/returns/fields.
+- Object rules: fields require constructor initialization; constructor/method overloads resolve by typed signature (best-match conversions), methods lower to hidden static call targets with implicit `this`, object bodies support implicit field access / implicit `this` method calls when names are not shadowed by locals or parameters, and object methods support implicit-void authoring; reserved field names are `length`, `hasValue`, `value`, `or`.
+- Interfaces: `interface Name { function<...> method(...); }` plus explicit `implement Interface for Object { method(types...) via Object.method; }` conformance checks and runtime dispatch for interface-typed locals/params/returns/fields/arrays.
 - Control flow: if/then[/else], while, for, foreach (numeric or array), break/continue, return (implicit 0).
 - Expressions: arithmetic (including `%`), comparisons, logical and/or/not (short-circuit), assignment (including `+=`, `-=`, `*=`, `/=`, `%=` and postfix `++/--` across variables, object fields, and array elements), function calls, full-expression string interpolation/concat.
 - Time intrinsics: `unix_ms()`, `unix_us()`, `mono_ns()`, `mono_ticks()`, `mono_ticks_per_second()`, plus `sleep_ms(integer)` (native-only).
@@ -23,7 +23,8 @@ Read this first. Update it whenever semantics or process change.
 - Host ABI baseline: compiler lowers print/time/native-only/engine intrinsic calls to `HOST_CALL` symbols; capability inference includes lowered host features (`standard.input_output.read_line`, `std.time.sleep_ms`, `engine.window/input/gfx`); VM resolves via native/web host binding tables and throws target-aware `HostBindingError` on unsupported host calls.
 - Engine ABI status: legacy window-handle calls (`window_create`, `window_should_close`, `window_present`, `input_key_down`, `gfx_clear`, `gfx_draw_rect`) remain no-op stubs on native/web hosts, while the scene-runtime intrinsics `key_down`, `clear`, `draw_rectangle`, `draw_rectangle_outline`, `draw_line`, `draw_circle`, `draw_circle_outline`, `draw_polygon`, `draw_polygon_outline`, `draw_text`, `draw_image`, `draw_sprite`, `camera_view_*`, `camera_safe_*`, `screen_width`, and `screen_height` now have browser-backed implementations for `vm-web`.
 - Web app/runtime slice: `--build-web` emits a static site folder (`index.html` + `app.bytecode`, plus copied `assets/` content when present) with a generated full-window browser runtime, centered `640x360` safe area, hybrid-expanded visible world, `MainScene` metadata, and `start/update/draw` plus optional `draw_hud` driving the JS VM.
-- First engine wrapper layer: root `lib/engine/` currently provides `engine.colors`, `engine.drawing`, `engine.input`, and `engine.view` modules over the raw scene-runtime helpers.
+- Engine wrapper layer: root `lib/engine/` currently provides `engine.colors`, `engine.drawing`, `engine.input`, `engine.view`, `engine.scene`, and `engine.loop` modules over the raw scene-runtime helpers.
+- Scene composition: `engine.scene` now provides explicit child-object registration through `Startable`, `Updatable`, `WorldDrawable`, and `HudDrawable`; `engine.loop.SceneLoop` stages adds/removes until the next update phase.
 - Web harness: `web-runtime/` still contains a lower-level JavaScript bytecode runner + browser host binding table for raw `.bytecode` / `.codelib` loading; it is preview/bootstrap tooling, not the primary shipping workflow.
 - Web app/runtime contract: `docs/web-app-v1.md` freezes the first implementation target around a scene object with `start/update/draw`, optional `draw_hud`, full-window browser runtime ownership, centered `640x360` safe area, hybrid-expanded framing, and static-site output.
 - Errors: `panic <expr>;` raises `UserError` with line/col + call stack (from bytecode debug map).
@@ -37,9 +38,9 @@ Read this first. Update it whenever semantics or process change.
 - Tests: integration (core features, arrays, optionals, objects, interfaces, modules/imports, host ABI surfaces, target capability validation, panic) + fuzz (arith, boolean, strings, loop sums, panic). Run `dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- --run-tests`.
 
 ## Not Implemented (yet)
-- User-defined data remaining: records, visibility enforcement, broader interface container/module surfaces, and dispatch optimization beyond baseline tables.
+- User-defined data remaining: records, visibility enforcement, broader container types beyond arrays, and dispatch optimization beyond baseline tables.
 - Module namespaces and stdlib versioning/layout.
-- Typed array element enforcement, constant pool, formatter/linter, REPL.
+- Constant pool, formatter/linter, REPL.
 - Typed error values / `fallible<T>` semantics wired to VM errors.
 - Engine web runtime maturation: broaden the current `lib/engine/` wrapper layer beyond colors/drawing/input/view, add richer input/audio/content handling, and replace the remaining raw window-handle `engine.window`/`engine.input`/`engine.gfx` stubs with real browser-backed behavior or wrappers.
 - GPU roadmap: `engine.gpu` ABI v1 + WebGPU backend (`vm-web`) + native GPU backend parity (`vm-native`).
@@ -64,6 +65,10 @@ Read this first. Update it whenever semantics or process change.
 - Prefer fully spelled-out user-facing names; avoid arbitrary abbreviations unless the term is a widely accepted domain term such as `hud`.
 
 ## Change Log
+- 2026-04-05: Fixed web-runtime VM opcode parity for growable arrays by adding browser support for `ARRAY_APPEND` / `ARRAY_REMOVE_AT` and a regression test that compares native VM opcodes against the browser runtime opcode table and switch handlers.
+- 2026-04-05: Added typed growable arrays (`append`, `remove_at`), array element type tracking through indexing/foreach/mutation, equality support for compatible reference/value types, explicit-void interface methods, and relaxed interface-call lowering so engine libraries can compile before user implementers are present.
+- 2026-04-05: Added `engine.scene` and `engine.loop` with explicit child-object scene composition, split lifecycle interfaces (`Startable`, `Updatable`, `WorldDrawable`, `HudDrawable`), staged registration semantics, and updated tests/example/docs for the new authoring model.
+- 2026-04-05: Added implicit `this` lookup in object constructors and methods: unshadowed bare field names resolve to the current object, bare method calls are object-first, constructor definite-field-initialization recognizes implicit field assignment, and the sample scene now uses the shorter style.
 - 2026-04-05: Expanded the browser runtime with rectangle outlines, circles, polygons, image/sprite drawing, copied `assets/` output for `--build-web`, and a first higher-level wrapper layer in `lib/engine/` (`engine.colors`, `engine.drawing`, `engine.input`, `engine.view`); added tests and updated the sample scene.
 - 2026-04-05: Switched the browser runtime to full-bleed hybrid expansion around a `640x360` safe area, added optional `draw_hud()`, exposed `camera_view_*` / `camera_safe_*` / `screen_width` / `screen_height`, and updated tests/docs/example for the new framing model.
 - 2026-04-05: Added the readability naming pass and next primitive layer: canonical `draw_rectangle`, compatibility aliases for legacy `draw_rect` / `std.io.*`, canonical `standard.input_output.*`, compound assignment on variables/fields/array elements, and browser-backed `draw_line` / `draw_text`; updated tests/docs/examples in the same change.

@@ -1,0 +1,482 @@
+package engine.scene;
+
+export interface Startable {
+  function<void> start();
+}
+
+export interface Updatable {
+  function<void> update();
+}
+
+export interface WorldDrawable {
+  function<void> draw();
+}
+
+export interface HudDrawable {
+  function<void> draw_hud();
+}
+
+object WorldDrawEntry {
+  WorldDrawable item;
+  integer layer;
+  integer order;
+
+  constructor(WorldDrawable item, integer layer, integer order) {
+    this.item = item;
+    this.layer = layer;
+    this.order = order;
+  }
+}
+
+object HudDrawEntry {
+  HudDrawable item;
+  integer layer;
+  integer order;
+
+  constructor(HudDrawable item, integer layer, integer order) {
+    this.item = item;
+    this.layer = layer;
+    this.order = order;
+  }
+}
+
+export object Scene {
+  array<Startable> active_startables;
+  array<Startable> pending_add_startables;
+  array<Startable> pending_remove_startables;
+
+  array<Updatable> active_updatables;
+  array<Updatable> pending_add_updatables;
+  array<Updatable> pending_remove_updatables;
+
+  array<WorldDrawEntry> active_world_drawables;
+  array<WorldDrawEntry> pending_add_world_drawables;
+  array<WorldDrawable> pending_remove_world_drawables;
+  array<WorldDrawEntry> pending_world_layer_changes;
+
+  array<HudDrawEntry> active_hud_drawables;
+  array<HudDrawEntry> pending_add_hud_drawables;
+  array<HudDrawable> pending_remove_hud_drawables;
+  array<HudDrawEntry> pending_hud_layer_changes;
+
+  integer next_world_order;
+  integer next_hud_order;
+
+  constructor() {
+    active_startables = new array<Startable>(0);
+    pending_add_startables = new array<Startable>(0);
+    pending_remove_startables = new array<Startable>(0);
+
+    active_updatables = new array<Updatable>(0);
+    pending_add_updatables = new array<Updatable>(0);
+    pending_remove_updatables = new array<Updatable>(0);
+
+    active_world_drawables = new array<WorldDrawEntry>(0);
+    pending_add_world_drawables = new array<WorldDrawEntry>(0);
+    pending_remove_world_drawables = new array<WorldDrawable>(0);
+    pending_world_layer_changes = new array<WorldDrawEntry>(0);
+
+    active_hud_drawables = new array<HudDrawEntry>(0);
+    pending_add_hud_drawables = new array<HudDrawEntry>(0);
+    pending_remove_hud_drawables = new array<HudDrawable>(0);
+    pending_hud_layer_changes = new array<HudDrawEntry>(0);
+
+    next_world_order = 0;
+    next_hud_order = 0;
+  }
+
+  function add_startable(Startable item) {
+    if contains_startable(pending_add_startables, item) then return;
+
+    integer pending_remove_index = find_startable_index(pending_remove_startables, item);
+    if pending_remove_index >= 0 then {
+      pending_remove_startables.remove_at(pending_remove_index);
+      return;
+    }
+
+    if contains_startable(active_startables, item) then return;
+    pending_add_startables.append(item);
+  }
+
+  function remove_startable(Startable item) {
+    integer pending_add_index = find_startable_index(pending_add_startables, item);
+    if pending_add_index >= 0 then {
+      pending_add_startables.remove_at(pending_add_index);
+      return;
+    }
+
+    if contains_startable(pending_remove_startables, item) then return;
+    if not contains_startable(active_startables, item) then return;
+    pending_remove_startables.append(item);
+  }
+
+  function add_updatable(Updatable item) {
+    if contains_updatable(pending_add_updatables, item) then return;
+
+    integer pending_remove_index = find_updatable_index(pending_remove_updatables, item);
+    if pending_remove_index >= 0 then {
+      pending_remove_updatables.remove_at(pending_remove_index);
+      return;
+    }
+
+    if contains_updatable(active_updatables, item) then return;
+    pending_add_updatables.append(item);
+  }
+
+  function remove_updatable(Updatable item) {
+    integer pending_add_index = find_updatable_index(pending_add_updatables, item);
+    if pending_add_index >= 0 then {
+      pending_add_updatables.remove_at(pending_add_index);
+      return;
+    }
+
+    if contains_updatable(pending_remove_updatables, item) then return;
+    if not contains_updatable(active_updatables, item) then return;
+    pending_remove_updatables.append(item);
+  }
+
+  function add_world_drawable(WorldDrawable item, integer layer) {
+    if find_world_draw_entry_index(pending_add_world_drawables, item) >= 0 then return;
+
+    integer pending_remove_index = find_world_drawable_index(pending_remove_world_drawables, item);
+    if pending_remove_index >= 0 then {
+      pending_remove_world_drawables.remove_at(pending_remove_index);
+      return;
+    }
+
+    if find_world_draw_entry_index(active_world_drawables, item) >= 0 then return;
+    pending_add_world_drawables.append(new WorldDrawEntry(item, layer, 0));
+  }
+
+  function remove_world_drawable(WorldDrawable item) {
+    integer pending_add_index = find_world_draw_entry_index(pending_add_world_drawables, item);
+    if pending_add_index >= 0 then {
+      pending_add_world_drawables.remove_at(pending_add_index);
+      integer pending_layer_change_index = find_world_draw_entry_index(pending_world_layer_changes, item);
+      if pending_layer_change_index >= 0 then pending_world_layer_changes.remove_at(pending_layer_change_index);
+      return;
+    }
+
+    if contains_world_drawable(pending_remove_world_drawables, item) then return;
+    if find_world_draw_entry_index(active_world_drawables, item) < 0 then return;
+
+    integer active_layer_change_index = find_world_draw_entry_index(pending_world_layer_changes, item);
+    if active_layer_change_index >= 0 then pending_world_layer_changes.remove_at(active_layer_change_index);
+    pending_remove_world_drawables.append(item);
+  }
+
+  function set_world_draw_layer(WorldDrawable item, integer layer) {
+    integer pending_add_index = find_world_draw_entry_index(pending_add_world_drawables, item);
+    if pending_add_index >= 0 then {
+      pending_add_world_drawables[pending_add_index].layer = layer;
+      return;
+    }
+
+    if find_world_draw_entry_index(active_world_drawables, item) < 0 then return;
+
+    integer pending_change_index = find_world_draw_entry_index(pending_world_layer_changes, item);
+    if pending_change_index >= 0 then {
+      pending_world_layer_changes[pending_change_index].layer = layer;
+      return;
+    }
+
+    pending_world_layer_changes.append(new WorldDrawEntry(item, layer, 0));
+  }
+
+  function add_hud_drawable(HudDrawable item, integer layer) {
+    if find_hud_draw_entry_index(pending_add_hud_drawables, item) >= 0 then return;
+
+    integer pending_remove_index = find_hud_drawable_index(pending_remove_hud_drawables, item);
+    if pending_remove_index >= 0 then {
+      pending_remove_hud_drawables.remove_at(pending_remove_index);
+      return;
+    }
+
+    if find_hud_draw_entry_index(active_hud_drawables, item) >= 0 then return;
+    pending_add_hud_drawables.append(new HudDrawEntry(item, layer, 0));
+  }
+
+  function remove_hud_drawable(HudDrawable item) {
+    integer pending_add_index = find_hud_draw_entry_index(pending_add_hud_drawables, item);
+    if pending_add_index >= 0 then {
+      pending_add_hud_drawables.remove_at(pending_add_index);
+      integer pending_layer_change_index = find_hud_draw_entry_index(pending_hud_layer_changes, item);
+      if pending_layer_change_index >= 0 then pending_hud_layer_changes.remove_at(pending_layer_change_index);
+      return;
+    }
+
+    if contains_hud_drawable(pending_remove_hud_drawables, item) then return;
+    if find_hud_draw_entry_index(active_hud_drawables, item) < 0 then return;
+
+    integer active_layer_change_index = find_hud_draw_entry_index(pending_hud_layer_changes, item);
+    if active_layer_change_index >= 0 then pending_hud_layer_changes.remove_at(active_layer_change_index);
+    pending_remove_hud_drawables.append(item);
+  }
+
+  function set_hud_draw_layer(HudDrawable item, integer layer) {
+    integer pending_add_index = find_hud_draw_entry_index(pending_add_hud_drawables, item);
+    if pending_add_index >= 0 then {
+      pending_add_hud_drawables[pending_add_index].layer = layer;
+      return;
+    }
+
+    if find_hud_draw_entry_index(active_hud_drawables, item) < 0 then return;
+
+    integer pending_change_index = find_hud_draw_entry_index(pending_hud_layer_changes, item);
+    if pending_change_index >= 0 then {
+      pending_hud_layer_changes[pending_change_index].layer = layer;
+      return;
+    }
+
+    pending_hud_layer_changes.append(new HudDrawEntry(item, layer, 0));
+  }
+
+  function apply_pending_startables() {
+    array<Startable> removals = pending_remove_startables;
+    array<Startable> additions = pending_add_startables;
+    pending_remove_startables = new array<Startable>(0);
+    pending_add_startables = new array<Startable>(0);
+
+    integer i = 0;
+    while i < removals.length then {
+      integer active_index = find_startable_index(active_startables, removals[i]);
+      if active_index >= 0 then active_startables.remove_at(active_index);
+      i += 1;
+    }
+
+    i = 0;
+    while i < additions.length then {
+      Startable item = additions[i];
+      if find_startable_index(active_startables, item) < 0 then {
+        active_startables.append(item);
+        item.start();
+      }
+      i += 1;
+    }
+  }
+
+  function apply_pending_updatables() {
+    array<Updatable> removals = pending_remove_updatables;
+    array<Updatable> additions = pending_add_updatables;
+    pending_remove_updatables = new array<Updatable>(0);
+    pending_add_updatables = new array<Updatable>(0);
+
+    integer i = 0;
+    while i < removals.length then {
+      integer active_index = find_updatable_index(active_updatables, removals[i]);
+      if active_index >= 0 then active_updatables.remove_at(active_index);
+      i += 1;
+    }
+
+    i = 0;
+    while i < additions.length then {
+      Updatable item = additions[i];
+      if find_updatable_index(active_updatables, item) < 0 then active_updatables.append(item);
+      i += 1;
+    }
+  }
+
+  function apply_pending_world_drawables() {
+    array<WorldDrawable> removals = pending_remove_world_drawables;
+    array<WorldDrawEntry> layer_changes = pending_world_layer_changes;
+    array<WorldDrawEntry> additions = pending_add_world_drawables;
+    pending_remove_world_drawables = new array<WorldDrawable>(0);
+    pending_world_layer_changes = new array<WorldDrawEntry>(0);
+    pending_add_world_drawables = new array<WorldDrawEntry>(0);
+
+    integer i = 0;
+    while i < removals.length then {
+      integer active_index = find_world_draw_entry_index(active_world_drawables, removals[i]);
+      if active_index >= 0 then active_world_drawables.remove_at(active_index);
+      i += 1;
+    }
+
+    i = 0;
+    while i < layer_changes.length then {
+      integer active_index = find_world_draw_entry_index(active_world_drawables, layer_changes[i].item);
+      if active_index >= 0 then active_world_drawables[active_index].layer = layer_changes[i].layer;
+      i += 1;
+    }
+
+    i = 0;
+    while i < additions.length then {
+      WorldDrawEntry entry = additions[i];
+      if find_world_draw_entry_index(active_world_drawables, entry.item) < 0 then {
+        active_world_drawables.append(new WorldDrawEntry(entry.item, entry.layer, next_world_order));
+        next_world_order += 1;
+      }
+      i += 1;
+    }
+
+    sort_world_drawables();
+  }
+
+  function apply_pending_hud_drawables() {
+    array<HudDrawable> removals = pending_remove_hud_drawables;
+    array<HudDrawEntry> layer_changes = pending_hud_layer_changes;
+    array<HudDrawEntry> additions = pending_add_hud_drawables;
+    pending_remove_hud_drawables = new array<HudDrawable>(0);
+    pending_hud_layer_changes = new array<HudDrawEntry>(0);
+    pending_add_hud_drawables = new array<HudDrawEntry>(0);
+
+    integer i = 0;
+    while i < removals.length then {
+      integer active_index = find_hud_draw_entry_index(active_hud_drawables, removals[i]);
+      if active_index >= 0 then active_hud_drawables.remove_at(active_index);
+      i += 1;
+    }
+
+    i = 0;
+    while i < layer_changes.length then {
+      integer active_index = find_hud_draw_entry_index(active_hud_drawables, layer_changes[i].item);
+      if active_index >= 0 then active_hud_drawables[active_index].layer = layer_changes[i].layer;
+      i += 1;
+    }
+
+    i = 0;
+    while i < additions.length then {
+      HudDrawEntry entry = additions[i];
+      if find_hud_draw_entry_index(active_hud_drawables, entry.item) < 0 then {
+        active_hud_drawables.append(new HudDrawEntry(entry.item, entry.layer, next_hud_order));
+        next_hud_order += 1;
+      }
+      i += 1;
+    }
+
+    sort_hud_drawables();
+  }
+
+  function update_all() {
+    integer i = 0;
+    while i < active_updatables.length then {
+      active_updatables[i].update();
+      i += 1;
+    }
+  }
+
+  function draw_all() {
+    integer i = 0;
+    while i < active_world_drawables.length then {
+      active_world_drawables[i].item.draw();
+      i += 1;
+    }
+  }
+
+  function draw_hud_all() {
+    integer i = 0;
+    while i < active_hud_drawables.length then {
+      active_hud_drawables[i].item.draw_hud();
+      i += 1;
+    }
+  }
+
+  function<integer> find_startable_index(array<Startable> items, Startable item) {
+    integer i = 0;
+    while i < items.length then {
+      if items[i] == item then return i;
+      i += 1;
+    }
+    return -1;
+  }
+
+  function<boolean> contains_startable(array<Startable> items, Startable item) {
+    return find_startable_index(items, item) >= 0;
+  }
+
+  function<integer> find_updatable_index(array<Updatable> items, Updatable item) {
+    integer i = 0;
+    while i < items.length then {
+      if items[i] == item then return i;
+      i += 1;
+    }
+    return -1;
+  }
+
+  function<boolean> contains_updatable(array<Updatable> items, Updatable item) {
+    return find_updatable_index(items, item) >= 0;
+  }
+
+  function<integer> find_world_drawable_index(array<WorldDrawable> items, WorldDrawable item) {
+    integer i = 0;
+    while i < items.length then {
+      if items[i] == item then return i;
+      i += 1;
+    }
+    return -1;
+  }
+
+  function<boolean> contains_world_drawable(array<WorldDrawable> items, WorldDrawable item) {
+    return find_world_drawable_index(items, item) >= 0;
+  }
+
+  function<integer> find_hud_drawable_index(array<HudDrawable> items, HudDrawable item) {
+    integer i = 0;
+    while i < items.length then {
+      if items[i] == item then return i;
+      i += 1;
+    }
+    return -1;
+  }
+
+  function<boolean> contains_hud_drawable(array<HudDrawable> items, HudDrawable item) {
+    return find_hud_drawable_index(items, item) >= 0;
+  }
+
+  function<integer> find_world_draw_entry_index(array<WorldDrawEntry> items, WorldDrawable item) {
+    integer i = 0;
+    while i < items.length then {
+      if items[i].item == item then return i;
+      i += 1;
+    }
+    return -1;
+  }
+
+  function<integer> find_hud_draw_entry_index(array<HudDrawEntry> items, HudDrawable item) {
+    integer i = 0;
+    while i < items.length then {
+      if items[i].item == item then return i;
+      i += 1;
+    }
+    return -1;
+  }
+
+  function sort_world_drawables() {
+    integer i = 1;
+    while i < active_world_drawables.length then {
+      integer j = i;
+      while j > 0 and should_swap_world_entries(active_world_drawables[j - 1], active_world_drawables[j]) then {
+        WorldDrawEntry left = active_world_drawables[j - 1];
+        active_world_drawables[j - 1] = active_world_drawables[j];
+        active_world_drawables[j] = left;
+        j -= 1;
+      }
+      i += 1;
+    }
+  }
+
+  function<boolean> should_swap_world_entries(WorldDrawEntry left, WorldDrawEntry right) {
+    if left.layer > right.layer then return true;
+    if left.layer == right.layer and left.order > right.order then return true;
+    return false;
+  }
+
+  function sort_hud_drawables() {
+    integer i = 1;
+    while i < active_hud_drawables.length then {
+      integer j = i;
+      while j > 0 and should_swap_hud_entries(active_hud_drawables[j - 1], active_hud_drawables[j]) then {
+        HudDrawEntry left = active_hud_drawables[j - 1];
+        active_hud_drawables[j - 1] = active_hud_drawables[j];
+        active_hud_drawables[j] = left;
+        j -= 1;
+      }
+      i += 1;
+    }
+  }
+
+  function<boolean> should_swap_hud_entries(HudDrawEntry left, HudDrawEntry right) {
+    if left.layer > right.layer then return true;
+    if left.layer == right.layer and left.order > right.order then return true;
+    return false;
+  }
+}

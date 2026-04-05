@@ -40,6 +40,7 @@ sealed class ArrayLiteral : Expr
     public IReadOnlyList<Expr> Elements { get; }
     public int Line { get; }
     public int Column { get; }
+    public TypeRef? ResolvedTypeRef { get; set; }
     public ArrayLiteral(IReadOnlyList<Expr> elements, int line, int column) { Elements = elements; Line = line; Column = column; }
 }
 
@@ -66,6 +67,7 @@ sealed class ArrayIndexExpr : Expr
 {
     public Expr Array { get; }
     public Expr Index { get; }
+    public TypeRef? ResolvedElementTypeRef { get; set; }
     public ArrayIndexExpr(Expr array, Expr index) { Array = array; Index = index; }
 }
 
@@ -120,6 +122,8 @@ sealed class ArraySetExpr : Expr
 sealed class Variable : Expr
 {
     public Token Name { get; }
+    public TypeRef? ResolvedImplicitFieldTypeRef { get; set; }
+    public bool ResolvesToImplicitField => ResolvedImplicitFieldTypeRef is not null;
     public Variable(Token name) { Name = name; }
 }
 
@@ -127,6 +131,8 @@ sealed class Assign : Expr
 {
     public Token Name { get; }
     public Expr Value { get; }
+    public TypeRef? ResolvedImplicitFieldTypeRef { get; set; }
+    public bool ResolvesToImplicitField => ResolvedImplicitFieldTypeRef is not null;
     public Assign(Token name, Expr value) { Name = name; Value = value; }
 }
 
@@ -148,6 +154,10 @@ sealed class Call : Expr
 {
     public Token Callee { get; }
     public IReadOnlyList<Expr> Arguments { get; }
+    public string? ResolvedImplicitMethodOwnerTypeName { get; set; }
+    public string? ResolvedImplicitMethodKey { get; set; }
+    public TypeRef? ResolvedImplicitMethodReturnTypeRef { get; set; }
+    public bool ResolvesToImplicitMethod => ResolvedImplicitMethodKey is not null;
     public Call(Token callee, IReadOnlyList<Expr> args) { Callee = callee; Arguments = args; }
 }
 
@@ -156,10 +166,13 @@ sealed class MethodCallExpr : Expr
     public Expr Target { get; }
     public Token MethodName { get; }
     public IReadOnlyList<Expr> Arguments { get; }
+    public string? ResolvedArrayMethodName { get; set; }
+    public TypeRef? ResolvedArrayElementTypeRef { get; set; }
     public string? ResolvedMethodKey { get; set; }
     public string? ResolvedInterfaceName { get; set; }
     public string? ResolvedInterfaceMethodKey { get; set; }
     public TypeRef? ResolvedReturnTypeRef { get; set; }
+    public bool ResolvesToArrayMethod => ResolvedArrayMethodName is not null;
     public MethodCallExpr(Expr target, Token methodName, IReadOnlyList<Expr> args)
     {
         Target = target; MethodName = methodName; Arguments = args;
@@ -289,6 +302,7 @@ sealed class ForeachStmt : Stmt
     public Expr Iterable { get; }
     public Stmt Body { get; }
     public bool IsArray { get; set; }
+    public TypeRef? IteratorTypeRef { get; set; }
     public ForeachStmt(Token iterator, Expr iterable, Stmt body)
     {
         Iterator = iterator; Iterable = iterable; Body = body;

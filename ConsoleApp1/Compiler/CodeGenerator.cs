@@ -297,13 +297,9 @@ sealed class CodeGenerator
                 break;
 
             case ExprStmt e:
-                if (e.Expression is Assign)
+                Emit(e.Expression);
+                if (ExpressionLeavesValue(e.Expression))
                 {
-                    Emit(e.Expression);
-                }
-                else
-                {
-                    Emit(e.Expression);
                     _builder.Pop();
                 }
                 break;
@@ -343,7 +339,7 @@ sealed class CodeGenerator
 
             case PrintStmt p:
                 Emit(p.Value);
-                _builder.HostCall(HostAbiCatalog.StdIoPrint.Symbol, HostAbiCatalog.StdIoPrint.Arity);
+                _builder.HostCall(HostAbiCatalog.StandardInputOutputPrint.Symbol, HostAbiCatalog.StandardInputOutputPrint.Arity);
                 _builder.Pop(); // host calls always return a value; discard print's void-like return
                 break;
 
@@ -360,7 +356,12 @@ sealed class CodeGenerator
                 Emit(f.Condition);
                 _builder.JumpIfZero(forEnd);
                 Emit(f.Body);
-                if (f.Increment is not null) Emit(f.Increment);
+                if (f.Increment is not null)
+                {
+                    Emit(f.Increment);
+                    if (ExpressionLeavesValue(f.Increment))
+                        _builder.Pop();
+                }
                 _builder.Jump(forStart);
                 _builder.Label(forEnd);
                 break;
@@ -495,6 +496,9 @@ sealed class CodeGenerator
                 Emit(a.Value);
                 SetLoc(a.Name);
                 _builder.Store(GetSlot(a.Name));
+                break;
+            case CompoundAssignExpr c:
+                EmitCompoundAssignment(c);
                 break;
             case ArraySetExpr aset:
                 Emit(aset.Target.Array);
@@ -752,6 +756,94 @@ sealed class CodeGenerator
                 return mc.ResolvedReturnTypeRef;
             default:
                 return null;
+        }
+    }
+
+    private static bool ExpressionLeavesValue(Expr expr)
+        => expr is not Assign;
+
+    private void EmitCompoundAssignment(CompoundAssignExpr expr)
+    {
+        switch (expr.Target)
+        {
+            case Variable variable:
+            {
+                SetLoc(variable.Name);
+                _builder.Load(GetSlot(variable.Name));
+                Emit(expr.Value);
+                EmitBinaryOperator(expr.Operator);
+                _builder.Dup();
+                _builder.Store(GetSlot(variable.Name));
+                break;
+            }
+            case FieldAccessExpr fieldAccess:
+            {
+                int objectSlot = AllocateTemp();
+                int valueSlot = AllocateTemp();
+                Emit(fieldAccess.Target);
+                _builder.Store(objectSlot);
+                _builder.Load(objectSlot);
+                _builder.GetField(fieldAccess.Name.Lexeme);
+                Emit(expr.Value);
+                EmitBinaryOperator(expr.Operator);
+                _builder.Store(valueSlot);
+                _builder.Load(objectSlot);
+                _builder.Load(valueSlot);
+                _builder.SetField(fieldAccess.Name.Lexeme);
+                ReleaseTemp(valueSlot);
+                ReleaseTemp(objectSlot);
+                break;
+            }
+            case ArrayIndexExpr arrayIndex:
+            {
+                int arraySlot = AllocateTemp();
+                int indexSlot = AllocateTemp();
+                int valueSlot = AllocateTemp();
+                Emit(arrayIndex.Array);
+                _builder.Store(arraySlot);
+                Emit(arrayIndex.Index);
+                _builder.Store(indexSlot);
+                _builder.Load(arraySlot);
+                _builder.Load(indexSlot);
+                _builder.ArrayGet();
+                Emit(expr.Value);
+                EmitBinaryOperator(expr.Operator);
+                _builder.Store(valueSlot);
+                _builder.Load(arraySlot);
+                _builder.Load(indexSlot);
+                _builder.Load(valueSlot);
+                _builder.ArraySet();
+                ReleaseTemp(valueSlot);
+                ReleaseTemp(indexSlot);
+                ReleaseTemp(arraySlot);
+                break;
+            }
+            default:
+                throw new InvalidOperationException("Invalid assignment target for compound assignment");
+        }
+    }
+
+    private void EmitBinaryOperator(Token op)
+    {
+        switch (op.Type)
+        {
+            case TokenType.Plus:
+                _builder.Add();
+                break;
+            case TokenType.Minus:
+                _builder.Sub();
+                break;
+            case TokenType.Star:
+                _builder.Mul();
+                break;
+            case TokenType.Slash:
+                _builder.Div();
+                break;
+            case TokenType.Percent:
+                _builder.Mod();
+                break;
+            default:
+                throw new InvalidOperationException($"Unsupported compound assignment operator '{op.Lexeme}'");
         }
     }
 

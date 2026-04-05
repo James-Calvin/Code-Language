@@ -6,6 +6,7 @@
   "entry": "main.code",
   "targets": ["vm-native", "vm-web"],
   "hostAbi": {
-    "requires": ["std.time", "std.io"]
+    "requires": ["std.time", "standard.input_output"]
   }
 }
+

@@ -70,6 +70,10 @@ internal static class TestHarness
                 "5" + nl),
 
             ("hostcall-print", BytecodeBuilder.New()
+                .PushString("hi").HostCall("standard.input_output.print", 1).Pop().Halt().ToArray(),
+                "hi" + nl),
+
+            ("hostcall-print-legacy-alias", BytecodeBuilder.New()
                 .PushString("hi").HostCall("std.io.print", 1).Pop().Halt().ToArray(),
                 "hi" + nl),
 
@@ -181,6 +185,41 @@ value--;
 print(value);
 value %= 4;
 print(value);", "5\n15\n7.5\n6.5\n2.5\n"),
+            ("enhanced-assignments-field-and-array-targets",
+@"object Box {
+  integer count;
+  constructor() {
+    this.count = 1;
+  }
+}
+object Holder {
+  integer calls;
+  Box box;
+  array<integer> items;
+  constructor() {
+    this.calls = 0;
+    this.box = new Box();
+    this.items = {3, 10};
+  }
+  function<Box> getBox() {
+    this.calls += 1;
+    return this.box;
+  }
+  function<array<integer>> getItems() {
+    this.calls += 1;
+    return this.items;
+  }
+  function<integer> nextIndex() {
+    this.calls += 1;
+    return 0;
+  }
+}
+Holder holder = new Holder();
+holder.getBox().count += 4;
+holder.getItems()[holder.nextIndex()] *= 2;
+print(holder.box.count);
+print(holder.items[0]);
+print(holder.calls);", "5\n6\n3\n"),
             ("constant-ok", @"constant real PI = 3; print(PI);", "3\n")
             ,
             ("time-intrinsics",
@@ -190,6 +229,10 @@ print(mono_ns() >= 0);
 print(mono_ticks() > 0);
 print(mono_ticks_per_second() > 0);",
              "1\n1\n1\n1\n1\n")
+            ,
+            ("legacy-draw-rectangle-alias",
+@"draw_rect(0, 0, 8, 8, 1, 1, 1, 1);
+print(1);", "1\n")
         };
         var arrayCases = new List<(string Name, string Source, string Expected)>
         {
@@ -199,6 +242,7 @@ print(mono_ticks_per_second() > 0);",
             ("array-length-prop", @"array<integer> items = {1,2,3,4,5}; print(items.length);", "5\n"),
             ("array-index", @"array<integer> items = {10,20,30}; print(items[0]); print(items[2]);", "10\n30\n"),
             ("array-set", @"array<integer> items = {10,20,30}; items[1] = 99; print(items[0]); print(items[1]); print(items[2]);", "10\n99\n30\n"),
+            ("array-compound-assignment", @"array<integer> items = {10,20,30}; integer index = 1; items[index] += 5; items[index]--; print(items[index]);", "24\n"),
             ("optional-hasvalue", @"optional<integer> v; print(v.hasValue);", "0\n"),
             ("optional-or", @"optional<integer> v; print(v.or(42));", "42\n"),
             ("optional-some", @"optional<integer> v = 5; print(v.hasValue); print(v.value);", "1\n5\n")
@@ -224,6 +268,20 @@ print(p.age);", "42\n"),
 Counter c = new Counter(1);
 c.count = c.count + 5;
 print(c.count);", "6\n"),
+            ("object-field-compound-assignment",
+@"object Counter {
+  integer count;
+  constructor(integer start) {
+    this.count = start;
+  }
+  function bump(integer amount) {
+    this.count += amount;
+    this.count--;
+  }
+}
+Counter c = new Counter(1);
+c.bump(5);
+print(c.count);", "5\n"),
             ("object-forward-field-ref",
 @"object B {
   A a;
@@ -327,7 +385,8 @@ logger.ping();", "ok\n"),
   }
   function draw() {
     clear(0, 0, 0, 1);
-    draw_rect(camera_view_left(), camera_view_top(), 30, 40, 1, 1, 1, 1);
+    draw_rectangle(camera_view_left(), camera_view_top(), 30, 40, 1, 1, 1, 1);
+    draw_line(camera_safe_left(), camera_safe_top(), camera_safe_right(), camera_safe_bottom(), 1, 1, 1, 1);
     print(camera_view_left());
     print(camera_view_top());
     print(camera_view_width());
@@ -338,7 +397,8 @@ logger.ping();", "ok\n"),
     print(camera_safe_height());
   }
   function draw_hud() {
-    draw_rect(screen_width() - 10, screen_height() - 10, 8, 8, 1, 1, 1, 1);
+    draw_rectangle(screen_width() - 10, screen_height() - 10, 8, 8, 1, 1, 1, 1);
+    draw_text(""hud"", screen_width() - 12, 12, 12, ""right"", ""top"", 1, 1, 1, 1);
     print(screen_width());
     print(screen_height());
   }
@@ -611,7 +671,7 @@ export function<integer> sub(integer a, integer b) { return a - b; }",
                 {
                     "Entry: main.code",
                     "Target: vm-native",
-                    "Capabilities: std.io",
+                    "Capabilities: standard.input_output",
                     "main.code -> math.code",
                     "{ add, sub as minus } from \"math.code\"",
                     "math.code package=app.math exports=add, sub"
@@ -621,7 +681,7 @@ export function<integer> sub(integer a, integer b) { return a - b; }",
                     "\"entry\": \"main.code\"",
                     "\"target\": \"vm-native\"",
                     "\"requiredCapabilities\": [",
-                    "\"std.io\"",
+                    "\"standard.input_output\"",
                     "\"path\": \"math.code\"",
                     "\"package\": \"app.math\"",
                     "\"binding\": \"{ add, sub as minus }\""
@@ -663,14 +723,14 @@ export function<integer> sub(integer a, integer b) { return a - b; }",
                 {
                     "Entry: main.code",
                     "Target: vm-native",
-                    "Capabilities: std.io, std.time"
+                    "Capabilities: standard.input_output, std.time"
                 },
                 new[]
                 {
                     "\"entry\": \"main.code\"",
                     "\"target\": \"vm-native\"",
                     "\"requiredCapabilities\": [",
-                    "\"std.io\"",
+                    "\"standard.input_output\"",
                     "\"std.time\""
                 },
                 new[]
@@ -682,7 +742,7 @@ export function<integer> sub(integer a, integer b) { return a - b; }",
                 {
                     "Load manifest code.package.json name=demo.app target=vm-native",
                     "Capability required: std.time",
-                    "Capability required: std.io"
+                    "Capability required: standard.input_output"
                 }
             ),
             (
@@ -695,12 +755,12 @@ export function<integer> sub(integer a, integer b) { return a - b; }",
                 new[]
                 {
                     "Entry: main.code",
-                    "Capabilities: std.io, std.time"
+                    "Capabilities: standard.input_output, std.time"
                 },
                 new[]
                 {
                     "\"requiredCapabilities\": [",
-                    "\"std.io\"",
+                    "\"standard.input_output\"",
                     "\"std.time\""
                 },
                 new[]
@@ -710,7 +770,7 @@ export function<integer> sub(integer a, integer b) { return a - b; }",
                 },
                 new[]
                 {
-                    "Capability required: std.io",
+                    "Capability required: standard.input_output",
                     "Capability required: std.time"
                 }
             ),
@@ -724,13 +784,13 @@ export function<integer> sub(integer a, integer b) { return a - b; }",
                 new[]
                 {
                     "Entry: main.code",
-                    "Capabilities: std.io, std.io.read_line, std.time.sleep_ms"
+                    "Capabilities: standard.input_output, standard.input_output.read_line, std.time.sleep_ms"
                 },
                 new[]
                 {
                     "\"requiredCapabilities\": [",
-                    "\"std.io\"",
-                    "\"std.io.read_line\"",
+                    "\"standard.input_output\"",
+                    "\"standard.input_output.read_line\"",
                     "\"std.time.sleep_ms\""
                 },
                 new[]
@@ -740,8 +800,8 @@ export function<integer> sub(integer a, integer b) { return a - b; }",
                 },
                 new[]
                 {
-                    "Capability required: std.io",
-                    "Capability required: std.io.read_line",
+                    "Capability required: standard.input_output",
+                    "Capability required: standard.input_output.read_line",
                     "Capability required: std.time.sleep_ms"
                 }
             )
@@ -855,7 +915,7 @@ export function<string> readText() { return ""ok""; }",
   ""kind"": ""library"",
   ""entry"": ""main.code"",
   ""hostAbi"": {
-    ""requires"": [""std.io""]
+    ""requires"": [""standard.input_output""]
   }
 }",
                     ["main.code"] = "print(11); export function<integer> add(integer a, integer b) { return a + b; }",
@@ -869,7 +929,7 @@ export function<string> readText() { return ""ok""; }",
                     "\"kind\": \"library\"",
                     "\"target\": \"vm-native\"",
                     "\"requiredCapabilities\": [",
-                    "\"std.io\"",
+                    "\"standard.input_output\"",
                     "\"bytecode\": \""
                 },
                 new[]
@@ -1247,7 +1307,7 @@ export function<string> readText() { return ""ok""; }",
                     ["main.code"] = "print(read_line());",
                 },
                 "main.code",
-                "Capability 'std.io.read_line' is not available for target 'vm-web'"
+                "Capability 'standard.input_output.read_line' is not available for target 'vm-web'"
             ),
             (
                 "module-target-web-rejects-sleep-ms-intrinsic",
@@ -1589,31 +1649,35 @@ export function<string> readText() { return ""ok""; }",
 @"export object MainScene {
   integer x;
   integer y;
+  integer speed;
 
   constructor() {
     this.x = 100;
     this.y = 120;
+    this.speed = 2;
   }
 
   function start() {
   }
 
   function update() {
-    if key_down(37) then this.x = this.x - 2;
-    if key_down(39) then this.x = this.x + 2;
-    if key_down(38) then this.y = this.y - 2;
-    if key_down(40) then this.y = this.y + 2;
+    if key_down(37) then this.x -= this.speed;
+    if key_down(39) then this.x += this.speed;
+    if key_down(38) then this.y -= this.speed;
+    if key_down(40) then this.y += this.speed;
   }
 
   function draw() {
     clear(0, 0, 0, 1);
+    draw_line(camera_safe_left(), camera_safe_top(), camera_safe_right(), camera_safe_bottom(), 1, 1, 1, 1);
     if this.x > camera_view_left() - 24 and this.x < camera_view_right() then {
-      draw_rect(this.x, this.y, 24, 24, 1, 1, 1, 1);
+      draw_rectangle(this.x, this.y, 24, 24, 1, 1, 1, 1);
     }
   }
 
   function draw_hud() {
-    draw_rect(screen_width() - 36, 12, 24, 12, 1, 1, 1, 1);
+    draw_text(""Code"", 16, 16, 18, ""left"", ""top"", 1, 1, 1, 1);
+    draw_text(""Arrow keys move"", screen_width() - 16, 16, 16, ""right"", ""top"", 1, 1, 1, 1);
   }
 }"
                 },
@@ -2414,3 +2478,4 @@ print(sum);";
 
     private static string Normalize(string text) => text.Replace("\r\n", "\n");
 }
+

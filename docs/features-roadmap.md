@@ -13,7 +13,7 @@ Legend:
 | `[x]` | Core language | Required type annotations; primitive numerics/string/boolean | Implemented |
 | `[x]` | Core language | Variables, assignments, blocks | Implemented |
 | `[x]` | Core language | Constants (`constant` declarations) | `constant Type name = value;` implemented with reassignment errors |
-| `[x]` | Core language | Enhanced assignment operators | `+=`, `-=`, `*=`, `/=`, `%=` and unary `++`/`--` implemented for variable targets |
+| `[x]` | Core language | Enhanced assignment operators | `+=`, `-=`, `*=`, `/=`, `%=` and unary `++`/`--` implemented for variables, object fields, and array elements |
 | `[x]` | Core language | Arithmetic and comparisons | Implemented |
 | `[x]` | Core language | Modulo operator (`%`) | Implemented in lexer/parser/type-checker/codegen/VM |
 | `[x]` | Core language | Logical `and`/`or`/`not` (short-circuit) | Implemented |
@@ -71,11 +71,11 @@ Legend:
 | `[~]` | Runtime/stdlib | Basic stdlib (IO/math/time) | Print + time intrinsics (`unix_ms`, `unix_us`, `mono_ns`, `mono_ticks`, `mono_ticks_per_second`) implemented; native-only `read_line` + `sleep_ms` added with target checks; expand broader IO/math surface |
 | `[x]` | Platform/targets | Compile target model (`--target vm-native|vm-web`) | Implemented: target threads through linker/codegen entry points; default `vm-native` |
 | `[x]` | Platform/targets | Target capability validation | Implemented baseline: inferred capability groups (`std.*`, `engine.*`) from package/imports with compile-time matrix checks (`vm-web` rejects `std.fs`) |
-| `[x]` | Platform/targets | Web app/runtime V1 contract | Documented in `docs/web-app-v1.md`: scene object convention, `start/update/draw` plus optional `draw_hud`, full-window browser runtime, centered `640x360` safe area, hybrid-expanded framing, shapes + keyboard input scope, static site folder target |
-| `[~]` | Platform/targets | Host ABI baseline | Implemented baseline `HOST_CALL` opcode + host binding tables for native/web modes (`std.io.print`, `std.time.*`, native-only `std.io.read_line`/`std.time.sleep_ms` with diagnostics) and engine stubs (`engine.window/input/gfx`); compile-time capability inference includes host-lowered intrinsics |
+| `[x]` | Platform/targets | Web app/runtime V1 contract | Documented in `docs/web-app-v1.md`: scene object convention, `start/update/draw` plus optional `draw_hud`, full-window browser runtime, centered `640x360` safe area, hybrid-expanded framing, primitive drawing + keyboard input scope, static site folder target |
+| `[~]` | Platform/targets | Host ABI baseline | Implemented baseline `HOST_CALL` opcode + host binding tables for native/web modes (`standard.input_output.print`, `std.time.*`, native-only `standard.input_output.read_line`/`std.time.sleep_ms` with diagnostics) and engine stubs (`engine.window/input/gfx`); compile-time capability inference includes host-lowered intrinsics |
 | `[x]` | Platform/targets | Static-site web build workflow | Implemented first slice: `--build-web` emits a runnable `dist/` folder (or custom `--out`) with `index.html` + `app.bytecode` |
-| `[~]` | Platform/targets | Browser-backed web app runtime | Implemented current slice: generated full-window canvas runtime owns resize, timing, `MainScene` lifecycle, optional `draw_hud`, centered `640x360` safe area, and hybrid-expanded framing; expand beyond shapes + keyboard |
-| `[~]` | Platform/targets | Web engine host bindings | Implemented current scene-runtime bindings for `key_down`, `clear`, `draw_rect`, `camera_view_*`, `camera_safe_*`, and `screen_width` / `screen_height`; legacy window/input/gfx handle-based stubs still need real browser-backed behavior or wrappers |
+| `[~]` | Platform/targets | Browser-backed web app runtime | Implemented current slice: generated full-window canvas runtime owns resize, timing, `MainScene` lifecycle, optional `draw_hud`, centered `640x360` safe area, and hybrid-expanded framing; expand beyond primitive drawing + keyboard |
+| `[~]` | Platform/targets | Web engine host bindings | Implemented current scene-runtime bindings for `key_down`, `clear`, `draw_rectangle`, `draw_line`, `draw_text`, `camera_view_*`, `camera_safe_*`, and `screen_width` / `screen_height`; legacy window/input/gfx handle-based stubs still need real browser-backed behavior or wrappers |
 | `[!]` | Platform/targets | Backend-agnostic engine API contract | Lock capability-query + fallback semantics so Code source remains portable across web/native backends |
 | `[~]` | Platform/targets | Native/web parity validation | Single-source app/game runs across both targets with explicit capability fallback behavior |
 | `[~]` | Game engine | Engine core packages | `engine.math`, `engine.ecs`, `engine.scene`, `engine.loop` |
@@ -100,3 +100,4 @@ Legend:
 - Low (`[_]`): interfaces runtime dispatch, REPL, future stdlib/versioning, long-term runtime lifecycle strategy, remote package registry.
 
 See also: `docs/platform-roadmap.md` for ABI schema, package manifest schema, and phased execution plan.
+

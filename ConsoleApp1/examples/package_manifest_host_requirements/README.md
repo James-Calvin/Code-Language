@@ -3,7 +3,7 @@
 This folder has two package examples for target/capability behavior.
 
 ## `ok/`
-- Declares `hostAbi.requires: ["std.time", "std.io"]`.
+- Declares `hostAbi.requires: ["std.time", "standard.input_output"]`.
 - Works on `vm-native` and `vm-web`.
 
 Compile:
@@ -20,3 +20,4 @@ Compile (expected failure):
 ```
 dotnet run --project ConsoleApp1 -- --target vm-web --compile-only ConsoleApp1/examples/package_manifest_host_requirements/web_blocked/main.code
 ```
+

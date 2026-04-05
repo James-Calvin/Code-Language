@@ -36,7 +36,7 @@ static class HostAbiCatalog
 
     private static readonly IReadOnlyDictionary<string, HostAbiIntrinsic> Intrinsics = BuildIntrinsics();
 
-    public static HostAbiSymbol StdIoPrint => Symbols["std.io.print"];
+    public static HostAbiSymbol StandardInputOutputPrint => Symbols["standard.input_output.print"];
 
     public static IEnumerable<HostAbiIntrinsic> IntrinsicSignatures => Intrinsics.Values;
 
@@ -64,8 +64,10 @@ static class HostAbiCatalog
     {
         var map = new Dictionary<string, HostAbiSymbol>(StringComparer.Ordinal)
         {
-            ["std.io.print"] = new HostAbiSymbol("std.io.print", 1, "std.io", HostAbiTargets.All),
-            ["std.io.read_line"] = new HostAbiSymbol("std.io.read_line", 0, "std.io.read_line", HostAbiTargets.Native),
+            ["standard.input_output.print"] = new HostAbiSymbol("standard.input_output.print", 1, "standard.input_output", HostAbiTargets.All),
+            ["standard.input_output.read_line"] = new HostAbiSymbol("standard.input_output.read_line", 0, "standard.input_output.read_line", HostAbiTargets.Native),
+            ["std.io.print"] = new HostAbiSymbol("std.io.print", 1, "standard.input_output", HostAbiTargets.All),
+            ["std.io.read_line"] = new HostAbiSymbol("std.io.read_line", 0, "standard.input_output.read_line", HostAbiTargets.Native),
             ["std.time.unix_ms"] = new HostAbiSymbol("std.time.unix_ms", 0, "std.time", HostAbiTargets.All),
             ["std.time.unix_us"] = new HostAbiSymbol("std.time.unix_us", 0, "std.time", HostAbiTargets.All),
             ["std.time.mono_ns"] = new HostAbiSymbol("std.time.mono_ns", 0, "std.time", HostAbiTargets.All),
@@ -98,7 +100,10 @@ static class HostAbiCatalog
             ["engine.gfx.clear"] = new HostAbiSymbol("engine.gfx.clear", 5, "engine.gfx", HostAbiTargets.All),
             ["engine.gfx.clear_scene"] = new HostAbiSymbol("engine.gfx.clear_scene", 4, "engine.gfx", HostAbiTargets.All),
             ["engine.gfx.draw_rect"] = new HostAbiSymbol("engine.gfx.draw_rect", 9, "engine.gfx", HostAbiTargets.All),
-            ["engine.gfx.draw_rect_scene"] = new HostAbiSymbol("engine.gfx.draw_rect_scene", 8, "engine.gfx", HostAbiTargets.All)
+            ["engine.gfx.draw_rect_scene"] = new HostAbiSymbol("engine.gfx.draw_rect_scene", 8, "engine.gfx", HostAbiTargets.All),
+            ["engine.gfx.draw_rectangle_scene"] = new HostAbiSymbol("engine.gfx.draw_rectangle_scene", 8, "engine.gfx", HostAbiTargets.All),
+            ["engine.gfx.draw_line_scene"] = new HostAbiSymbol("engine.gfx.draw_line_scene", 8, "engine.gfx", HostAbiTargets.All),
+            ["engine.gfx.draw_text_scene"] = new HostAbiSymbol("engine.gfx.draw_text_scene", 10, "engine.gfx", HostAbiTargets.All)
         };
 
         return new ReadOnlyDictionary<string, HostAbiSymbol>(map);
@@ -138,7 +143,7 @@ static class HostAbiCatalog
             ["mono_ticks"] = Sig("mono_ticks", "std.time.mono_ticks", TypeSymbol.Integer, "integer"),
             ["mono_ticks_per_second"] = Sig("mono_ticks_per_second", "std.time.mono_ticks_per_second", TypeSymbol.Integer, "integer"),
             ["sleep_ms"] = Sig("sleep_ms", "std.time.sleep_ms", TypeSymbol.Void, "void", (TypeSymbol.Integer, "integer")),
-            ["read_line"] = Sig("read_line", "std.io.read_line", TypeSymbol.String, "string"),
+            ["read_line"] = Sig("read_line", "standard.input_output.read_line", TypeSymbol.String, "string"),
 
             ["window_create"] = Sig(
                 "window_create",
@@ -220,15 +225,56 @@ static class HostAbiCatalog
                 (TypeSymbol.Real, "real"),
                 (TypeSymbol.Real, "real"),
                 (TypeSymbol.Real, "real")),
-            ["draw_rect"] = Sig(
-                "draw_rect",
-                "engine.gfx.draw_rect_scene",
+            ["draw_rectangle"] = Sig(
+                "draw_rectangle",
+                "engine.gfx.draw_rectangle_scene",
                 TypeSymbol.Void,
                 "void",
                 (TypeSymbol.Real, "real"),
                 (TypeSymbol.Real, "real"),
                 (TypeSymbol.Real, "real"),
                 (TypeSymbol.Real, "real"),
+                (TypeSymbol.Real, "real"),
+                (TypeSymbol.Real, "real"),
+                (TypeSymbol.Real, "real"),
+                (TypeSymbol.Real, "real")),
+            ["draw_rect"] = Sig(
+                "draw_rect",
+                "engine.gfx.draw_rectangle_scene",
+                TypeSymbol.Void,
+                "void",
+                (TypeSymbol.Real, "real"),
+                (TypeSymbol.Real, "real"),
+                (TypeSymbol.Real, "real"),
+                (TypeSymbol.Real, "real"),
+                (TypeSymbol.Real, "real"),
+                (TypeSymbol.Real, "real"),
+                (TypeSymbol.Real, "real"),
+                (TypeSymbol.Real, "real")),
+            ["draw_line"] = Sig(
+                "draw_line",
+                "engine.gfx.draw_line_scene",
+                TypeSymbol.Void,
+                "void",
+                (TypeSymbol.Real, "real"),
+                (TypeSymbol.Real, "real"),
+                (TypeSymbol.Real, "real"),
+                (TypeSymbol.Real, "real"),
+                (TypeSymbol.Real, "real"),
+                (TypeSymbol.Real, "real"),
+                (TypeSymbol.Real, "real"),
+                (TypeSymbol.Real, "real")),
+            ["draw_text"] = Sig(
+                "draw_text",
+                "engine.gfx.draw_text_scene",
+                TypeSymbol.Void,
+                "void",
+                (TypeSymbol.String, "string"),
+                (TypeSymbol.Real, "real"),
+                (TypeSymbol.Real, "real"),
+                (TypeSymbol.Real, "real"),
+                (TypeSymbol.String, "string"),
+                (TypeSymbol.String, "string"),
                 (TypeSymbol.Real, "real"),
                 (TypeSymbol.Real, "real"),
                 (TypeSymbol.Real, "real"),

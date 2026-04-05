@@ -14,14 +14,14 @@ The repo contains:
 - Typed variables/functions; primitives: integer/whole/real, boolean, string
 - Constants: `constant Type name = value;` (immutable after init)
 - Control flow: `if/then/else`, `while`, `for`, `foreach` (numeric bounds and arrays)
-- Expressions: arithmetic (including `%`), comparisons, logical `and/or/not`, enhanced assignments (`+=`, `-=`, `*=`, `/=`, `%=` and postfix `++/--`), string interpolation and concatenation
+- Expressions: arithmetic (including `%`), comparisons, logical `and/or/not`, enhanced assignments (`+=`, `-=`, `*=`, `/=`, `%=` and postfix `++/--`) across variables, object fields, and array elements, plus string interpolation and concatenation
 - Time intrinsics: `unix_ms()`, `unix_us()`, `mono_ns()`, `mono_ticks()`, `mono_ticks_per_second()`, `sleep_ms(ms)`
 - Native-only IO intrinsic: `read_line()`
 - Functions with CALL/RET, locals, return (implicit 0)
 - File modules: `export` + imports (`import Name [as Alias] from "path";`, `import { A, B as C } from "path";`) with recursive linking and `lib/` search
 - Package manifest + lockfile baseline: nearest `code.package.json` is parsed/validated during module compile; local dependency graph resolves and `code.lock.json` is generated
-- Host ABI baseline: compiler emits `HOST_CALL` for `print`, time intrinsics, native-only APIs (`std.io.read_line`, `std.time.sleep_ms`), and engine stubs (`engine.window/*`, `engine.input/*`, `engine.gfx/*`)
-- Web app build/runtime V1 slice: `--build-web` emits a runnable static site folder with `index.html`, `app.bytecode`, a full-bleed canvas runtime, `MainScene` scene-object lifecycle (`start/update/draw` plus optional `draw_hud()`), guaranteed `640x360` safe area, hybrid-expand world framing, HUD screen-space, and browser-backed `key_down`/`clear`/`draw_rect`
+- Host ABI baseline: compiler emits `HOST_CALL` for `print`, time intrinsics, native-only APIs (`standard.input_output.read_line`, `std.time.sleep_ms`), and engine stubs (`engine.window/*`, `engine.input/*`, `engine.gfx/*`)
+- Web app build/runtime V1 slice: `--build-web` emits a runnable static site folder with `index.html`, `app.bytecode`, a full-bleed canvas runtime, `MainScene` scene-object lifecycle (`start/update/draw` plus optional `draw_hud()`), guaranteed `640x360` safe area, hybrid-expand world framing, HUD screen-space, and browser-backed `key_down()`/`clear()`/`draw_rectangle()`/`draw_line()`/`draw_text()`
 - Browser runtime harness (`web-runtime/`): lower-level JavaScript VM harness for loading raw `.bytecode` / `.codelib` files during bring-up and debugging
 - Runtime diagnostics: bytecode debug map -> line/column stack traces
 - Error objects: `panic <expr>;` emits a `UserError` with call stack
@@ -30,7 +30,7 @@ See [the language spec](docs/code-language-spec.md), [the feature roadmap](docs/
 
 ## Current State vs Target Workflow
 - Current state: scene-object web apps can now be built with `--build-web` into a runnable static site folder, defaulting to `dist/`.
-- Current state: the generated browser runtime owns the canvas, fills the window edge-to-edge, preserves aspect ratio with a guaranteed `640x360` safe area, expands the visible world on wider/taller screens, and supports `MainScene.start()`, `update()`, `draw()`, optional `draw_hud()`, `key_down()`, `clear()`, `draw_rect()`, `camera_view_*()`, `camera_safe_*()`, `screen_width()`, and `screen_height()`.
+- Current state: the generated browser runtime owns the canvas, fills the window edge-to-edge, preserves aspect ratio with a guaranteed `640x360` safe area, expands the visible world on wider/taller screens, and supports `MainScene.start()`, `update()`, `draw()`, optional `draw_hud()`, `key_down()`, `clear()`, `draw_rectangle()`, `draw_line()`, `draw_text()`, `camera_view_*()`, `camera_safe_*()`, `screen_width()`, and `screen_height()`.
 - Current state: `web-runtime/index.html` still exists as a lower-level preview/debug harness for raw `.bytecode` / `.codelib` loading.
 - Target workflow: expand this slice into higher-level engine packages and richer rendering/input/audio without forcing raw window-handle management into the default authoring model.
 
@@ -109,6 +109,7 @@ Test harness covers VM ops, compiler integration (print, arithmetic, functions, 
 - Library artifacts use `.codelib` (`<package>-<version>-<target>.codelib`)
 - Semicolons required; `then` mandatory after `if/while/for/foreach` conditions
 - Function returns: explicit `function<T> name(...)` or implicit-void `function name(...)`
+- Naming rule: user-facing APIs prefer fully spelled-out words; accepted domain terms like `hud` remain allowed
 - Arrays: literals `{...}`, typed declarations `array<integer> xs = {1,2,3};`, dynamic `new array<integer>(n);`, `.length`, indexing `xs[i]`, mutation `xs[i] = value`
 - Optionals: `optional<T>` with `none`, `.hasValue`, `.value`, `.or(fallback)`
 - Objects: `object` declarations with constructors/methods, `new Type(...)`, field access/assignment (`obj.field`, `obj.field = ...`), method calls (`obj.method(...)`)
@@ -171,3 +172,4 @@ Panic example:
 ```
 panic("boom");
 ```
+

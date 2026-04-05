@@ -602,7 +602,7 @@ sealed class Vm
 
     private void InitializeCommonHostBindings()
     {
-        _hostBindings["std.io.print"] = new HostBinding(1, args =>
+        HostBinding printBinding = new(1, args =>
         {
             var value = args[0];
             if (value is VmError err)
@@ -611,6 +611,8 @@ sealed class Vm
                 _output.WriteLine(value);
             return 0;
         });
+        _hostBindings["standard.input_output.print"] = printBinding;
+        _hostBindings["std.io.print"] = printBinding;
 
         _hostBindings["std.time.unix_ms"] = new HostBinding(0, _ => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
         _hostBindings["std.time.unix_us"] = new HostBinding(0, _ => (DateTime.UtcNow.Ticks - UnixEpochTicks) / 10);
@@ -647,11 +649,16 @@ sealed class Vm
         _hostBindings["engine.gfx.clear_scene"] = new HostBinding(4, _ => 0);
         _hostBindings["engine.gfx.draw_rect"] = new HostBinding(9, _ => 0);
         _hostBindings["engine.gfx.draw_rect_scene"] = new HostBinding(8, _ => 0);
+        _hostBindings["engine.gfx.draw_rectangle_scene"] = new HostBinding(8, _ => 0);
+        _hostBindings["engine.gfx.draw_line_scene"] = new HostBinding(8, _ => 0);
+        _hostBindings["engine.gfx.draw_text_scene"] = new HostBinding(10, _ => 0);
     }
 
     private void InitializeNativeHostBindings()
     {
-        _hostBindings["std.io.read_line"] = new HostBinding(0, _ => _input.ReadLine() ?? string.Empty);
+        HostBinding readLineBinding = new(0, _ => _input.ReadLine() ?? string.Empty);
+        _hostBindings["standard.input_output.read_line"] = readLineBinding;
+        _hostBindings["std.io.read_line"] = readLineBinding;
         _hostBindings["std.time.sleep_ms"] = new HostBinding(1, args =>
         {
             int ms = CoerceNonNegativeIntArg(args[0], "std.time.sleep_ms");
@@ -662,6 +669,10 @@ sealed class Vm
 
     private void InitializeWebHostBindings()
     {
+        RegisterUnsupportedBinding(
+            "standard.input_output.read_line",
+            0,
+            "this host API is native-only and cannot run on vm-web.");
         RegisterUnsupportedBinding(
             "std.io.read_line",
             0,

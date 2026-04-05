@@ -130,6 +130,20 @@ sealed class Assign : Expr
     public Assign(Token name, Expr value) { Name = name; Value = value; }
 }
 
+sealed class CompoundAssignExpr : Expr
+{
+    public Expr Target { get; }
+    public Token Operator { get; }
+    public Expr Value { get; }
+
+    public CompoundAssignExpr(Expr target, Token op, Expr value)
+    {
+        Target = target;
+        Operator = op;
+        Value = value;
+    }
+}
+
 sealed class Call : Expr
 {
     public Token Callee { get; }

@@ -1,30 +1,34 @@
 export object MainScene {
   integer x;
   integer y;
+  integer speed;
 
   constructor() {
     this.x = 100;
     this.y = 100;
+    this.speed = 2;
   }
 
   function start() {
   }
 
   function update() {
-    if key_down(37) then this.x = this.x - 2;
-    if key_down(39) then this.x = this.x + 2;
-    if key_down(38) then this.y = this.y - 2;
-    if key_down(40) then this.y = this.y + 2;
+    if key_down(37) then this.x -= this.speed;
+    if key_down(39) then this.x += this.speed;
+    if key_down(38) then this.y -= this.speed;
+    if key_down(40) then this.y += this.speed;
   }
 
   function draw() {
     clear(0, 0, 0, 1);
+    draw_line(camera_safe_left(), camera_safe_top(), camera_safe_right(), camera_safe_bottom(), 1, 1, 1, 1);
     if this.x > camera_view_left() - 24 and this.x < camera_view_right() then {
-      draw_rect(this.x, this.y, 24, 24, 1, 1, 1, 1);
+      draw_rectangle(this.x, this.y, 24, 24, 1, 1, 1, 1);
     }
   }
 
   function draw_hud() {
-    draw_rect(screen_width() - 44, 12, 32, 16, 1, 1, 1, 1);
+    draw_text("Code", 16, 16, 18, "left", "top", 1, 1, 1, 1);
+    draw_text("Arrow keys move", screen_width() - 16, 16, 16, "right", "top", 1, 1, 1, 1);
   }
 }

@@ -9,7 +9,7 @@ Read this first. Update it whenever semantics or process change.
 - Current web JS runtime is a bootstrap/prototyping runtime; it does not block a future WebGPU or WASM-hosted VM path.
 - Capability query + explicit fallback policy is a required design constraint for predictable cross-target behavior.
 - Near-term product target: write Code source, build once, and get a deployable website.
-- Default web runtime target: full-window browser app, centered `640x360` safe area with hybrid-expanded world framing, scene-object authoring, separate HUD space, and shapes + keyboard input for V1.
+- Default web runtime target: full-window browser app, centered `640x360` safe area with hybrid-expanded world framing, scene-object authoring, separate HUD space, primitive drawing, and keyboard input for V1.
 
 ## Current Capability Snapshot
 - Types: integer/whole/real, boolean, string, array<T> (literals `{...}`, `new array<T>(n)`, `.length`, indexing, mutation), optional<T> (`none`, `.hasValue`, `.value`, `.or(fallback)`), constants, typed/void functions, object types.
@@ -17,11 +17,11 @@ Read this first. Update it whenever semantics or process change.
 - Object rules: fields require constructor initialization; constructor/method overloads resolve by typed signature (best-match conversions), methods lower to hidden static call targets with implicit `this`, and object methods support implicit-void authoring; reserved field names are `length`, `hasValue`, `value`, `or`.
 - Interfaces: `interface Name { function<...> method(...); }` plus explicit `implement Interface for Object { method(types...) via Object.method; }` conformance checks and runtime dispatch for interface-typed locals/params/returns/fields.
 - Control flow: if/then[/else], while, for, foreach (numeric or array), break/continue, return (implicit 0).
-- Expressions: arithmetic (including `%`), comparisons, logical and/or/not (short-circuit), assignment (including `+=`, `-=`, `*=`, `/=`, `%=` and postfix `++/--`), function calls, full-expression string interpolation/concat.
+- Expressions: arithmetic (including `%`), comparisons, logical and/or/not (short-circuit), assignment (including `+=`, `-=`, `*=`, `/=`, `%=` and postfix `++/--` across variables, object fields, and array elements), function calls, full-expression string interpolation/concat.
 - Time intrinsics: `unix_ms()`, `unix_us()`, `mono_ns()`, `mono_ticks()`, `mono_ticks_per_second()`, plus `sleep_ms(integer)` (native-only).
 - IO intrinsic: `read_line() -> string` (native-only).
-- Host ABI baseline: compiler lowers print/time/native-only/engine intrinsic calls to `HOST_CALL` symbols; capability inference includes lowered host features (`std.io.read_line`, `std.time.sleep_ms`, `engine.window/input/gfx`); VM resolves via native/web host binding tables and throws target-aware `HostBindingError` on unsupported host calls.
-- Engine ABI status: legacy window-handle calls (`window_create`, `window_should_close`, `window_present`, `input_key_down`, `gfx_clear`, `gfx_draw_rect`) remain no-op stubs on native/web hosts, while the scene-runtime intrinsics `key_down`, `clear`, `draw_rect`, `camera_view_*`, `camera_safe_*`, `screen_width`, and `screen_height` now have browser-backed implementations for `vm-web`.
+- Host ABI baseline: compiler lowers print/time/native-only/engine intrinsic calls to `HOST_CALL` symbols; capability inference includes lowered host features (`standard.input_output.read_line`, `std.time.sleep_ms`, `engine.window/input/gfx`); VM resolves via native/web host binding tables and throws target-aware `HostBindingError` on unsupported host calls.
+- Engine ABI status: legacy window-handle calls (`window_create`, `window_should_close`, `window_present`, `input_key_down`, `gfx_clear`, `gfx_draw_rect`) remain no-op stubs on native/web hosts, while the scene-runtime intrinsics `key_down`, `clear`, `draw_rectangle`, `draw_line`, `draw_text`, `camera_view_*`, `camera_safe_*`, `screen_width`, and `screen_height` now have browser-backed implementations for `vm-web`.
 - Web app/runtime slice: `--build-web` emits a static site folder (`index.html` + `app.bytecode`) with a generated full-window browser runtime, centered `640x360` safe area, hybrid-expanded visible world, `MainScene` metadata, and `start/update/draw` plus optional `draw_hud` driving the JS VM.
 - Web harness: `web-runtime/` still contains a lower-level JavaScript bytecode runner + browser host binding table for raw `.bytecode` / `.codelib` loading; it is preview/bootstrap tooling, not the primary shipping workflow.
 - Web app/runtime contract: `docs/web-app-v1.md` freezes the first implementation target around a scene object with `start/update/draw`, optional `draw_hud`, full-window browser runtime ownership, centered `640x360` safe area, hybrid-expanded framing, and static-site output.
@@ -40,7 +40,7 @@ Read this first. Update it whenever semantics or process change.
 - Module namespaces and stdlib versioning/layout.
 - Typed array element enforcement, constant pool, formatter/linter, REPL.
 - Typed error values / `fallible<T>` semantics wired to VM errors.
-- Engine web runtime maturation: expand the generated web app/runtime slice beyond `MainScene` + shapes/keyboard, add engine package wrappers aligned to the V1 runtime contract, and replace the remaining raw window-handle `engine.window`/`engine.input`/`engine.gfx` stubs with real browser-backed behavior or wrappers.
+- Engine web runtime maturation: expand the generated web app/runtime slice beyond `MainScene` + primitive drawing/keyboard, add engine package wrappers aligned to the V1 runtime contract, and replace the remaining raw window-handle `engine.window`/`engine.input`/`engine.gfx` stubs with real browser-backed behavior or wrappers.
 - GPU roadmap: `engine.gpu` ABI v1 + WebGPU backend (`vm-web`) + native GPU backend parity (`vm-native`).
 - Capability query/fallback APIs for deterministic backend negotiation.
 
@@ -59,10 +59,12 @@ Read this first. Update it whenever semantics or process change.
 - When making product-direction or workflow decisions: update the relevant docs in the same change. Do not let roadmap, README, and design docs drift.
 - Keep examples comprehensive; add one per new feature.
 - Preserve prior decisions; ask user when unclear.
+- Prefer fully spelled-out user-facing names; avoid arbitrary abbreviations unless the term is a widely accepted domain term such as `hud`.
 
 ## Change Log
 - 2026-04-05: Switched the browser runtime to full-bleed hybrid expansion around a `640x360` safe area, added optional `draw_hud()`, exposed `camera_view_*` / `camera_safe_*` / `screen_width` / `screen_height`, and updated tests/docs/example for the new framing model.
-- 2026-04-05: Implemented the first web app/runtime slice: `--build-web`, generated `index.html` + `app.bytecode`, `MainScene` scene metadata extraction, browser-backed full-window scene runtime (`start/update/draw`), and scene intrinsics (`key_down`, `clear`, `draw_rect`); added tests and `ConsoleApp1/examples/web_scene.code`.
+- 2026-04-05: Added the readability naming pass and next primitive layer: canonical `draw_rectangle`, compatibility aliases for legacy `draw_rect` / `std.io.*`, canonical `standard.input_output.*`, compound assignment on variables/fields/array elements, and browser-backed `draw_line` / `draw_text`; updated tests/docs/examples in the same change.
+- 2026-04-05: Implemented the first web app/runtime slice: `--build-web`, generated `index.html` + `app.bytecode`, `MainScene` scene metadata extraction, browser-backed full-window scene runtime (`start/update/draw`), and scene intrinsics (`key_down`, `clear`, `draw_rectangle`); added tests and `ConsoleApp1/examples/web_scene.code`.
 - 2026-04-05: Repositioned Code as a 2D/web-first language, added `docs/web-app-v1.md`, documented scene-object/full-window/static-site defaults, and formalized the rule that code or product decisions update docs in the same change.
 - 2026-02-28: Synced AI context with web-first strategy and backend-agnostic engine API goals; documented capability/fallback policy requirement.
 - 2026-02-28: Added near-term platform focus: real browser engine host bindings, engine package wrappers/loop contract, and web bundle workflow.
@@ -75,7 +77,7 @@ Read this first. Update it whenever semantics or process change.
 - 2026-02-19: Added baseline package dependency resolver and lockfile generation (`code.lock.json`) with local package discovery, semver range validation, and lockfile integration tests.
 - 2026-02-19: Added `.codelib` library artifact format (read/write/validate), automatic artifact emission for library packages, lockfile preference for validated artifacts, and CLI support to run/disassemble `.codelib` inputs.
 - 2026-02-19: Added timing intrinsics (unix/us + monotonic ns/ticks) in type checker/codegen/VM with integration coverage and example program.
-- 2026-02-19: Added `HOST_CALL` opcode and native host binding table; migrated compiler lowering for `print` + time intrinsics to host ABI symbols (`std.io.*`, `std.time.*`).
+- 2026-02-19: Added `HOST_CALL` opcode and native host binding table; migrated compiler lowering for `print` + time intrinsics to host ABI symbols (`standard.input_output.*`, `std.time.*`).
 - 2026-02-19: Added host-mode parity scaffold (`vm-native` vs `vm-web`) in VM/CLI and parity test coverage for `print` + time host calls.
 - 2026-02-25: Added native-only host ABI intrinsics (`read_line`, `sleep_ms`) with compile-time target gating and web runtime diagnostics; added engine window/input/gfx host stubs and conformance tests.
 - 2026-02-25: Added first browser harness in `web-runtime/` (JavaScript bytecode VM + web host binding table for print/time).
@@ -91,3 +93,4 @@ Read this first. Update it whenever semantics or process change.
 - 2026-02-11: Arrays (typed, length, indexing), optionals (`none`, hasValue/value/or), panic errors, expanded tests/fuzz; CLI `--run-tests`; docs/README/roadmap updated.
 - 2026-02-10: Numeric literal rules, conversions, interpolation, overload order, imports resolution, debug map; control flow/functions; CLI utilities.
 - 2026-02-09: Initial context and spec v0.8 snapshot.
+

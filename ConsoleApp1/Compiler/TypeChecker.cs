@@ -689,6 +689,28 @@ sealed class TypeChecker
                 RequireAssignable(lhsType, lhsTypeRef, rhs, rhsTypeRef, a.Name.Line, a.Name.Column, "Assignment type mismatch");
                 env.MarkAssigned(a.Name);
                 return lhsType;
+            case CompoundAssignExpr c:
+            {
+                var (targetType, targetTypeRef, assignToken) = CheckCompoundAssignmentTarget(c.Target, env, currentReturn);
+                var valueType = CheckExpr(c.Value, env, currentReturn);
+                var resultType = CheckCompoundAssignmentOperator(
+                    c.Operator,
+                    targetType,
+                    valueType,
+                    GetLine(c.Target),
+                    GetCol(c.Target));
+                RequireAssignable(
+                    targetType,
+                    targetTypeRef,
+                    resultType,
+                    null,
+                    assignToken.Line,
+                    assignToken.Column,
+                    "Assignment type mismatch");
+                if (c.Target is Variable variableTarget)
+                    env.MarkAssigned(variableTarget.Name);
+                return targetType;
+            }
             case Call c:
                 if (!TryGetFunctionSignature(c.Callee.Lexeme, out var sig))
                     throw new CompilerException($"Undefined function '{c.Callee.Lexeme}'", c.Callee.Line, c.Callee.Column);
@@ -1041,6 +1063,75 @@ sealed class TypeChecker
         }
     }
 
+    private (TypeSymbol Type, TypeRef? TypeRef, Token AssignmentToken) CheckCompoundAssignmentTarget(
+        Expr target,
+        TypeEnvironment env,
+        TypeSymbol? currentReturn)
+    {
+        switch (target)
+        {
+            case Variable variable:
+                env.EnsureCanAssign(variable.Name);
+                return (env.LookupForRead(variable.Name), env.TryGetDeclaredType(variable.Name), variable.Name);
+            case FieldAccessExpr fieldAccess:
+            {
+                var targetType = CheckExpr(fieldAccess.Target, env, currentReturn);
+                Require(targetType == TypeSymbol.Object, fieldAccess.Target, "Field access requires object target");
+                return (
+                    ResolveFieldType(fieldAccess, env) ?? TypeSymbol.Unknown,
+                    ResolveFieldTypeRef(fieldAccess, env),
+                    fieldAccess.Name);
+            }
+            case ArrayIndexExpr arrayIndex:
+            {
+                var arrayType = CheckExpr(arrayIndex.Array, env, currentReturn);
+                Require(arrayType == TypeSymbol.Array, arrayIndex.Array, "Indexing requires an array");
+                var indexType = CheckExpr(arrayIndex.Index, env, currentReturn);
+                Require(IsNumeric(indexType), arrayIndex.Index, "Array index must be numeric");
+                return (
+                    TypeSymbol.Integer,
+                    null,
+                    arrayIndex.Array is Variable variableArray ? variableArray.Name : BuildSyntheticToken(GetLine(arrayIndex), GetCol(arrayIndex)));
+            }
+            default:
+                throw new CompilerException("Invalid assignment target.", GetLine(target), GetCol(target));
+        }
+    }
+
+    private TypeSymbol CheckCompoundAssignmentOperator(
+        Token op,
+        TypeSymbol leftType,
+        TypeSymbol rightType,
+        int line,
+        int column)
+    {
+        switch (op.Type)
+        {
+            case TokenType.Plus:
+                if (leftType == TypeSymbol.String || rightType == TypeSymbol.String)
+                    return TypeSymbol.String;
+                RequireAt(line, column, IsNumeric(leftType) && IsNumeric(rightType), "Arithmetic requires numeric");
+                return Promote(leftType, rightType);
+            case TokenType.Minus:
+            case TokenType.Star:
+            case TokenType.Slash:
+            case TokenType.Percent:
+                RequireAt(line, column, IsNumeric(leftType) && IsNumeric(rightType), "Arithmetic requires numeric");
+                return Promote(leftType, rightType);
+            default:
+                throw new CompilerException($"Unsupported compound assignment operator '{op.Lexeme}'", op.Line, op.Column);
+        }
+    }
+
+    private static Token BuildSyntheticToken(int line, int column)
+        => new(TokenType.Identifier, "<synthetic>", null, line, column);
+
+    private static void RequireAt(int line, int column, bool condition, string message)
+    {
+        if (!condition)
+            throw new CompilerException(message, line, column);
+    }
+
     private void ValidateTypeRef(TypeRef typeRef)
     {
         switch (typeRef.Name)
@@ -1184,6 +1275,7 @@ sealed class TypeChecker
         Literal => 0,
         Variable v => v.Name.Line,
         Assign a => a.Name.Line,
+        CompoundAssignExpr c => GetLine(c.Target),
         Call c => c.Callee.Line,
         MethodCallExpr mc => mc.MethodName.Line,
         Unary u => GetLine(u.Right),
@@ -1196,6 +1288,7 @@ sealed class TypeChecker
         Literal => 0,
         Variable v => v.Name.Column,
         Assign a => a.Name.Column,
+        CompoundAssignExpr c => GetCol(c.Target),
         Call c => c.Callee.Column,
         MethodCallExpr mc => mc.MethodName.Column,
         Unary u => GetCol(u.Right),

@@ -140,6 +140,14 @@ function toNumber(value, fail) {
   return 0;
 }
 
+function toText(value, fail) {
+  if (typeof value === "string") {
+    return value;
+  }
+  fail(`Expected string on stack, found ${typeof value}`);
+  return "";
+}
+
 function formatVmError(errorObject) {
   const line = Number.isInteger(errorObject.line) ? errorObject.line : -1;
   const column = Number.isInteger(errorObject.column) ? errorObject.column : -1;
@@ -162,6 +170,28 @@ function toCssRgba(r, g, b, a) {
   const green = Math.round(clampUnit(g) * 255);
   const blue = Math.round(clampUnit(b) * 255);
   return `rgba(${red}, ${green}, ${blue}, ${clampUnit(a)})`;
+}
+
+function normalizeHorizontalAlignment(value) {
+  switch (value) {
+    case "left":
+    case "center":
+    case "right":
+      return value;
+    default:
+      return "left";
+  }
+}
+
+function normalizeVerticalAlignment(value) {
+  switch (value) {
+    case "top":
+    case "middle":
+    case "bottom":
+      return value;
+    default:
+      return "top";
+  }
 }
 
 export class CanvasSceneRuntime {
@@ -354,12 +384,44 @@ export class CanvasSceneRuntime {
   }
 
   drawRect(x, y, w, h, r, g, b, a) {
+    return this.drawRectangle(x, y, w, h, r, g, b, a);
+  }
+
+  drawRectangle(x, y, w, h, r, g, b, a) {
     if (!this.ctx) {
       return 0;
     }
 
     this.ctx.fillStyle = toCssRgba(r, g, b, a);
     this.ctx.fillRect(x, y, w, h);
+    return 0;
+  }
+
+  drawLine(x1, y1, x2, y2, r, g, b, a) {
+    if (!this.ctx) {
+      return 0;
+    }
+
+    this.ctx.strokeStyle = toCssRgba(r, g, b, a);
+    this.ctx.beginPath();
+    this.ctx.moveTo(x1, y1);
+    this.ctx.lineTo(x2, y2);
+    this.ctx.stroke();
+    return 0;
+  }
+
+  drawText(text, x, y, size, horizontalAlignment, verticalAlignment, r, g, b, a) {
+    if (!this.ctx) {
+      return 0;
+    }
+
+    const horizontal = normalizeHorizontalAlignment(horizontalAlignment);
+    const vertical = normalizeVerticalAlignment(verticalAlignment);
+    this.ctx.fillStyle = toCssRgba(r, g, b, a);
+    this.ctx.font = `${Math.max(1, size)}px "Trebuchet MS", Verdana, sans-serif`;
+    this.ctx.textAlign = horizontal;
+    this.ctx.textBaseline = vertical;
+    this.ctx.fillText(text, x, y);
     return 0;
   }
 
@@ -544,7 +606,7 @@ export class WebVm {
   }
 
   initializeHostBindings() {
-    this.hostBindings.set("std.io.print", {
+    const printBinding = {
       arity: 1,
       handler: args => {
         const value = args[0];
@@ -555,7 +617,9 @@ export class WebVm {
         }
         return 0;
       }
-    });
+    };
+    this.hostBindings.set("standard.input_output.print", printBinding);
+    this.hostBindings.set("std.io.print", printBinding);
 
     this.hostBindings.set("std.time.unix_ms", {
       arity: 0,
@@ -583,6 +647,7 @@ export class WebVm {
       handler: () => 1_000_000
     });
 
+    this.registerUnsupportedBinding("standard.input_output.read_line", 0, "native-only API");
     this.registerUnsupportedBinding("std.io.read_line", 0, "native-only API");
     this.registerUnsupportedBinding("std.time.sleep_ms", 1, "native-only API");
 
@@ -689,13 +754,13 @@ export class WebVm {
       arity: 9,
       handler: () => 0
     });
-    this.hostBindings.set("engine.gfx.draw_rect_scene", {
+    const drawRectangleSceneBinding = {
       arity: 8,
       handler: args => {
         if (!this.sceneHost) {
           return 0;
         }
-        return this.sceneHost.drawRect(
+        return this.sceneHost.drawRectangle(
           toNumber(args[0], message => this.throwRuntime(message)),
           toNumber(args[1], message => this.throwRuntime(message)),
           toNumber(args[2], message => this.throwRuntime(message)),
@@ -704,6 +769,46 @@ export class WebVm {
           toNumber(args[5], message => this.throwRuntime(message)),
           toNumber(args[6], message => this.throwRuntime(message)),
           toNumber(args[7], message => this.throwRuntime(message))
+        );
+      }
+    };
+    this.hostBindings.set("engine.gfx.draw_rect_scene", drawRectangleSceneBinding);
+    this.hostBindings.set("engine.gfx.draw_rectangle_scene", drawRectangleSceneBinding);
+    this.hostBindings.set("engine.gfx.draw_line_scene", {
+      arity: 8,
+      handler: args => {
+        if (!this.sceneHost) {
+          return 0;
+        }
+        return this.sceneHost.drawLine(
+          toNumber(args[0], message => this.throwRuntime(message)),
+          toNumber(args[1], message => this.throwRuntime(message)),
+          toNumber(args[2], message => this.throwRuntime(message)),
+          toNumber(args[3], message => this.throwRuntime(message)),
+          toNumber(args[4], message => this.throwRuntime(message)),
+          toNumber(args[5], message => this.throwRuntime(message)),
+          toNumber(args[6], message => this.throwRuntime(message)),
+          toNumber(args[7], message => this.throwRuntime(message))
+        );
+      }
+    });
+    this.hostBindings.set("engine.gfx.draw_text_scene", {
+      arity: 10,
+      handler: args => {
+        if (!this.sceneHost) {
+          return 0;
+        }
+        return this.sceneHost.drawText(
+          toText(args[0], message => this.throwRuntime(message)),
+          toNumber(args[1], message => this.throwRuntime(message)),
+          toNumber(args[2], message => this.throwRuntime(message)),
+          toNumber(args[3], message => this.throwRuntime(message)),
+          toText(args[4], message => this.throwRuntime(message)),
+          toText(args[5], message => this.throwRuntime(message)),
+          toNumber(args[6], message => this.throwRuntime(message)),
+          toNumber(args[7], message => this.throwRuntime(message)),
+          toNumber(args[8], message => this.throwRuntime(message)),
+          toNumber(args[9], message => this.throwRuntime(message))
         );
       }
     });

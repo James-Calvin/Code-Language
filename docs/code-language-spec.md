@@ -243,7 +243,10 @@ if not isReady then {
   - Binary operators are left-associative except assignment, which is right-associative.
   - Parentheses may be used to override precedence.
 - Arithmetic includes modulo (`%`).
-- Enhanced assignments are supported for variables:
+- Enhanced assignments are supported for assignable targets:
+  - variables
+  - object fields
+  - array elements
   - `+=`, `-=`, `*=`, `/=`, `%=`
   - postfix `++`, `--`
 
@@ -479,7 +482,7 @@ real result3 = errorExample(0) on error panic("Error message {error}");
   - `read_line() -> string` (native-only host API; compile-time target check rejects it for `vm-web`)
   - These currently lower through host ABI symbols (`std.time.*`) rather than dedicated language-level stdlib modules.
 - Print lowering (current baseline):
-  - `print(expr);` lowers through host ABI symbol `std.io.print`.
+  - `print(expr);` lowers through host ABI symbol `standard.input_output.print`.
   - VM host binding mismatch (missing symbol/arity) raises `HostBindingError` at runtime.
   - Native-only host calls include target-specific runtime diagnostics when executed on `vm-web` host tables.
   - Engine-facing host stubs are available through intrinsics:
@@ -536,3 +539,4 @@ function<fallible<real>> runWithTypedError(string input, real count) {
 
 ## 17. Open Questions
 - Future package search paths beyond project `lib/` (configuration format, stdlib layout).
+

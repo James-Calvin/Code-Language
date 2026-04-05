@@ -84,7 +84,7 @@ Host calls are explicit, capability-scoped bindings provided by the runtime host
   - `mono_ticks() -> integer`
   - `mono_ticks_per_second() -> integer`
   - `sleep_ms(integer ms) -> void` (`vm-native` only in v1)
-- `std.io`
+- `standard.input_output`
   - `print(string value) -> void`
   - `read_line() -> string` (`vm-native` only in v1)
 - `std.fs` (`vm-native` only in v1)
@@ -110,7 +110,7 @@ Host calls are explicit, capability-scoped bindings provided by the runtime host
 
 ### 2.5 Target capability matrix (v1)
 - `vm-native`: all capability groups above
-- `vm-web`: `std.time`, `std.io.print`, `engine.window`, `engine.input`, `engine.gfx`, `engine.audio`
+- `vm-web`: `std.time`, `standard.input_output.print`, `engine.window`, `engine.input`, `engine.gfx`, `engine.audio`
 - compile-time rule: fail build if package requires unsupported capability for selected target.
 
 ### 2.6 Backend policy (WebGPU compatibility)
@@ -216,15 +216,15 @@ Legend:
 | Priority | Phase | Work Item | Deliverable / Exit Criteria |
 | --- | --- | --- | --- |
 | `[x]` | Phase 1 | Target flag + capability validation | Implemented: `--target vm-native|vm-web` with compile-time capability matrix checks |
-| `[~]` | Phase 1 | Host ABI v1 baseline | Implemented baseline `HOST_CALL` + native/web host tables + `HostBindingError`; includes `std.io.print`, `std.time.*`, native-only `read_line`/`sleep_ms` diagnostics, and engine window/input/gfx no-op stubs |
+| `[~]` | Phase 1 | Host ABI v1 baseline | Implemented baseline `HOST_CALL` + native/web host tables + `HostBindingError`; includes `standard.input_output.print`, `std.time.*`, native-only `read_line`/`sleep_ms` diagnostics, and engine window/input/gfx no-op stubs |
 | `[x]` | Phase 2 | Manifest parser + validation | Implemented baseline: nearest-manifest discovery, schema v1 validation, target and host capability checks |
 | `[x]` | Phase 2 | Dependency resolver + lockfile | Implemented baseline local resolver + deterministic `code.lock.json` generation (target-scoped) |
 | `[x]` | Phase 2 | Library artifact format (`.codelib`) | Implemented baseline: library manifests emit `.codelib`, resolver validates/prefer artifact paths in `code.lock.json`, CLI can run/disasm `.codelib` |
 | `[x]` | Phase 3 | Web app/runtime V1 contract | Documented in `docs/web-app-v1.md`: scene-object authoring, `start/update/draw` plus optional `draw_hud`, full-window browser runtime, centered `640x360` safe area, hybrid-expanded framing, and static-site output target |
-| `[~]` | Phase 3 | Stdlib as packages | `std.core`, `std.math`, `std.time`, `std.io` packaged and importable |
+| `[~]` | Phase 3 | Stdlib as packages | `std.core`, `std.math`, `std.time`, `standard.input_output` packaged and importable |
 | `[x]` | Phase 4 | Web bundle workflow | Implemented first slice: `--build-web` emits a runnable static site folder (`index.html` + `app.bytecode`) instead of relying on the preview harness |
-| `[~]` | Phase 4 | Browser-backed web app runtime | Implemented current slice: generated full-window canvas runtime, `MainScene` lifecycle (`start/update/draw` plus optional `draw_hud`), fixed-step loop, centered `640x360` safe area, and hybrid-expanded world framing; expand beyond shapes + keyboard |
-| `[~]` | Phase 4 | Web engine host bindings (real impl) | Implemented current scene-runtime bindings for `key_down`, `clear`, `draw_rect`, `camera_view_*`, `camera_safe_*`, and `screen_width` / `screen_height`; legacy window-handle web stubs still need real implementations or package-level wrappers |
+| `[~]` | Phase 4 | Browser-backed web app runtime | Implemented current slice: generated full-window canvas runtime, `MainScene` lifecycle (`start/update/draw` plus optional `draw_hud`), fixed-step loop, centered `640x360` safe area, and hybrid-expanded world framing; expand beyond primitive drawing + keyboard |
+| `[~]` | Phase 4 | Web engine host bindings (real impl) | Implemented current scene-runtime bindings for `key_down`, `clear`, `draw_rectangle`, `draw_line`, `draw_text`, `camera_view_*`, `camera_safe_*`, and `screen_width` / `screen_height`; legacy window-handle web stubs still need real implementations or package-level wrappers |
 | `[!]` | Phase 4 | Backend-agnostic API contract | Freeze capability-query and fallback semantics so one Code source can target multiple backends predictably |
 | `[~]` | Phase 5 | Engine core package set | `engine.math`, `engine.ecs`, `engine.scene`, `engine.loop` |
 | `[~]` | Phase 5 | Engine platform adapters | `engine.window/input/gfx/audio` host-backed packages for native+web |
@@ -241,7 +241,7 @@ Legend:
 3. [x] Implement `code.package.json` parser + validator.
 4. [x] Implement local dependency resolver + `code.lock.json`.
 5. [x] Add `.codelib` read/write and linker support.
-6. [x] Add first host ABI bindings (`std.io.print`, `std.time.*`) for both `vm-native` and `vm-web`, then extend native-only APIs (`read_line`, `sleep_ms`) with target diagnostics.
+6. [x] Add first host ABI bindings (`standard.input_output.print`, `std.time.*`) for both `vm-native` and `vm-web`, then extend native-only APIs (`read_line`, `sleep_ms`) with target diagnostics.
 
 This order gets library system + target model stable before engine work starts.
 
@@ -257,8 +257,9 @@ This order gets library system + target model stable before engine work starts.
 
 3. **Browser-backed app runtime**
    - Implemented current slice: generated app page and browser runtime fill the window, preserve aspect ratio with a centered `640x360` safe area, expand the visible world when needed, support optional `draw_hud`, and own the main loop for a `MainScene`.
-   - Next step: expand the runtime beyond `clear`/`draw_rect`/`key_down`/camera helpers and keep the higher-level engine-facing API off raw window handles.
+   - Next step: expand the runtime beyond `clear`/`draw_rectangle`/`draw_line`/`draw_text`/`key_down`/camera helpers and keep the higher-level engine-facing API off raw window handles.
 
 4. **Engine packages + loop contract**
    - Add importable `engine.window`, `engine.input`, `engine.gfx`, `engine.loop` packages or wrappers aligned to the runtime contract, with scene lifecycle integration.
    - Exit criteria: the runtime contract is reflected in package-level APIs rather than only raw host ABI symbols.
+

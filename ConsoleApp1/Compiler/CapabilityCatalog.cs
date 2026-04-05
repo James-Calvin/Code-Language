@@ -9,6 +9,8 @@ static class CapabilityCatalog
     {
         "std.time",
         "std.time.sleep_ms",
+        "standard.input_output",
+        "standard.input_output.read_line",
         "std.io",
         "std.io.read_line",
         "std.fs",
@@ -21,7 +23,7 @@ static class CapabilityCatalog
     private static readonly IReadOnlySet<string> VmWeb = new HashSet<string>(StringComparer.Ordinal)
     {
         "std.time",
-        "std.io",
+        "standard.input_output",
         "engine.window",
         "engine.input",
         "engine.gfx",
@@ -46,6 +48,12 @@ static class CapabilityCatalog
             return null;
 
         var normalized = capability.Trim().ToLowerInvariant();
+        normalized = normalized switch
+        {
+            "std.io" => "standard.input_output",
+            "std.io.read_line" => "standard.input_output.read_line",
+            _ => normalized
+        };
         return IsKnown(normalized) ? normalized : null;
     }
 }

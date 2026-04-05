@@ -731,7 +731,7 @@ static class ModuleCompiler
 
                 case PrintStmt p:
                     RegisterCapability(
-                        HostAbiCatalog.StdIoPrint.Capability,
+                        HostAbiCatalog.StandardInputOutputPrint.Capability,
                         modulePath,
                         GetExprLine(p.Value),
                         GetExprColumn(p.Value),
@@ -838,6 +838,10 @@ static class ModuleCompiler
                 case Assign a:
                     ScanExprForCapabilities(a.Value, modulePath);
                     break;
+                case CompoundAssignExpr c:
+                    ScanExprForCapabilities(c.Target, modulePath);
+                    ScanExprForCapabilities(c.Value, modulePath);
+                    break;
                 case Call c:
                     if (HostAbiCatalog.TryGetIntrinsic(c.Callee.Lexeme, out var intrinsic))
                     {
@@ -869,6 +873,7 @@ static class ModuleCompiler
             NewArrayExpr n => n.Line,
             Variable v => v.Name.Line,
             Assign a => a.Name.Line,
+            CompoundAssignExpr c => GetExprLine(c.Target),
             Call c => c.Callee.Line,
             MethodCallExpr m => m.MethodName.Line,
             FieldAccessExpr f => f.Name.Line,
@@ -893,6 +898,7 @@ static class ModuleCompiler
             NewArrayExpr n => n.Column,
             Variable v => v.Name.Column,
             Assign a => a.Name.Column,
+            CompoundAssignExpr c => GetExprColumn(c.Target),
             Call c => c.Callee.Column,
             MethodCallExpr m => m.MethodName.Column,
             FieldAccessExpr f => f.Name.Column,
@@ -1253,6 +1259,7 @@ static class ModuleCompiler
             ArraySetExpr a => new ArraySetExpr((ArrayIndexExpr)RewriteExpr(a.Target, aliases), RewriteExpr(a.Value, aliases)),
             Variable v => v,
             Assign a => new Assign(a.Name, RewriteExpr(a.Value, aliases)),
+            CompoundAssignExpr c => new CompoundAssignExpr(RewriteExpr(c.Target, aliases), c.Operator, RewriteExpr(c.Value, aliases)),
             Call c => new Call(c.Callee, c.Arguments.Select(a => RewriteExpr(a, aliases)).ToList()),
             MethodCallExpr m => new MethodCallExpr(RewriteExpr(m.Target, aliases), m.MethodName, m.Arguments.Select(a => RewriteExpr(a, aliases)).ToList())
             {

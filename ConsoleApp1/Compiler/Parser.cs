@@ -854,7 +854,7 @@ sealed class Parser
 
     private Expr BuildCompoundAssignment(Expr target, Token operatorToken, Expr value)
     {
-        if (target is not Variable variable)
+        if (!IsAssignmentTarget(target))
             throw Error(operatorToken, "Invalid assignment target.");
 
         TokenType binaryType = operatorToken.Type switch
@@ -868,18 +868,20 @@ sealed class Parser
         };
 
         var binaryOp = new Token(binaryType, operatorToken.Lexeme, null, operatorToken.Line, operatorToken.Column);
-        Expr rhs = new Binary(new Variable(variable.Name), binaryOp, value);
-        return new Assign(variable.Name, rhs);
+        return new CompoundAssignExpr(target, binaryOp, value);
     }
 
     private Expr BuildIncrementAssignment(Expr target, Token operatorToken)
     {
-        if (target is not Variable variable)
+        if (!IsAssignmentTarget(target))
             throw Error(operatorToken, "Invalid increment/decrement target.");
 
         TokenType binaryType = operatorToken.Type == TokenType.PlusPlus ? TokenType.Plus : TokenType.Minus;
         var binaryOp = new Token(binaryType, operatorToken.Lexeme, null, operatorToken.Line, operatorToken.Column);
         var one = new Literal(1, operatorToken.Line, operatorToken.Column);
-        return new Assign(variable.Name, new Binary(new Variable(variable.Name), binaryOp, one));
+        return new CompoundAssignExpr(target, binaryOp, one);
     }
+
+    private static bool IsAssignmentTarget(Expr expr)
+        => expr is Variable or ArrayIndexExpr or FieldAccessExpr;
 }

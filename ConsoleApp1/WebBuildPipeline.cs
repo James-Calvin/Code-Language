@@ -144,7 +144,10 @@ internal static class WebBuildPipeline
                 constructor = new { targetIp = webScene.Constructor.TargetIp, frameSize = webScene.Constructor.FrameSize },
                 start = new { targetIp = webScene.Start.TargetIp, frameSize = webScene.Start.FrameSize },
                 update = new { targetIp = webScene.Update.TargetIp, frameSize = webScene.Update.FrameSize },
-                draw = new { targetIp = webScene.Draw.TargetIp, frameSize = webScene.Draw.FrameSize }
+                draw = new { targetIp = webScene.Draw.TargetIp, frameSize = webScene.Draw.FrameSize },
+                drawHud = webScene.DrawHud is null
+                    ? null
+                    : new { targetIp = webScene.DrawHud.TargetIp, frameSize = webScene.DrawHud.FrameSize }
             }
         }, new JsonSerializerOptions { WriteIndented = true });
         string bytecodeJson = JsonSerializer.Serialize(bytecodeBase64);

@@ -19,6 +19,12 @@ export object MainScene {
 
   function draw() {
     clear(0, 0, 0, 1);
-    draw_rect(this.x, this.y, 24, 24, 1, 1, 1, 1);
+    if this.x > camera_view_left() - 24 and this.x < camera_view_right() then {
+      draw_rect(this.x, this.y, 24, 24, 1, 1, 1, 1);
+    }
+  }
+
+  function draw_hud() {
+    draw_rect(screen_width() - 44, 12, 32, 16, 1, 1, 1, 1);
   }
 }

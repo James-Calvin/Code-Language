@@ -22,19 +22,22 @@ sealed class WebSceneMetadata
     public GeneratedCallableMetadata Start { get; }
     public GeneratedCallableMetadata Update { get; }
     public GeneratedCallableMetadata Draw { get; }
+    public GeneratedCallableMetadata? DrawHud { get; }
 
     public WebSceneMetadata(
         string sceneTypeName,
         GeneratedCallableMetadata constructor,
         GeneratedCallableMetadata start,
         GeneratedCallableMetadata update,
-        GeneratedCallableMetadata draw)
+        GeneratedCallableMetadata draw,
+        GeneratedCallableMetadata? drawHud)
     {
         SceneTypeName = sceneTypeName;
         Constructor = constructor;
         Start = start;
         Update = update;
         Draw = draw;
+        DrawHud = drawHud;
     }
 }
 
@@ -1071,6 +1074,7 @@ sealed class CodeGenerator
         MethodDecl? start = FindZeroArgMethod(sceneObject.Methods, "start");
         MethodDecl? update = FindZeroArgMethod(sceneObject.Methods, "update");
         MethodDecl? draw = FindZeroArgMethod(sceneObject.Methods, "draw");
+        MethodDecl? drawHud = FindZeroArgMethod(sceneObject.Methods, "draw_hud");
 
         if (ctor is null || start is null || update is null || draw is null)
             return null;
@@ -1083,8 +1087,14 @@ sealed class CodeGenerator
             return null;
         if (!TryResolveCallableMetadata(_methods, MethodKey(sceneObject.Name.Lexeme, draw.Name.Lexeme, draw.Parameters), out var drawMeta))
             return null;
+        GeneratedCallableMetadata? drawHudMeta = null;
+        if (drawHud is not null &&
+            !TryResolveCallableMetadata(_methods, MethodKey(sceneObject.Name.Lexeme, drawHud.Name.Lexeme, drawHud.Parameters), out drawHudMeta))
+        {
+            return null;
+        }
 
-        return new WebSceneMetadata(sceneObject.Name.Lexeme, ctorMeta, startMeta, updateMeta, drawMeta);
+        return new WebSceneMetadata(sceneObject.Name.Lexeme, ctorMeta, startMeta, updateMeta, drawMeta, drawHudMeta);
     }
 
     private static MethodDecl? FindZeroArgMethod(IReadOnlyList<MethodDecl> methods, string name)

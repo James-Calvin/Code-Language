@@ -628,6 +628,20 @@ sealed class Vm
 
         _hostBindings["engine.input.key_down"] = new HostBinding(2, _ => 0);
         _hostBindings["engine.input.key_down_scene"] = new HostBinding(1, _ => 0);
+        _hostBindings["engine.window.camera_view_left_scene"] = new HostBinding(0, _ => 0.0);
+        _hostBindings["engine.window.camera_view_top_scene"] = new HostBinding(0, _ => 0.0);
+        _hostBindings["engine.window.camera_view_width_scene"] = new HostBinding(0, _ => 640.0);
+        _hostBindings["engine.window.camera_view_height_scene"] = new HostBinding(0, _ => 360.0);
+        _hostBindings["engine.window.camera_view_right_scene"] = new HostBinding(0, _ => 640.0);
+        _hostBindings["engine.window.camera_view_bottom_scene"] = new HostBinding(0, _ => 360.0);
+        _hostBindings["engine.window.camera_safe_left_scene"] = new HostBinding(0, _ => 0.0);
+        _hostBindings["engine.window.camera_safe_top_scene"] = new HostBinding(0, _ => 0.0);
+        _hostBindings["engine.window.camera_safe_width_scene"] = new HostBinding(0, _ => 640.0);
+        _hostBindings["engine.window.camera_safe_height_scene"] = new HostBinding(0, _ => 360.0);
+        _hostBindings["engine.window.camera_safe_right_scene"] = new HostBinding(0, _ => 640.0);
+        _hostBindings["engine.window.camera_safe_bottom_scene"] = new HostBinding(0, _ => 360.0);
+        _hostBindings["engine.window.screen_width_scene"] = new HostBinding(0, _ => 640.0);
+        _hostBindings["engine.window.screen_height_scene"] = new HostBinding(0, _ => 360.0);
 
         _hostBindings["engine.gfx.clear"] = new HostBinding(5, _ => 0);
         _hostBindings["engine.gfx.clear_scene"] = new HostBinding(4, _ => 0);

@@ -21,7 +21,7 @@ This document defines the contract that the current first slice implements and t
 - Primary workload: 2D interactive applications and games
 - Authoring model: scene object
 - Browser presentation: fills the browser window by default
-- Coordinate model: fixed virtual resolution of `640x360`
+- Coordinate model: guaranteed safe area of `640x360`, with hybrid-expanded world framing beyond that safe area when needed
 - Initial rendering/input scope: shapes + keyboard input only
 - Build output: deployable static site folder
 - Default output directory: `dist/`
@@ -37,7 +37,7 @@ Current state:
 - A dedicated web build mode exists: `--build-web <entry.code>`.
 - The default web build output is `dist/`, unless `--out` is provided.
 - The generated app page owns the browser canvas and runtime bootstrap.
-- The current browser-backed V1 slice supports `MainScene`, `start()`, `update()`, `draw()`, full-window presentation, fixed `640x360` scaling, `key_down()`, `clear()`, and `draw_rect()`.
+- The current browser-backed V1 slice supports `MainScene`, `start()`, `update()`, `draw()`, optional `draw_hud()`, full-window presentation, hybrid-expanded framing around a fixed `640x360` safe area, `key_down()`, `clear()`, `draw_rect()`, `camera_view_*()`, `camera_safe_*()`, `screen_width()`, and `screen_height()`.
 - `web-runtime/index.html` still exists as a lower-level harness for loading raw `.bytecode` / `.codelib` files during debugging and bring-up.
 - Legacy window-handle engine host bindings still exist, but they are not the default scene-object workflow.
 
@@ -59,16 +59,21 @@ Lifecycle:
 - The runtime calls `start()` exactly once after scene creation and before the first update.
 - The runtime calls `update()` on a fixed-step simulation loop at 60 updates per second.
 - The runtime calls `draw()` once per presented frame.
+- If present, the runtime calls `draw_hud()` once per presented frame after `draw()`.
 
 Required methods:
 - `start()`
 - `update()`
 - `draw()`
 
+Optional method:
+- `draw_hud()`
+
 Method intent:
 - `start()` is for initialization that depends on the runtime being ready.
 - `update()` is for simulation, state changes, and input-driven gameplay logic.
-- `draw()` is for rendering the current scene state.
+- `draw()` is for rendering the current world/gameplay state.
+- `draw_hud()` is for screen-edge-attached HUD or overlay work that should not move with the expanded world view.
 
 Important implementation note:
 - Object methods now support the same implicit-void authoring style as top-level functions.
@@ -98,7 +103,13 @@ export object MainScene {
 
   function draw() {
     clear(0, 0, 0, 1);
-    draw_rect(this.x, this.y, 24, 24, 1, 1, 1, 1);
+    if this.x > camera_view_left() - 24 and this.x < camera_view_right() then {
+      draw_rect(this.x, this.y, 24, 24, 1, 1, 1, 1);
+    }
+  }
+
+  function draw_hud() {
+    draw_rect(screen_width() - 44, 12, 32, 16, 1, 1, 1, 1);
   }
 }
 ```
@@ -113,18 +124,28 @@ Browser ownership:
 - The runtime, not user code, handles resize and presentation.
 
 Virtual resolution:
-- The logical drawing space is always `640x360`.
-- Scene code reads and writes positions in that coordinate space.
-- Browser resize does not change the logical coordinate system.
+- The guaranteed safe area is always `0,0 -> 640,360`.
+- Scene code can treat that rectangle as the authored gameplay-safe region.
+- Browser resize does not change the safe area.
 
 Scaling:
-- The runtime scales the `640x360` scene to the largest centered rectangle that fits inside the browser viewport.
+- The browser canvas fills the browser viewport edge-to-edge with no letterboxing.
 - Aspect ratio is preserved.
-- Any extra viewport area is letterboxed by the runtime instead of stretching the scene.
+- The visible world expands around the `640x360` safe area instead of stretching or cropping.
+- On wider screens, visible world width grows while visible world height remains `360`.
+- On taller screens, visible world height grows while visible world width remains `640`.
+- The safe area stays centered inside the expanded visible world.
+
+World vs HUD spaces:
+- `draw()` uses world-space coordinates in the expanded visible world rectangle.
+- `draw_hud()` uses screen-space coordinates anchored to the visible browser edges.
+- HUD origin is top-left of the visible screen.
+- HUD size is exposed through `screen_width()` and `screen_height()`.
 
 Loop behavior:
 - `update()` runs at a fixed 60 Hz step.
 - `draw()` runs once per presented frame.
+- `draw_hud()` runs once per presented frame after `draw()` when present.
 - If rendering is slower than updates for a short period, simulation remains fixed-step and presentation may skip frames rather than change game speed.
 
 ## V1 API Surface
@@ -135,12 +156,30 @@ Required V1 surface:
 - `clear(real r, real g, real b, real a)`
 - `draw_rect(real x, real y, real w, real h, real r, real g, real b, real a)`
 - `key_down(integer keycode) -> boolean`
+- `camera_view_left() -> real`
+- `camera_view_top() -> real`
+- `camera_view_width() -> real`
+- `camera_view_height() -> real`
+- `camera_view_right() -> real`
+- `camera_view_bottom() -> real`
+- `camera_safe_left() -> real`
+- `camera_safe_top() -> real`
+- `camera_safe_width() -> real`
+- `camera_safe_height() -> real`
+- `camera_safe_right() -> real`
+- `camera_safe_bottom() -> real`
+- `screen_width() -> real`
+- `screen_height() -> real`
 
 Behavior rules:
-- Rendering coordinates use the `640x360` virtual space.
-- `clear(...)` clears the current frame buffer for the active scene draw.
-- `draw_rect(...)` draws a filled rectangle in virtual coordinates.
+- `clear(...)` clears the full visible browser canvas for the current frame.
+- `draw_rect(...)` draws in world coordinates during `draw()`.
+- `draw_rect(...)` draws in screen-space coordinates during `draw_hud()`.
 - `key_down(...)` returns the current keyboard state without requiring a window handle.
+- `camera_view_*()` exposes the current expanded visible world bounds.
+- `camera_safe_*()` exposes the guaranteed `640x360` safe area bounds.
+- `screen_width()` / `screen_height()` expose the visible HUD/screen-space size.
+- Peek limiting, culling, and gameplay-specific visibility rules remain developer-authored in user code; the runtime only exposes the bounds needed to implement them.
 
 Out of scope for V1:
 - sprite/image loading
@@ -185,9 +224,10 @@ The first implementation milestone is defined by the following conditions:
 - A sample scene-object app builds to `dist/`.
 - Opening `dist/index.html` runs without a manual upload step.
 - The app fills the browser window.
-- Rendering uses the `640x360` logical coordinate system with preserved aspect ratio.
+- Rendering preserves aspect ratio with a centered `640x360` safe area and hybrid-expanded visible world.
 - Keyboard input works inside `update()`.
 - Rectangle rendering works inside `draw()`.
+- HUD anchoring works inside `draw_hud()` using `screen_width()` / `screen_height()`.
 
 Implementation note:
 - Automated coverage exists for bytecode generation, scene metadata extraction, and generated `index.html` contract.

@@ -168,6 +168,19 @@ export class CanvasSceneRuntime {
   constructor(options = {}) {
     this.virtualWidth = Math.max(1, Math.trunc(options.width || 640));
     this.virtualHeight = Math.max(1, Math.trunc(options.height || 360));
+    this.safeLeft = 0;
+    this.safeTop = 0;
+    this.safeWidth = this.virtualWidth;
+    this.safeHeight = this.virtualHeight;
+    this.viewLeft = 0;
+    this.viewTop = 0;
+    this.viewWidth = this.virtualWidth;
+    this.viewHeight = this.virtualHeight;
+    this.viewportWidth = this.virtualWidth;
+    this.viewportHeight = this.virtualHeight;
+    this.worldScale = 1;
+    this.devicePixelRatio = 1;
+    this.drawSpace = "world";
     this.title = typeof options.title === "string" && options.title.length > 0
       ? options.title
       : "Code App";
@@ -205,24 +218,26 @@ export class CanvasSceneRuntime {
     document.documentElement.style.margin = "0";
     document.documentElement.style.width = "100%";
     document.documentElement.style.height = "100%";
+    document.documentElement.style.overflow = "hidden";
 
     root.style.margin = "0";
     root.style.width = "100%";
     root.style.height = "100%";
     root.style.overflow = "hidden";
     root.style.position = "relative";
-    root.style.display = "flex";
-    root.style.alignItems = "center";
-    root.style.justifyContent = "center";
-    root.style.background = "#05070b";
+    root.style.display = "block";
+    root.style.background = "#000000";
 
     const canvas = document.createElement("canvas");
     canvas.width = this.virtualWidth;
     canvas.height = this.virtualHeight;
     canvas.style.display = "block";
-    canvas.style.background = "#000000";
-    canvas.style.boxShadow = "0 0 0 1px rgba(255,255,255,0.06)";
-    canvas.style.imageRendering = "pixelated";
+    canvas.style.position = "absolute";
+    canvas.style.left = "0";
+    canvas.style.top = "0";
+    canvas.style.width = "100%";
+    canvas.style.height = "100%";
+    canvas.style.background = "transparent";
 
     const output = document.createElement("pre");
     output.style.position = "absolute";
@@ -266,18 +281,36 @@ export class CanvasSceneRuntime {
   }
 
   resize() {
-    if (!this.canvas) {
+    if (!this.canvas || !this.ctx) {
       return;
     }
 
     const viewportWidth = Math.max(1, window.innerWidth || document.documentElement.clientWidth || this.virtualWidth);
     const viewportHeight = Math.max(1, window.innerHeight || document.documentElement.clientHeight || this.virtualHeight);
-    const scale = Math.min(viewportWidth / this.virtualWidth, viewportHeight / this.virtualHeight);
-    const displayWidth = Math.max(1, Math.floor(this.virtualWidth * scale));
-    const displayHeight = Math.max(1, Math.floor(this.virtualHeight * scale));
+    const viewportAspect = viewportWidth / viewportHeight;
+    const safeAspect = this.virtualWidth / this.virtualHeight;
 
-    this.canvas.style.width = `${displayWidth}px`;
-    this.canvas.style.height = `${displayHeight}px`;
+    this.viewportWidth = viewportWidth;
+    this.viewportHeight = viewportHeight;
+    this.devicePixelRatio = Math.max(1, window.devicePixelRatio || 1);
+
+    if (viewportAspect >= safeAspect) {
+      this.viewHeight = this.virtualHeight;
+      this.viewWidth = this.viewHeight * viewportAspect;
+    } else {
+      this.viewWidth = this.virtualWidth;
+      this.viewHeight = this.viewWidth / viewportAspect;
+    }
+
+    this.viewLeft = (this.virtualWidth - this.viewWidth) / 2;
+    this.viewTop = (this.virtualHeight - this.viewHeight) / 2;
+    this.worldScale = viewportWidth / this.viewWidth;
+
+    this.canvas.width = Math.max(1, Math.round(viewportWidth * this.devicePixelRatio));
+    this.canvas.height = Math.max(1, Math.round(viewportHeight * this.devicePixelRatio));
+    this.canvas.style.width = `${viewportWidth}px`;
+    this.canvas.style.height = `${viewportHeight}px`;
+    this.applyCurrentTransform();
   }
 
   appendOutput(line) {
@@ -308,12 +341,15 @@ export class CanvasSceneRuntime {
   }
 
   clear(r, g, b, a) {
-    if (!this.ctx) {
+    if (!this.ctx || !this.canvas) {
       return 0;
     }
 
+    this.ctx.save();
+    this.ctx.setTransform(1, 0, 0, 1, 0, 0);
     this.ctx.fillStyle = toCssRgba(r, g, b, a);
-    this.ctx.fillRect(0, 0, this.virtualWidth, this.virtualHeight);
+    this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    this.ctx.restore();
     return 0;
   }
 
@@ -331,6 +367,100 @@ export class CanvasSceneRuntime {
     return this.keysDown.has(Math.trunc(keyCode));
   }
 
+  cameraViewLeft() {
+    return this.viewLeft;
+  }
+
+  cameraViewTop() {
+    return this.viewTop;
+  }
+
+  cameraViewWidth() {
+    return this.viewWidth;
+  }
+
+  cameraViewHeight() {
+    return this.viewHeight;
+  }
+
+  cameraViewRight() {
+    return this.viewLeft + this.viewWidth;
+  }
+
+  cameraViewBottom() {
+    return this.viewTop + this.viewHeight;
+  }
+
+  cameraSafeLeft() {
+    return this.safeLeft;
+  }
+
+  cameraSafeTop() {
+    return this.safeTop;
+  }
+
+  cameraSafeWidth() {
+    return this.safeWidth;
+  }
+
+  cameraSafeHeight() {
+    return this.safeHeight;
+  }
+
+  cameraSafeRight() {
+    return this.safeLeft + this.safeWidth;
+  }
+
+  cameraSafeBottom() {
+    return this.safeTop + this.safeHeight;
+  }
+
+  screenWidth() {
+    return this.viewportWidth;
+  }
+
+  screenHeight() {
+    return this.viewportHeight;
+  }
+
+  setDrawSpace(space) {
+    this.drawSpace = space === "hud" ? "hud" : "world";
+    this.applyCurrentTransform();
+  }
+
+  applyCurrentTransform() {
+    if (!this.ctx) {
+      return;
+    }
+
+    if (this.drawSpace === "hud") {
+      this.applyHudTransform();
+      return;
+    }
+
+    this.applyWorldTransform();
+  }
+
+  applyWorldTransform() {
+    if (!this.ctx) {
+      return;
+    }
+
+    const scale = this.worldScale * this.devicePixelRatio;
+    this.ctx.setTransform(scale, 0, 0, scale, -this.viewLeft * scale, -this.viewTop * scale);
+    this.ctx.imageSmoothingEnabled = false;
+  }
+
+  applyHudTransform() {
+    if (!this.ctx) {
+      return;
+    }
+
+    const scale = this.devicePixelRatio;
+    this.ctx.setTransform(scale, 0, 0, scale, 0, 0);
+    this.ctx.imageSmoothingEnabled = false;
+  }
+
   runScene(vm, sceneInfo) {
     this.vm = vm;
     this.sceneInfo = sceneInfo;
@@ -339,6 +469,7 @@ export class CanvasSceneRuntime {
     vm.run();
 
     this.sceneObject = vm.createObject(sceneInfo.typeName);
+    this.setDrawSpace("world");
     vm.invokeVoid(sceneInfo.constructor.targetIp, sceneInfo.constructor.frameSize, [this.sceneObject]);
     vm.invokeVoid(sceneInfo.start.targetIp, sceneInfo.start.frameSize, [this.sceneObject]);
 
@@ -366,12 +497,19 @@ export class CanvasSceneRuntime {
       this.lastTimestampMs = timestamp;
       this.accumulatorMs += elapsedMs;
 
+      this.setDrawSpace("world");
       while (this.accumulatorMs >= this.stepMs) {
         this.vm.invokeVoid(this.sceneInfo.update.targetIp, this.sceneInfo.update.frameSize, [this.sceneObject]);
         this.accumulatorMs -= this.stepMs;
       }
 
+      this.setDrawSpace("world");
       this.vm.invokeVoid(this.sceneInfo.draw.targetIp, this.sceneInfo.draw.frameSize, [this.sceneObject]);
+      if (this.sceneInfo.drawHud) {
+        this.setDrawSpace("hud");
+        this.vm.invokeVoid(this.sceneInfo.drawHud.targetIp, this.sceneInfo.drawHud.frameSize, [this.sceneObject]);
+      }
+      this.setDrawSpace("world");
       this.frameHandle = requestAnimationFrame(this.tick);
     } catch (error) {
       this.stop();
@@ -472,6 +610,62 @@ export class WebVm {
         }
         return this.sceneHost.keyDown(toNumber(args[0], message => this.throwRuntime(message))) ? 1 : 0;
       }
+    });
+    this.hostBindings.set("engine.window.camera_view_left_scene", {
+      arity: 0,
+      handler: () => this.sceneHost ? this.sceneHost.cameraViewLeft() : 0
+    });
+    this.hostBindings.set("engine.window.camera_view_top_scene", {
+      arity: 0,
+      handler: () => this.sceneHost ? this.sceneHost.cameraViewTop() : 0
+    });
+    this.hostBindings.set("engine.window.camera_view_width_scene", {
+      arity: 0,
+      handler: () => this.sceneHost ? this.sceneHost.cameraViewWidth() : 640
+    });
+    this.hostBindings.set("engine.window.camera_view_height_scene", {
+      arity: 0,
+      handler: () => this.sceneHost ? this.sceneHost.cameraViewHeight() : 360
+    });
+    this.hostBindings.set("engine.window.camera_view_right_scene", {
+      arity: 0,
+      handler: () => this.sceneHost ? this.sceneHost.cameraViewRight() : 640
+    });
+    this.hostBindings.set("engine.window.camera_view_bottom_scene", {
+      arity: 0,
+      handler: () => this.sceneHost ? this.sceneHost.cameraViewBottom() : 360
+    });
+    this.hostBindings.set("engine.window.camera_safe_left_scene", {
+      arity: 0,
+      handler: () => this.sceneHost ? this.sceneHost.cameraSafeLeft() : 0
+    });
+    this.hostBindings.set("engine.window.camera_safe_top_scene", {
+      arity: 0,
+      handler: () => this.sceneHost ? this.sceneHost.cameraSafeTop() : 0
+    });
+    this.hostBindings.set("engine.window.camera_safe_width_scene", {
+      arity: 0,
+      handler: () => this.sceneHost ? this.sceneHost.cameraSafeWidth() : 640
+    });
+    this.hostBindings.set("engine.window.camera_safe_height_scene", {
+      arity: 0,
+      handler: () => this.sceneHost ? this.sceneHost.cameraSafeHeight() : 360
+    });
+    this.hostBindings.set("engine.window.camera_safe_right_scene", {
+      arity: 0,
+      handler: () => this.sceneHost ? this.sceneHost.cameraSafeRight() : 640
+    });
+    this.hostBindings.set("engine.window.camera_safe_bottom_scene", {
+      arity: 0,
+      handler: () => this.sceneHost ? this.sceneHost.cameraSafeBottom() : 360
+    });
+    this.hostBindings.set("engine.window.screen_width_scene", {
+      arity: 0,
+      handler: () => this.sceneHost ? this.sceneHost.screenWidth() : 640
+    });
+    this.hostBindings.set("engine.window.screen_height_scene", {
+      arity: 0,
+      handler: () => this.sceneHost ? this.sceneHost.screenHeight() : 360
     });
     this.hostBindings.set("engine.gfx.clear", {
       arity: 5,

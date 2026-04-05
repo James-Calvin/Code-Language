@@ -220,11 +220,11 @@ Legend:
 | `[x]` | Phase 2 | Manifest parser + validation | Implemented baseline: nearest-manifest discovery, schema v1 validation, target and host capability checks |
 | `[x]` | Phase 2 | Dependency resolver + lockfile | Implemented baseline local resolver + deterministic `code.lock.json` generation (target-scoped) |
 | `[x]` | Phase 2 | Library artifact format (`.codelib`) | Implemented baseline: library manifests emit `.codelib`, resolver validates/prefer artifact paths in `code.lock.json`, CLI can run/disasm `.codelib` |
-| `[x]` | Phase 3 | Web app/runtime V1 contract | Documented in `docs/web-app-v1.md`: scene-object authoring, `start/update/draw` lifecycle, full-window browser runtime, `640x360` virtual resolution, shapes + keyboard scope, and static-site output target |
+| `[x]` | Phase 3 | Web app/runtime V1 contract | Documented in `docs/web-app-v1.md`: scene-object authoring, `start/update/draw` plus optional `draw_hud`, full-window browser runtime, centered `640x360` safe area, hybrid-expanded framing, and static-site output target |
 | `[~]` | Phase 3 | Stdlib as packages | `std.core`, `std.math`, `std.time`, `std.io` packaged and importable |
 | `[x]` | Phase 4 | Web bundle workflow | Implemented first slice: `--build-web` emits a runnable static site folder (`index.html` + `app.bytecode`) instead of relying on the preview harness |
-| `[~]` | Phase 4 | Browser-backed web app runtime | Implemented first slice: generated full-window canvas runtime, `MainScene` lifecycle (`start/update/draw`), fixed-step loop, and `640x360` scaling; expand from shapes + keyboard |
-| `[~]` | Phase 4 | Web engine host bindings (real impl) | Implemented first scene-runtime bindings for `key_down`, `clear`, and `draw_rect`; legacy window-handle web stubs still need real implementations or package-level wrappers |
+| `[~]` | Phase 4 | Browser-backed web app runtime | Implemented current slice: generated full-window canvas runtime, `MainScene` lifecycle (`start/update/draw` plus optional `draw_hud`), fixed-step loop, centered `640x360` safe area, and hybrid-expanded world framing; expand beyond shapes + keyboard |
+| `[~]` | Phase 4 | Web engine host bindings (real impl) | Implemented current scene-runtime bindings for `key_down`, `clear`, `draw_rect`, `camera_view_*`, `camera_safe_*`, and `screen_width` / `screen_height`; legacy window-handle web stubs still need real implementations or package-level wrappers |
 | `[!]` | Phase 4 | Backend-agnostic API contract | Freeze capability-query and fallback semantics so one Code source can target multiple backends predictably |
 | `[~]` | Phase 5 | Engine core package set | `engine.math`, `engine.ecs`, `engine.scene`, `engine.loop` |
 | `[~]` | Phase 5 | Engine platform adapters | `engine.window/input/gfx/audio` host-backed packages for native+web |
@@ -256,8 +256,8 @@ This order gets library system + target model stable before engine work starts.
    - Current state: one command produces a runnable browser folder for a sample app, defaulting to `dist/`.
 
 3. **Browser-backed app runtime**
-   - Implemented first slice: generated app page and browser runtime fill the window, preserve a `640x360` virtual resolution, and own the main loop for a `MainScene`.
-   - Next step: expand the runtime beyond `clear`/`draw_rect`/`key_down` and keep the higher-level engine-facing API off raw window handles.
+   - Implemented current slice: generated app page and browser runtime fill the window, preserve aspect ratio with a centered `640x360` safe area, expand the visible world when needed, support optional `draw_hud`, and own the main loop for a `MainScene`.
+   - Next step: expand the runtime beyond `clear`/`draw_rect`/`key_down`/camera helpers and keep the higher-level engine-facing API off raw window handles.
 
 4. **Engine packages + loop contract**
    - Add importable `engine.window`, `engine.input`, `engine.gfx`, `engine.loop` packages or wrappers aligned to the runtime contract, with scene lifecycle integration.

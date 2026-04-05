@@ -35,6 +35,7 @@ Engine ABI stubs are available as no-ops on web:
 2. Open the generated `dist/index.html` directly, or serve the generated folder from any static host.
 
 The generated web app path is now the main workflow for browser apps.
+- Current generated runtime behavior: full-bleed browser canvas, centered `640x360` safe area, hybrid-expanded world framing, and optional `draw_hud()` for screen-edge HUD work.
 
 ## Harness quick start
 1. Compile a program for web:

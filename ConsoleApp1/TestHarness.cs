@@ -327,14 +327,27 @@ logger.ping();", "ok\n"),
   }
   function draw() {
     clear(0, 0, 0, 1);
-    draw_rect(10, 20, 30, 40, 1, 1, 1, 1);
-    print(""draw"");
+    draw_rect(camera_view_left(), camera_view_top(), 30, 40, 1, 1, 1, 1);
+    print(camera_view_left());
+    print(camera_view_top());
+    print(camera_view_width());
+    print(camera_view_height());
+    print(camera_view_right());
+    print(camera_view_bottom());
+    print(camera_safe_width());
+    print(camera_safe_height());
+  }
+  function draw_hud() {
+    draw_rect(screen_width() - 10, screen_height() - 10, 8, 8, 1, 1, 1, 1);
+    print(screen_width());
+    print(screen_height());
   }
 }
 MainScene scene = new MainScene();
 scene.start();
 scene.update();
-scene.draw();", "start\n0\ndraw\n"),
+scene.draw();
+scene.draw_hud();", "start\n0\n0\n0\n640\n360\n640\n360\n640\n360\n640\n360\n"),
         };
         var interfaceCases = new List<(string Name, string Source, string Expected)>
         {
@@ -1594,7 +1607,13 @@ export function<string> readText() { return ""ok""; }",
 
   function draw() {
     clear(0, 0, 0, 1);
-    draw_rect(this.x, this.y, 24, 24, 1, 1, 1, 1);
+    if this.x > camera_view_left() - 24 and this.x < camera_view_right() then {
+      draw_rect(this.x, this.y, 24, 24, 1, 1, 1, 1);
+    }
+  }
+
+  function draw_hud() {
+    draw_rect(screen_width() - 36, 12, 24, 12, 1, 1, 1, 1);
   }
 }"
                 },
@@ -1610,6 +1629,7 @@ export function<string> readText() { return ""ok""; }",
                 outputs.IndexHtml.Contains("\"typeName\": \"MainScene\"", StringComparison.Ordinal) &&
                 outputs.IndexHtml.Contains("\"virtualWidth\": 640", StringComparison.Ordinal) &&
                 outputs.IndexHtml.Contains("\"virtualHeight\": 360", StringComparison.Ordinal) &&
+                outputs.IndexHtml.Contains("\"drawHud\": {", StringComparison.Ordinal) &&
                 !outputs.IndexHtml.Contains("fileInput", StringComparison.Ordinal) &&
                 !outputs.IndexHtml.Contains("Load a compiled", StringComparison.Ordinal);
 

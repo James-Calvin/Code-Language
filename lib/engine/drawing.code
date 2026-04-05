@@ -1,0 +1,57 @@
+package engine.drawing;
+
+import { Color } from "engine/colors.code";
+
+export function clear_screen(Color color) {
+  clear(color.red, color.green, color.blue, color.alpha);
+}
+
+export function line(real x1, real y1, real x2, real y2, Color color) {
+  draw_line(x1, y1, x2, y2, color.red, color.green, color.blue, color.alpha);
+}
+
+export function rectangle(real x, real y, real width, real height, Color color) {
+  draw_rectangle(x, y, width, height, color.red, color.green, color.blue, color.alpha);
+}
+
+export function rectangle_outline(real x, real y, real width, real height, real line_width, Color color) {
+  draw_rectangle_outline(x, y, width, height, line_width, color.red, color.green, color.blue, color.alpha);
+}
+
+export function circle(real x, real y, real radius, Color color) {
+  draw_circle(x, y, radius, color.red, color.green, color.blue, color.alpha);
+}
+
+export function circle_outline(real x, real y, real radius, real line_width, Color color) {
+  draw_circle_outline(x, y, radius, line_width, color.red, color.green, color.blue, color.alpha);
+}
+
+export function polygon(array<real> points, Color color) {
+  draw_polygon(points, color.red, color.green, color.blue, color.alpha);
+}
+
+export function polygon_outline(array<real> points, real line_width, Color color) {
+  draw_polygon_outline(points, line_width, color.red, color.green, color.blue, color.alpha);
+}
+
+export function text(string value, real x, real y, real size, string horizontal_alignment, string vertical_alignment, Color color) {
+  draw_text(value, x, y, size, horizontal_alignment, vertical_alignment, color.red, color.green, color.blue, color.alpha);
+}
+
+export function image(string source, real x, real y, real width, real height, real alpha) {
+  draw_image(source, x, y, width, height, alpha);
+}
+
+export function sprite(
+  string source,
+  real source_x,
+  real source_y,
+  real source_width,
+  real source_height,
+  real x,
+  real y,
+  real width,
+  real height,
+  real alpha) {
+  draw_sprite(source, source_x, source_y, source_width, source_height, x, y, width, height, alpha);
+}

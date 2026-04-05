@@ -223,11 +223,11 @@ Legend:
 | `[x]` | Phase 3 | Web app/runtime V1 contract | Documented in `docs/web-app-v1.md`: scene-object authoring, `start/update/draw` plus optional `draw_hud`, full-window browser runtime, centered `640x360` safe area, hybrid-expanded framing, and static-site output target |
 | `[~]` | Phase 3 | Stdlib as packages | `std.core`, `std.math`, `std.time`, `standard.input_output` packaged and importable |
 | `[x]` | Phase 4 | Web bundle workflow | Implemented first slice: `--build-web` emits a runnable static site folder (`index.html` + `app.bytecode`) instead of relying on the preview harness |
-| `[~]` | Phase 4 | Browser-backed web app runtime | Implemented current slice: generated full-window canvas runtime, `MainScene` lifecycle (`start/update/draw` plus optional `draw_hud`), fixed-step loop, centered `640x360` safe area, and hybrid-expanded world framing; expand beyond primitive drawing + keyboard |
-| `[~]` | Phase 4 | Web engine host bindings (real impl) | Implemented current scene-runtime bindings for `key_down`, `clear`, `draw_rectangle`, `draw_line`, `draw_text`, `camera_view_*`, `camera_safe_*`, and `screen_width` / `screen_height`; legacy window-handle web stubs still need real implementations or package-level wrappers |
+| `[~]` | Phase 4 | Browser-backed web app runtime | Implemented current slice: generated full-window canvas runtime, `MainScene` lifecycle (`start/update/draw` plus optional `draw_hud`), fixed-step loop, centered `640x360` safe area, hybrid-expanded world framing, copied `assets/` output, and browser-backed rectangles/outlines/lines/circles/polygons/text/images/sprites; expand richer input/audio/content handling |
+| `[~]` | Phase 4 | Web engine host bindings (real impl) | Implemented current scene-runtime bindings for `key_down`, `clear`, `draw_rectangle`, `draw_rectangle_outline`, `draw_line`, `draw_circle`, `draw_circle_outline`, `draw_polygon`, `draw_polygon_outline`, `draw_text`, `draw_image`, `draw_sprite`, `camera_view_*`, `camera_safe_*`, and `screen_width` / `screen_height`; legacy window-handle web stubs still need real implementations or package-level wrappers |
 | `[!]` | Phase 4 | Backend-agnostic API contract | Freeze capability-query and fallback semantics so one Code source can target multiple backends predictably |
 | `[~]` | Phase 5 | Engine core package set | `engine.math`, `engine.ecs`, `engine.scene`, `engine.loop` |
-| `[~]` | Phase 5 | Engine platform adapters | `engine.window/input/gfx/audio` host-backed packages for native+web |
+| `[~]` | Phase 5 | Engine platform adapters | First wrapper layer exists in `lib/engine/` (`engine.colors`, `engine.drawing`, `engine.input`, `engine.view`); still need fuller host-backed package taxonomy for native+web, plus audio |
 | `[~]` | Phase 5 | `engine.gpu` ABI v1 | Add GPU resource/pipeline/dispatch ABI for compute-heavy and graphics-heavy workloads |
 | `[~]` | Phase 5 | WebGPU backend | Implement `engine.gpu` on `vm-web` with explicit fallback policy when WebGPU is unavailable |
 | `[~]` | Phase 5 | Native GPU backend parity | Implement the same `engine.gpu` ABI on `vm-native` backend(s) for parity and performance |
@@ -256,10 +256,11 @@ This order gets library system + target model stable before engine work starts.
    - Current state: one command produces a runnable browser folder for a sample app, defaulting to `dist/`.
 
 3. **Browser-backed app runtime**
-   - Implemented current slice: generated app page and browser runtime fill the window, preserve aspect ratio with a centered `640x360` safe area, expand the visible world when needed, support optional `draw_hud`, and own the main loop for a `MainScene`.
-   - Next step: expand the runtime beyond `clear`/`draw_rectangle`/`draw_line`/`draw_text`/`key_down`/camera helpers and keep the higher-level engine-facing API off raw window handles.
+   - Implemented current slice: generated app page and browser runtime fill the window, preserve aspect ratio with a centered `640x360` safe area, expand the visible world when needed, support optional `draw_hud`, own the main loop for a `MainScene`, and expose rectangles/outlines/lines/circles/polygons/text/images/sprites.
+   - Next step: expand richer input/audio/content handling while keeping the higher-level engine-facing API off raw window handles.
 
 4. **Engine packages + loop contract**
-   - Add importable `engine.window`, `engine.input`, `engine.gfx`, `engine.loop` packages or wrappers aligned to the runtime contract, with scene lifecycle integration.
-   - Exit criteria: the runtime contract is reflected in package-level APIs rather than only raw host ABI symbols.
+   - Implemented first slice: importable wrapper modules now exist for colors, drawing, input, and view queries under `lib/engine/`.
+   - Next step: grow that wrapper layer into broader `engine.window`, `engine.input`, `engine.gfx`, and `engine.loop` package surfaces with scene lifecycle integration.
+   - Exit criteria: the runtime contract is reflected in engine-facing modules rather than only raw host ABI symbols.
 

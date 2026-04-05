@@ -386,7 +386,14 @@ logger.ping();", "ok\n"),
   function draw() {
     clear(0, 0, 0, 1);
     draw_rectangle(camera_view_left(), camera_view_top(), 30, 40, 1, 1, 1, 1);
+    draw_rectangle_outline(camera_view_left() + 4, camera_view_top() + 4, 20, 30, 2, 1, 1, 1, 1);
+    draw_circle(camera_safe_left() + 20, camera_safe_top() + 20, 10, 1, 1, 1, 1);
+    draw_circle_outline(camera_safe_left() + 20, camera_safe_top() + 20, 16, 2, 1, 1, 1, 1);
+    draw_polygon({0, 0, 10, 0, 5, 10}, 1, 1, 1, 1);
+    draw_polygon_outline({0, 0, 10, 0, 5, 10}, 2, 1, 1, 1, 1);
     draw_line(camera_safe_left(), camera_safe_top(), camera_safe_right(), camera_safe_bottom(), 1, 1, 1, 1);
+    draw_image(""assets/example.svg"", 0, 0, 16, 16, 1);
+    draw_sprite(""assets/example.svg"", 0, 0, 8, 8, 16, 16, 8, 8, 1);
     print(camera_view_left());
     print(camera_view_top());
     print(camera_view_width());
@@ -538,6 +545,30 @@ export function<integer> sub(integer a, integer b) { return a - b; }",
                 },
                 "main.code",
                 "12\n"
+            ),
+            (
+                "module-engine-wrapper-layer",
+                new Dictionary<string, string>
+                {
+                    ["main.code"] =
+@"import { rgb } from ""engine/colors.code"";
+import { circle, clear_screen, image, line, polygon, rectangle, sprite, text } from ""engine/drawing.code"";
+import { key_is_down } from ""engine/input.code"";
+import { hud_width } from ""engine/view.code"";
+clear_screen(rgb(0, 0, 0));
+rectangle(10, 10, 12, 14, rgb(1, 1, 1));
+line(0, 0, 10, 10, rgb(1, 1, 1));
+circle(20, 20, 8, rgb(1, 1, 1));
+polygon({0, 0, 12, 0, 6, 12}, rgb(1, 1, 1));
+image(""assets/test.svg"", 0, 0, 16, 16, 1);
+sprite(""assets/test.svg"", 0, 0, 8, 8, 20, 20, 8, 8, 1);
+text(""ok"", hud_width() - 10, 10, 12, ""right"", ""top"", rgb(1, 1, 1));
+print(hud_width());
+print(key_is_down(37));",
+                    ["assets/test.svg"] = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\"></svg>",
+                },
+                "main.code",
+                "640\n0\n"
             ),
             (
                 "module-import-object-interface",
@@ -1645,8 +1676,15 @@ export function<string> readText() { return ""ok""; }",
             var outputs = BuildWebApp(
                 new Dictionary<string, string>
                 {
+                    ["assets/code-sheet.svg"] =
+"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"64\" height=\"32\"><rect width=\"32\" height=\"32\" fill=\"#0b1020\"/><rect x=\"32\" width=\"32\" height=\"32\" fill=\"#1d4ed8\"/></svg>",
                     ["main.code"] =
-@"export object MainScene {
+@"import { rgb } from ""engine/colors.code"";
+import { circle, clear_screen, image, line, polygon, rectangle, sprite, text } from ""engine/drawing.code"";
+import { key_is_down } from ""engine/input.code"";
+import { hud_width, safe_bottom, safe_left, safe_right, safe_top, view_left, view_right } from ""engine/view.code"";
+
+export object MainScene {
   integer x;
   integer y;
   integer speed;
@@ -1661,23 +1699,27 @@ export function<string> readText() { return ""ok""; }",
   }
 
   function update() {
-    if key_down(37) then this.x -= this.speed;
-    if key_down(39) then this.x += this.speed;
-    if key_down(38) then this.y -= this.speed;
-    if key_down(40) then this.y += this.speed;
+    if key_is_down(37) then this.x -= this.speed;
+    if key_is_down(39) then this.x += this.speed;
+    if key_is_down(38) then this.y -= this.speed;
+    if key_is_down(40) then this.y += this.speed;
   }
 
   function draw() {
-    clear(0, 0, 0, 1);
-    draw_line(camera_safe_left(), camera_safe_top(), camera_safe_right(), camera_safe_bottom(), 1, 1, 1, 1);
-    if this.x > camera_view_left() - 24 and this.x < camera_view_right() then {
-      draw_rectangle(this.x, this.y, 24, 24, 1, 1, 1, 1);
+    clear_screen(rgb(0, 0, 0));
+    line(safe_left(), safe_top(), safe_right(), safe_bottom(), rgb(1, 1, 1));
+    polygon({300, 80, 340, 92, 352, 120, 304, 124, 284, 100}, rgb(1, 1, 1));
+    circle(124, 84, 16, rgb(1, 1, 1));
+    image(""assets/code-sheet.svg"", 24, 220, 64, 32, 1);
+    sprite(""assets/code-sheet.svg"", 32, 0, 32, 32, 104, 210, 64, 64, 1);
+    if this.x > view_left() - 24 and this.x < view_right() then {
+      rectangle(this.x, this.y, 24, 24, rgb(1, 1, 1));
     }
   }
 
   function draw_hud() {
-    draw_text(""Code"", 16, 16, 18, ""left"", ""top"", 1, 1, 1, 1);
-    draw_text(""Arrow keys move"", screen_width() - 16, 16, 16, ""right"", ""top"", 1, 1, 1, 1);
+    text(""Code"", 16, 16, 18, ""left"", ""top"", rgb(1, 1, 1));
+    text(""Arrow keys move"", hud_width() - 16, 16, 16, ""right"", ""top"", rgb(1, 1, 1));
   }
 }"
                 },
@@ -1688,6 +1730,10 @@ export function<string> readText() { return ""ok""; }",
                 outputs.IndexHtmlExists &&
                 outputs.BytecodeExists &&
                 outputs.BytecodeLength > 0 &&
+                outputs.OutputFiles.Any(path => string.Equals(
+                    path.Replace('\\', '/'),
+                    "assets/code-sheet.svg",
+                    StringComparison.OrdinalIgnoreCase)) &&
                 outputs.IndexHtml.Contains("CanvasSceneRuntime", StringComparison.Ordinal) &&
                 outputs.IndexHtml.Contains("APP_METADATA", StringComparison.Ordinal) &&
                 outputs.IndexHtml.Contains("\"typeName\": \"MainScene\"", StringComparison.Ordinal) &&
@@ -2184,14 +2230,7 @@ print(sum);";
         Directory.CreateDirectory(tempRoot);
         try
         {
-            foreach (var pair in files)
-            {
-                string fullPath = Path.Combine(tempRoot, pair.Key);
-                string? dir = Path.GetDirectoryName(fullPath);
-                if (!string.IsNullOrEmpty(dir))
-                    Directory.CreateDirectory(dir);
-                File.WriteAllText(fullPath, pair.Value);
-            }
+            PopulateWorkspace(tempRoot, files);
 
             string entryPath = Path.Combine(tempRoot, entryRelativePath);
             var options = new Compiler.ModuleCompileOptions { Target = target };
@@ -2217,14 +2256,7 @@ print(sum);";
         Directory.CreateDirectory(tempRoot);
         try
         {
-            foreach (var pair in files)
-            {
-                string fullPath = Path.Combine(tempRoot, pair.Key);
-                string? dir = Path.GetDirectoryName(fullPath);
-                if (!string.IsNullOrEmpty(dir))
-                    Directory.CreateDirectory(dir);
-                File.WriteAllText(fullPath, pair.Value);
-            }
+            PopulateWorkspace(tempRoot, files);
 
             var traceLines = new List<string>();
             string entryPath = Path.Combine(tempRoot, entryRelativePath);
@@ -2257,14 +2289,7 @@ print(sum);";
         Directory.CreateDirectory(tempRoot);
         try
         {
-            foreach (var pair in files)
-            {
-                string fullPath = Path.Combine(tempRoot, pair.Key);
-                string? dir = Path.GetDirectoryName(fullPath);
-                if (!string.IsNullOrEmpty(dir))
-                    Directory.CreateDirectory(dir);
-                File.WriteAllText(fullPath, pair.Value);
-            }
+            PopulateWorkspace(tempRoot, files);
 
             string entryPath = Path.Combine(tempRoot, entryRelativePath);
             var options = new Compiler.ModuleCompileOptions { Target = target };
@@ -2292,7 +2317,8 @@ print(sum);";
         bool IndexHtmlExists,
         bool BytecodeExists,
         int BytecodeLength,
-        string IndexHtml);
+        string IndexHtml,
+        IReadOnlyList<string> OutputFiles);
 
     private static ArtifactOutputs CompileModulesAndReadArtifact(
         IReadOnlyDictionary<string, string> files,
@@ -2303,14 +2329,7 @@ print(sum);";
         Directory.CreateDirectory(tempRoot);
         try
         {
-            foreach (var pair in files)
-            {
-                string fullPath = Path.Combine(tempRoot, pair.Key);
-                string? dir = Path.GetDirectoryName(fullPath);
-                if (!string.IsNullOrEmpty(dir))
-                    Directory.CreateDirectory(dir);
-                File.WriteAllText(fullPath, pair.Value);
-            }
+            PopulateWorkspace(tempRoot, files);
 
             string entryPath = Path.Combine(tempRoot, entryRelativePath);
             var options = new Compiler.ModuleCompileOptions { Target = target };
@@ -2348,14 +2367,7 @@ print(sum);";
         Directory.CreateDirectory(tempRoot);
         try
         {
-            foreach (var pair in files)
-            {
-                string fullPath = Path.Combine(tempRoot, pair.Key);
-                string? dir = Path.GetDirectoryName(fullPath);
-                if (!string.IsNullOrEmpty(dir))
-                    Directory.CreateDirectory(dir);
-                File.WriteAllText(fullPath, pair.Value);
-            }
+            PopulateWorkspace(tempRoot, files);
 
             string entryPath = Path.Combine(tempRoot, entryRelativePath);
             string? resolvedOutputDirectory = string.IsNullOrWhiteSpace(outputDirectory)
@@ -2367,6 +2379,9 @@ print(sum);";
             bool bytecodeExists = File.Exists(result.BytecodePath);
             string indexHtml = indexHtmlExists ? File.ReadAllText(result.IndexHtmlPath) : string.Empty;
             int bytecodeLength = bytecodeExists ? File.ReadAllBytes(result.BytecodePath).Length : 0;
+            var outputFiles = Directory.GetFiles(result.OutputDirectory, "*", SearchOption.AllDirectories)
+                .Select(path => Path.GetRelativePath(result.OutputDirectory, path))
+                .ToList();
 
             return new WebBuildOutputs(
                 result.OutputDirectory,
@@ -2375,7 +2390,8 @@ print(sum);";
                 indexHtmlExists,
                 bytecodeExists,
                 bytecodeLength,
-                indexHtml);
+                indexHtml,
+                outputFiles);
         }
         finally
         {
@@ -2447,14 +2463,7 @@ print(sum);";
         Directory.CreateDirectory(tempRoot);
         try
         {
-            foreach (var pair in files)
-            {
-                string fullPath = Path.Combine(tempRoot, pair.Key);
-                string? dir = Path.GetDirectoryName(fullPath);
-                if (!string.IsNullOrEmpty(dir))
-                    Directory.CreateDirectory(dir);
-                File.WriteAllText(fullPath, pair.Value);
-            }
+            PopulateWorkspace(tempRoot, files);
 
             string entryPath = Path.Combine(tempRoot, entryRelativePath);
             try
@@ -2473,6 +2482,38 @@ print(sum);";
         {
             try { Directory.Delete(tempRoot, recursive: true); }
             catch { }
+        }
+    }
+
+    private static void PopulateWorkspace(string tempRoot, IReadOnlyDictionary<string, string> files)
+    {
+        CopyBundledLib(tempRoot);
+
+        foreach (var pair in files)
+        {
+            string fullPath = Path.Combine(tempRoot, pair.Key);
+            string? dir = Path.GetDirectoryName(fullPath);
+            if (!string.IsNullOrEmpty(dir))
+                Directory.CreateDirectory(dir);
+            File.WriteAllText(fullPath, pair.Value);
+        }
+    }
+
+    private static void CopyBundledLib(string tempRoot)
+    {
+        string bundledLibRoot = Path.Combine(Directory.GetCurrentDirectory(), "lib");
+        if (!Directory.Exists(bundledLibRoot))
+            return;
+
+        string destinationRoot = Path.Combine(tempRoot, "lib");
+        foreach (var sourceFile in Directory.GetFiles(bundledLibRoot, "*", SearchOption.AllDirectories))
+        {
+            string relativePath = Path.GetRelativePath(bundledLibRoot, sourceFile);
+            string destinationPath = Path.Combine(destinationRoot, relativePath);
+            string? destinationDir = Path.GetDirectoryName(destinationPath);
+            if (!string.IsNullOrEmpty(destinationDir))
+                Directory.CreateDirectory(destinationDir);
+            File.Copy(sourceFile, destinationPath, overwrite: true);
         }
     }
 

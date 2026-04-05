@@ -31,8 +31,15 @@ Engine ABI stubs are available as no-ops on web:
 
 Current generated scene-runtime bindings also support:
 - `engine.gfx.draw_rectangle_scene`
+- `engine.gfx.draw_rectangle_outline_scene`
 - `engine.gfx.draw_line_scene`
+- `engine.gfx.draw_circle_scene`
+- `engine.gfx.draw_circle_outline_scene`
+- `engine.gfx.draw_polygon_scene`
+- `engine.gfx.draw_polygon_outline_scene`
 - `engine.gfx.draw_text_scene`
+- `engine.gfx.draw_image_scene`
+- `engine.gfx.draw_sprite_scene`
 - `engine.window.camera_view_*_scene`
 - `engine.window.camera_safe_*_scene`
 - `engine.window.screen_width_scene`
@@ -47,7 +54,8 @@ Compatibility note:
 2. Open the generated `dist/index.html` directly, or serve the generated folder from any static host.
 
 The generated web app path is now the main workflow for browser apps.
-- Current generated runtime behavior: full-bleed browser canvas, centered `640x360` safe area, hybrid-expanded world framing, optional `draw_hud()` for screen-edge HUD work, and scene primitives for `draw_rectangle()`, `draw_line()`, and `draw_text()`.
+- Current generated runtime behavior: full-bleed browser canvas, centered `640x360` safe area, hybrid-expanded world framing, optional `draw_hud()` for screen-edge HUD work, scene primitives for rectangles, outlines, lines, circles, polygons, text, images, and sprites, and copied `assets/` content in the generated site output when present.
+- The repo also ships a first wrapper layer in `lib/engine/` so scene apps can import `engine.colors`, `engine.drawing`, `engine.input`, and `engine.view` instead of relying on the raw helper surface.
 
 ## Harness quick start
 1. Compile a program for web:

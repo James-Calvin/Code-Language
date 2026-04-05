@@ -1,3 +1,8 @@
+import { rgb, rgba } from "engine/colors.code";
+import { circle, circle_outline, clear_screen, image, line, polygon, polygon_outline, rectangle, rectangle_outline, sprite, text } from "engine/drawing.code";
+import { key_is_down } from "engine/input.code";
+import { hud_width, safe_bottom, safe_left, safe_right, safe_top, view_left, view_right } from "engine/view.code";
+
 export object MainScene {
   integer x;
   integer y;
@@ -13,22 +18,30 @@ export object MainScene {
   }
 
   function update() {
-    if key_down(37) then this.x -= this.speed;
-    if key_down(39) then this.x += this.speed;
-    if key_down(38) then this.y -= this.speed;
-    if key_down(40) then this.y += this.speed;
+    if key_is_down(37) then this.x -= this.speed;
+    if key_is_down(39) then this.x += this.speed;
+    if key_is_down(38) then this.y -= this.speed;
+    if key_is_down(40) then this.y += this.speed;
   }
 
   function draw() {
-    clear(0, 0, 0, 1);
-    draw_line(camera_safe_left(), camera_safe_top(), camera_safe_right(), camera_safe_bottom(), 1, 1, 1, 1);
-    if this.x > camera_view_left() - 24 and this.x < camera_view_right() then {
-      draw_rectangle(this.x, this.y, 24, 24, 1, 1, 1, 1);
+    clear_screen(rgb(0, 0, 0));
+    line(safe_left(), safe_top(), safe_right(), safe_bottom(), rgba(1, 1, 1, 1 / 3));
+    polygon({300, 80, 340, 92, 352, 120, 304, 124, 284, 100}, rgba(0, 1 / 2, 1, 1 / 3));
+    polygon_outline({300, 80, 340, 92, 352, 120, 304, 124, 284, 100}, 2, rgb(1, 1, 1));
+    circle(124, 84, 16, rgba(1, 1 / 2, 1 / 4, 1 / 2));
+    circle_outline(124, 84, 24, 2, rgb(1, 1, 1));
+    image("assets/code-sheet.svg", 24, 220, 64, 32, 1);
+    sprite("assets/code-sheet.svg", 32, 0, 32, 32, 104, 210, 64, 64, 1);
+
+    if this.x > view_left() - 24 and this.x < view_right() then {
+      rectangle(this.x, this.y, 24, 24, rgb(1, 1, 1));
+      rectangle_outline(this.x - 4, this.y - 4, 32, 32, 2, rgba(1 / 4, 1 / 2, 1, 2 / 3));
     }
   }
 
   function draw_hud() {
-    draw_text("Code", 16, 16, 18, "left", "top", 1, 1, 1, 1);
-    draw_text("Arrow keys move", screen_width() - 16, 16, 16, "right", "top", 1, 1, 1, 1);
+    text("Code", 16, 16, 18, "left", "top", rgb(1, 1, 1));
+    text("Arrow keys move", hud_width() - 16, 16, 16, "right", "top", rgb(1, 1, 1));
   }
 }

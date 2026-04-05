@@ -98,6 +98,7 @@ Version: 0.9 (2026-02-25)
   - print/time: `standard.input_output.print`, `std.time.*`
   - native-only APIs: `standard.input_output.read_line`, `std.time.sleep_ms`
   - engine stubs: `engine.window.*`, `engine.input.*`, `engine.gfx.*`
+  - generated web-app scene runtime: `engine.input.key_down_scene`, `engine.window.camera_view_*_scene`, `engine.window.camera_safe_*_scene`, `engine.window.screen_width_scene`, `engine.window.screen_height_scene`, `engine.gfx.clear_scene`, `engine.gfx.draw_rectangle_scene`, `engine.gfx.draw_rectangle_outline_scene`, `engine.gfx.draw_line_scene`, `engine.gfx.draw_circle_scene`, `engine.gfx.draw_circle_outline_scene`, `engine.gfx.draw_polygon_scene`, `engine.gfx.draw_polygon_outline_scene`, `engine.gfx.draw_text_scene`, `engine.gfx.draw_image_scene`, `engine.gfx.draw_sprite_scene`
 - Runtime hosts still accept legacy migration aliases such as `std.io.*` and scene `draw_rect`-era symbols so previously compiled artifacts continue to run during the rename window.
 - Runtime host mode (`vm-native`/`vm-web`) selects the host binding table used by `HOST_CALL`; missing symbol/arity mismatches raise `HostBindingError`.
 - Native-only symbols are expected to raise target-specific `HostBindingError` diagnostics when executed on `vm-web`.

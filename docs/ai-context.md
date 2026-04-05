@@ -9,7 +9,7 @@ Read this first. Update it whenever semantics or process change.
 - Current web JS runtime is a bootstrap/prototyping runtime; it does not block a future WebGPU or WASM-hosted VM path.
 - Capability query + explicit fallback policy is a required design constraint for predictable cross-target behavior.
 - Near-term product target: write Code source, build once, and get a deployable website.
-- Default web runtime target: full-window browser app, centered `640x360` safe area with hybrid-expanded world framing, scene-object authoring, separate HUD space, primitive drawing, and keyboard input for V1.
+- Default web runtime target: full-window browser app, centered `640x360` safe area with hybrid-expanded world framing, scene-object authoring, separate HUD space, a first wrapper layer in `lib/engine/`, and browser-backed drawing/image-sprite/keyboard support for V1.
 
 ## Current Capability Snapshot
 - Types: integer/whole/real, boolean, string, array<T> (literals `{...}`, `new array<T>(n)`, `.length`, indexing, mutation), optional<T> (`none`, `.hasValue`, `.value`, `.or(fallback)`), constants, typed/void functions, object types.
@@ -21,8 +21,9 @@ Read this first. Update it whenever semantics or process change.
 - Time intrinsics: `unix_ms()`, `unix_us()`, `mono_ns()`, `mono_ticks()`, `mono_ticks_per_second()`, plus `sleep_ms(integer)` (native-only).
 - IO intrinsic: `read_line() -> string` (native-only).
 - Host ABI baseline: compiler lowers print/time/native-only/engine intrinsic calls to `HOST_CALL` symbols; capability inference includes lowered host features (`standard.input_output.read_line`, `std.time.sleep_ms`, `engine.window/input/gfx`); VM resolves via native/web host binding tables and throws target-aware `HostBindingError` on unsupported host calls.
-- Engine ABI status: legacy window-handle calls (`window_create`, `window_should_close`, `window_present`, `input_key_down`, `gfx_clear`, `gfx_draw_rect`) remain no-op stubs on native/web hosts, while the scene-runtime intrinsics `key_down`, `clear`, `draw_rectangle`, `draw_line`, `draw_text`, `camera_view_*`, `camera_safe_*`, `screen_width`, and `screen_height` now have browser-backed implementations for `vm-web`.
-- Web app/runtime slice: `--build-web` emits a static site folder (`index.html` + `app.bytecode`) with a generated full-window browser runtime, centered `640x360` safe area, hybrid-expanded visible world, `MainScene` metadata, and `start/update/draw` plus optional `draw_hud` driving the JS VM.
+- Engine ABI status: legacy window-handle calls (`window_create`, `window_should_close`, `window_present`, `input_key_down`, `gfx_clear`, `gfx_draw_rect`) remain no-op stubs on native/web hosts, while the scene-runtime intrinsics `key_down`, `clear`, `draw_rectangle`, `draw_rectangle_outline`, `draw_line`, `draw_circle`, `draw_circle_outline`, `draw_polygon`, `draw_polygon_outline`, `draw_text`, `draw_image`, `draw_sprite`, `camera_view_*`, `camera_safe_*`, `screen_width`, and `screen_height` now have browser-backed implementations for `vm-web`.
+- Web app/runtime slice: `--build-web` emits a static site folder (`index.html` + `app.bytecode`, plus copied `assets/` content when present) with a generated full-window browser runtime, centered `640x360` safe area, hybrid-expanded visible world, `MainScene` metadata, and `start/update/draw` plus optional `draw_hud` driving the JS VM.
+- First engine wrapper layer: root `lib/engine/` currently provides `engine.colors`, `engine.drawing`, `engine.input`, and `engine.view` modules over the raw scene-runtime helpers.
 - Web harness: `web-runtime/` still contains a lower-level JavaScript bytecode runner + browser host binding table for raw `.bytecode` / `.codelib` loading; it is preview/bootstrap tooling, not the primary shipping workflow.
 - Web app/runtime contract: `docs/web-app-v1.md` freezes the first implementation target around a scene object with `start/update/draw`, optional `draw_hud`, full-window browser runtime ownership, centered `640x360` safe area, hybrid-expanded framing, and static-site output.
 - Errors: `panic <expr>;` raises `UserError` with line/col + call stack (from bytecode debug map).
@@ -40,7 +41,7 @@ Read this first. Update it whenever semantics or process change.
 - Module namespaces and stdlib versioning/layout.
 - Typed array element enforcement, constant pool, formatter/linter, REPL.
 - Typed error values / `fallible<T>` semantics wired to VM errors.
-- Engine web runtime maturation: expand the generated web app/runtime slice beyond `MainScene` + primitive drawing/keyboard, add engine package wrappers aligned to the V1 runtime contract, and replace the remaining raw window-handle `engine.window`/`engine.input`/`engine.gfx` stubs with real browser-backed behavior or wrappers.
+- Engine web runtime maturation: broaden the current `lib/engine/` wrapper layer beyond colors/drawing/input/view, add richer input/audio/content handling, and replace the remaining raw window-handle `engine.window`/`engine.input`/`engine.gfx` stubs with real browser-backed behavior or wrappers.
 - GPU roadmap: `engine.gpu` ABI v1 + WebGPU backend (`vm-web`) + native GPU backend parity (`vm-native`).
 - Capability query/fallback APIs for deterministic backend negotiation.
 
@@ -51,6 +52,7 @@ Read this first. Update it whenever semantics or process change.
 - Platform/package plan: `docs/platform-roadmap.md`
 - Web app/runtime V1 contract: `docs/web-app-v1.md`
 - Browser harness: `web-runtime/index.html`, `web-runtime/code-vm-web.js`
+- Engine wrappers: `lib/engine/*.code`
 - Examples: `ConsoleApp1/examples/*.code`
 - README: build/run quickstart
 
@@ -62,6 +64,7 @@ Read this first. Update it whenever semantics or process change.
 - Prefer fully spelled-out user-facing names; avoid arbitrary abbreviations unless the term is a widely accepted domain term such as `hud`.
 
 ## Change Log
+- 2026-04-05: Expanded the browser runtime with rectangle outlines, circles, polygons, image/sprite drawing, copied `assets/` output for `--build-web`, and a first higher-level wrapper layer in `lib/engine/` (`engine.colors`, `engine.drawing`, `engine.input`, `engine.view`); added tests and updated the sample scene.
 - 2026-04-05: Switched the browser runtime to full-bleed hybrid expansion around a `640x360` safe area, added optional `draw_hud()`, exposed `camera_view_*` / `camera_safe_*` / `screen_width` / `screen_height`, and updated tests/docs/example for the new framing model.
 - 2026-04-05: Added the readability naming pass and next primitive layer: canonical `draw_rectangle`, compatibility aliases for legacy `draw_rect` / `std.io.*`, canonical `standard.input_output.*`, compound assignment on variables/fields/array elements, and browser-backed `draw_line` / `draw_text`; updated tests/docs/examples in the same change.
 - 2026-04-05: Implemented the first web app/runtime slice: `--build-web`, generated `index.html` + `app.bytecode`, `MainScene` scene metadata extraction, browser-backed full-window scene runtime (`start/update/draw`), and scene intrinsics (`key_down`, `clear`, `draw_rectangle`); added tests and `ConsoleApp1/examples/web_scene.code`.

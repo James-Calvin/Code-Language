@@ -1,0 +1,23 @@
+package engine.colors;
+
+export object Color {
+  real red;
+  real green;
+  real blue;
+  real alpha;
+
+  constructor(real red, real green, real blue, real alpha) {
+    this.red = red;
+    this.green = green;
+    this.blue = blue;
+    this.alpha = alpha;
+  }
+}
+
+export function<Color> rgb(real red, real green, real blue) {
+  return new Color(red, green, blue, 1);
+}
+
+export function<Color> rgba(real red, real green, real blue, real alpha) {
+  return new Color(red, green, blue, alpha);
+}

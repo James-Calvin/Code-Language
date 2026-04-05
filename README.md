@@ -21,7 +21,8 @@ The repo contains:
 - File modules: `export` + imports (`import Name [as Alias] from "path";`, `import { A, B as C } from "path";`) with recursive linking and `lib/` search
 - Package manifest + lockfile baseline: nearest `code.package.json` is parsed/validated during module compile; local dependency graph resolves and `code.lock.json` is generated
 - Host ABI baseline: compiler emits `HOST_CALL` for `print`, time intrinsics, native-only APIs (`standard.input_output.read_line`, `std.time.sleep_ms`), and engine stubs (`engine.window/*`, `engine.input/*`, `engine.gfx/*`)
-- Web app build/runtime V1 slice: `--build-web` emits a runnable static site folder with `index.html`, `app.bytecode`, a full-bleed canvas runtime, `MainScene` scene-object lifecycle (`start/update/draw` plus optional `draw_hud()`), guaranteed `640x360` safe area, hybrid-expand world framing, HUD screen-space, and browser-backed `key_down()`/`clear()`/`draw_rectangle()`/`draw_line()`/`draw_text()`
+- Web app build/runtime V1 slice: `--build-web` emits a runnable static site folder with `index.html`, `app.bytecode`, copied `assets/` content when present, a full-bleed canvas runtime, `MainScene` scene-object lifecycle (`start/update/draw` plus optional `draw_hud()`), guaranteed `640x360` safe area, hybrid-expand world framing, HUD screen-space, and browser-backed `key_down()`/`clear()`/`draw_rectangle()`/`draw_rectangle_outline()`/`draw_line()`/`draw_circle()`/`draw_circle_outline()`/`draw_polygon()`/`draw_polygon_outline()`/`draw_text()`/`draw_image()`/`draw_sprite()`
+- First higher-level engine wrapper layer: root `lib/engine/` modules now provide `engine.colors`, `engine.drawing`, `engine.input`, and `engine.view` wrappers over the raw scene-runtime helpers
 - Browser runtime harness (`web-runtime/`): lower-level JavaScript VM harness for loading raw `.bytecode` / `.codelib` files during bring-up and debugging
 - Runtime diagnostics: bytecode debug map -> line/column stack traces
 - Error objects: `panic <expr>;` emits a `UserError` with call stack
@@ -30,7 +31,8 @@ See [the language spec](docs/code-language-spec.md), [the feature roadmap](docs/
 
 ## Current State vs Target Workflow
 - Current state: scene-object web apps can now be built with `--build-web` into a runnable static site folder, defaulting to `dist/`.
-- Current state: the generated browser runtime owns the canvas, fills the window edge-to-edge, preserves aspect ratio with a guaranteed `640x360` safe area, expands the visible world on wider/taller screens, and supports `MainScene.start()`, `update()`, `draw()`, optional `draw_hud()`, `key_down()`, `clear()`, `draw_rectangle()`, `draw_line()`, `draw_text()`, `camera_view_*()`, `camera_safe_*()`, `screen_width()`, and `screen_height()`.
+- Current state: the generated browser runtime owns the canvas, fills the window edge-to-edge, preserves aspect ratio with a guaranteed `640x360` safe area, expands the visible world on wider/taller screens, and supports `MainScene.start()`, `update()`, `draw()`, optional `draw_hud()`, `key_down()`, `clear()`, `draw_rectangle()`, `draw_rectangle_outline()`, `draw_line()`, `draw_circle()`, `draw_circle_outline()`, `draw_polygon()`, `draw_polygon_outline()`, `draw_text()`, `draw_image()`, `draw_sprite()`, `camera_view_*()`, `camera_safe_*()`, `screen_width()`, and `screen_height()`.
+- Current state: the repo also ships a first wrapper layer in `lib/engine/` so scene apps can import `engine.colors`, `engine.drawing`, `engine.input`, and `engine.view` instead of calling the raw helpers directly.
 - Current state: `web-runtime/index.html` still exists as a lower-level preview/debug harness for raw `.bytecode` / `.codelib` loading.
 - Target workflow: expand this slice into higher-level engine packages and richer rendering/input/audio without forcing raw window-handle management into the default authoring model.
 
@@ -85,6 +87,10 @@ Build a web app to a custom output directory:
 ```
 dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- --build-web --out path/to/dist ConsoleApp1/examples/web_scene.code
 ```
+Current web build behavior:
+- Copies an `assets/` directory from the package root when a manifest exists, otherwise from the entry file directory.
+- Preserves relative asset paths such as `assets/code-sheet.svg` for `draw_image()` / `draw_sprite()`.
+
 Current limitation: `--build-web` does not yet combine with `--dump-module-graph`.
 
 The preview harness remains useful for raw bytecode bring-up, but the primary browser workflow is now `--build-web`. The current runtime contract is documented in [docs/web-app-v1.md](docs/web-app-v1.md).
@@ -122,6 +128,7 @@ Test harness covers VM ops, compiler integration (print, arithmetic, functions, 
 - Lockfile: `code.lock.json` is written in the package root during compile when a manifest is present (schema v1, target, resolved package list with integrity hashes)
 - Library packages (`kind: "library"`) emit a `.codelib` artifact during compile; lockfile resolution prefers `.codelib` paths when present and validated
 - Import resolution: importing file directory first, then discovered ancestor `lib/` folders
+- Current engine wrapper modules live under `lib/engine/` and are imported as `"engine/colors.code"`, `"engine/drawing.code"`, `"engine/input.code"`, and `"engine/view.code"`
 - Alias imports support exported functions, objects, and interfaces
 - Module tooling flags: `--dump-module-graph [outputPath]`, `--module-graph-format <text|json|dot>`, and `--trace-linker`
 - Compile target flag: `--target vm-native|vm-web` (default `vm-native`)
@@ -135,7 +142,7 @@ Test harness covers VM ops, compiler integration (print, arithmetic, functions, 
 - Current interface dispatch scope: direct interface-typed values (locals/params/returns/fields); broader container/module surfaces are still planned
 
 ## Roadmap (high level)
-Active priorities: expand the generated web app/runtime slice into higher-level engine packages, continue replacing raw engine stubs with real browser-backed implementations, and grow the rendering/input surface beyond rectangles + keyboard. Full detail is in [docs/features-roadmap.md](docs/features-roadmap.md) and [docs/platform-roadmap.md](docs/platform-roadmap.md).
+Active priorities: grow the first `lib/engine/` wrapper layer into a fuller engine-facing API, continue replacing raw engine stubs with real browser-backed implementations, and expand the browser runtime beyond the current primitives/keyboard/image-sprite slice into richer rendering, input, and audio. Full detail is in [docs/features-roadmap.md](docs/features-roadmap.md) and [docs/platform-roadmap.md](docs/platform-roadmap.md).
 
 ## Examples
 Compile + run an example:

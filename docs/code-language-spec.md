@@ -10,6 +10,7 @@ Last updated: 2026-04-05
 - It targets new developers while teaching concepts transferable to other languages.
 - Its primary product direction is: write Code source, build it, and get a runnable website.
 - It should feel closer to game development than to DOM-first web development.
+- User-facing APIs should prefer fully spelled-out names; accepted domain terms like `hud` are allowed.
 - It supports object-oriented programming.
 - It does not use class inheritance.
 - It uses interfaces for structural contracts.
@@ -490,6 +491,10 @@ real result3 = errorExample(0) on error panic("Error message {error}");
     - `input_key_down(...)`
     - `gfx_clear(...)`, `gfx_draw_rect(...)`
     - Current runtime behavior for these engine intrinsics is prototype/no-op on both native and web hosts.
+  - Scene-oriented browser/runtime intrinsics are also available for the generated web app path:
+    - input/view: `key_down(...)`, `camera_view_*()`, `camera_safe_*()`, `screen_width()`, `screen_height()`
+    - drawing: `clear(...)`, `draw_rectangle(...)`, `draw_rectangle_outline(...)`, `draw_line(...)`, `draw_circle(...)`, `draw_circle_outline(...)`, `draw_polygon(...)`, `draw_polygon_outline(...)`, `draw_text(...)`, `draw_image(...)`, `draw_sprite(...)`
+  - The current repo ships a first wrapper layer in `lib/engine/` over those scene/runtime intrinsics: `engine.colors`, `engine.drawing`, `engine.input`, and `engine.view`.
   - Note: high-range timing values may eventually need dedicated 64-bit numeric/value support for full precision guarantees.
 - Object construction and field access lower to dedicated VM opcodes (`NEW_OBJECT`, `GET_FIELD`, `SET_FIELD`).
 - Arrays: literals `{...}` create arrays; typed declarations `array<integer> xs = {1,2,3};`; dynamic `new array<integer>(n)` requires a size; `xs.length` yields length; `foreach` iterates arrays by element.

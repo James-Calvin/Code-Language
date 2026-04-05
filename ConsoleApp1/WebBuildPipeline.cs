@@ -58,6 +58,8 @@ internal static class WebBuildPipeline
         string bytecodePath = Path.Combine(resolvedOutputDirectory, "app.bytecode");
         File.WriteAllBytes(bytecodePath, result.Bytecode);
 
+        CopyAssets(fullSourcePath, resolvedOutputDirectory, manifest);
+
         string runtimeScript = PrepareRuntimeScriptForInlineModule(File.ReadAllText(ResolveWebRuntimeScriptPath(fullSourcePath)));
         string html = BuildIndexHtml(
             manifest?.Name ?? Path.GetFileNameWithoutExtension(fullSourcePath),
@@ -117,6 +119,33 @@ internal static class WebBuildPipeline
                 cursor = Directory.GetParent(cursor)?.FullName;
             }
         }
+    }
+
+    private static void CopyAssets(string sourcePath, string outputDirectory, PackageManifest? manifest)
+    {
+        string assetsSourceDirectory = ResolveAssetsSourceDirectory(sourcePath, manifest);
+        if (!Directory.Exists(assetsSourceDirectory))
+            return;
+
+        string assetsOutputDirectory = Path.Combine(outputDirectory, "assets");
+        foreach (var sourceFile in Directory.GetFiles(assetsSourceDirectory, "*", SearchOption.AllDirectories))
+        {
+            string relativePath = Path.GetRelativePath(assetsSourceDirectory, sourceFile);
+            string destinationPath = Path.Combine(assetsOutputDirectory, relativePath);
+            string? destinationDir = Path.GetDirectoryName(destinationPath);
+            if (!string.IsNullOrWhiteSpace(destinationDir))
+                Directory.CreateDirectory(destinationDir);
+            File.Copy(sourceFile, destinationPath, overwrite: true);
+        }
+    }
+
+    private static string ResolveAssetsSourceDirectory(string sourcePath, PackageManifest? manifest)
+    {
+        if (manifest is not null)
+            return Path.Combine(manifest.PackageRoot, "assets");
+
+        string? sourceDir = Path.GetDirectoryName(sourcePath);
+        return Path.Combine(sourceDir ?? Directory.GetCurrentDirectory(), "assets");
     }
 
     private static string PrepareRuntimeScriptForInlineModule(string runtimeScript)

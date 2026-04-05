@@ -148,6 +148,19 @@ function toText(value, fail) {
   return "";
 }
 
+function toNumberArray(value, fail) {
+  if (!Array.isArray(value)) {
+    fail(`Expected array on stack, found ${typeof value}`);
+    return [];
+  }
+
+  const result = new Array(value.length);
+  for (let i = 0; i < value.length; i += 1) {
+    result[i] = toNumber(value[i], fail);
+  }
+  return result;
+}
+
 function formatVmError(errorObject) {
   const line = Number.isInteger(errorObject.line) ? errorObject.line : -1;
   const column = Number.isInteger(errorObject.column) ? errorObject.column : -1;
@@ -226,6 +239,7 @@ export class CanvasSceneRuntime {
     this.canvas = null;
     this.ctx = null;
     this.outputElement = null;
+    this.imageCache = new Map();
     this.handleResize = () => this.resize();
     this.handleKeyDown = event => {
       this.keysDown.add(event.keyCode);
@@ -397,6 +411,65 @@ export class CanvasSceneRuntime {
     return 0;
   }
 
+  drawRectangleOutline(x, y, w, h, lineWidth, r, g, b, a) {
+    if (!this.ctx) {
+      return 0;
+    }
+
+    this.ctx.lineWidth = Math.max(1, lineWidth);
+    this.ctx.strokeStyle = toCssRgba(r, g, b, a);
+    this.ctx.strokeRect(x, y, w, h);
+    return 0;
+  }
+
+  drawCircle(x, y, radius, r, g, b, a) {
+    if (!this.ctx) {
+      return 0;
+    }
+
+    this.ctx.fillStyle = toCssRgba(r, g, b, a);
+    this.ctx.beginPath();
+    this.ctx.arc(x, y, Math.max(0, radius), 0, Math.PI * 2);
+    this.ctx.fill();
+    return 0;
+  }
+
+  drawCircleOutline(x, y, radius, lineWidth, r, g, b, a) {
+    if (!this.ctx) {
+      return 0;
+    }
+
+    this.ctx.lineWidth = Math.max(1, lineWidth);
+    this.ctx.strokeStyle = toCssRgba(r, g, b, a);
+    this.ctx.beginPath();
+    this.ctx.arc(x, y, Math.max(0, radius), 0, Math.PI * 2);
+    this.ctx.stroke();
+    return 0;
+  }
+
+  drawPolygon(points, r, g, b, a) {
+    if (!this.ctx) {
+      return 0;
+    }
+
+    return this.drawPolygonPath(points, () => {
+      this.ctx.fillStyle = toCssRgba(r, g, b, a);
+      this.ctx.fill();
+    });
+  }
+
+  drawPolygonOutline(points, lineWidth, r, g, b, a) {
+    if (!this.ctx) {
+      return 0;
+    }
+
+    return this.drawPolygonPath(points, () => {
+      this.ctx.lineWidth = Math.max(1, lineWidth);
+      this.ctx.strokeStyle = toCssRgba(r, g, b, a);
+      this.ctx.stroke();
+    });
+  }
+
   drawLine(x1, y1, x2, y2, r, g, b, a) {
     if (!this.ctx) {
       return 0;
@@ -422,6 +495,40 @@ export class CanvasSceneRuntime {
     this.ctx.textAlign = horizontal;
     this.ctx.textBaseline = vertical;
     this.ctx.fillText(text, x, y);
+    return 0;
+  }
+
+  drawImage(source, x, y, width, height, alpha) {
+    if (!this.ctx) {
+      return 0;
+    }
+
+    const record = this.getImageRecord(source);
+    if (!record.loaded || record.failed) {
+      return 0;
+    }
+
+    this.ctx.save();
+    this.ctx.globalAlpha = clampUnit(alpha);
+    this.ctx.drawImage(record.image, x, y, width, height);
+    this.ctx.restore();
+    return 0;
+  }
+
+  drawSprite(source, sourceX, sourceY, sourceWidth, sourceHeight, x, y, width, height, alpha) {
+    if (!this.ctx) {
+      return 0;
+    }
+
+    const record = this.getImageRecord(source);
+    if (!record.loaded || record.failed) {
+      return 0;
+    }
+
+    this.ctx.save();
+    this.ctx.globalAlpha = clampUnit(alpha);
+    this.ctx.drawImage(record.image, sourceX, sourceY, sourceWidth, sourceHeight, x, y, width, height);
+    this.ctx.restore();
     return 0;
   }
 
@@ -521,6 +628,41 @@ export class CanvasSceneRuntime {
     const scale = this.devicePixelRatio;
     this.ctx.setTransform(scale, 0, 0, scale, 0, 0);
     this.ctx.imageSmoothingEnabled = false;
+  }
+
+  drawPolygonPath(points, finish) {
+    if (!this.ctx || points.length < 6 || points.length % 2 !== 0) {
+      return 0;
+    }
+
+    this.ctx.beginPath();
+    this.ctx.moveTo(points[0], points[1]);
+    for (let i = 2; i < points.length; i += 2) {
+      this.ctx.lineTo(points[i], points[i + 1]);
+    }
+    this.ctx.closePath();
+    finish();
+    return 0;
+  }
+
+  getImageRecord(source) {
+    const normalizedSource = String(source || "");
+    let record = this.imageCache.get(normalizedSource);
+    if (record) {
+      return record;
+    }
+
+    const image = new Image();
+    record = { image, loaded: false, failed: false };
+    image.addEventListener("load", () => {
+      record.loaded = true;
+    });
+    image.addEventListener("error", () => {
+      record.failed = true;
+    });
+    image.src = normalizedSource;
+    this.imageCache.set(normalizedSource, record);
+    return record;
   }
 
   runScene(vm, sceneInfo) {
@@ -774,6 +916,91 @@ export class WebVm {
     };
     this.hostBindings.set("engine.gfx.draw_rect_scene", drawRectangleSceneBinding);
     this.hostBindings.set("engine.gfx.draw_rectangle_scene", drawRectangleSceneBinding);
+    this.hostBindings.set("engine.gfx.draw_rectangle_outline_scene", {
+      arity: 9,
+      handler: args => {
+        if (!this.sceneHost) {
+          return 0;
+        }
+        return this.sceneHost.drawRectangleOutline(
+          toNumber(args[0], message => this.throwRuntime(message)),
+          toNumber(args[1], message => this.throwRuntime(message)),
+          toNumber(args[2], message => this.throwRuntime(message)),
+          toNumber(args[3], message => this.throwRuntime(message)),
+          toNumber(args[4], message => this.throwRuntime(message)),
+          toNumber(args[5], message => this.throwRuntime(message)),
+          toNumber(args[6], message => this.throwRuntime(message)),
+          toNumber(args[7], message => this.throwRuntime(message)),
+          toNumber(args[8], message => this.throwRuntime(message))
+        );
+      }
+    });
+    this.hostBindings.set("engine.gfx.draw_circle_scene", {
+      arity: 7,
+      handler: args => {
+        if (!this.sceneHost) {
+          return 0;
+        }
+        return this.sceneHost.drawCircle(
+          toNumber(args[0], message => this.throwRuntime(message)),
+          toNumber(args[1], message => this.throwRuntime(message)),
+          toNumber(args[2], message => this.throwRuntime(message)),
+          toNumber(args[3], message => this.throwRuntime(message)),
+          toNumber(args[4], message => this.throwRuntime(message)),
+          toNumber(args[5], message => this.throwRuntime(message)),
+          toNumber(args[6], message => this.throwRuntime(message))
+        );
+      }
+    });
+    this.hostBindings.set("engine.gfx.draw_circle_outline_scene", {
+      arity: 8,
+      handler: args => {
+        if (!this.sceneHost) {
+          return 0;
+        }
+        return this.sceneHost.drawCircleOutline(
+          toNumber(args[0], message => this.throwRuntime(message)),
+          toNumber(args[1], message => this.throwRuntime(message)),
+          toNumber(args[2], message => this.throwRuntime(message)),
+          toNumber(args[3], message => this.throwRuntime(message)),
+          toNumber(args[4], message => this.throwRuntime(message)),
+          toNumber(args[5], message => this.throwRuntime(message)),
+          toNumber(args[6], message => this.throwRuntime(message)),
+          toNumber(args[7], message => this.throwRuntime(message))
+        );
+      }
+    });
+    this.hostBindings.set("engine.gfx.draw_polygon_scene", {
+      arity: 5,
+      handler: args => {
+        if (!this.sceneHost) {
+          return 0;
+        }
+        return this.sceneHost.drawPolygon(
+          toNumberArray(args[0], message => this.throwRuntime(message)),
+          toNumber(args[1], message => this.throwRuntime(message)),
+          toNumber(args[2], message => this.throwRuntime(message)),
+          toNumber(args[3], message => this.throwRuntime(message)),
+          toNumber(args[4], message => this.throwRuntime(message))
+        );
+      }
+    });
+    this.hostBindings.set("engine.gfx.draw_polygon_outline_scene", {
+      arity: 6,
+      handler: args => {
+        if (!this.sceneHost) {
+          return 0;
+        }
+        return this.sceneHost.drawPolygonOutline(
+          toNumberArray(args[0], message => this.throwRuntime(message)),
+          toNumber(args[1], message => this.throwRuntime(message)),
+          toNumber(args[2], message => this.throwRuntime(message)),
+          toNumber(args[3], message => this.throwRuntime(message)),
+          toNumber(args[4], message => this.throwRuntime(message)),
+          toNumber(args[5], message => this.throwRuntime(message))
+        );
+      }
+    });
     this.hostBindings.set("engine.gfx.draw_line_scene", {
       arity: 8,
       handler: args => {
@@ -805,6 +1032,42 @@ export class WebVm {
           toNumber(args[3], message => this.throwRuntime(message)),
           toText(args[4], message => this.throwRuntime(message)),
           toText(args[5], message => this.throwRuntime(message)),
+          toNumber(args[6], message => this.throwRuntime(message)),
+          toNumber(args[7], message => this.throwRuntime(message)),
+          toNumber(args[8], message => this.throwRuntime(message)),
+          toNumber(args[9], message => this.throwRuntime(message))
+        );
+      }
+    });
+    this.hostBindings.set("engine.gfx.draw_image_scene", {
+      arity: 6,
+      handler: args => {
+        if (!this.sceneHost) {
+          return 0;
+        }
+        return this.sceneHost.drawImage(
+          toText(args[0], message => this.throwRuntime(message)),
+          toNumber(args[1], message => this.throwRuntime(message)),
+          toNumber(args[2], message => this.throwRuntime(message)),
+          toNumber(args[3], message => this.throwRuntime(message)),
+          toNumber(args[4], message => this.throwRuntime(message)),
+          toNumber(args[5], message => this.throwRuntime(message))
+        );
+      }
+    });
+    this.hostBindings.set("engine.gfx.draw_sprite_scene", {
+      arity: 10,
+      handler: args => {
+        if (!this.sceneHost) {
+          return 0;
+        }
+        return this.sceneHost.drawSprite(
+          toText(args[0], message => this.throwRuntime(message)),
+          toNumber(args[1], message => this.throwRuntime(message)),
+          toNumber(args[2], message => this.throwRuntime(message)),
+          toNumber(args[3], message => this.throwRuntime(message)),
+          toNumber(args[4], message => this.throwRuntime(message)),
+          toNumber(args[5], message => this.throwRuntime(message)),
           toNumber(args[6], message => this.throwRuntime(message)),
           toNumber(args[7], message => this.throwRuntime(message)),
           toNumber(args[8], message => this.throwRuntime(message)),

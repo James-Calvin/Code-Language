@@ -650,8 +650,15 @@ sealed class Vm
         _hostBindings["engine.gfx.draw_rect"] = new HostBinding(9, _ => 0);
         _hostBindings["engine.gfx.draw_rect_scene"] = new HostBinding(8, _ => 0);
         _hostBindings["engine.gfx.draw_rectangle_scene"] = new HostBinding(8, _ => 0);
+        _hostBindings["engine.gfx.draw_rectangle_outline_scene"] = new HostBinding(9, _ => 0);
+        _hostBindings["engine.gfx.draw_circle_scene"] = new HostBinding(7, _ => 0);
+        _hostBindings["engine.gfx.draw_circle_outline_scene"] = new HostBinding(8, _ => 0);
+        _hostBindings["engine.gfx.draw_polygon_scene"] = new HostBinding(5, _ => 0);
+        _hostBindings["engine.gfx.draw_polygon_outline_scene"] = new HostBinding(6, _ => 0);
         _hostBindings["engine.gfx.draw_line_scene"] = new HostBinding(8, _ => 0);
         _hostBindings["engine.gfx.draw_text_scene"] = new HostBinding(10, _ => 0);
+        _hostBindings["engine.gfx.draw_image_scene"] = new HostBinding(6, _ => 0);
+        _hostBindings["engine.gfx.draw_sprite_scene"] = new HostBinding(10, _ => 0);
     }
 
     private void InitializeNativeHostBindings()

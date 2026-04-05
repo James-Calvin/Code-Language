@@ -1,6 +1,6 @@
 # Platform, Libraries, and Targets Roadmap
 
-Last updated: 2026-02-28
+Last updated: 2026-04-05
 
 This roadmap is specifically for:
 1) library/package system,
@@ -12,13 +12,19 @@ It is intentionally staged so each step de-risks the next one.
 ## 0) Strategic intent (web-first, platform-agnostic)
 
 Primary product direction:
-- First-class support for web-hosted workloads (simulation, ML experiments, computationally heavy apps).
+- First-class support for code-first 2D interactive applications and games deployed on the web.
 - Keep Code source portable across `vm-web` and `vm-native`.
+- The default user story should be: write Code, build once, and receive a deployable website.
 
 Architecture rule:
 - Language-facing APIs stay backend-agnostic (for example `engine.gfx`, later `engine.gpu`).
 - Runtime host bindings map those APIs to concrete platform backends (WebGPU/WebGL/Canvas on web, native GPU stacks on desktop).
 - Capability discovery + explicit fallback policy is required so behavior is predictable, not implicit magic.
+
+Product-default rule:
+- The browser runtime, not raw window management, should own the initial app shell.
+- Web apps should fill the browser window by default.
+- The V1 runtime contract is defined in `docs/web-app-v1.md`.
 
 ## 1) Build Model (target interaction)
 
@@ -37,6 +43,12 @@ Target IDs (v1):
 CLI direction:
 - `--target vm-native|vm-web`
 - default: `vm-native` when omitted.
+
+Near-term web build goal:
+- A dedicated web build mode now emits a deployable static site folder via `--build-web`.
+- Default output directory: `dist/` in the package root when a manifest exists, otherwise `dist/` beside the entry `.code` file.
+- Current output: `index.html` + `app.bytecode`, with the runtime loader inlined into `index.html`.
+- The current `web-runtime/index.html` upload flow remains preview-only bootstrap tooling for raw bytecode bring-up and is no longer the primary workflow.
 
 ## 2) Host ABI v1 (concrete draft)
 
@@ -191,7 +203,7 @@ Library artifact:
 
 Application artifact:
 - `vm-native`: `.bytecode` + optional runner metadata
-- `vm-web`: `.bytecode` + JS/WASM loader bundle + minimal HTML bootstrap
+- `vm-web`: static site output; current implementation emits `index.html` + `app.bytecode` with an inlined JS loader/runtime
 
 ## 5) Streamlined execution roadmap
 
@@ -208,9 +220,11 @@ Legend:
 | `[x]` | Phase 2 | Manifest parser + validation | Implemented baseline: nearest-manifest discovery, schema v1 validation, target and host capability checks |
 | `[x]` | Phase 2 | Dependency resolver + lockfile | Implemented baseline local resolver + deterministic `code.lock.json` generation (target-scoped) |
 | `[x]` | Phase 2 | Library artifact format (`.codelib`) | Implemented baseline: library manifests emit `.codelib`, resolver validates/prefer artifact paths in `code.lock.json`, CLI can run/disasm `.codelib` |
+| `[x]` | Phase 3 | Web app/runtime V1 contract | Documented in `docs/web-app-v1.md`: scene-object authoring, `start/update/draw` lifecycle, full-window browser runtime, `640x360` virtual resolution, shapes + keyboard scope, and static-site output target |
 | `[~]` | Phase 3 | Stdlib as packages | `std.core`, `std.math`, `std.time`, `std.io` packaged and importable |
-| `[!]` | Phase 4 | Web VM target runtime | Browser runtime preview is in place (`web-runtime/` JS bytecode harness + web host bindings); continue toward production WASM/JS target packaging and runtime parity |
-| `[!]` | Phase 4 | Web engine host bindings (real impl) | Replace window/input/gfx no-op web stubs with concrete browser bindings and conformance tests |
+| `[x]` | Phase 4 | Web bundle workflow | Implemented first slice: `--build-web` emits a runnable static site folder (`index.html` + `app.bytecode`) instead of relying on the preview harness |
+| `[~]` | Phase 4 | Browser-backed web app runtime | Implemented first slice: generated full-window canvas runtime, `MainScene` lifecycle (`start/update/draw`), fixed-step loop, and `640x360` scaling; expand from shapes + keyboard |
+| `[~]` | Phase 4 | Web engine host bindings (real impl) | Implemented first scene-runtime bindings for `key_down`, `clear`, and `draw_rect`; legacy window-handle web stubs still need real implementations or package-level wrappers |
 | `[!]` | Phase 4 | Backend-agnostic API contract | Freeze capability-query and fallback semantics so one Code source can target multiple backends predictably |
 | `[~]` | Phase 5 | Engine core package set | `engine.math`, `engine.ecs`, `engine.scene`, `engine.loop` |
 | `[~]` | Phase 5 | Engine platform adapters | `engine.window/input/gfx/audio` host-backed packages for native+web |
@@ -233,14 +247,18 @@ This order gets library system + target model stable before engine work starts.
 
 ## 7) Near-term execution milestones (web-first)
 
-1. **Real web engine host bindings**
-   - Implement browser-backed `engine.window`, `engine.input`, and `engine.gfx` handlers.
-   - Exit criteria: a Code sample renders and responds to keyboard input in browser.
+1. **Freeze and keep the V1 contract**
+   - Treat `docs/web-app-v1.md` as the implementation contract for the first end-to-end browser app workflow.
+   - Exit criteria: docs, roadmap, and README all point to the same scene-object/full-window/static-site direction with no contradictory claims.
 
-2. **Engine packages + loop contract**
-   - Add importable `engine.window`, `engine.input`, `engine.gfx`, `engine.loop` packages over host ABI.
-   - Exit criteria: same source compiles/runs on both targets with documented behavior.
+2. **Web bundle workflow**
+   - Implemented first slice: `--build-web` emits a runnable static site folder instead of a raw `.bytecode` file plus a manual upload step.
+   - Current state: one command produces a runnable browser folder for a sample app, defaulting to `dist/`.
 
-3. **Web bundle workflow**
-   - Add a CLI web bundle mode that outputs bytecode + loader + HTML scaffold.
-   - Exit criteria: one command produces a runnable browser folder for a sample app.
+3. **Browser-backed app runtime**
+   - Implemented first slice: generated app page and browser runtime fill the window, preserve a `640x360` virtual resolution, and own the main loop for a `MainScene`.
+   - Next step: expand the runtime beyond `clear`/`draw_rect`/`key_down` and keep the higher-level engine-facing API off raw window handles.
+
+4. **Engine packages + loop contract**
+   - Add importable `engine.window`, `engine.input`, `engine.gfx`, `engine.loop` packages or wrappers aligned to the runtime contract, with scene lifecycle integration.
+   - Exit criteria: the runtime contract is reflected in package-level APIs rather than only raw host ABI symbols.

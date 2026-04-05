@@ -21,6 +21,8 @@ internal static class Program
         string? moduleGraphOutputPath = null;
         string? moduleGraphFormat = null;
         bool traceLinker = false;
+        bool buildWeb = false;
+        bool targetSpecified = false;
         CompileTarget compileTarget = CompileTarget.VmNative;
 
         for (int i = 0; i < args.Length; i++)
@@ -36,8 +38,11 @@ internal static class Program
                     dumpTokensPath = args[++i];
                     break;
                 case "--out":
-                    if (i + 1 >= args.Length) Fail("Usage: --out <output.bytecode>");
+                    if (i + 1 >= args.Length) Fail("Usage: --out <output.bytecode|output-directory>");
                     outPath = args[++i];
+                    break;
+                case "--build-web":
+                    buildWeb = true;
                     break;
                 case "--skip-tests":
                     skipTests = true;
@@ -70,6 +75,7 @@ internal static class Program
                     string targetArg = args[++i];
                     if (!CompileTargetExtensions.TryParse(targetArg, out compileTarget))
                         Fail($"Unsupported target '{targetArg}'. Use vm-native or vm-web.");
+                    targetSpecified = true;
                     break;
                 default:
                     if (args[i].EndsWith(".bytecode", StringComparison.OrdinalIgnoreCase))
@@ -93,6 +99,13 @@ internal static class Program
         if (moduleGraphFormat is not null && !dumpModuleGraph)
             Fail("--module-graph-format requires --dump-module-graph.");
 
+        if (buildWeb)
+        {
+            if (targetSpecified && compileTarget != CompileTarget.VmWeb)
+                Fail("--build-web requires target vm-web.");
+            compileTarget = CompileTarget.VmWeb;
+        }
+
         if (disasmPath != null)
         {
             var bytes = LoadBytecodePayload(disasmPath);
@@ -106,8 +119,20 @@ internal static class Program
             return;
         }
 
+        if (buildWeb && codePath is null)
+            Fail("--build-web requires a .code input.");
+
         if (codePath != null)
         {
+            if (buildWeb)
+            {
+                if (dumpModuleGraph || moduleGraphOutputPath is not null || moduleGraphFormat is not null)
+                    Fail("Module graph options are not supported with --build-web yet.");
+
+                BuildWebApp(codePath, outPath, traceLinker);
+                return;
+            }
+
             string outputPath = outPath ?? Path.ChangeExtension(codePath, ".bytecode");
             CompileToFile(codePath, outputPath, dumpModuleGraph, moduleGraphOutputPath, moduleGraphFormat, traceLinker, compileTarget);
             if (!compileOnly)
@@ -197,6 +222,36 @@ internal static class Program
         catch (Exception ex)
         {
             Console.Error.WriteLine($"Compile failed: {ex.Message}");
+            Environment.Exit(1);
+        }
+    }
+
+    private static void BuildWebApp(
+        string sourcePath,
+        string? outputDirectory,
+        bool traceLinker)
+    {
+        var source = File.ReadAllText(sourcePath);
+        try
+        {
+            var result = WebBuildPipeline.Build(
+                sourcePath,
+                outputDirectory,
+                traceLinker,
+                traceLinker ? message => Console.Error.WriteLine($"[linker] {message}") : null);
+
+            Console.WriteLine($"Built web app {sourcePath} -> {result.OutputDirectory}");
+            Console.WriteLine($"Entry page: {result.IndexHtmlPath}");
+        }
+        catch (CompilerException ce)
+        {
+            Console.Error.WriteLine($"{sourcePath}:{ce.Line}:{ce.Column}: error: {ce.Message}");
+            DiagnosticPrinter.PrintSnippet(sourcePath, source, ce.Line, ce.Column);
+            Environment.Exit(1);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"Web build failed: {ex.Message}");
             Environment.Exit(1);
         }
     }

@@ -627,9 +627,12 @@ sealed class Vm
         _hostBindings["engine.window.present"] = new HostBinding(1, _ => 0);
 
         _hostBindings["engine.input.key_down"] = new HostBinding(2, _ => 0);
+        _hostBindings["engine.input.key_down_scene"] = new HostBinding(1, _ => 0);
 
         _hostBindings["engine.gfx.clear"] = new HostBinding(5, _ => 0);
+        _hostBindings["engine.gfx.clear_scene"] = new HostBinding(4, _ => 0);
         _hostBindings["engine.gfx.draw_rect"] = new HostBinding(9, _ => 0);
+        _hostBindings["engine.gfx.draw_rect_scene"] = new HostBinding(8, _ => 0);
     }
 
     private void InitializeNativeHostBindings()

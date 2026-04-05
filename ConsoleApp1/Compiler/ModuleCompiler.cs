@@ -21,13 +21,20 @@ sealed class ModuleCompileResult
     public ModuleGraph Graph { get; }
     public CompileTarget Target { get; }
     public IReadOnlyList<string> RequiredCapabilities { get; }
+    public WebSceneMetadata? WebScene { get; }
 
-    public ModuleCompileResult(byte[] bytecode, ModuleGraph graph, CompileTarget target, IReadOnlyList<string> requiredCapabilities)
+    public ModuleCompileResult(
+        byte[] bytecode,
+        ModuleGraph graph,
+        CompileTarget target,
+        IReadOnlyList<string> requiredCapabilities,
+        WebSceneMetadata? webScene)
     {
         Bytecode = bytecode;
         Graph = graph;
         Target = target;
         RequiredCapabilities = requiredCapabilities;
+        WebScene = webScene;
     }
 }
 
@@ -264,7 +271,8 @@ static class ModuleCompiler
         var typeChecker = new TypeChecker();
         typeChecker.Check(linkResult.Statements);
         var generator = new CodeGenerator();
-        var bytecode = generator.Generate(linkResult.Statements);
+        var generated = generator.GenerateWithMetadata(linkResult.Statements);
+        var bytecode = generated.Bytecode;
 
         if (manifest is not null && string.Equals(manifest.Kind, "library", StringComparison.Ordinal))
         {
@@ -287,7 +295,8 @@ static class ModuleCompiler
             bytecode,
             linkResult.Graph,
             compileOptions.Target,
-            linkResult.RequiredCapabilities);
+            linkResult.RequiredCapabilities,
+            generated.WebScene);
     }
 
     private static void WriteLibraryArtifact(

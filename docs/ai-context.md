@@ -1,26 +1,30 @@
-# AI Context — Draive / Code Language
-Updated: 2026-02-28
+# AI Context - Draive / Code Language
+Updated: 2026-04-05
 
 Read this first. Update it whenever semantics or process change.
 
 ## Strategic Direction (active)
-- Web-first for computationally heavy workloads (simulation/ML/graphics), while preserving native portability.
+- Web-first for code-first 2D interactive applications and games, while preserving native portability.
 - Keep language-facing engine APIs backend-agnostic; host bindings provide platform-specific implementations.
 - Current web JS runtime is a bootstrap/prototyping runtime; it does not block a future WebGPU or WASM-hosted VM path.
 - Capability query + explicit fallback policy is a required design constraint for predictable cross-target behavior.
+- Near-term product target: write Code source, build once, and get a deployable website.
+- Default web runtime target: full-window browser app, `640x360` virtual resolution, scene-object authoring, and shapes + keyboard input for V1.
 
 ## Current Capability Snapshot
 - Types: integer/whole/real, boolean, string, array<T> (literals `{...}`, `new array<T>(n)`, `.length`, indexing, mutation), optional<T> (`none`, `.hasValue`, `.value`, `.or(fallback)`), constants, typed/void functions, object types.
 - Compiler type model: AST/parser/type-checker use `TypeRef`; named object types resolve via object symbol tables (fields + constructors + forward refs).
-- Object rules: fields require constructor initialization; constructor/method overloads resolve by typed signature (best-match conversions), methods lower to hidden static call targets with implicit `this`; reserved field names are `length`, `hasValue`, `value`, `or`.
+- Object rules: fields require constructor initialization; constructor/method overloads resolve by typed signature (best-match conversions), methods lower to hidden static call targets with implicit `this`, and object methods support implicit-void authoring; reserved field names are `length`, `hasValue`, `value`, `or`.
 - Interfaces: `interface Name { function<...> method(...); }` plus explicit `implement Interface for Object { method(types...) via Object.method; }` conformance checks and runtime dispatch for interface-typed locals/params/returns/fields.
 - Control flow: if/then[/else], while, for, foreach (numeric or array), break/continue, return (implicit 0).
 - Expressions: arithmetic (including `%`), comparisons, logical and/or/not (short-circuit), assignment (including `+=`, `-=`, `*=`, `/=`, `%=` and postfix `++/--`), function calls, full-expression string interpolation/concat.
 - Time intrinsics: `unix_ms()`, `unix_us()`, `mono_ns()`, `mono_ticks()`, `mono_ticks_per_second()`, plus `sleep_ms(integer)` (native-only).
 - IO intrinsic: `read_line() -> string` (native-only).
 - Host ABI baseline: compiler lowers print/time/native-only/engine intrinsic calls to `HOST_CALL` symbols; capability inference includes lowered host features (`std.io.read_line`, `std.time.sleep_ms`, `engine.window/input/gfx`); VM resolves via native/web host binding tables and throws target-aware `HostBindingError` on unsupported host calls.
-- Engine ABI stubs: `window_create`, `window_should_close`, `window_present`, `input_key_down`, `gfx_clear`, `gfx_draw_rect` are wired as no-op prototypes on native/web hosts; next step is real browser-backed implementations.
-- Web harness: `web-runtime/` contains a JavaScript bytecode runner + browser host binding table for `std.io.print` and `std.time.*`.
+- Engine ABI status: legacy window-handle calls (`window_create`, `window_should_close`, `window_present`, `input_key_down`, `gfx_clear`, `gfx_draw_rect`) remain no-op stubs on native/web hosts, while the scene-runtime intrinsics `key_down`, `clear`, and `draw_rect` now have a browser-backed implementation for `vm-web`.
+- Web app/runtime slice: `--build-web` emits a static site folder (`index.html` + `app.bytecode`) with a generated full-window browser runtime, fixed `640x360` virtual resolution, `MainScene` metadata, and `start/update/draw` scene lifecycle driving the JS VM.
+- Web harness: `web-runtime/` still contains a lower-level JavaScript bytecode runner + browser host binding table for raw `.bytecode` / `.codelib` loading; it is preview/bootstrap tooling, not the primary shipping workflow.
+- Web app/runtime contract: `docs/web-app-v1.md` freezes the first implementation target around a scene object with `start/update/draw`, full-window browser runtime ownership, `640x360` virtual resolution, and static-site output.
 - Errors: `panic <expr>;` raises `UserError` with line/col + call stack (from bytecode debug map).
 - Bytecode/VM: header v0x05, spec v0.8; ops include strings, arrays (NEW_ARRAY/GET/LEN/SET/NEW_ARRAY_N), optionals (NONE/HAS/VALUE/OR), objects (NEW_OBJECT/GET_FIELD/SET_FIELD/GET_TYPE_NAME), interface dispatch (INTERFACE_CALL), THROW_ERROR.
 - Modules/imports: recursive file-based module linking for `.code` files with `import`/`export`, package declarations, grouped/selective imports, module-scope symbol conflict checks, import-chain diagnostics, alias imports for function/object/interface exports, and `lib/` ancestor search.
@@ -28,15 +32,15 @@ Read this first. Update it whenever semantics or process change.
 - Library artifact: packages with `kind: "library"` emit `<package>-<version>-<target>.codelib` with embedded bytecode + metadata; resolver validates and prefers artifact paths in lockfile when present.
 - Module tooling: `--dump-module-graph [outputPath]` emits entry/modules/import edges; supports text/json/dot output (via `--module-graph-format` or output extension inference); `--trace-linker` emits linker resolution steps.
 - Targets/capabilities: `--target vm-native|vm-web` (default `vm-native`) threads through module compilation; linker infers capability groups from package/import namespaces and rejects unsupported target capabilities (e.g., `std.fs` on `vm-web`).
-- CLI flags: `--run-tests`, `--skip-tests`, `--disasm`, `--dump-tokens`, `--out`, `--compile-only`, `--dump-module-graph`, `--module-graph-format`, `--trace-linker`, `--target`.
-- Tests: integration (core features, arrays, optionals, objects, interfaces, modules/imports, host ABI surfaces, target capability validation, panic) + fuzz (arith, boolean, strings, loop sums, panic). Run `dotnet run --project ConsoleApp1/ConsoleApp1.csproj --run-tests`.
+- CLI flags: `--run-tests`, `--skip-tests`, `--disasm`, `--dump-tokens`, `--out`, `--compile-only`, `--build-web`, `--dump-module-graph`, `--module-graph-format`, `--trace-linker`, `--target`.
+- Tests: integration (core features, arrays, optionals, objects, interfaces, modules/imports, host ABI surfaces, target capability validation, panic) + fuzz (arith, boolean, strings, loop sums, panic). Run `dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- --run-tests`.
 
 ## Not Implemented (yet)
 - User-defined data remaining: records, visibility enforcement, broader interface container/module surfaces, and dispatch optimization beyond baseline tables.
 - Module namespaces and stdlib versioning/layout.
 - Typed array element enforcement, constant pool, formatter/linter, REPL.
 - Typed error values / `fallible<T>` semantics wired to VM errors.
-- Engine web runtime maturation: real browser `engine.window`/`engine.input`/`engine.gfx` bindings, engine package wrappers, and web bundle workflow.
+- Engine web runtime maturation: expand the generated web app/runtime slice beyond `MainScene` + shapes/keyboard, add engine package wrappers aligned to the V1 runtime contract, and replace the remaining raw window-handle `engine.window`/`engine.input`/`engine.gfx` stubs with real browser-backed behavior or wrappers.
 - GPU roadmap: `engine.gpu` ABI v1 + WebGPU backend (`vm-web`) + native GPU backend parity (`vm-native`).
 - Capability query/fallback APIs for deterministic backend negotiation.
 
@@ -45,16 +49,20 @@ Read this first. Update it whenever semantics or process change.
 - Bytecode spec: `docs/bytecode-spec.md`
 - Roadmap/status: `docs/features-roadmap.md`
 - Platform/package plan: `docs/platform-roadmap.md`
+- Web app/runtime V1 contract: `docs/web-app-v1.md`
 - Browser harness: `web-runtime/index.html`, `web-runtime/code-vm-web.js`
 - Examples: `ConsoleApp1/examples/*.code`
 - README: build/run quickstart
 
 ## Process Expectations
 - When changing semantics: update spec, roadmap, bytecode spec (if opcodes), examples, tests. Run `--run-tests`.
-- Keep examples comprehensive—add one per new feature.
+- When making product-direction or workflow decisions: update the relevant docs in the same change. Do not let roadmap, README, and design docs drift.
+- Keep examples comprehensive; add one per new feature.
 - Preserve prior decisions; ask user when unclear.
 
 ## Change Log
+- 2026-04-05: Implemented the first web app/runtime slice: `--build-web`, generated `index.html` + `app.bytecode`, `MainScene` scene metadata extraction, browser-backed full-window scene runtime (`start/update/draw`), and scene intrinsics (`key_down`, `clear`, `draw_rect`); added tests and `ConsoleApp1/examples/web_scene.code`.
+- 2026-04-05: Repositioned Code as a 2D/web-first language, added `docs/web-app-v1.md`, documented scene-object/full-window/static-site defaults, and formalized the rule that code or product decisions update docs in the same change.
 - 2026-02-28: Synced AI context with web-first strategy and backend-agnostic engine API goals; documented capability/fallback policy requirement.
 - 2026-02-28: Added near-term platform focus: real browser engine host bindings, engine package wrappers/loop contract, and web bundle workflow.
 - 2026-02-13: Added `package` declarations, module-level import/declaration conflict checks, and chained import diagnostics (`a -> b -> c`) for linker errors.

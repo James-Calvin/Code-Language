@@ -121,11 +121,11 @@ sealed class TypeChecker
             var methodKeys = new HashSet<string>(StringComparer.Ordinal);
             foreach (var method in obj.Methods)
             {
-                if (method.ReturnType is null)
-                    throw new CompilerException($"Method '{method.Name.Lexeme}' is missing a return type", method.Name.Line, method.Name.Column);
                 if (method.Parameters.Any(p => p.Type is null))
                     throw new CompilerException($"Method '{method.Name.Lexeme}' has untyped parameters", method.Name.Line, method.Name.Column);
-                EnsureNotVoidTypeRef(method.ReturnType, "Methods cannot use return type 'void' in the current object model", method.Name.Line, method.Name.Column);
+
+                var returnTypeRef = method.ReturnType ?? BuildImplicitVoidTypeRef(method.Name);
+                ValidateTypeRef(returnTypeRef);
 
                 var paramTypeRefs = method.Parameters.Select(p => p.Type!).ToList();
                 for (int i = 0; i < paramTypeRefs.Count; i++)
@@ -137,8 +137,8 @@ sealed class TypeChecker
                     throw new CompilerException($"Method overload '{method.Name.Lexeme}' with the same signature is already defined in object '{obj.Name.Lexeme}'", method.Name.Line, method.Name.Column);
 
                 var paramTypes = method.Parameters.Select(p => MapType(p.Type!)).ToList();
-                var returnType = MapType(method.ReturnType);
-                symbol.Methods[methodKey] = new MethodSignature(method.Name, method.ReturnType, returnType, paramTypes, paramTypeRefs, methodKey, method.Body, method.Parameters);
+                var returnType = MapType(returnTypeRef);
+                symbol.Methods[methodKey] = new MethodSignature(method.Name, returnTypeRef, returnType, paramTypes, paramTypeRefs, methodKey, method.Body, method.Parameters);
             }
 
             if (symbol.Fields.Count > 0 && symbol.Constructors.Count == 0)
@@ -340,7 +340,7 @@ sealed class TypeChecker
 
             bool allPathsReturn = CheckStmt(method.Body, env, method.ReturnType);
             _currentReturnTypeRef = previousReturnRef;
-            if (!allPathsReturn)
+            if (method.ReturnType != TypeSymbol.Void && !allPathsReturn)
                 throw new CompilerException($"Method '{obj.Name.Lexeme}.{method.Name.Lexeme}' may not return a value on all paths", method.Name.Line, method.Name.Column);
         }
     }

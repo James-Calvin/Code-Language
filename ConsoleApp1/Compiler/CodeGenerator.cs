@@ -3,6 +3,53 @@ using System.Collections.Generic;
 
 namespace ConsoleApp1.Compiler;
 
+sealed class GeneratedCallableMetadata
+{
+    public int TargetIp { get; }
+    public int FrameSize { get; }
+
+    public GeneratedCallableMetadata(int targetIp, int frameSize)
+    {
+        TargetIp = targetIp;
+        FrameSize = frameSize;
+    }
+}
+
+sealed class WebSceneMetadata
+{
+    public string SceneTypeName { get; }
+    public GeneratedCallableMetadata Constructor { get; }
+    public GeneratedCallableMetadata Start { get; }
+    public GeneratedCallableMetadata Update { get; }
+    public GeneratedCallableMetadata Draw { get; }
+
+    public WebSceneMetadata(
+        string sceneTypeName,
+        GeneratedCallableMetadata constructor,
+        GeneratedCallableMetadata start,
+        GeneratedCallableMetadata update,
+        GeneratedCallableMetadata draw)
+    {
+        SceneTypeName = sceneTypeName;
+        Constructor = constructor;
+        Start = start;
+        Update = update;
+        Draw = draw;
+    }
+}
+
+sealed class CodeGenerationResult
+{
+    public byte[] Bytecode { get; }
+    public WebSceneMetadata? WebScene { get; }
+
+    public CodeGenerationResult(byte[] bytecode, WebSceneMetadata? webScene)
+    {
+        Bytecode = bytecode;
+        WebScene = webScene;
+    }
+}
+
 sealed class CodeGenerator
 {
     private readonly BytecodeBuilder _builder = BytecodeBuilder.New();
@@ -23,7 +70,9 @@ sealed class CodeGenerator
     private readonly Dictionary<string, List<InterfaceDispatchTarget>> _interfaceDispatch = new(StringComparer.Ordinal);
     private int _labelCounter;
 
-    public byte[] Generate(IList<Stmt> statements)
+    public byte[] Generate(IList<Stmt> statements) => GenerateWithMetadata(statements).Bytecode;
+
+    public CodeGenerationResult GenerateWithMetadata(IList<Stmt> statements)
     {
         var functionDecls = new List<FunctionDecl>();
         var objectDecls = new List<ObjectDecl>();
@@ -101,7 +150,8 @@ sealed class CodeGenerator
         _builder.Halt();
         PopScope();
 
-        return _builder.ToArray();
+        byte[] bytecode = _builder.ToArray();
+        return new CodeGenerationResult(bytecode, TryBuildWebSceneMetadata(objectDecls));
     }
 
     private void SetLoc(Token token) => _builder.SetDebugLocation(token.Line, token.Column);
@@ -991,6 +1041,77 @@ sealed class CodeGenerator
         _locals = _scopeStack.Pop();
         _localDeclaredTypes = _scopeDeclaredTypesStack.Pop();
         _nextLocalIndex = _nextLocalStack.Pop();
+    }
+
+    private WebSceneMetadata? TryBuildWebSceneMetadata(IReadOnlyList<ObjectDecl> objectDecls)
+    {
+        ObjectDecl? sceneObject = null;
+        for (int i = 0; i < objectDecls.Count; i++)
+        {
+            if (string.Equals(objectDecls[i].Name.Lexeme, "MainScene", StringComparison.Ordinal))
+            {
+                sceneObject = objectDecls[i];
+                break;
+            }
+        }
+
+        if (sceneObject is null)
+            return null;
+
+        ConstructorDecl? ctor = null;
+        for (int i = 0; i < sceneObject.Constructors.Count; i++)
+        {
+            if (sceneObject.Constructors[i].Parameters.Count == 0)
+            {
+                ctor = sceneObject.Constructors[i];
+                break;
+            }
+        }
+
+        MethodDecl? start = FindZeroArgMethod(sceneObject.Methods, "start");
+        MethodDecl? update = FindZeroArgMethod(sceneObject.Methods, "update");
+        MethodDecl? draw = FindZeroArgMethod(sceneObject.Methods, "draw");
+
+        if (ctor is null || start is null || update is null || draw is null)
+            return null;
+
+        if (!TryResolveCallableMetadata(_constructors, ConstructorKey(sceneObject.Name.Lexeme, ctor.Parameters), out var ctorMeta))
+            return null;
+        if (!TryResolveCallableMetadata(_methods, MethodKey(sceneObject.Name.Lexeme, start.Name.Lexeme, start.Parameters), out var startMeta))
+            return null;
+        if (!TryResolveCallableMetadata(_methods, MethodKey(sceneObject.Name.Lexeme, update.Name.Lexeme, update.Parameters), out var updateMeta))
+            return null;
+        if (!TryResolveCallableMetadata(_methods, MethodKey(sceneObject.Name.Lexeme, draw.Name.Lexeme, draw.Parameters), out var drawMeta))
+            return null;
+
+        return new WebSceneMetadata(sceneObject.Name.Lexeme, ctorMeta, startMeta, updateMeta, drawMeta);
+    }
+
+    private static MethodDecl? FindZeroArgMethod(IReadOnlyList<MethodDecl> methods, string name)
+    {
+        for (int i = 0; i < methods.Count; i++)
+        {
+            var method = methods[i];
+            if (string.Equals(method.Name.Lexeme, name, StringComparison.Ordinal) && method.Parameters.Count == 0)
+                return method;
+        }
+
+        return null;
+    }
+
+    private bool TryResolveCallableMetadata(
+        IReadOnlyDictionary<string, (string Label, int ParamCount, int LocalCount)> map,
+        string key,
+        out GeneratedCallableMetadata metadata)
+    {
+        metadata = null!;
+        if (!map.TryGetValue(key, out var info))
+            return false;
+        if (!_builder.TryGetLabelAddress(info.Label, out int targetIp))
+            return false;
+
+        metadata = new GeneratedCallableMetadata(targetIp, Math.Max(info.LocalCount, info.ParamCount));
+        return true;
     }
 
     private sealed record InterfaceDispatchTarget(string ObjectTypeName, string ObjectMethodDispatchKey);

@@ -78,9 +78,12 @@ static class HostAbiCatalog
             ["engine.window.present"] = new HostAbiSymbol("engine.window.present", 1, "engine.window", HostAbiTargets.All),
 
             ["engine.input.key_down"] = new HostAbiSymbol("engine.input.key_down", 2, "engine.input", HostAbiTargets.All),
+            ["engine.input.key_down_scene"] = new HostAbiSymbol("engine.input.key_down_scene", 1, "engine.input", HostAbiTargets.All),
 
             ["engine.gfx.clear"] = new HostAbiSymbol("engine.gfx.clear", 5, "engine.gfx", HostAbiTargets.All),
-            ["engine.gfx.draw_rect"] = new HostAbiSymbol("engine.gfx.draw_rect", 9, "engine.gfx", HostAbiTargets.All)
+            ["engine.gfx.clear_scene"] = new HostAbiSymbol("engine.gfx.clear_scene", 4, "engine.gfx", HostAbiTargets.All),
+            ["engine.gfx.draw_rect"] = new HostAbiSymbol("engine.gfx.draw_rect", 9, "engine.gfx", HostAbiTargets.All),
+            ["engine.gfx.draw_rect_scene"] = new HostAbiSymbol("engine.gfx.draw_rect_scene", 8, "engine.gfx", HostAbiTargets.All)
         };
 
         return new ReadOnlyDictionary<string, HostAbiSymbol>(map);
@@ -149,6 +152,12 @@ static class HostAbiCatalog
                 "boolean",
                 (TypeSymbol.Whole, "whole"),
                 (TypeSymbol.Integer, "integer")),
+            ["key_down"] = Sig(
+                "key_down",
+                "engine.input.key_down_scene",
+                TypeSymbol.Boolean,
+                "boolean",
+                (TypeSymbol.Integer, "integer")),
             ["gfx_clear"] = Sig(
                 "gfx_clear",
                 "engine.gfx.clear",
@@ -159,12 +168,34 @@ static class HostAbiCatalog
                 (TypeSymbol.Real, "real"),
                 (TypeSymbol.Real, "real"),
                 (TypeSymbol.Real, "real")),
+            ["clear"] = Sig(
+                "clear",
+                "engine.gfx.clear_scene",
+                TypeSymbol.Void,
+                "void",
+                (TypeSymbol.Real, "real"),
+                (TypeSymbol.Real, "real"),
+                (TypeSymbol.Real, "real"),
+                (TypeSymbol.Real, "real")),
             ["gfx_draw_rect"] = Sig(
                 "gfx_draw_rect",
                 "engine.gfx.draw_rect",
                 TypeSymbol.Void,
                 "void",
                 (TypeSymbol.Whole, "whole"),
+                (TypeSymbol.Real, "real"),
+                (TypeSymbol.Real, "real"),
+                (TypeSymbol.Real, "real"),
+                (TypeSymbol.Real, "real"),
+                (TypeSymbol.Real, "real"),
+                (TypeSymbol.Real, "real"),
+                (TypeSymbol.Real, "real"),
+                (TypeSymbol.Real, "real")),
+            ["draw_rect"] = Sig(
+                "draw_rect",
+                "engine.gfx.draw_rect_scene",
+                TypeSymbol.Void,
+                "void",
                 (TypeSymbol.Real, "real"),
                 (TypeSymbol.Real, "real"),
                 (TypeSymbol.Real, "real"),

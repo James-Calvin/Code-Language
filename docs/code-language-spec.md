@@ -1,16 +1,19 @@
 # Code Language Specification (Living Draft)
 
-Version: 1.0  
-Last updated: 2026-02-25
+Version: 1.0
+Last updated: 2026-04-05
 
 ## 1. Goals and Design
-- `Code` is a general-purpose language.
+- `Code` is a code-first language for building 2D interactive applications that target the web first.
 - It prioritizes clarity over brevity.
 - Syntax should be consistent and intuitive.
 - It targets new developers while teaching concepts transferable to other languages.
+- Its primary product direction is: write Code source, build it, and get a runnable website.
+- It should feel closer to game development than to DOM-first web development.
 - It supports object-oriented programming.
 - It does not use class inheritance.
 - It uses interfaces for structural contracts.
+- It should preserve native portability as a secondary goal, but the first-class workflow is browser deployment.
 - When ambiguous, behavior should follow new-developer intuition.
 
 ## 2. Program Structure
@@ -24,6 +27,7 @@ print("hello, world");
   - `main` is optional.
   - `main` is used for terminal-executed console apps that take command-line arguments.
   - A file can execute without `main` when no command-line parameters are required.
+  - This is the current CLI/runtime behavior; the planned web-app authoring contract is documented separately in `docs/web-app-v1.md`.
   - Signature:
 
 ```code
@@ -114,6 +118,7 @@ if maybeCount.hasValue then {
 - Declaration syntax:
   - With explicit return type: `function<ReturnType> name(parameters) { ... }`
   - `void` return may be implied by omitting `<void>`.
+  - The same implicit-void form applies to methods declared inside `object` bodies.
 
 ```code
 function<void> doWork(integer parameter) { ... }
@@ -279,6 +284,7 @@ array<integer> otherNumbers = new array<integer>(10);
 - Current method lowering (implemented):
   - Methods are lowered to hidden callable bodies with implicit `this` as the first argument.
   - Method resolution uses object type + method name + parameter-type signature with best-match conversion scoring.
+  - Methods may use either `function<ReturnType> name(...)` or implicit-void `function name(...)`.
 - Reserved field names (currently disallowed): `length`, `hasValue`, `value`, `or`.
 - `record` is a type like `object`, but passed by value.
 - `object` instances are passed by reference.

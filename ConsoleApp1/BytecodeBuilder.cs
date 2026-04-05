@@ -199,6 +199,8 @@ sealed class BytecodeBuilder
     }
     public BytecodeBuilder Halt() { RecordDebug(); _bytes.Add((byte)OpCode.Halt); return this; }
 
+    public bool TryGetLabelAddress(string name, out int address) => _labels.TryGetValue(name, out address);
+
     public byte[] ToArray()
     {
         // Resolve jumps before writing header.

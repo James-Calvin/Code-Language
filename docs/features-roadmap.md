@@ -40,7 +40,7 @@ Legend:
 | `[x]` | Object model | VM heap object representation + opcodes (`NEW_OBJECT`, `GET_FIELD`, `SET_FIELD`) | Implemented with runtime object field dictionary |
 | `[x]` | Object model | Parse + lower `new Type(...)`, `obj.field`, `obj.field = value` | Implemented for object construction + field read/write |
 | `[x]` | Object model | Constructors + definite field initialization rules | Implemented baseline: fields require constructor init; constructors enforced |
-| `[x]` | Object model | Method declarations + call syntax (`obj.method(args)`) | Implemented with signature-based overload resolution |
+| `[x]` | Object model | Method declarations + call syntax (`obj.method(args)`) | Implemented with signature-based overload resolution; object methods support implicit-void authoring |
 | `[x]` | Object model | Temporary method lowering (`method` -> static fn with implicit `this`) | Implemented with compile-time signature binding (no dynamic dispatch yet) |
 | `[~]` | Object model | `record` declaration + value semantics (copy on assignment/pass/return) | Add `record` parser/type model first, then non-reference copy semantics |
 | `[~]` | Object model | Visibility enforcement (`public/package/private`) | Permanent; phase in from parser -> checker -> codegen |
@@ -71,9 +71,11 @@ Legend:
 | `[~]` | Runtime/stdlib | Basic stdlib (IO/math/time) | Print + time intrinsics (`unix_ms`, `unix_us`, `mono_ns`, `mono_ticks`, `mono_ticks_per_second`) implemented; native-only `read_line` + `sleep_ms` added with target checks; expand broader IO/math surface |
 | `[x]` | Platform/targets | Compile target model (`--target vm-native|vm-web`) | Implemented: target threads through linker/codegen entry points; default `vm-native` |
 | `[x]` | Platform/targets | Target capability validation | Implemented baseline: inferred capability groups (`std.*`, `engine.*`) from package/imports with compile-time matrix checks (`vm-web` rejects `std.fs`) |
+| `[x]` | Platform/targets | Web app/runtime V1 contract | Documented in `docs/web-app-v1.md`: scene object convention, `start/update/draw`, full-window browser runtime, `640x360` virtual resolution, shapes + keyboard input scope, static site folder target |
 | `[~]` | Platform/targets | Host ABI baseline | Implemented baseline `HOST_CALL` opcode + host binding tables for native/web modes (`std.io.print`, `std.time.*`, native-only `std.io.read_line`/`std.time.sleep_ms` with diagnostics) and engine stubs (`engine.window/input/gfx`); compile-time capability inference includes host-lowered intrinsics |
-| `[!]` | Platform/targets | Web VM target | Browser runtime preview implemented (`web-runtime/` JS bytecode harness + web host binding table for `std.io.print`/`std.time.*`); continue toward production loader/packaging |
-| `[!]` | Platform/targets | Web engine host bindings | Replace browser window/input/gfx no-op stubs with concrete host implementations + conformance tests |
+| `[x]` | Platform/targets | Static-site web build workflow | Implemented first slice: `--build-web` emits a runnable `dist/` folder (or custom `--out`) with `index.html` + `app.bytecode` |
+| `[~]` | Platform/targets | Browser-backed web app runtime | Implemented first slice: generated full-window canvas runtime owns resize, timing, `MainScene` lifecycle, and `640x360` scaling; expand beyond shapes + keyboard |
+| `[~]` | Platform/targets | Web engine host bindings | Implemented first scene-runtime bindings for `key_down`, `clear`, and `draw_rect`; legacy window/input/gfx handle-based stubs still need real browser-backed behavior or wrappers |
 | `[!]` | Platform/targets | Backend-agnostic engine API contract | Lock capability-query + fallback semantics so Code source remains portable across web/native backends |
 | `[~]` | Platform/targets | Native/web parity validation | Single-source app/game runs across both targets with explicit capability fallback behavior |
 | `[~]` | Game engine | Engine core packages | `engine.math`, `engine.ecs`, `engine.scene`, `engine.loop` |
@@ -93,7 +95,7 @@ Legend:
 | `[~]` | Testing | Object-model fuzz/property domains | Constructor/field mutation/member access invariants |
 
 ## Priority Rollup (benefit/effort)
-- High (`[!]`): interface/dynamic dispatch model, type system/codegen polish (frame sizing, flow/return analysis), testing expansion, error propagation semantics, host ABI + web VM target, and backend-agnostic web engine host bindings.
+- High (`[!]`): expand the browser-backed app runtime, finish backend-agnostic web engine host bindings, interface/dynamic dispatch model, type system/codegen polish (frame sizing, flow/return analysis), testing expansion, and error propagation semantics.
 - Medium (`[~]`): record semantics, constant pool, optimizer expansion, stdlib basics, tooling polish, engine core/adapters, `engine.gpu` ABI, and native/web GPU backend parity.
 - Low (`[_]`): interfaces runtime dispatch, REPL, future stdlib/versioning, long-term runtime lifecycle strategy, remote package registry.
 

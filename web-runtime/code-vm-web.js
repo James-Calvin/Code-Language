@@ -150,6 +150,237 @@ function isVmError(value) {
   return value && typeof value === "object" && value.__vmError === true;
 }
 
+function clampUnit(value) {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+  return Math.min(1, Math.max(0, value));
+}
+
+function toCssRgba(r, g, b, a) {
+  const red = Math.round(clampUnit(r) * 255);
+  const green = Math.round(clampUnit(g) * 255);
+  const blue = Math.round(clampUnit(b) * 255);
+  return `rgba(${red}, ${green}, ${blue}, ${clampUnit(a)})`;
+}
+
+export class CanvasSceneRuntime {
+  constructor(options = {}) {
+    this.virtualWidth = Math.max(1, Math.trunc(options.width || 640));
+    this.virtualHeight = Math.max(1, Math.trunc(options.height || 360));
+    this.title = typeof options.title === "string" && options.title.length > 0
+      ? options.title
+      : "Code App";
+    this.keysDown = new Set();
+    this.stepMs = 1000 / 60;
+    this.accumulatorMs = 0;
+    this.lastTimestampMs = 0;
+    this.running = false;
+    this.frameHandle = 0;
+    this.sceneObject = null;
+    this.sceneInfo = null;
+    this.vm = null;
+    this.canvas = null;
+    this.ctx = null;
+    this.outputElement = null;
+    this.handleResize = () => this.resize();
+    this.handleKeyDown = event => {
+      this.keysDown.add(event.keyCode);
+    };
+    this.handleKeyUp = event => {
+      this.keysDown.delete(event.keyCode);
+    };
+    this.handleBlur = () => {
+      this.keysDown.clear();
+    };
+    this.tick = timestamp => this.onFrame(timestamp);
+  }
+
+  attach(root = document.body) {
+    if (this.canvas) {
+      return;
+    }
+
+    document.title = this.title;
+    document.documentElement.style.margin = "0";
+    document.documentElement.style.width = "100%";
+    document.documentElement.style.height = "100%";
+
+    root.style.margin = "0";
+    root.style.width = "100%";
+    root.style.height = "100%";
+    root.style.overflow = "hidden";
+    root.style.position = "relative";
+    root.style.display = "flex";
+    root.style.alignItems = "center";
+    root.style.justifyContent = "center";
+    root.style.background = "#05070b";
+
+    const canvas = document.createElement("canvas");
+    canvas.width = this.virtualWidth;
+    canvas.height = this.virtualHeight;
+    canvas.style.display = "block";
+    canvas.style.background = "#000000";
+    canvas.style.boxShadow = "0 0 0 1px rgba(255,255,255,0.06)";
+    canvas.style.imageRendering = "pixelated";
+
+    const output = document.createElement("pre");
+    output.style.position = "absolute";
+    output.style.left = "12px";
+    output.style.bottom = "12px";
+    output.style.margin = "0";
+    output.style.maxWidth = "min(560px, calc(100vw - 24px))";
+    output.style.maxHeight = "40vh";
+    output.style.overflow = "auto";
+    output.style.padding = "10px 12px";
+    output.style.borderRadius = "10px";
+    output.style.background = "rgba(9, 12, 19, 0.78)";
+    output.style.color = "#e2e8f0";
+    output.style.font = "12px/1.4 Consolas, 'Courier New', monospace";
+    output.style.whiteSpace = "pre-wrap";
+    output.style.display = "none";
+
+    root.replaceChildren(canvas, output);
+
+    this.canvas = canvas;
+    this.ctx = canvas.getContext("2d");
+    this.outputElement = output;
+    if (this.ctx) {
+      this.ctx.imageSmoothingEnabled = false;
+    }
+
+    window.addEventListener("resize", this.handleResize);
+    window.addEventListener("keydown", this.handleKeyDown);
+    window.addEventListener("keyup", this.handleKeyUp);
+    window.addEventListener("blur", this.handleBlur);
+    this.resize();
+  }
+
+  dispose() {
+    this.stop();
+    window.removeEventListener("resize", this.handleResize);
+    window.removeEventListener("keydown", this.handleKeyDown);
+    window.removeEventListener("keyup", this.handleKeyUp);
+    window.removeEventListener("blur", this.handleBlur);
+    this.keysDown.clear();
+  }
+
+  resize() {
+    if (!this.canvas) {
+      return;
+    }
+
+    const viewportWidth = Math.max(1, window.innerWidth || document.documentElement.clientWidth || this.virtualWidth);
+    const viewportHeight = Math.max(1, window.innerHeight || document.documentElement.clientHeight || this.virtualHeight);
+    const scale = Math.min(viewportWidth / this.virtualWidth, viewportHeight / this.virtualHeight);
+    const displayWidth = Math.max(1, Math.floor(this.virtualWidth * scale));
+    const displayHeight = Math.max(1, Math.floor(this.virtualHeight * scale));
+
+    this.canvas.style.width = `${displayWidth}px`;
+    this.canvas.style.height = `${displayHeight}px`;
+  }
+
+  appendOutput(line) {
+    if (!this.outputElement) {
+      return;
+    }
+
+    this.outputElement.style.display = "block";
+    this.outputElement.textContent += `${line}\n`;
+    this.outputElement.scrollTop = this.outputElement.scrollHeight;
+  }
+
+  showFatal(error) {
+    const message = error instanceof VmRuntimeError
+      ? `Runtime error: ${error.message}`
+      : (error && typeof error.message === "string" ? error.message : String(error));
+    this.appendOutput(message);
+
+    if (error instanceof VmRuntimeError) {
+      const frames = error.payload?.callStack ?? [];
+      if (frames.length > 0) {
+        this.appendOutput("Stack trace (most recent call first):");
+        for (const frame of frames) {
+          this.appendOutput(`  at ip ${frame.ip} (${frame.line}:${frame.column})`);
+        }
+      }
+    }
+  }
+
+  clear(r, g, b, a) {
+    if (!this.ctx) {
+      return 0;
+    }
+
+    this.ctx.fillStyle = toCssRgba(r, g, b, a);
+    this.ctx.fillRect(0, 0, this.virtualWidth, this.virtualHeight);
+    return 0;
+  }
+
+  drawRect(x, y, w, h, r, g, b, a) {
+    if (!this.ctx) {
+      return 0;
+    }
+
+    this.ctx.fillStyle = toCssRgba(r, g, b, a);
+    this.ctx.fillRect(x, y, w, h);
+    return 0;
+  }
+
+  keyDown(keyCode) {
+    return this.keysDown.has(Math.trunc(keyCode));
+  }
+
+  runScene(vm, sceneInfo) {
+    this.vm = vm;
+    this.sceneInfo = sceneInfo;
+    this.stop();
+
+    vm.run();
+
+    this.sceneObject = vm.createObject(sceneInfo.typeName);
+    vm.invokeVoid(sceneInfo.constructor.targetIp, sceneInfo.constructor.frameSize, [this.sceneObject]);
+    vm.invokeVoid(sceneInfo.start.targetIp, sceneInfo.start.frameSize, [this.sceneObject]);
+
+    this.running = true;
+    this.accumulatorMs = 0;
+    this.lastTimestampMs = performance.now();
+    this.frameHandle = requestAnimationFrame(this.tick);
+  }
+
+  stop() {
+    this.running = false;
+    if (this.frameHandle) {
+      cancelAnimationFrame(this.frameHandle);
+      this.frameHandle = 0;
+    }
+  }
+
+  onFrame(timestamp) {
+    if (!this.running || !this.vm || !this.sceneInfo || !this.sceneObject) {
+      return;
+    }
+
+    try {
+      const elapsedMs = Math.min(250, Math.max(0, timestamp - this.lastTimestampMs));
+      this.lastTimestampMs = timestamp;
+      this.accumulatorMs += elapsedMs;
+
+      while (this.accumulatorMs >= this.stepMs) {
+        this.vm.invokeVoid(this.sceneInfo.update.targetIp, this.sceneInfo.update.frameSize, [this.sceneObject]);
+        this.accumulatorMs -= this.stepMs;
+      }
+
+      this.vm.invokeVoid(this.sceneInfo.draw.targetIp, this.sceneInfo.draw.frameSize, [this.sceneObject]);
+      this.frameHandle = requestAnimationFrame(this.tick);
+    } catch (error) {
+      this.stop();
+      this.showFatal(error);
+      console.error(error);
+    }
+  }
+}
+
 export class WebVm {
   constructor(bytecodeBytes, options = {}) {
     this.bytes = bytecodeBytes;
@@ -169,6 +400,7 @@ export class WebVm {
     this.hostTarget = "vm-web";
     this.monoOriginMs = performance.now();
     this.hostBindings = new Map();
+    this.sceneHost = options.sceneHost ?? null;
 
     this.initializeHostBindings();
   }
@@ -232,14 +464,84 @@ export class WebVm {
       arity: 2,
       handler: () => 0
     });
+    this.hostBindings.set("engine.input.key_down_scene", {
+      arity: 1,
+      handler: args => {
+        if (!this.sceneHost) {
+          return 0;
+        }
+        return this.sceneHost.keyDown(toNumber(args[0], message => this.throwRuntime(message))) ? 1 : 0;
+      }
+    });
     this.hostBindings.set("engine.gfx.clear", {
       arity: 5,
       handler: () => 0
+    });
+    this.hostBindings.set("engine.gfx.clear_scene", {
+      arity: 4,
+      handler: args => {
+        if (!this.sceneHost) {
+          return 0;
+        }
+        return this.sceneHost.clear(
+          toNumber(args[0], message => this.throwRuntime(message)),
+          toNumber(args[1], message => this.throwRuntime(message)),
+          toNumber(args[2], message => this.throwRuntime(message)),
+          toNumber(args[3], message => this.throwRuntime(message))
+        );
+      }
     });
     this.hostBindings.set("engine.gfx.draw_rect", {
       arity: 9,
       handler: () => 0
     });
+    this.hostBindings.set("engine.gfx.draw_rect_scene", {
+      arity: 8,
+      handler: args => {
+        if (!this.sceneHost) {
+          return 0;
+        }
+        return this.sceneHost.drawRect(
+          toNumber(args[0], message => this.throwRuntime(message)),
+          toNumber(args[1], message => this.throwRuntime(message)),
+          toNumber(args[2], message => this.throwRuntime(message)),
+          toNumber(args[3], message => this.throwRuntime(message)),
+          toNumber(args[4], message => this.throwRuntime(message)),
+          toNumber(args[5], message => this.throwRuntime(message)),
+          toNumber(args[6], message => this.throwRuntime(message)),
+          toNumber(args[7], message => this.throwRuntime(message))
+        );
+      }
+    });
+  }
+
+  createObject(typeName) {
+    return { __vmObject: true, typeName, fields: new Map() };
+  }
+
+  invokeVoid(targetIp, localCount, args = []) {
+    const savedIp = this.ip;
+    const savedLocals = this.locals;
+    const savedStackDepth = this.stack.length;
+    const savedCallStackDepth = this.callStack.length;
+
+    const frameSize = Math.max(localCount || 0, args.length, 1);
+    const locals = new Array(frameSize).fill(0);
+    for (let i = 0; i < args.length; i += 1) {
+      locals[i] = args[i];
+    }
+
+    this.locals = locals;
+    this.ip = targetIp;
+
+    try {
+      this.run();
+    } finally {
+      this.locals = savedLocals;
+      this.ip = savedIp;
+      this.stack.length = savedStackDepth;
+      this.callStack.length = savedCallStackDepth;
+    }
   }
 
   registerUnsupportedBinding(symbol, arity, reason) {

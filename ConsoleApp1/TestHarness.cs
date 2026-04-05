@@ -113,6 +113,7 @@ internal static class TestHarness
         }
 
         failures += RunCompilerIntegrationTests();
+        failures += RunWebBuildTests();
         failures += RunHostAbiSurfaceTests();
         failures += RunTargetParityTests();
         failures += RunArithmeticFuzz();
@@ -306,6 +307,34 @@ Bag a = new Bag(3);
 Bag b = new Bag(true);
 print(a.count);
 print(b.count);", "3\n999\n"),
+            ("object-method-implicit-void",
+@"object Logger {
+  constructor() { }
+  function ping() {
+    print(""ok"");
+  }
+}
+Logger logger = new Logger();
+logger.ping();", "ok\n"),
+            ("scene-intrinsics-native-stubs",
+@"object MainScene {
+  constructor() { }
+  function start() {
+    print(""start"");
+  }
+  function update() {
+    print(key_down(37));
+  }
+  function draw() {
+    clear(0, 0, 0, 1);
+    draw_rect(10, 20, 30, 40, 1, 1, 1, 1);
+    print(""draw"");
+  }
+}
+MainScene scene = new MainScene();
+scene.start();
+scene.update();
+scene.draw();", "start\n0\ndraw\n"),
         };
         var interfaceCases = new List<(string Name, string Source, string Expected)>
         {
@@ -1534,6 +1563,104 @@ export function<string> readText() { return ""ok""; }",
         return failures;
     }
 
+    private static int RunWebBuildTests()
+    {
+        int failures = 0;
+
+        try
+        {
+            var outputs = BuildWebApp(
+                new Dictionary<string, string>
+                {
+                    ["main.code"] =
+@"export object MainScene {
+  integer x;
+  integer y;
+
+  constructor() {
+    this.x = 100;
+    this.y = 120;
+  }
+
+  function start() {
+  }
+
+  function update() {
+    if key_down(37) then this.x = this.x - 2;
+    if key_down(39) then this.x = this.x + 2;
+    if key_down(38) then this.y = this.y - 2;
+    if key_down(40) then this.y = this.y + 2;
+  }
+
+  function draw() {
+    clear(0, 0, 0, 1);
+    draw_rect(this.x, this.y, 24, 24, 1, 1, 1, 1);
+  }
+}"
+                },
+                "main.code");
+
+            bool matched =
+                string.Equals(Path.GetFileName(outputs.OutputDirectory), "dist", StringComparison.OrdinalIgnoreCase) &&
+                outputs.IndexHtmlExists &&
+                outputs.BytecodeExists &&
+                outputs.BytecodeLength > 0 &&
+                outputs.IndexHtml.Contains("CanvasSceneRuntime", StringComparison.Ordinal) &&
+                outputs.IndexHtml.Contains("APP_METADATA", StringComparison.Ordinal) &&
+                outputs.IndexHtml.Contains("\"typeName\": \"MainScene\"", StringComparison.Ordinal) &&
+                outputs.IndexHtml.Contains("\"virtualWidth\": 640", StringComparison.Ordinal) &&
+                outputs.IndexHtml.Contains("\"virtualHeight\": 360", StringComparison.Ordinal) &&
+                !outputs.IndexHtml.Contains("fileInput", StringComparison.Ordinal) &&
+                !outputs.IndexHtml.Contains("Load a compiled", StringComparison.Ordinal);
+
+            if (!matched)
+            {
+                failures++;
+                Console.WriteLine("[FAIL] web-build-scene-runtime: generated web app did not match expected runtime contract");
+            }
+            else
+            {
+                Console.WriteLine("[PASS] web-build-scene-runtime");
+            }
+        }
+        catch (Exception ex)
+        {
+            failures++;
+            Console.WriteLine($"[FAIL] web-build-scene-runtime: threw {ex.GetType().Name} - {ex.Message}");
+        }
+
+        try
+        {
+            _ = BuildWebApp(
+                new Dictionary<string, string>
+                {
+                    ["main.code"] = "print(1);"
+                },
+                "main.code");
+            failures++;
+            Console.WriteLine("[FAIL] web-build-requires-main-scene: expected compile error");
+        }
+        catch (Compiler.CompilerException ex)
+        {
+            if (!ex.Message.Contains("Web build requires object 'MainScene'", StringComparison.Ordinal))
+            {
+                failures++;
+                Console.WriteLine($"[FAIL] web-build-requires-main-scene: unexpected error '{ex.Message}'");
+            }
+            else
+            {
+                Console.WriteLine("[PASS] web-build-requires-main-scene");
+            }
+        }
+        catch (Exception ex)
+        {
+            failures++;
+            Console.WriteLine($"[FAIL] web-build-requires-main-scene: threw {ex.GetType().Name} - {ex.Message}");
+        }
+
+        return failures;
+    }
+
     private static int RunTargetParityTests()
     {
         int failures = 0;
@@ -2074,6 +2201,15 @@ print(sum);";
 
     private sealed record ArtifactOutputs(string ArtifactJson, string LockfileJson, string RunOutput);
 
+    private sealed record WebBuildOutputs(
+        string OutputDirectory,
+        string IndexHtmlPath,
+        string BytecodePath,
+        bool IndexHtmlExists,
+        bool BytecodeExists,
+        int BytecodeLength,
+        string IndexHtml);
+
     private static ArtifactOutputs CompileModulesAndReadArtifact(
         IReadOnlyDictionary<string, string> files,
         string entryRelativePath,
@@ -2111,6 +2247,51 @@ print(sum);";
             vm.Run();
 
             return new ArtifactOutputs(File.ReadAllText(artifactPath), File.ReadAllText(lockPath), sw.ToString());
+        }
+        finally
+        {
+            try { Directory.Delete(tempRoot, recursive: true); }
+            catch { }
+        }
+    }
+
+    private static WebBuildOutputs BuildWebApp(
+        IReadOnlyDictionary<string, string> files,
+        string entryRelativePath,
+        string? outputDirectory = null)
+    {
+        string tempRoot = Path.Combine(Path.GetTempPath(), "code-web-build-tests-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+        try
+        {
+            foreach (var pair in files)
+            {
+                string fullPath = Path.Combine(tempRoot, pair.Key);
+                string? dir = Path.GetDirectoryName(fullPath);
+                if (!string.IsNullOrEmpty(dir))
+                    Directory.CreateDirectory(dir);
+                File.WriteAllText(fullPath, pair.Value);
+            }
+
+            string entryPath = Path.Combine(tempRoot, entryRelativePath);
+            string? resolvedOutputDirectory = string.IsNullOrWhiteSpace(outputDirectory)
+                ? null
+                : Path.GetFullPath(Path.Combine(tempRoot, outputDirectory));
+
+            var result = WebBuildPipeline.Build(entryPath, resolvedOutputDirectory);
+            bool indexHtmlExists = File.Exists(result.IndexHtmlPath);
+            bool bytecodeExists = File.Exists(result.BytecodePath);
+            string indexHtml = indexHtmlExists ? File.ReadAllText(result.IndexHtmlPath) : string.Empty;
+            int bytecodeLength = bytecodeExists ? File.ReadAllBytes(result.BytecodePath).Length : 0;
+
+            return new WebBuildOutputs(
+                result.OutputDirectory,
+                result.IndexHtmlPath,
+                result.BytecodePath,
+                indexHtmlExists,
+                bytecodeExists,
+                bytecodeLength,
+                indexHtml);
         }
         finally
         {

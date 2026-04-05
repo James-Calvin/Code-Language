@@ -18,7 +18,7 @@ The repo contains:
 - Time intrinsics: `unix_ms()`, `unix_us()`, `mono_ns()`, `mono_ticks()`, `mono_ticks_per_second()`, `sleep_ms(ms)`
 - Native-only IO intrinsic: `read_line()`
 - Functions with CALL/RET, locals, return (implicit 0)
-- File modules: `export` + imports (`import Name [as Alias] from "path";`, `import { A, B as C } from "path";`, `import everything as Namespace from "path";`) with recursive linking and `lib/` search
+- File modules: `export` + imports (`import Name [as Alias] from "path";`, `import { A, B as C } from "path";`, `import everything as Namespace from "path";`, `export import ...`) with recursive linking and `lib/` search
 - Package manifest + lockfile baseline: nearest `code.package.json` is parsed/validated during module compile; local dependency graph resolves and `code.lock.json` is generated
 - Host ABI baseline: compiler emits `HOST_CALL` for `print`, time intrinsics, native-only APIs (`standard.input_output.read_line`, `std.time.sleep_ms`), and engine stubs (`engine.window/*`, `engine.input/*`, `engine.gfx/*`)
 - Web app build/runtime V1 slice: `--build-web` emits a runnable static site folder with `index.html`, `app.bytecode`, copied `assets/` content when present, a full-bleed canvas runtime, `MainScene` scene-object lifecycle (`start/update/draw` plus optional `draw_hud()`), guaranteed `640x360` safe area, hybrid-expand world framing, HUD screen-space, and browser-backed `key_down()`/`clear()`/`draw_rectangle()`/`draw_rectangle_outline()`/`draw_line()`/`draw_circle()`/`draw_circle_outline()`/`draw_polygon()`/`draw_polygon_outline()`/`draw_text()`/`draw_image()`/`draw_sprite()`
@@ -28,6 +28,11 @@ The repo contains:
 - Error objects: `panic <expr>;` emits a `UserError` with call stack
 
 See [the language spec](docs/code-language-spec.md), [the feature roadmap](docs/features-roadmap.md), and [the web app/runtime V1 contract](docs/web-app-v1.md) for the current scope and the target developer workflow.
+
+## Implemented Today vs Planned
+- Implemented today: objects, interfaces, arrays, optionals, grouped/selective/namespace/re-export imports, package manifests/lockfiles/library artifacts, target capability checks, `panic`, and the current web build/runtime slice.
+- Planned, not implemented today: enumerations, `switch`, `record`, visibility modifiers, user-facing `fallible<T>` / `on error`, built-in `map` / `set` / `queue` / `stack`, and standard math/random helpers.
+- Example status and usage live in [the example catalog](docs/example-catalog.md).
 
 ## Current State vs Target Workflow
 - Current state: scene-object web apps can now be built with `--build-web` into a runnable static site folder, defaulting to `dist/`.
@@ -128,7 +133,7 @@ Test harness covers VM ops, compiler integration (print, arithmetic, functions, 
 - Namespace imports: `import everything as Draw from "engine/drawing.code";` for function-only module surfaces
 - Re-export imports: `export import Name from "path";`, `export import { A, B } from "path";`
 - Package declarations: optional `package Name;` at top of module (before imports/declarations)
-- Package manifest: optional `code.package.json` (nearest ancestor) with validated fields (`schemaVersion`, `name`, `version`, `kind`, `entry`, optional `targets`, `targetOverrides`, `hostAbi.requires`, deps maps)
+- Package manifest: optional `code.package.json` (nearest ancestor) with validated fields (`schemaVersion`, `name`, `version`, `kind`, `entry`, optional `targets`, `targetOverrides`, `hostAbi.requires`, deps maps); `targetOverrides` are currently schema-validated but not yet used to auto-select a different entry file at compile time
 - Lockfile: `code.lock.json` is written in the package root during compile when a manifest is present (schema v1, target, resolved package list with integrity hashes)
 - Library packages (`kind: "library"`) emit a `.codelib` artifact during compile; lockfile resolution prefers `.codelib` paths when present and validated
 - Import resolution: importing file directory first, then discovered ancestor `lib/` folders
@@ -149,6 +154,8 @@ Test harness covers VM ops, compiler integration (print, arithmetic, functions, 
 Active priorities: grow the current `lib/engine/` wrapper layer beyond scene composition into a fuller engine-facing API, continue replacing raw engine stubs with real browser-backed implementations, and expand the browser runtime beyond the current primitives/keyboard/image-sprite slice into richer rendering, input, and audio. The web runtime remains JavaScript for now; a Wasm path is deferred until performance or parity data justifies the extra toolchain cost. Full detail is in [docs/features-roadmap.md](docs/features-roadmap.md) and [docs/platform-roadmap.md](docs/platform-roadmap.md).
 
 ## Examples
+See [docs/example-catalog.md](docs/example-catalog.md) for the implementation-truth catalog of runnable, negative, and planned examples.
+
 Compile + run an example:
 ```
 dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- ConsoleApp1/examples/arithmetic.code
@@ -157,6 +164,11 @@ dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- ConsoleApp1/examples/arit
 Module import example:
 ```
 dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- ConsoleApp1/examples/modules/main.code
+```
+
+Re-export import example:
+```
+dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- ConsoleApp1/examples/modules/re_exports_main.code
 ```
 
 Time intrinsics example:
@@ -169,7 +181,12 @@ Engine host stub example:
 dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- --target vm-web ConsoleApp1/examples/engine_stubs.code
 ```
 
-Web scene build example:
+Playable web demo example:
+```
+dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- --build-web ConsoleApp1/examples/shape_dodge.code
+```
+
+Broader web scene/runtime reference:
 ```
 dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- --build-web ConsoleApp1/examples/web_scene.code
 ```
@@ -179,8 +196,13 @@ Native-only host API example:
 dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- ConsoleApp1/examples/host_abi_native_only.code
 ```
 
-Panic example:
+Negative compile-error example:
 ```
-panic("boom");
+dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- --compile-only ConsoleApp1/examples/constants.code
+```
+
+Negative runtime-error example:
+```
+dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- ConsoleApp1/examples/panic.code
 ```
 

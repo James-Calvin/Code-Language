@@ -1,0 +1,6 @@
+package examples.modules.reexportsmain;
+
+import { add, subtract as minus } from "re_exports_public.code";
+
+print(add(7, 2));
+print(minus(7, 2));

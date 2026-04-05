@@ -1,0 +1,9 @@
+package examples.modules.reexportsmath;
+
+export function<integer> add(integer left, integer right) {
+  return left + right;
+}
+
+export function<integer> subtract(integer left, integer right) {
+  return left - right;
+}

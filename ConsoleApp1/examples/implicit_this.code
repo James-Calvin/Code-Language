@@ -1,0 +1,21 @@
+// Runnable example: implicit field access and bare method calls inside object bodies.
+
+object Counter {
+  integer count;
+
+  constructor() {
+    count = 1;
+  }
+
+  function bump() {
+    count += 1;
+  }
+
+  function<integer> read() {
+    bump();
+    return count;
+  }
+}
+
+Counter counter = new Counter();
+print(counter.read());

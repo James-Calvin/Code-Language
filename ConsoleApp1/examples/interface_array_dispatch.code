@@ -1,0 +1,29 @@
+// Runnable example: inline interface implementation plus interface-typed arrays.
+
+interface IValue {
+  function<integer> read();
+}
+
+object One {
+  constructor() {
+  }
+
+  implement IValue.read() {
+    return 1;
+  }
+}
+
+object Two {
+  constructor() {
+  }
+
+  implement IValue.read() {
+    return 2;
+  }
+}
+
+array<IValue> values = new array<IValue>(0);
+values.append(new One());
+values.append(new Two());
+
+foreach value in values then print(value.read());

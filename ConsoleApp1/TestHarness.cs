@@ -119,6 +119,7 @@ internal static class TestHarness
 
         failures += RunCompilerIntegrationTests();
         failures += RunWebBuildTests();
+        failures += RunExampleCatalogTests();
         failures += RunWebRuntimeParityTests();
         failures += RunHostAbiSurfaceTests();
         failures += RunTargetParityTests();
@@ -2218,6 +2219,165 @@ export object MainScene {
         return failures;
     }
 
+    private static int RunExampleCatalogTests()
+    {
+        int failures = 0;
+
+        var runnableCompileExamples = new List<(string Name, string RelativePath, Compiler.CompileTarget Target)>
+        {
+            ("example-arithmetic-runnable", @"ConsoleApp1/examples/arithmetic.code", Compiler.CompileTarget.VmNative),
+            ("example-object-runnable", @"ConsoleApp1/examples/object.code", Compiler.CompileTarget.VmNative),
+            ("example-implicit-this-runnable", @"ConsoleApp1/examples/implicit_this.code", Compiler.CompileTarget.VmNative),
+            ("example-interface-dispatch-runnable", @"ConsoleApp1/examples/interface_dispatch.code", Compiler.CompileTarget.VmNative),
+            ("example-interface-array-dispatch-runnable", @"ConsoleApp1/examples/interface_array_dispatch.code", Compiler.CompileTarget.VmNative),
+            ("example-modules-main-runnable", @"ConsoleApp1/examples/modules/main.code", Compiler.CompileTarget.VmNative),
+            ("example-modules-grouped-imports-runnable", @"ConsoleApp1/examples/modules/grouped-imports.code", Compiler.CompileTarget.VmNative),
+            ("example-modules-re-exports-runnable", @"ConsoleApp1/examples/modules/re_exports_main.code", Compiler.CompileTarget.VmNative),
+        };
+
+        foreach (var (name, relativePath, target) in runnableCompileExamples)
+        {
+            try
+            {
+                var bytes = CompileRepoExample(relativePath, target);
+                if (bytes.Length <= 0)
+                {
+                    failures++;
+                    Console.WriteLine($"[FAIL] {name}: compile produced no bytecode");
+                }
+                else
+                {
+                    Console.WriteLine($"[PASS] {name}");
+                }
+            }
+            catch (Exception ex)
+            {
+                failures++;
+                Console.WriteLine($"[FAIL] {name}: threw {ex.GetType().Name} - {ex.Message}");
+            }
+        }
+
+        try
+        {
+            string output = Normalize(CompileAndRunRepoPackageExample(
+                @"ConsoleApp1/examples/package_manifest_host_requirements/ok/main.code",
+                Compiler.CompileTarget.VmWeb,
+                VmHostTarget.Web));
+            if (!string.Equals(output, "ok package\n1\n1\n", StringComparison.Ordinal))
+            {
+                failures++;
+                Console.WriteLine($"[FAIL] example-package-host-requirements-ok: unexpected output '{Escape(output)}'");
+            }
+            else
+            {
+                Console.WriteLine("[PASS] example-package-host-requirements-ok");
+            }
+        }
+        catch (Exception ex)
+        {
+            failures++;
+            Console.WriteLine($"[FAIL] example-package-host-requirements-ok: threw {ex.GetType().Name} - {ex.Message}");
+        }
+
+        try
+        {
+            VerifyRepoPackageArtifactExample(@"ConsoleApp1/examples/package_library_artifact/main.code");
+            Console.WriteLine("[PASS] example-package-library-artifact");
+        }
+        catch (Exception ex)
+        {
+            failures++;
+            Console.WriteLine($"[FAIL] example-package-library-artifact: threw {ex.GetType().Name} - {ex.Message}");
+        }
+
+        var webBuildExamples = new List<(string Name, string RelativePath)>
+        {
+            ("example-shape-dodge-web-build", @"ConsoleApp1/examples/shape_dodge.code"),
+            ("example-web-scene-web-build", @"ConsoleApp1/examples/web_scene.code"),
+        };
+
+        foreach (var (name, relativePath) in webBuildExamples)
+        {
+            try
+            {
+                VerifyRepoWebBuildExample(relativePath);
+                Console.WriteLine($"[PASS] {name}");
+            }
+            catch (Exception ex)
+            {
+                failures++;
+                Console.WriteLine($"[FAIL] {name}: threw {ex.GetType().Name} - {ex.Message}");
+            }
+        }
+
+        try
+        {
+            CompileRepoExampleExpectCompileError(
+                @"ConsoleApp1/examples/constants.code",
+                "Cannot assign to constant");
+            Console.WriteLine("[PASS] example-constants-negative");
+        }
+        catch (Exception ex)
+        {
+            failures++;
+            Console.WriteLine($"[FAIL] example-constants-negative: {ex.GetType().Name} - {ex.Message}");
+        }
+
+        try
+        {
+            CompileRepoPackageExampleExpectCompileError(
+                @"ConsoleApp1/examples/package_manifest_host_requirements/web_blocked/main.code",
+                Compiler.CompileTarget.VmWeb,
+                "hostAbi.requires");
+            Console.WriteLine("[PASS] example-package-host-requirements-web-blocked");
+        }
+        catch (Exception ex)
+        {
+            failures++;
+            Console.WriteLine($"[FAIL] example-package-host-requirements-web-blocked: {ex.GetType().Name} - {ex.Message}");
+        }
+
+        try
+        {
+            CompileRepoExampleExpectRuntimeError(
+                @"ConsoleApp1/examples/panic.code",
+                "UserError");
+            Console.WriteLine("[PASS] example-panic-negative");
+        }
+        catch (Exception ex)
+        {
+            failures++;
+            Console.WriteLine($"[FAIL] example-panic-negative: {ex.GetType().Name} - {ex.Message}");
+        }
+
+        try
+        {
+            string catalogText = File.ReadAllText(GetRepoPath(@"docs/example-catalog.md"));
+            bool matched =
+                catalogText.Contains("| `negative` | `ConsoleApp1/examples/constants.code` | `expected compile error` |", StringComparison.Ordinal) &&
+                catalogText.Contains("| `planned` | `ConsoleApp1/examples/record.code` | `planned only` |", StringComparison.Ordinal) &&
+                catalogText.Contains("| `runnable` | `ConsoleApp1/examples/shape_dodge.code` | `build-web` |", StringComparison.Ordinal) &&
+                catalogText.Contains("| `runnable` | `ConsoleApp1/examples/web_scene.code` | `build-web` |", StringComparison.Ordinal);
+
+            if (!matched)
+            {
+                failures++;
+                Console.WriteLine("[FAIL] example-catalog-statuses: catalog rows did not match expected statuses");
+            }
+            else
+            {
+                Console.WriteLine("[PASS] example-catalog-statuses");
+            }
+        }
+        catch (Exception ex)
+        {
+            failures++;
+            Console.WriteLine($"[FAIL] example-catalog-statuses: threw {ex.GetType().Name} - {ex.Message}");
+        }
+
+        return failures;
+    }
+
     private static int RunTargetParityTests()
     {
         int failures = 0;
@@ -2888,6 +3048,205 @@ print(sum);";
         }
     }
 
+    private static string GetRepoPath(string relativePath)
+    {
+        string normalizedRelativePath = relativePath
+            .Replace('/', Path.DirectorySeparatorChar)
+            .Replace('\\', Path.DirectorySeparatorChar);
+        string path = Path.Combine(Directory.GetCurrentDirectory(), normalizedRelativePath);
+        if (!File.Exists(path) && !Directory.Exists(path))
+            throw new FileNotFoundException($"Expected repo path was not found: {path}", path);
+        return path;
+    }
+
+    private static byte[] CompileRepoExample(string relativePath, Compiler.CompileTarget target = Compiler.CompileTarget.VmNative)
+    {
+        string path = GetRepoPath(relativePath);
+        var options = new Compiler.ModuleCompileOptions { Target = target };
+        return Compiler.ModuleCompiler.CompileFromFile(path, options);
+    }
+
+    private static void CompileRepoExampleExpectCompileError(string relativePath, string expectedContains, Compiler.CompileTarget target = Compiler.CompileTarget.VmNative)
+    {
+        try
+        {
+            _ = CompileRepoExample(relativePath, target);
+            throw new Exception("Expected compile error was not thrown");
+        }
+        catch (Compiler.CompilerException ex)
+        {
+            if (!ex.Message.Contains(expectedContains, StringComparison.Ordinal))
+                throw new Exception($"Expected compile error containing '{expectedContains}', got '{ex.Message}'");
+        }
+    }
+
+    private static void CompileRepoExampleExpectRuntimeError(
+        string relativePath,
+        string expectedType,
+        Compiler.CompileTarget target = Compiler.CompileTarget.VmNative,
+        VmHostTarget hostTarget = VmHostTarget.Native)
+    {
+        var bytes = CompileRepoExample(relativePath, target);
+        using var sw = new StringWriter();
+        var vm = new Vm(bytes, sw, hostTarget: hostTarget);
+        try
+        {
+            vm.Run();
+            throw new Exception("Expected runtime error was not thrown");
+        }
+        catch (VmRuntimeException vex)
+        {
+            if (!string.Equals(vex.Error.Type, expectedType, StringComparison.Ordinal))
+                throw new Exception($"Expected runtime error '{expectedType}', got '{vex.Error.Type}'");
+        }
+    }
+
+    private static void VerifyRepoWebBuildExample(string relativePath)
+    {
+        string outputDirectory = Path.Combine(Path.GetTempPath(), "code-example-web-build-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            Directory.CreateDirectory(outputDirectory);
+            string examplePath = GetRepoPath(relativePath);
+            var result = WebBuildPipeline.Build(examplePath, outputDirectory);
+
+            bool matched =
+                File.Exists(result.IndexHtmlPath) &&
+                File.Exists(result.BytecodePath) &&
+                File.ReadAllBytes(result.BytecodePath).Length > 0 &&
+                File.ReadAllText(result.IndexHtmlPath).Contains("MainScene", StringComparison.Ordinal);
+
+            if (!matched)
+                throw new Exception("Build output missing expected files");
+        }
+        finally
+        {
+            try { Directory.Delete(outputDirectory, recursive: true); }
+            catch { }
+        }
+    }
+
+    private static string CompileAndRunRepoPackageExample(
+        string relativeEntryPath,
+        Compiler.CompileTarget target,
+        VmHostTarget hostTarget)
+    {
+        var workspace = CopyRepoPackageExampleToTemp(relativeEntryPath);
+        try
+        {
+            var options = new Compiler.ModuleCompileOptions { Target = target };
+            var bytes = Compiler.ModuleCompiler.CompileFromFile(workspace.EntryPath, options);
+            using var sw = new StringWriter();
+            var vm = new Vm(bytes, sw, hostTarget: hostTarget);
+            vm.Run();
+            return sw.ToString();
+        }
+        finally
+        {
+            try { Directory.Delete(workspace.TempRoot, recursive: true); }
+            catch { }
+        }
+    }
+
+    private static void CompileRepoPackageExampleExpectCompileError(
+        string relativeEntryPath,
+        Compiler.CompileTarget target,
+        string expectedContains)
+    {
+        var workspace = CopyRepoPackageExampleToTemp(relativeEntryPath);
+        try
+        {
+            try
+            {
+                var options = new Compiler.ModuleCompileOptions { Target = target };
+                _ = Compiler.ModuleCompiler.CompileFromFile(workspace.EntryPath, options);
+                throw new Exception("Expected compile error was not thrown");
+            }
+            catch (Compiler.CompilerException ex)
+            {
+                if (!ex.Message.Contains(expectedContains, StringComparison.Ordinal))
+                    throw new Exception($"Expected compile error containing '{expectedContains}', got '{ex.Message}'");
+            }
+        }
+        finally
+        {
+            try { Directory.Delete(workspace.TempRoot, recursive: true); }
+            catch { }
+        }
+    }
+
+    private static void VerifyRepoPackageArtifactExample(string relativeEntryPath)
+    {
+        var workspace = CopyRepoPackageExampleToTemp(relativeEntryPath);
+        try
+        {
+            var options = new Compiler.ModuleCompileOptions { Target = Compiler.CompileTarget.VmNative };
+            _ = Compiler.ModuleCompiler.CompileFromFile(workspace.EntryPath, options);
+
+            var artifactFiles = Directory.GetFiles(workspace.TempRoot, "*.codelib", SearchOption.TopDirectoryOnly);
+            if (artifactFiles.Length == 0)
+                throw new Exception("Expected library artifact file was not generated");
+
+            string lockPath = Path.Combine(workspace.TempRoot, "code.lock.json");
+            if (!File.Exists(lockPath))
+                throw new Exception("Expected code.lock.json to be generated");
+        }
+        finally
+        {
+            try { Directory.Delete(workspace.TempRoot, recursive: true); }
+            catch { }
+        }
+    }
+
+    private static TempPackageWorkspace CopyRepoPackageExampleToTemp(string relativeEntryPath)
+    {
+        string repoEntryPath = GetRepoPath(relativeEntryPath);
+        string entryDirectory = Path.GetDirectoryName(repoEntryPath)
+            ?? throw new InvalidOperationException($"Could not determine directory for '{repoEntryPath}'.");
+        string packageRoot = FindNearestManifestDirectory(entryDirectory)
+            ?? throw new DirectoryNotFoundException($"Could not find code.package.json for '{repoEntryPath}'.");
+
+        string tempRoot = Path.Combine(Path.GetTempPath(), "code-package-example-" + Guid.NewGuid().ToString("N"));
+        CopyDirectory(packageRoot, tempRoot);
+
+        string relativeEntry = Path.GetRelativePath(packageRoot, repoEntryPath);
+        string tempEntryPath = Path.Combine(tempRoot, relativeEntry);
+        return new TempPackageWorkspace(tempRoot, tempEntryPath);
+    }
+
+    private static string? FindNearestManifestDirectory(string startDirectory)
+    {
+        string repoRoot = Directory.GetCurrentDirectory();
+        string? current = startDirectory;
+        while (!string.IsNullOrEmpty(current))
+        {
+            if (File.Exists(Path.Combine(current, "code.package.json")))
+                return current;
+
+            if (string.Equals(current, repoRoot, StringComparison.OrdinalIgnoreCase))
+                break;
+
+            current = Directory.GetParent(current)?.FullName;
+        }
+
+        return null;
+    }
+
+    private static void CopyDirectory(string sourceRoot, string destinationRoot)
+    {
+        Directory.CreateDirectory(destinationRoot);
+
+        foreach (var sourcePath in Directory.GetFiles(sourceRoot, "*", SearchOption.AllDirectories))
+        {
+            string relativePath = Path.GetRelativePath(sourceRoot, sourcePath);
+            string destinationPath = Path.Combine(destinationRoot, relativePath);
+            string? destinationDirectory = Path.GetDirectoryName(destinationPath);
+            if (!string.IsNullOrEmpty(destinationDirectory))
+                Directory.CreateDirectory(destinationDirectory);
+            File.Copy(sourcePath, destinationPath, overwrite: true);
+        }
+    }
+
     private static bool ContainsAll(string testName, string sectionName, string text, IReadOnlyList<string> expectedPieces)
     {
         for (int i = 0; i < expectedPieces.Count; i++)
@@ -2907,6 +3266,8 @@ print(sum);";
         string GraphJson,
         string GraphDot,
         string TraceOutput);
+
+    private sealed record TempPackageWorkspace(string TempRoot, string EntryPath);
 
     private static void CompileAndRunExpectError(string source, string expectedType)
     {

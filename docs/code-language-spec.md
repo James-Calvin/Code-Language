@@ -301,7 +301,6 @@ numbers.remove_at(0);
   - Methods may use either `function<ReturnType> name(...)` or implicit-void `function name(...)`.
   - Inside constructors and methods, unshadowed bare field names resolve to the current object (`field` -> `this.field`), and bare method calls resolve to the current object before top-level/intrinsic functions.
 - Reserved field names (currently disallowed): `length`, `hasValue`, `value`, `or`.
-- `record` is a type like `object`, but passed by value.
 - `object` instances are passed by reference.
 - For remaining categories, reference/value behavior follows common C# conventions (provisional).
 
@@ -377,20 +376,26 @@ Instantiation:
 Person instance = new Person("Ada");
 ```
 
-## 10. Member Access and Visibility
-- Supported access modifiers: `public`, `package`, `private`.
-- Default member visibility is `package`.
-- `static` members are supported.
-- `constant` fields are supported.
+## 10. Member Access
+- Visibility/access modifiers are not implemented yet.
+- `constant` fields are supported through `constant` declarations.
 - Field access allows both unqualified and `this.`-qualified forms.
 - If a local variable shadows a field, unqualified access resolves to the local variable.
 - Use `this.fieldName` to reference the shadowed member field.
 - Bare method calls inside object bodies also use implicit `this` lookup before top-level or intrinsic functions.
 
 ```code
-function method(string name) {
-  print(name); // local variable
-  print(this.name); // member field
+object Person {
+  string name;
+
+  constructor(string name) {
+    this.name = name;
+  }
+
+  function show(string name) {
+    print(name); // local variable
+    print(this.name); // member field
+  }
 }
 ```
 
@@ -418,6 +423,7 @@ function method(string name) {
   - Manifest schema v1 is validated (`schemaVersion`, `name`, `version`, `kind`, `entry`; optional exports/deps/target overrides/host capabilities).
   - Optional `targets` must include selected compile target; optional `hostAbi.requires` capabilities must be valid for the target.
   - Manifest `entry` and target override entry paths must reference existing `.code` files.
+  - `targetOverrides` are currently parsed and validated, but compile entry selection still follows the explicit entry file passed to the compiler.
   - Declared `dependencies` are resolved from local package folders and must satisfy manifest version ranges (`x.y.z` exact or `^x.y.z` caret).
   - Compiler emits `code.lock.json` in the package root with deterministic target-specific resolution results.
 
@@ -435,46 +441,21 @@ package Example.Package;
 - Export is currently implemented for `function`, `object`, and `interface` declarations.
 
 ```code
-export function<fallible<real>> exportedFunction(real value) {
-  // ...
+export function<integer> add(integer left, integer right) {
+  return left + right;
 }
 ```
 
-## 13. Error Model (Observed)
-- `fallible<T>` represents a value that may fail.
-- Functions may return `fallible<T>`.
-- Built-in `error` shape contains:
-  - `type`
-  - `message`
-  - `stacktrace`
-- Call-site error handling uses `on error` (chosen syntax).
-- The implicit `error` object is available in `on error` scope.
-- When converting `fallible<T>` to `T` via `on error`, the handler must terminate with either `yield <T>` or `panic(...)`.
-- In functions returning `fallible<T>`, `on error` may explicitly propagate the current error:
-  - `... on error return error;`
-- Error transformation is supported:
-  - `... on error return new error(string type, string message);`
-- Supported handling patterns:
-  - `on error { ... }` block form
-  - `on error yield fallbackValue`
-  - `on error panic("message {error}")`
-  - `on error return error`
-  - `on error return new error(type, message)`
-- Handler flexibility: `on error return <errorExpression>` is valid when the expression type is `error`.
-- A fallible result can be kept unhandled by assigning it to `fallible<T>`.
-- Stacktrace capture: on `panic` or unhandled `fallible` error, capture frames as `at function (file:line)` plus error `type` and `message`, attached to `error.stacktrace`.
+## 13. Error Model (Current Implementation)
+- Current user-facing error syntax is `panic(expression);`.
+- `panic(...)` raises a `UserError` with a message and stack information.
+- Runtime and host failures also surface as VM/runtime errors with line/column information and a bytecode-derived call stack when debug data is available.
+- The VM has internal typed error objects (`type`, `message`, `stacktrace`) for diagnostics.
+- User-facing `fallible<T>` and `on error` syntax are not implemented yet.
 
 ```code
-real result1 = errorExample(0) on error {
-  print("Error: {error}");
-  yield 0;
-};
-
-real result2 = errorExample(0) on error yield 0;
-
-fallible<real> pending = errorExample(0);
-
-real result3 = errorExample(0) on error panic("Error message {error}");
+integer x = 5;
+if x > 3 then panic("x too large");
 ```
 
 ## 14. Compiler Behavior (current implementation)
@@ -535,22 +516,16 @@ real result3 = errorExample(0) on error panic("Error message {error}");
 - Object construction and field access lower to dedicated VM opcodes (`NEW_OBJECT`, `GET_FIELD`, `SET_FIELD`).
 - Arrays: literals `{...}` create arrays; typed declarations `array<integer> xs = {1,2,3};`; dynamic `new array<integer>(n)` requires a size; `xs.length` yields length; `xs.append(value)` and `xs.remove_at(index)` grow/shrink arrays; `foreach` iterates arrays by element.
 
-```code
-function<fallible<real>> run(string input, real count) {
-  real parsed = parseReal(input) on error return error;
-  return divide(parsed, count);
-}
-```
+## 15. Planned But Not Implemented Yet
+- Enumerations.
+- `switch`.
+- `record` declarations and value semantics.
+- Visibility/access modifiers such as `public`, `package`, and `private`.
+- User-facing `fallible<T>` / `on error` syntax.
+- Built-in container types beyond arrays: `map`, `set`, `queue`, `stack`.
+- Standard math and randomness helpers such as `minimum`, `maximum`, `absolute`, `sign`, `lerp`, `sine`, `cosine`, and `random`.
 
-```code
-function<fallible<real>> runWithTypedError(string input, real count) {
-  real parsed = parseReal(input)
-    on error return new error("ParseError", "Could not parse '{input}'");
-  return divide(parsed, count);
-}
-```
-
-## 14. Comments
+## 16. Comments
 - Single-line comments:
 
 ```code
@@ -563,7 +538,7 @@ function<fallible<real>> runWithTypedError(string input, real count) {
 /* comment */
 ```
 
-## 15. Strings (Observed)
+## 17. Strings (Observed)
 - Supports quoted string literals: `"text"`.
 - Supports interpolation markers with braces inside string literals, e.g.:
   - `"usage: {arguments[0]} <your name>"`
@@ -573,11 +548,11 @@ function<fallible<real>> runWithTypedError(string input, real count) {
   - Escape literal braces with `\{` and `\}`.
   - Nested string literals inside an interpolation are disallowed to keep parsing simple.
 
-## 16. Literals
+## 18. Literals
 - Numeric: see numeric literal rules above.
 - Boolean: `true` and `false`.
 - Strings: quoted `"text"`; interpolation with `{ ... }` allowed (escape braces with `\{` and `\}`); supports concatenation via `+`. Interpolation currently supports expressions.
 
-## 17. Open Questions
+## 19. Open Questions
 - Future package search paths beyond project `lib/` (configuration format, stdlib layout).
 

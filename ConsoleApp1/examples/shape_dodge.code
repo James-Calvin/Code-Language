@@ -1,0 +1,314 @@
+import everything as Draw from "engine/drawing.code";
+import everything as Viewport from "engine/viewport.code";
+import { Color, rgb, rgba } from "engine/colors.code";
+import { key_is_down } from "engine/input.code";
+import { HudDrawable, Scene, SceneLoop, Updatable, WorldDrawable } from "engine/scene.code";
+
+object GameState {
+  integer score;
+  integer lives;
+  integer frame_count;
+  boolean game_over;
+
+  constructor() {
+    score = 0;
+    lives = 3;
+    frame_count = 0;
+    game_over = false;
+  }
+
+  function reset() {
+    score = 0;
+    lives = 3;
+    frame_count = 0;
+    game_over = false;
+  }
+}
+
+object BackgroundLayer {
+  constructor() {
+  }
+
+  implement WorldDrawable.draw() {
+    Draw.clear_screen(rgb(1 / 32, 1 / 24, 3 / 32));
+    Draw.rectangle(Viewport.safe_left(), Viewport.safe_top(), Viewport.safe_width(), Viewport.safe_height(), rgba(1 / 12, 1 / 8, 3 / 16, 1));
+    Draw.rectangle_outline(Viewport.safe_left(), Viewport.safe_top(), Viewport.safe_width(), Viewport.safe_height(), 2, rgba(3 / 4, 3 / 4, 1, 1 / 3));
+    draw_lane_guides();
+  }
+
+  function draw_lane_guides() {
+    real lane_width = Viewport.safe_width() / 5;
+    integer lane = 1;
+    while lane < 5 then {
+      real x = Viewport.safe_left() + lane_width * lane;
+      Draw.line(x, Viewport.safe_top(), x, Viewport.safe_bottom(), rgba(1, 1, 1, 1 / 8));
+      lane += 1;
+    }
+
+    Draw.line(
+      Viewport.safe_left(),
+      Viewport.safe_bottom() - 48,
+      Viewport.safe_right(),
+      Viewport.safe_bottom() - 48,
+      rgba(1, 1, 1, 1 / 8));
+  }
+}
+
+object Player {
+  GameState game_state;
+  real x;
+  real y;
+  real width;
+  real height;
+  real speed;
+
+  constructor(GameState game_state) {
+    this.game_state = game_state;
+    width = 28;
+    height = 20;
+    speed = 4;
+    x = Viewport.safe_left() + Viewport.safe_width() / 2 - width / 2;
+    y = Viewport.safe_bottom() - height - 18;
+  }
+
+  function reset() {
+    x = Viewport.safe_left() + Viewport.safe_width() / 2 - width / 2;
+    y = Viewport.safe_bottom() - height - 18;
+  }
+
+  implement Updatable.update() {
+    if game_state.game_over then return;
+
+    if key_is_down(37) then x -= speed;
+    if key_is_down(39) then x += speed;
+    clamp_to_safe_area();
+  }
+
+  implement WorldDrawable.draw() {
+    Draw.rectangle(x, y, width, height, rgb(3 / 16, 13 / 16, 1));
+    Draw.rectangle_outline(x, y, width, height, 2, rgb(1, 1, 1));
+    Draw.line(x + width / 2, y + 4, x + width / 2, y + height - 4, rgba(1, 1, 1, 2 / 3));
+  }
+
+  function clamp_to_safe_area() {
+    real left = Viewport.safe_left() + 10;
+    real right = Viewport.safe_right() - width - 10;
+    if x < left then x = left;
+    if x > right then x = right;
+  }
+}
+
+object Obstacle {
+  real x;
+  real y;
+  real speed;
+  real size;
+  integer kind;
+
+  constructor(real x, real y, real speed, real size, integer kind) {
+    this.x = x;
+    this.y = y;
+    this.speed = speed;
+    this.size = size;
+    this.kind = kind;
+  }
+}
+
+object ObstacleManager {
+  GameState game_state;
+  Player player;
+  array<Obstacle> obstacles;
+  array<integer> lane_pattern;
+  integer next_lane_index;
+  integer next_kind;
+  integer spawn_interval;
+
+  constructor(GameState game_state, Player player) {
+    this.game_state = game_state;
+    this.player = player;
+    obstacles = new array<Obstacle>(0);
+    lane_pattern = {0, 2, 4, 1, 3, 2, 0, 4, 1, 3};
+    next_lane_index = 0;
+    next_kind = 0;
+    spawn_interval = 36;
+  }
+
+  function reset() {
+    obstacles = new array<Obstacle>(0);
+    next_lane_index = 0;
+    next_kind = 0;
+  }
+
+  implement Updatable.update() {
+    if game_state.game_over then {
+      if key_is_down(32) then {
+        game_state.reset();
+        player.reset();
+        reset();
+      }
+      return;
+    }
+
+    game_state.frame_count += 1;
+    if game_state.frame_count % spawn_interval == 0 then spawn_obstacle();
+
+    integer index = 0;
+    while index < obstacles.length then {
+      Obstacle obstacle = obstacles[index];
+      obstacle.y += obstacle.speed;
+
+      if overlaps_player(obstacle) then {
+        obstacles.remove_at(index);
+        game_state.lives -= 1;
+        if game_state.lives <= 0 then {
+          game_state.game_over = true;
+          return;
+        }
+      }
+      else if obstacle.y > Viewport.safe_bottom() + obstacle.size then {
+        obstacles.remove_at(index);
+        game_state.score += 1;
+      }
+      else {
+        index += 1;
+      }
+    }
+  }
+
+  implement WorldDrawable.draw() {
+    integer index = 0;
+    while index < obstacles.length then {
+      draw_obstacle(obstacles[index]);
+      index += 1;
+    }
+  }
+
+  function spawn_obstacle() {
+    integer lane = lane_pattern[next_lane_index];
+    next_lane_index += 1;
+    if next_lane_index >= lane_pattern.length then next_lane_index = 0;
+
+    integer kind = next_kind;
+    next_kind += 1;
+    if next_kind >= 3 then next_kind = 0;
+
+    real size = 20 + kind * 6;
+    real lane_width = Viewport.safe_width() / 5;
+    real x = Viewport.safe_left() + lane_width * lane + (lane_width - size) / 2;
+    real y = Viewport.safe_top() - size - 8;
+    real speed = 2 + kind;
+    obstacles.append(new Obstacle(x, y, speed, size, kind));
+  }
+
+  function<boolean> overlaps_player(Obstacle obstacle) {
+    return
+      obstacle.x < player.x + player.width and
+      obstacle.x + obstacle.size > player.x and
+      obstacle.y < player.y + player.height and
+      obstacle.y + obstacle.size > player.y;
+  }
+
+  function draw_obstacle(Obstacle obstacle) {
+    Color fill = fill_color(obstacle);
+    Color outline = outline_color(obstacle);
+
+    if obstacle.kind == 0 then {
+      Draw.rectangle(obstacle.x, obstacle.y, obstacle.size, obstacle.size, fill);
+      Draw.rectangle_outline(obstacle.x, obstacle.y, obstacle.size, obstacle.size, 2, outline);
+      return;
+    }
+
+    if obstacle.kind == 1 then {
+      Draw.circle(obstacle.x + obstacle.size / 2, obstacle.y + obstacle.size / 2, obstacle.size / 2, fill);
+      Draw.circle_outline(obstacle.x + obstacle.size / 2, obstacle.y + obstacle.size / 2, obstacle.size / 2, 2, outline);
+      return;
+    }
+
+    real half = obstacle.size / 2;
+    array<real> points = new array<real>(8);
+    points[0] = obstacle.x + half;
+    points[1] = obstacle.y;
+    points[2] = obstacle.x + obstacle.size;
+    points[3] = obstacle.y + half;
+    points[4] = obstacle.x + half;
+    points[5] = obstacle.y + obstacle.size;
+    points[6] = obstacle.x;
+    points[7] = obstacle.y + half;
+    Draw.polygon(points, fill);
+    Draw.polygon_outline(points, 2, outline);
+  }
+
+  function<Color> fill_color(Obstacle obstacle) {
+    if obstacle.kind == 0 then return rgb(1, 7 / 16, 7 / 16);
+    if obstacle.kind == 1 then return rgb(1, 13 / 16, 1 / 4);
+    return rgb(1 / 4, 13 / 16, 1);
+  }
+
+  function<Color> outline_color(Obstacle obstacle) {
+    if obstacle.kind == 0 then return rgb(1, 7 / 8, 7 / 8);
+    if obstacle.kind == 1 then return rgb(1, 31 / 32, 3 / 4);
+    return rgb(7 / 8, 1, 1);
+  }
+}
+
+object HeadsUpDisplay {
+  GameState game_state;
+
+  constructor(GameState game_state) {
+    this.game_state = game_state;
+  }
+
+  implement HudDrawable.draw_hud() {
+    Draw.text("Shape Dodge", 16, 16, 22, "left", "top", rgb(1, 1, 1));
+    Draw.text("Left/Right move", Viewport.hud_width() - 16, 16, 15, "right", "top", rgb(1, 1, 1));
+    Draw.text("Score: {game_state.score}", 16, 48, 16, "left", "top", rgb(1, 1, 1));
+    Draw.text("Lives: {game_state.lives}", 16, 72, 16, "left", "top", rgb(1, 1, 1));
+
+    if game_state.game_over then {
+      Draw.text("Game Over", Viewport.hud_width() / 2, Viewport.hud_height() / 2 - 18, 28, "center", "middle", rgb(1, 7 / 8, 7 / 8));
+      Draw.text("Press Space to restart", Viewport.hud_width() / 2, Viewport.hud_height() / 2 + 12, 16, "center", "middle", rgb(1, 1, 1));
+    }
+  }
+}
+
+export object MainScene {
+  Scene scene;
+  SceneLoop loop;
+  GameState game_state;
+  BackgroundLayer background_layer;
+  Player player;
+  ObstacleManager obstacle_manager;
+  HeadsUpDisplay heads_up_display;
+
+  constructor() {
+    scene = new Scene();
+    loop = new SceneLoop(scene);
+    game_state = new GameState();
+    background_layer = new BackgroundLayer();
+    player = new Player(game_state);
+    obstacle_manager = new ObstacleManager(game_state, player);
+    heads_up_display = new HeadsUpDisplay(game_state);
+  }
+
+  function start() {
+    scene.add_world_drawable(background_layer, 0);
+    scene.add_updatable(player);
+    scene.add_updatable(obstacle_manager);
+    scene.add_world_drawable(obstacle_manager, 10);
+    scene.add_world_drawable(player, 20);
+    scene.add_hud_drawable(heads_up_display, 0);
+    loop.start();
+  }
+
+  function update() {
+    loop.update();
+  }
+
+  function draw() {
+    loop.draw();
+  }
+
+  function draw_hud() {
+    loop.draw_hud();
+  }
+}

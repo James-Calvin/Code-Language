@@ -6,6 +6,26 @@ Legend:
 - `[~]` medium priority  
 - `[_]` low priority
 
+This roadmap is implementation-truthful: items marked below are gaps from the current compiler/runtime surface, not draft syntax that already exists.
+
+## Near-Term Gap Groups
+
+### Language Gaps
+1. Enumerations
+2. `switch`
+3. `record` declarations and value semantics
+4. Visibility/access control
+5. User-facing error-handling syntax and propagation (`fallible<T>`, `on error`)
+
+### Stdlib and Runtime Gaps
+1. Math and randomness helpers (`minimum`, `maximum`, `absolute`, `sign`, `lerp`, `sine`, `cosine`, `random`)
+2. Built-in collections beyond arrays (`map`, `set`, `queue`, `stack`)
+
+### Engine Gaps
+1. Broader engine wrapper packages
+2. Richer browser input/audio/content handling
+3. Longer-term GPU/backend work
+
 ## Status & Priority Table
 
 |  Priority | Area | Item | Notes |
@@ -27,13 +47,15 @@ Legend:
 | `[x]` | Core language | Return statements (implicit 0 if missing) | Implemented |
 | `[x]` | Core language | Collections: literals + foreach over collections | Array literals + array foreach + typed array declarations/new(size) + `.length` + indexing + mutation + `append` / `remove_at` with preserved element typing |
 | `[x]` | Core language | Optionals | `optional<T>` with `none`, `.hasValue`, `.value`, `.or(fallback)` |
+| `[!]` | Core language | Enumerations | Not implemented; needed to replace magic integers/strings in user code |
+| `[!]` | Core language | `switch` | Not implemented; current code must use `if`/`else` chains |
 | `[~]` | Core language | Structs/records (user types) | Planned via object-model build-out below |
 | `[~]` | Type system | Sized numerics & literal suffixes (`i8/w8/r32` etc.) | Lexer/parser/type support pending |
 | `[~]` | Type system | Optional/`optional<T>` semantics | Baseline works; flow narrowing and stricter typing rules pending |
 | `[_]` | Type system | Overload resolution rules (spec’d) | Engine not implemented |
 | `[x]` | Error model | Runtime IP + call stack + snippets | Debug-map backed |
 | `[x]` | Error model | Typed errors / exception objects in VM | VmError objects, THROW opcode, panic statement, tests |
-| `[!]` | Error model | Propagation semantics across functions | Requires compiler/codegen rules |
+| `[~]` | Error model | User-facing `fallible<T>` / `on error` syntax and propagation | Spec draft exists, but parser/type-checker/codegen do not implement it today |
 | `[x]` | Object model | Type references in AST/type checker (`TypeRef`) for named/generic user types | Implemented; parser/type-checker now use `TypeRef` instead of token-only types |
 | `[x]` | Object model | Object symbol table pass (object names + fields + forward refs) | Implemented; duplicate checks + field type validation in place |
 | `[x]` | Object model | Constructor symbol collection (typed signatures) | Implemented with signature-based overload resolution |
@@ -69,6 +91,8 @@ Legend:
 | `[~]` | Compiler pipeline | Frame sizing/temp management | Function-local slots are unique; CALL uses precise frame size; temps reused within foreach; further temp reuse/liveness possible |
 | `[~]` | Compiler pipeline | Optimizations: const fold/DCE | Initial literal fold in place |
 | `[~]` | Runtime/stdlib | Basic stdlib (IO/math/time) | Print + time intrinsics (`unix_ms`, `unix_us`, `mono_ns`, `mono_ticks`, `mono_ticks_per_second`) implemented; native-only `read_line` + `sleep_ms` added with target checks; expand broader IO/math surface |
+| `[!]` | Runtime/stdlib | Math helpers and randomness | Add `minimum`, `maximum`, `absolute`, `sign`, `lerp`, `sine`, `cosine`, and `random` |
+| `[!]` | Runtime/stdlib | Collections beyond arrays | Add `map`, `set`, `queue`, and `stack` |
 | `[x]` | Platform/targets | Compile target model (`--target vm-native|vm-web`) | Implemented: target threads through linker/codegen entry points; default `vm-native` |
 | `[x]` | Platform/targets | Target capability validation | Implemented baseline: inferred capability groups (`std.*`, `engine.*`) from package/imports with compile-time matrix checks (`vm-web` rejects `std.fs`) |
 | `[x]` | Platform/targets | Web app/runtime V1 contract | Documented in `docs/web-app-v1.md`: scene object convention, `start/update/draw` plus optional `draw_hud`, full-window browser runtime, centered `640x360` safe area, hybrid-expanded framing, current primitive/image-sprite/keyboard scope, wrapper-layer guidance, and static site folder target |
@@ -95,9 +119,9 @@ Legend:
 | `[~]` | Testing | Object-model fuzz/property domains | Constructor/field mutation/member access invariants |
 
 ## Priority Rollup (benefit/effort)
-- High (`[!]`): expand the browser-backed app runtime, finish backend-agnostic web engine host bindings, interface/dynamic dispatch model, type system/codegen polish (frame sizing, flow/return analysis), testing expansion, and error propagation semantics.
-- Medium (`[~]`): record semantics, constant pool, optimizer expansion, stdlib basics, tooling polish, engine core/adapters, `engine.gpu` ABI, and native/web GPU backend parity.
-- Low (`[_]`): interfaces runtime dispatch, REPL, future stdlib/versioning, long-term runtime lifecycle strategy, remote package registry.
+- High (`[!]`): enumerations, math/random support, collections beyond arrays, `switch`, and keeping example/docs status aligned with implementation truth.
+- Medium (`[~]`): records, visibility/access control, fuller user-facing error-handling syntax, constant pool, optimizer expansion, tooling polish, and engine core/adapters.
+- Low (`[_]`): REPL, future stdlib/versioning, long-term runtime lifecycle strategy, remote package registry, and longer-horizon GPU/backend work.
 
 See also: `docs/platform-roadmap.md` for ABI schema, package manifest schema, and phased execution plan.
 

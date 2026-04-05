@@ -196,6 +196,8 @@ export object MainScene {
 
 The example above matches the current recommended larger-project shape and is checked in as `ConsoleApp1/examples/web_scene.code`.
 
+For a smaller playable sample that stays within primitives plus keyboard input, see `ConsoleApp1/examples/shape_dodge.code`. `shape_dodge.code` is the current recommended "small game" demo, while `web_scene.code` remains the broader scene-composition and rendering reference. Example status and usage are cataloged in `docs/example-catalog.md`.
+
 ## Runtime Behavior
 
 Browser ownership:

@@ -1,3 +1,5 @@
+// Planned example only: `record` declarations are not implemented yet.
+
 record Stats {
   integer strength;
   integer defense;

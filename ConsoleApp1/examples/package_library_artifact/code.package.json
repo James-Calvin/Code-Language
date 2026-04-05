@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "name": "examples.package.libraryartifact",
+  "version": "0.1.0",
+  "kind": "library",
+  "entry": "main.code",
+  "targets": ["vm-native", "vm-web"]
+}

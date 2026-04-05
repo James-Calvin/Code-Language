@@ -12,7 +12,7 @@ Read this first. Update it whenever semantics or process change.
 - Default web runtime target: full-window browser app, centered `640x360` safe area with hybrid-expanded world framing, scene-object authoring, separate HUD space, a first wrapper layer in `lib/engine/`, and browser-backed drawing/image-sprite/keyboard support for V1.
 
 ## Current Capability Snapshot
-- Types: integer/whole/real, boolean, string, array<T> (literals `{...}`, `new array<T>(n)`, `.length`, indexing, mutation, `append`, `remove_at`, preserved element typing through indexing/foreach), optional<T> (`none`, `.hasValue`, `.value`, `.or(fallback)`), constants, typed/void functions, object types.
+- Types: integer/whole/real, boolean, string, array<T> (literals `{...}`, `new array<T>(n)`, `.length`, indexing, mutation, `append`, `remove_at`, preserved element typing through indexing/foreach), optional<T> (`none`, `.hasValue`, `.value`, `.or(fallback)`), constants, typed/void functions, and object types. User-facing `record`, `enum`, and `fallible<T>` syntax are not implemented.
 - Compiler type model: AST/parser/type-checker use `TypeRef`; named object types resolve via object symbol tables (fields + constructors + forward refs).
 - Object rules: fields require constructor initialization; constructor/method overloads resolve by typed signature (best-match conversions), methods lower to hidden static call targets with implicit `this`, object bodies support implicit field access / implicit `this` method calls when names are not shadowed by locals or parameters, and object methods support implicit-void authoring; reserved field names are `length`, `hasValue`, `value`, `or`.
 - Interfaces: `interface Name { function<...> method(...); }` plus either inline object-body implementations `implement Interface.method(...) { ... }` or explicit `implement Interface for Object { method(types...) via Object.method; }`, with runtime dispatch for interface-typed locals/params/returns/fields/arrays.
@@ -29,8 +29,8 @@ Read this first. Update it whenever semantics or process change.
 - Web app/runtime contract: `docs/web-app-v1.md` freezes the first implementation target around a scene object with `start/update/draw`, optional `draw_hud`, full-window browser runtime ownership, centered `640x360` safe area, hybrid-expanded framing, and static-site output.
 - Errors: `panic <expr>;` raises `UserError` with line/col + call stack (from bytecode debug map).
 - Bytecode/VM: header v0x05, spec v0.8; ops include strings, arrays (NEW_ARRAY/GET/LEN/SET/NEW_ARRAY_N), optionals (NONE/HAS/VALUE/OR), objects (NEW_OBJECT/GET_FIELD/SET_FIELD/GET_TYPE_NAME), interface dispatch (INTERFACE_CALL), THROW_ERROR.
-- Modules/imports: recursive file-based module linking for `.code` files with `import`/`export`, package declarations, grouped/selective imports, module-scope symbol conflict checks, import-chain diagnostics, alias imports for function/object/interface exports, and `lib/` ancestor search.
-- Package manifest/lockfile: nearest `code.package.json` is auto-discovered and schema-validated (v1 baseline) with compile-target gating (`targets`) and host capability requirements (`hostAbi.requires`); local dependencies resolve and `code.lock.json` is emitted.
+- Modules/imports: recursive file-based module linking for `.code` files with `import`/`export`, package declarations, grouped/selective imports, namespace imports, re-export imports, module-scope symbol conflict checks, import-chain diagnostics, alias imports for function/object/interface exports, and `lib/` ancestor search.
+- Package manifest/lockfile: nearest `code.package.json` is auto-discovered and schema-validated (v1 baseline) with compile-target gating (`targets`), validated `targetOverrides`, and host capability requirements (`hostAbi.requires`); local dependencies resolve and `code.lock.json` is emitted. `targetOverrides` are not yet used to auto-select a different compile entry.
 - Library artifact: packages with `kind: "library"` emit `<package>-<version>-<target>.codelib` with embedded bytecode + metadata; resolver validates and prefers artifact paths in lockfile when present.
 - Module tooling: `--dump-module-graph [outputPath]` emits entry/modules/import edges; supports text/json/dot output (via `--module-graph-format` or output extension inference); `--trace-linker` emits linker resolution steps.
 - Targets/capabilities: `--target vm-native|vm-web` (default `vm-native`) threads through module compilation; linker infers capability groups from package/import namespaces and rejects unsupported target capabilities (e.g., `std.fs` on `vm-web`).
@@ -38,10 +38,11 @@ Read this first. Update it whenever semantics or process change.
 - Tests: integration (core features, arrays, optionals, objects, interfaces, modules/imports, host ABI surfaces, target capability validation, panic) + fuzz (arith, boolean, strings, loop sums, panic). Run `dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- --run-tests`.
 
 ## Not Implemented (yet)
-- User-defined data remaining: records, visibility enforcement, broader container types beyond arrays, and dispatch optimization beyond baseline tables.
+- Language gaps: enumerations, `switch`, `record` declarations/value semantics, visibility enforcement, and user-facing `fallible<T>` / `on error`.
+- Stdlib/runtime gaps: math/random helpers (`minimum`, `maximum`, `absolute`, `sign`, `lerp`, `sine`, `cosine`, `random`) and broader container types beyond arrays (`map`, `set`, `queue`, `stack`).
+- Dispatch/runtime polish: optimization beyond baseline interface dispatch tables.
 - Module namespaces and stdlib versioning/layout.
 - Constant pool, formatter/linter, REPL.
-- Typed error values / `fallible<T>` semantics wired to VM errors.
 - Engine web runtime maturation: broaden the current `lib/engine/` wrapper layer beyond colors/drawing/input/viewport, add richer input/audio/content handling, and replace the remaining raw window-handle `engine.window`/`engine.input`/`engine.gfx` stubs with real browser-backed behavior or wrappers.
 - Web runtime packaging stance: generated web apps currently inline the JavaScript VM/runtime into `index.html`; Wasm is explicitly deferred until measured performance, parity, or startup-size data justifies the extra complexity.
 - GPU roadmap: `engine.gpu` ABI v1 + WebGPU backend (`vm-web`) + native GPU backend parity (`vm-native`).
@@ -53,6 +54,7 @@ Read this first. Update it whenever semantics or process change.
 - Roadmap/status: `docs/features-roadmap.md`
 - Platform/package plan: `docs/platform-roadmap.md`
 - Web app/runtime V1 contract: `docs/web-app-v1.md`
+- Example catalog: `docs/example-catalog.md`
 - Browser harness: `web-runtime/index.html`, `web-runtime/code-vm-web.js`
 - Engine wrappers: `lib/engine/*.code`
 - Examples: `ConsoleApp1/examples/*.code`
@@ -61,12 +63,15 @@ Read this first. Update it whenever semantics or process change.
 ## Process Expectations
 - When changing semantics: update spec, roadmap, bytecode spec (if opcodes), examples, tests. Run `--run-tests`.
 - When making product-direction or workflow decisions: update the relevant docs in the same change. Do not let roadmap, README, and design docs drift.
-- Keep examples comprehensive; add one per new feature.
+- Keep examples status-labeled (`runnable`, `negative`, `planned`) and tested so stale draft files do not masquerade as working features.
+- Prefer one example per capability cluster rather than one tiny file per minor feature.
 - Preserve prior decisions; ask user when unclear.
 - Prefer fully spelled-out user-facing names; avoid arbitrary abbreviations unless the term is a widely accepted domain term such as `hud`.
 
 ## Change Log
+- 2026-04-05: Added `docs/example-catalog.md`, reclassified examples as runnable/negative/planned, added focused examples for implicit `this`, interface-array dispatch, re-export imports, and library artifacts, and updated the harness/docs to align example status with implementation truth.
 - 2026-04-05: Fixed web-runtime VM opcode parity for growable arrays by adding browser support for `ARRAY_APPEND` / `ARRAY_REMOVE_AT` and a regression test that compares native VM opcodes against the browser runtime opcode table and switch handlers.
+- 2026-04-05: Added `ConsoleApp1/examples/shape_dodge.code` as the canonical small playable web demo, plus harness smoke coverage that compiles and `--build-web`s the repo example without changing engine APIs.
 - 2026-04-05: Added namespace imports (`import everything as Name from "path";`), inline interface methods inside object bodies, canonical `engine.viewport` and `engine.scene.SceneLoop` surfaces with compatibility re-export modules, regression tests for the new ergonomics, and updated the web scene example/docs accordingly.
 - 2026-04-05: Added typed growable arrays (`append`, `remove_at`), array element type tracking through indexing/foreach/mutation, equality support for compatible reference/value types, explicit-void interface methods, and relaxed interface-call lowering so engine libraries can compile before user implementers are present.
 - 2026-04-05: Added `engine.scene` and `engine.loop` with explicit child-object scene composition, split lifecycle interfaces (`Startable`, `Updatable`, `WorldDrawable`, `HudDrawable`), staged registration semantics, and updated tests/example/docs for the new authoring model.

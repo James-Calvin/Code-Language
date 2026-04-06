@@ -382,6 +382,15 @@ static class ModuleCompiler
                 continue;
             }
 
+            if (obj.IsRecord)
+            {
+                var inline = obj.InlineInterfaceMethods[0];
+                throw new CompilerException(
+                    $"Record '{obj.Name.Lexeme}' does not support inline interface implementations",
+                    inline.InterfaceName.Line,
+                    inline.InterfaceName.Column);
+            }
+
             var methods = new List<MethodDecl>(obj.Methods);
             for (int m = 0; m < obj.InlineInterfaceMethods.Count; m++)
             {
@@ -423,7 +432,7 @@ static class ModuleCompiler
                     inline.MethodName));
             }
 
-            lowered.Add(new ObjectDecl(obj.Name, obj.Fields, obj.Constructors, methods));
+            lowered.Add(new ObjectDecl(obj.Name, obj.IsRecord, obj.Fields, obj.Constructors, methods));
         }
 
         foreach (var key in generatedImplements.Keys.OrderBy(value => value, StringComparer.Ordinal))
@@ -1465,6 +1474,7 @@ static class ModuleCompiler
             EnumDecl enumDecl => enumDecl,
             ObjectDecl obj => new ObjectDecl(
                 obj.Name,
+                obj.IsRecord,
                 obj.Fields.Select(f => new FieldDecl(RewriteTypeRef(f.Type, typeAliases), f.Name)).ToList(),
                 obj.Constructors.Select(c => new ConstructorDecl(
                     c.Keyword,

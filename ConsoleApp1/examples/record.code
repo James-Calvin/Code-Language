@@ -1,18 +1,27 @@
-// Planned example only: `record` declarations are not implemented yet.
+// Runnable example: records are copy-by-value data types.
 
 record Stats {
   integer strength;
   integer defense;
 
-  constructor() {
-    strength = 0;
-    defense = 0;
+  constructor(integer strength, integer defense) {
+    this.strength = strength;
+    this.defense = defense;
   }
 }
 
-Stats player = new Stats();
-print "Strength: {player.strength}"; // Expect: Strength: 0
-Stats playerCopy = player;
-player.strength = 5;
-print "Strength: {player.strength}"; // Expect: Strength: 5
-print "Strength: {playerCopy.strength}"; // Expect: Strength: 0
+function<Stats> raised(Stats base_stats) {
+  base_stats.strength += 2;
+  return base_stats;
+}
+
+Stats player = new Stats(3, 4);
+Stats player_copy = player;
+player.strength = 9;
+
+print(player.strength);
+print(player_copy.strength);
+
+Stats promoted = raised(player_copy);
+print(player_copy.strength);
+print(promoted.strength);

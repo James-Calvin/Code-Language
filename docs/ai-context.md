@@ -12,9 +12,10 @@ Read this first. Update it whenever semantics or process change.
 - Default web runtime target: full-window browser app, centered `640x360` safe area with hybrid-expanded world framing, scene-object authoring, separate HUD space, a first wrapper layer in `lib/engine/`, and browser-backed drawing/image-sprite/keyboard support for V1.
 
 ## Current Capability Snapshot
-- Types: integer/whole/real, boolean, string, enums (`enum Name { Member; Other = 5; }` with `Enum.Member` access and strong enum-to-enum typing), array<T> (literals `{...}`, `new array<T>(n)`, `.length`, indexing, mutation, `append`, `remove_at`, preserved element typing through indexing/foreach), built-in collections (`map<Key, Value>`, `set<Value>`, `queue<Value>`, `stack<Value>` with shared `.length` and collection-specific methods), optional<T> (`none`, `.hasValue`, `.value`, `.or(fallback)`), constants, typed/void functions, and object types. User-facing `record` and `fallible<T>` syntax are not implemented.
+- Types: integer/whole/real, boolean, string, enums (`enum Name { Member; Other = 5; }` with `Enum.Member` access and strong enum-to-enum typing), records (`record Name { ... }` with constructors, field access, and copy-on-assignment/pass/return semantics), array<T> (literals `{...}`, `new array<T>(n)`, `.length`, indexing, mutation, `append`, `remove_at`, preserved element typing through indexing/foreach), built-in collections (`map<Key, Value>`, `set<Value>`, `queue<Value>`, `stack<Value>` with shared `.length` and collection-specific methods), optional<T> (`none`, `.hasValue`, `.value`, `.or(fallback)`), constants, typed/void functions, and object types. User-facing `fallible<T>` syntax is not implemented.
 - Compiler type model: AST/parser/type-checker use `TypeRef`; named object types resolve via object symbol tables (fields + constructors + forward refs).
 - Object rules: fields require constructor initialization; constructor/method overloads resolve by typed signature (best-match conversions), methods lower to hidden static call targets with implicit `this`, object bodies support implicit field access / implicit `this` method calls when names are not shadowed by locals or parameters, and object methods support implicit-void authoring; reserved field names are `length`, `hasValue`, `value`, `or`.
+- Record rules: records currently support fields + constructors only; assignments, parameter passing, returns, and array/queue/stack insertion clone record values; nested record fields and `optional<Record>` fields clone deeply; record methods, record interface implementations, record equality, and record use as `map` keys / `set` elements are not supported yet.
 - Interfaces: `interface Name { function<...> method(...); }` plus either inline object-body implementations `implement Interface.method(...) { ... }` or explicit `implement Interface for Object { method(types...) via Object.method; }`, with runtime dispatch for interface-typed locals/params/returns/fields/arrays.
 - Control flow: if/then[/else], switch (no fallthrough), while, for, foreach (numeric or array), break/continue, return (implicit 0).
 - Expressions: arithmetic (including `%`), comparisons, logical and/or/not (short-circuit), assignment (including `+=`, `-=`, `*=`, `/=`, `%=` and postfix `++/--` across variables, object fields, and array elements), function calls, full-expression string interpolation/concat.
@@ -38,7 +39,7 @@ Read this first. Update it whenever semantics or process change.
 - Tests: integration (core features, arrays, optionals, objects, interfaces, modules/imports, host ABI surfaces, target capability validation, panic) + fuzz (arith, boolean, strings, loop sums, panic). Run `dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- --run-tests`.
 
 ## Not Implemented (yet)
-- Language gaps: `record` declarations/value semantics, visibility enforcement, and user-facing `fallible<T>` / `on error`.
+- Language gaps: visibility enforcement and user-facing `fallible<T>` / `on error`.
 - Stdlib/runtime gaps: broader standard-library surface beyond the current math/random and core container baseline.
 - Dispatch/runtime polish: optimization beyond baseline interface dispatch tables.
 - Module namespaces and stdlib versioning/layout.
@@ -69,6 +70,7 @@ Read this first. Update it whenever semantics or process change.
 - Prefer fully spelled-out user-facing names; avoid arbitrary abbreviations unless the term is a widely accepted domain term such as `hud`.
 
 ## Change Log
+- 2026-04-05: Implemented baseline `record` support with constructor/field syntax, copy-on-assignment/pass/return semantics, deep cloning for nested record and `optional<Record>` fields, example/test coverage, and explicit current limitations for record methods/interfaces/equality and map/set key usage.
 - 2026-04-05: Added `switch` statements with `case ... then ...` / optional `default then ...`, no fallthrough, single evaluation of the switch value, constructor definite-assignment support, runnable example coverage, and synced docs/tests.
 - 2026-04-05: Added built-in collections `map`, `set`, `queue`, and `stack` to the type checker/code generator/native VM/web VM, added a runnable collections example plus compile/runtime regression coverage, and updated docs/bytecode notes to move collections out of the planned bucket.
 - 2026-04-05: Added math/random intrinsics (`minimum`, `maximum`, `absolute`, `sign`, `lerp`, `sine`, `cosine`, `random`) to the native/web host ABI surface, added a runnable example, updated docs, and added target-parity plus web-runtime binding coverage.

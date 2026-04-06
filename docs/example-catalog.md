@@ -17,6 +17,7 @@ Use this document as the primary answer to "does this exist yet?"
 | --- | --- | --- | --- |
 | `runnable` | `ConsoleApp1/examples/arithmetic.code` | `run` | Basic arithmetic and typed locals |
 | `runnable` | `ConsoleApp1/examples/enum.code` | `run` | Strongly typed enumerations with `Enum.Member` access |
+| `runnable` | `ConsoleApp1/examples/record.code` | `run` | Copy-by-value records with constructors, assignment, parameter passing, and returns |
 | `runnable` | `ConsoleApp1/examples/switch.code` | `run` | `switch` statements with enum and integer cases |
 | `runnable` | `ConsoleApp1/examples/forloop.code` | `run` | Counted `for` loop |
 | `runnable` | `ConsoleApp1/examples/foreach.code` | `run` | Numeric `foreach` |
@@ -40,7 +41,6 @@ Use this document as the primary answer to "does this exist yet?"
 | `runnable` | `ConsoleApp1/examples/implicit_this.code` | `run` | Implicit field access and bare method calls inside object bodies |
 | `runnable` | `ConsoleApp1/examples/interface_dispatch.code` | `run` | Interface dispatch across object values |
 | `runnable` | `ConsoleApp1/examples/interface_array_dispatch.code` | `run` | Inline interface methods plus interface-typed arrays |
-| `planned` | `ConsoleApp1/examples/record.code` | `planned only` | Draft record syntax sketch; `record` is not implemented yet |
 
 ## Modules and Packages
 
@@ -69,3 +69,8 @@ Current limitation:
 No checked-in runnable examples exist yet for these planned features:
 - user-facing `fallible<T>` / `on error`
 - visibility modifiers (`public`, `package`, `private`)
+
+Current record limitations:
+- Record methods and record interface implementations are rejected.
+- Record equality is not implemented.
+- Record values cannot currently be used as `map` keys or `set` elements.

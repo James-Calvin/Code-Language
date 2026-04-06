@@ -47,7 +47,8 @@ sealed class Parser
             return EnumDeclaration();
         }
         if (Match(TokenType.Function)) return FunctionDeclaration();
-        if (Match(TokenType.Object)) return ObjectDeclaration();
+        if (Match(TokenType.Object)) return ObjectDeclaration(isRecord: false);
+        if (Match(TokenType.Record)) return ObjectDeclaration(isRecord: true);
         if (Match(TokenType.Interface)) return InterfaceDeclaration();
         if (Match(TokenType.Implement)) return ImplementDeclaration();
         if (Match(TokenType.Constant)) return ConstantDeclaration();
@@ -114,12 +115,14 @@ sealed class Parser
         if (Match(TokenType.Function))
             return new ExportDecl(FunctionDeclaration());
         if (Match(TokenType.Object))
-            return new ExportDecl(ObjectDeclaration());
+            return new ExportDecl(ObjectDeclaration(isRecord: false));
+        if (Match(TokenType.Record))
+            return new ExportDecl(ObjectDeclaration(isRecord: true));
         if (Match(TokenType.Interface))
             return new ExportDecl(InterfaceDeclaration());
         if (Match(TokenType.Enum))
             return new ExportDecl(EnumDeclaration());
-        throw Error(Peek(), "Expect function/object/interface/enum declaration after 'export'.");
+        throw Error(Peek(), "Expect function/object/record/interface/enum declaration after 'export'.");
     }
 
     private Stmt PackageDeclaration()
@@ -267,10 +270,10 @@ sealed class Parser
         return new ConstructorDecl(ctorKeyword, parameters, body);
     }
 
-    private Stmt ObjectDeclaration()
+    private Stmt ObjectDeclaration(bool isRecord)
     {
         Token name = Consume(TokenType.Identifier, "Expect object name.");
-        Consume(TokenType.LeftBrace, "Expect '{' after object name.");
+        Consume(TokenType.LeftBrace, $"Expect '{{' after {(isRecord ? "record" : "object")} name.");
         var fields = new List<FieldDecl>();
         var constructors = new List<ConstructorDecl>();
         var methods = new List<MethodDecl>();
@@ -298,8 +301,8 @@ sealed class Parser
             Consume(TokenType.Semicolon, "Expect ';' after field.");
             fields.Add(new FieldDecl(fType, fname));
         }
-        Consume(TokenType.RightBrace, "Expect '}' after object fields.");
-        return new ObjectDecl(name, fields, constructors, methods, inlineInterfaceMethods);
+        Consume(TokenType.RightBrace, $"Expect '}}' after {(isRecord ? "record" : "object")} fields.");
+        return new ObjectDecl(name, isRecord, fields, constructors, methods, inlineInterfaceMethods);
     }
 
     private InlineImplementMethodDecl ParseInlineImplementMethod()
@@ -424,7 +427,8 @@ sealed class Parser
         if (Match(TokenType.Return)) return ReturnStatement();
         if (Match(TokenType.Print)) return PrintStatement();
         if (Match(TokenType.Panic)) return PanicStatement();
-        if (Match(TokenType.Object)) return ObjectDeclaration();
+        if (Match(TokenType.Object)) return ObjectDeclaration(isRecord: false);
+        if (Match(TokenType.Record)) return ObjectDeclaration(isRecord: true);
 
         var expr = Expression();
         Consume(TokenType.Semicolon, "Expect ';' after expression.");

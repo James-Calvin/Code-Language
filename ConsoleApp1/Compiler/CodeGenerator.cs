@@ -64,13 +64,16 @@ sealed class CodeGenerator
     private readonly Stack<Dictionary<string, TypeRef>> _scopeDeclaredTypesStack = new();
     private readonly Stack<int> _nextLocalStack = new();
     private readonly List<int> _freeTemps = new();
+    private readonly HashSet<int> _freeTempSet = new();
     private readonly Dictionary<string, (string Label, int ParamCount, int LocalCount)> _functions = new(StringComparer.Ordinal);
     private readonly Dictionary<string, (string Label, int ParamCount, int LocalCount)> _constructors = new(StringComparer.Ordinal);
     private readonly Dictionary<string, (string Label, int ParamCount, int LocalCount)> _methods = new(StringComparer.Ordinal);
     private readonly HashSet<string> _objectNames = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _recordNames = new(StringComparer.Ordinal);
     private readonly HashSet<string> _interfaceNames = new(StringComparer.Ordinal);
     private readonly Dictionary<string, Dictionary<string, TypeRef>> _objectFieldTypes = new(StringComparer.Ordinal);
     private readonly Dictionary<string, List<InterfaceDispatchTarget>> _interfaceDispatch = new(StringComparer.Ordinal);
+    private TypeRef? _currentCallableReturnTypeRef;
     private int _labelCounter;
 
     public byte[] Generate(IList<Stmt> statements) => GenerateWithMetadata(statements).Bytecode;
@@ -105,6 +108,8 @@ sealed class CodeGenerator
         foreach (var obj in objectDecls)
         {
             _objectNames.Add(obj.Name.Lexeme);
+            if (obj.IsRecord)
+                _recordNames.Add(obj.Name.Lexeme);
             var fieldTypes = new Dictionary<string, TypeRef>(StringComparer.Ordinal);
             foreach (var field in obj.Fields)
             {
@@ -145,6 +150,10 @@ sealed class CodeGenerator
 
         // Top-level script body
         _builder.Label(mainLabel);
+        _nextLocalIndex = 0;
+        _functionLocalHighWater = 0;
+        _freeTemps.Clear();
+        _freeTempSet.Clear();
         PushScope();
         foreach (var stmt in topLevel)
         {
@@ -164,11 +173,14 @@ sealed class CodeGenerator
     {
         string label = _functions[fn.Name.Lexeme].Label;
         _builder.Label(label);
+        var previousReturnTypeRef = _currentCallableReturnTypeRef;
+        _currentCallableReturnTypeRef = fn.ReturnType;
 
         // reset per-function allocators
         _nextLocalIndex = 0;
         _functionLocalHighWater = 0;
         _freeTemps.Clear();
+        _freeTempSet.Clear();
         PushScope();
         // Parameters occupy leading slots
         for (int i = 0; i < fn.Parameters.Count; i++)
@@ -178,6 +190,12 @@ sealed class CodeGenerator
             if (param.Type is not null)
                 _localDeclaredTypes[param.Name.Lexeme] = param.Type;
             _functionLocalHighWater = Math.Max(_functionLocalHighWater, _nextLocalIndex);
+            if (param.Type is not null && RequiresCopyOnAssignment(param.Type))
+            {
+                _builder.Load(_locals[param.Name.Lexeme]);
+                EmitCloneIfNeeded(param.Type);
+                _builder.Store(_locals[param.Name.Lexeme]);
+            }
         }
 
         Emit(fn.Body);
@@ -188,6 +206,7 @@ sealed class CodeGenerator
 
         _functions[fn.Name.Lexeme] = (label, fn.Parameters.Count, _functionLocalHighWater);
         PopScope();
+        _currentCallableReturnTypeRef = previousReturnTypeRef;
     }
 
     private void EmitObjectConstructors(ObjectDecl obj)
@@ -211,10 +230,13 @@ sealed class CodeGenerator
         string key = ConstructorKey(obj.Name.Lexeme, ctor.Parameters);
         var info = _constructors[key];
         _builder.Label(info.Label);
+        var previousReturnTypeRef = _currentCallableReturnTypeRef;
+        _currentCallableReturnTypeRef = null;
 
         _nextLocalIndex = 0;
         _functionLocalHighWater = 0;
         _freeTemps.Clear();
+        _freeTempSet.Clear();
         PushScope();
 
         // implicit this
@@ -229,6 +251,12 @@ sealed class CodeGenerator
             if (param.Type is not null)
                 _localDeclaredTypes[param.Name.Lexeme] = param.Type;
             _functionLocalHighWater = Math.Max(_functionLocalHighWater, _nextLocalIndex);
+            if (param.Type is not null && RequiresCopyOnAssignment(param.Type))
+            {
+                _builder.Load(_locals[param.Name.Lexeme]);
+                EmitCloneIfNeeded(param.Type);
+                _builder.Store(_locals[param.Name.Lexeme]);
+            }
         }
 
         Emit(ctor.Body);
@@ -238,6 +266,7 @@ sealed class CodeGenerator
 
         _constructors[key] = (info.Label, info.ParamCount, _functionLocalHighWater);
         PopScope();
+        _currentCallableReturnTypeRef = previousReturnTypeRef;
     }
 
     private void EmitMethod(ObjectDecl obj, MethodDecl method)
@@ -245,10 +274,13 @@ sealed class CodeGenerator
         string key = MethodKey(obj.Name.Lexeme, method.Name.Lexeme, method.Parameters);
         var info = _methods[key];
         _builder.Label(info.Label);
+        var previousReturnTypeRef = _currentCallableReturnTypeRef;
+        _currentCallableReturnTypeRef = method.ReturnType;
 
         _nextLocalIndex = 0;
         _functionLocalHighWater = 0;
         _freeTemps.Clear();
+        _freeTempSet.Clear();
         PushScope();
 
         _locals["this"] = _nextLocalIndex++;
@@ -262,6 +294,12 @@ sealed class CodeGenerator
             if (param.Type is not null)
                 _localDeclaredTypes[param.Name.Lexeme] = param.Type;
             _functionLocalHighWater = Math.Max(_functionLocalHighWater, _nextLocalIndex);
+            if (param.Type is not null && RequiresCopyOnAssignment(param.Type))
+            {
+                _builder.Load(_locals[param.Name.Lexeme]);
+                EmitCloneIfNeeded(param.Type);
+                _builder.Store(_locals[param.Name.Lexeme]);
+            }
         }
 
         Emit(method.Body);
@@ -271,6 +309,7 @@ sealed class CodeGenerator
 
         _methods[key] = (info.Label, info.ParamCount, _functionLocalHighWater);
         PopScope();
+        _currentCallableReturnTypeRef = previousReturnTypeRef;
     }
 
     private void Emit(Stmt stmt)
@@ -284,6 +323,7 @@ sealed class CodeGenerator
                 if (v.Initializer is not null)
                 {
                     Emit(v.Initializer);
+                    EmitCloneIfNeeded(v.Type);
                 }
                 else
                 {
@@ -359,7 +399,11 @@ sealed class CodeGenerator
                 break;
 
             case ReturnStmt r:
-                if (r.Value is not null) Emit(r.Value);
+                if (r.Value is not null)
+                {
+                    Emit(r.Value);
+                    EmitCloneIfNeeded(_currentCallableReturnTypeRef);
+                }
                 else _builder.PushInt(0);
                 _builder.Ret();
                 break;
@@ -543,12 +587,14 @@ sealed class CodeGenerator
                 {
                     EmitCurrentObject();
                     Emit(a.Value);
+                    EmitCloneIfNeeded(a.ResolvedImplicitFieldTypeRef);
                     _builder.SetField(a.Name.Lexeme);
                     _builder.Pop();
                 }
                 else
                 {
                     Emit(a.Value);
+                    EmitCloneIfNeeded(_localDeclaredTypes.TryGetValue(a.Name.Lexeme, out var assignType) ? assignType : null);
                     _builder.Store(GetSlot(a.Name));
                 }
                 break;
@@ -559,11 +605,13 @@ sealed class CodeGenerator
                 Emit(aset.Target.Array);
                 Emit(aset.Target.Index);
                 Emit(aset.Value);
+                EmitCloneIfNeeded(TryResolveTypeRef(aset.Target));
                 EmitIndexSet(aset.Target.Array);
                 break;
             case FieldSetExpr fset:
                 Emit(fset.Target.Target);
                 Emit(fset.Value);
+                EmitCloneIfNeeded(TryResolveTypeRef(fset.Target));
                 _builder.SetField(fset.Target.Name.Lexeme);
                 break;
             case MethodCallExpr mc:
@@ -692,6 +740,8 @@ sealed class CodeGenerator
     {
         if (_locals.TryGetValue(name, out var slot)) return slot;
         slot = _nextLocalIndex++;
+        if (_freeTempSet.Remove(slot))
+            _freeTemps.Remove(slot);
         _locals[name] = slot;
         _functionLocalHighWater = Math.Max(_functionLocalHighWater, _nextLocalIndex);
         return slot;
@@ -703,6 +753,7 @@ sealed class CodeGenerator
         {
             int idx = _freeTemps[^1];
             _freeTemps.RemoveAt(_freeTemps.Count - 1);
+            _freeTempSet.Remove(idx);
             return idx;
         }
         return GetOrAllocate($"__temp{_labelCounter++}");
@@ -710,6 +761,9 @@ sealed class CodeGenerator
 
     private void ReleaseTemp(int slot)
     {
+        if (_freeTempSet.Contains(slot))
+            return;
+        _freeTempSet.Add(slot);
         _freeTemps.Add(slot);
     }
 
@@ -829,6 +883,15 @@ sealed class CodeGenerator
                 return mc.ResolvedReturnTypeRef;
             case ArraySetExpr aset:
                 return TryResolveTypeRef(aset.Target);
+            case OptionalValueExpr oval:
+            {
+                var optionalType = TryResolveTypeRef(oval.Target);
+                if (optionalType is null || !optionalType.IsOptional || optionalType.TypeArguments.Count != 1)
+                    return null;
+                return optionalType.TypeArguments[0];
+            }
+            case OptionalOrExpr oor:
+                return TryResolveTypeRef(oor.Fallback);
             default:
                 return null;
         }
@@ -948,9 +1011,12 @@ sealed class CodeGenerator
             throw new InvalidOperationException($"Missing resolved built-in collection method for '{mc.MethodName.Lexeme}'");
 
         Emit(mc.Target);
-        foreach (var arg in mc.Arguments)
+        for (int i = 0; i < mc.Arguments.Count; i++)
         {
+            var arg = mc.Arguments[i];
             Emit(arg);
+            if (i == 0 && TryGetCollectionInsertedValueType(targetType, mc.ResolvedBuiltInCollectionMethodName, out var insertedValueType))
+                EmitCloneIfNeeded(insertedValueType);
         }
 
         switch (targetType.Name, mc.ResolvedBuiltInCollectionMethodName)
@@ -1054,6 +1120,96 @@ sealed class CodeGenerator
             default:
                 throw new InvalidOperationException($"Unsupported indexed collection type '{collectionType.Name}'");
         }
+    }
+
+    private bool TryGetCollectionInsertedValueType(TypeRef collectionType, string? methodName, out TypeRef? valueType)
+    {
+        valueType = null;
+        if (methodName is null)
+            return false;
+
+        switch (collectionType.Name, methodName)
+        {
+            case ("array", "append"):
+            case ("queue", "enqueue"):
+            case ("stack", "push"):
+                if (collectionType.TypeArguments.Count == 1)
+                {
+                    valueType = collectionType.TypeArguments[0];
+                    return true;
+                }
+                return false;
+            case ("set", "add"):
+                if (collectionType.TypeArguments.Count == 1)
+                {
+                    valueType = collectionType.TypeArguments[0];
+                    return true;
+                }
+                return false;
+            default:
+                return false;
+        }
+    }
+
+    private bool RequiresCopyOnAssignment(TypeRef? typeRef)
+    {
+        if (typeRef is null)
+            return false;
+        if (IsRecordType(typeRef))
+            return true;
+        return string.Equals(typeRef.Name, "optional", StringComparison.Ordinal) &&
+               typeRef.TypeArguments.Count == 1 &&
+               RequiresCopyOnAssignment(typeRef.TypeArguments[0]);
+    }
+
+    private bool IsRecordType(TypeRef typeRef) => _recordNames.Contains(typeRef.Name);
+
+    private void EmitCloneIfNeeded(TypeRef? typeRef)
+    {
+        if (!RequiresCopyOnAssignment(typeRef) || typeRef is null)
+            return;
+
+        if (IsRecordType(typeRef))
+        {
+            EmitCloneRecordValue(typeRef);
+            return;
+        }
+
+        if (string.Equals(typeRef.Name, "optional", StringComparison.Ordinal) && typeRef.TypeArguments.Count == 1)
+        {
+            string endLabel = NewLabel("clone_optional_end");
+            _builder.Dup();
+            _builder.OptionalHas();
+            _builder.JumpIfZero(endLabel);
+            EmitCloneIfNeeded(typeRef.TypeArguments[0]);
+            _builder.Label(endLabel);
+        }
+    }
+
+    private void EmitCloneRecordValue(TypeRef recordType)
+    {
+        if (!_objectFieldTypes.TryGetValue(recordType.Name, out var fieldTypes))
+            throw new InvalidOperationException($"Missing record field metadata for '{recordType.Name}'.");
+
+        int originalSlot = AllocateTemp();
+        int cloneSlot = AllocateTemp();
+        _builder.Store(originalSlot);
+        _builder.NewObject(recordType.Name);
+        _builder.Store(cloneSlot);
+
+        foreach (var field in fieldTypes)
+        {
+            _builder.Load(cloneSlot);
+            _builder.Load(originalSlot);
+            _builder.GetField(field.Key);
+            EmitCloneIfNeeded(field.Value);
+            _builder.SetField(field.Key);
+            _builder.Pop();
+        }
+
+        _builder.Load(cloneSlot);
+        ReleaseTemp(cloneSlot);
+        ReleaseTemp(originalSlot);
     }
 
     private void EmitObjectMethodCall(MethodCallExpr mc, TypeRef targetType)
@@ -1194,6 +1350,7 @@ sealed class CodeGenerator
         _builder.Load(arrSlot);
         _builder.Load(idxSlot);
         _builder.ArrayGet();
+        EmitCloneIfNeeded(fe.IteratorTypeRef);
         _builder.Store(iterSlot);
 
         Emit(fe.Body);

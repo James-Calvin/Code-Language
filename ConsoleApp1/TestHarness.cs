@@ -231,6 +231,57 @@ array<Direction> directions = {Direction.Left, choose(true)};
 print(directions[0] == Direction.Left);
 print(directions[1] == Direction.Right);", "1\n1\n")
             ,
+            ("record-copy-assignment",
+@"record Stats {
+  integer strength;
+  constructor(integer strength) {
+    this.strength = strength;
+  }
+}
+Stats original = new Stats(3);
+Stats copied = original;
+original.strength = 9;
+print(original.strength);
+print(copied.strength);", "9\n3\n")
+            ,
+            ("record-pass-and-return-by-value",
+@"record Stats {
+  integer strength;
+  constructor(integer strength) {
+    this.strength = strength;
+  }
+}
+function<Stats> boost(Stats stats) {
+  stats.strength += 2;
+  return stats;
+}
+Stats original = new Stats(4);
+Stats result = boost(original);
+print(original.strength);
+print(result.strength);", "4\n6\n")
+            ,
+            ("record-nested-and-optional-copy",
+@"record Stats {
+  integer strength;
+  constructor(integer strength) {
+    this.strength = strength;
+  }
+}
+record Profile {
+  Stats stats;
+  optional<Stats> backup;
+  constructor(integer strength) {
+    stats = new Stats(strength);
+    backup = stats;
+  }
+}
+Profile first = new Profile(5);
+Profile second = first;
+first.stats.strength = 9;
+Stats backup = second.backup.value;
+print(second.stats.strength);
+print(backup.strength);", "5\n5\n")
+            ,
             ("modulo-op", @"integer value = 8 % 3; print(value);", "2\n"),
             ("function-void",
 @"function printHello() {
@@ -326,6 +377,22 @@ print(1);", "1\n")
             ("array-set", @"array<integer> items = {10,20,30}; items[1] = 99; print(items[0]); print(items[1]); print(items[2]);", "10\n99\n30\n"),
             ("array-compound-assignment", @"array<integer> items = {10,20,30}; integer index = 1; items[index] += 5; items[index]--; print(items[index]);", "24\n"),
             ("array-append-remove", @"array<integer> items = new array<integer>(0); items.append(10); items.append(20); items.remove_at(0); print(items.length); print(items[0]);", "1\n20\n"),
+            ("array-record-copy-boundaries",
+@"record Stats {
+  integer strength;
+  constructor(integer strength) {
+    this.strength = strength;
+  }
+}
+array<Stats> items = new array<Stats>(0);
+Stats current = new Stats(1);
+items.append(current);
+current.strength = 7;
+print(items[0].strength);
+foreach item in items then {
+  item.strength = 9;
+}
+print(items[0].strength);", "1\n1\n"),
             ("built-in-collections",
 @"map<string, integer> scores = new map<string, integer>();
 scores[""coins""] = 10;
@@ -1757,6 +1824,75 @@ items.enqueue();", "expects 1 argument"),
             ("stack-push-type-mismatch",
 @"stack<integer> items = new stack<integer>();
 items.push(""oops"");", "Stack element type mismatch"),
+            ("record-methods-not-supported",
+@"record Stats {
+  integer strength;
+  constructor(integer strength) {
+    this.strength = strength;
+  }
+  function<integer> read() {
+    return strength;
+  }
+}", "does not support methods yet"),
+            ("record-inline-interface-not-supported",
+@"interface IReadable {
+  function<integer> read();
+}
+record Stats {
+  integer strength;
+  constructor(integer strength) {
+    this.strength = strength;
+  }
+  implement IReadable.read() {
+    return strength;
+  }
+}", "does not support inline interface implementations"),
+            ("record-external-interface-not-supported",
+@"interface IReadable {
+  function<integer> read();
+}
+record Stats {
+  integer strength;
+  constructor(integer strength) {
+    this.strength = strength;
+  }
+}
+implement IReadable for Stats {
+  read() via Stats.read;
+}", "does not support interface implementations yet"),
+            ("record-set-element-not-supported",
+@"record Stats {
+  integer strength;
+  constructor(integer strength) {
+    this.strength = strength;
+  }
+}
+set<Stats> items = new set<Stats>();", "Set elements cannot currently use record value types"),
+            ("record-map-key-not-supported",
+@"record Stats {
+  integer strength;
+  constructor(integer strength) {
+    this.strength = strength;
+  }
+}
+map<Stats, integer> values = new map<Stats, integer>();", "Map keys cannot currently use record value types"),
+            ("record-equality-not-supported",
+@"record Stats {
+  integer strength;
+  constructor(integer strength) {
+    this.strength = strength;
+  }
+}
+Stats left = new Stats(1);
+Stats right = left;
+print(left == right);", "Equality requires compatible types"),
+            ("record-cycle-not-supported",
+@"record Node {
+  optional<Node> next;
+  constructor() {
+    next = none;
+  }
+}", "cannot contain itself by value"),
         };
         var moduleErrorCases = new List<(string Name, IReadOnlyDictionary<string, string> Files, string Entry, string ErrorContains)>
         {
@@ -2448,6 +2584,7 @@ export object MainScene {
         {
             ("example-arithmetic-runnable", @"ConsoleApp1/examples/arithmetic.code", Compiler.CompileTarget.VmNative),
             ("example-enum-runnable", @"ConsoleApp1/examples/enum.code", Compiler.CompileTarget.VmNative),
+            ("example-record-runnable", @"ConsoleApp1/examples/record.code", Compiler.CompileTarget.VmNative),
             ("example-switch-runnable", @"ConsoleApp1/examples/switch.code", Compiler.CompileTarget.VmNative),
             ("example-time-runnable", @"ConsoleApp1/examples/time.code", Compiler.CompileTarget.VmNative),
             ("example-math-random-runnable", @"ConsoleApp1/examples/math_random.code", Compiler.CompileTarget.VmNative),
@@ -2581,12 +2718,12 @@ export object MainScene {
             string catalogText = File.ReadAllText(GetRepoPath(@"docs/example-catalog.md"));
             bool matched =
                 catalogText.Contains("| `runnable` | `ConsoleApp1/examples/enum.code` | `run` |", StringComparison.Ordinal) &&
+                catalogText.Contains("| `runnable` | `ConsoleApp1/examples/record.code` | `run` |", StringComparison.Ordinal) &&
                 catalogText.Contains("| `runnable` | `ConsoleApp1/examples/switch.code` | `run` |", StringComparison.Ordinal) &&
                 catalogText.Contains("| `runnable` | `ConsoleApp1/examples/time.code` | `run` |", StringComparison.Ordinal) &&
                 catalogText.Contains("| `runnable` | `ConsoleApp1/examples/math_random.code` | `run` |", StringComparison.Ordinal) &&
                 catalogText.Contains("| `runnable` | `ConsoleApp1/examples/collections.code` | `run` |", StringComparison.Ordinal) &&
                 catalogText.Contains("| `negative` | `ConsoleApp1/examples/constants.code` | `expected compile error` |", StringComparison.Ordinal) &&
-                catalogText.Contains("| `planned` | `ConsoleApp1/examples/record.code` | `planned only` |", StringComparison.Ordinal) &&
                 catalogText.Contains("| `runnable` | `ConsoleApp1/examples/shape_dodge.code` | `build-web` |", StringComparison.Ordinal) &&
                 catalogText.Contains("| `runnable` | `ConsoleApp1/examples/web_scene.code` | `build-web` |", StringComparison.Ordinal);
 

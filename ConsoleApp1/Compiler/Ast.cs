@@ -373,18 +373,21 @@ sealed class FunctionDecl : Stmt
 sealed class ObjectDecl : Stmt
 {
     public Token Name { get; }
+    public bool IsRecord { get; }
     public IReadOnlyList<FieldDecl> Fields { get; }
     public IReadOnlyList<ConstructorDecl> Constructors { get; }
     public IReadOnlyList<MethodDecl> Methods { get; }
     public IReadOnlyList<InlineImplementMethodDecl> InlineInterfaceMethods { get; }
     public ObjectDecl(
         Token name,
+        bool isRecord,
         IReadOnlyList<FieldDecl> fields,
         IReadOnlyList<ConstructorDecl> constructors,
         IReadOnlyList<MethodDecl> methods,
         IReadOnlyList<InlineImplementMethodDecl>? inlineInterfaceMethods = null)
     {
         Name = name;
+        IsRecord = isRecord;
         Fields = fields;
         Constructors = constructors;
         Methods = methods;

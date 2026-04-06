@@ -15,6 +15,7 @@ enum TypeSymbol
     Optional,
     Void,
     Enum,
+    Record,
     Object,
     Interface,
     Unknown

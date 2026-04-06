@@ -50,6 +50,7 @@ sealed class TypeChecker
                 throw new CompilerException($"Type name '{obj.Name.Lexeme}' is already used by an enum", obj.Name.Line, obj.Name.Column);
             _objects[obj.Name.Lexeme] = new ObjectSymbol(
                 obj.Name,
+                obj.IsRecord,
                 new Dictionary<string, TypeRef>(StringComparer.Ordinal),
                 new List<ConstructorSignature>(),
                 new Dictionary<string, MethodSignature>(StringComparer.Ordinal));
@@ -139,14 +140,15 @@ sealed class TypeChecker
                 continue;
 
             var symbol = _objects[obj.Name.Lexeme];
+            string typeKind = obj.IsRecord ? "record" : "object";
             foreach (var field in obj.Fields)
             {
                 if (symbol.Fields.ContainsKey(field.Name.Lexeme))
-                    throw new CompilerException($"Field '{field.Name.Lexeme}' is already defined in object '{obj.Name.Lexeme}'", field.Name.Line, field.Name.Column);
+                    throw new CompilerException($"Field '{field.Name.Lexeme}' is already defined in {typeKind} '{obj.Name.Lexeme}'", field.Name.Line, field.Name.Column);
                 if (IsReservedPropertyName(field.Name.Lexeme))
                     throw new CompilerException($"Field name '{field.Name.Lexeme}' is reserved for built-in properties", field.Name.Line, field.Name.Column);
                 ValidateTypeRef(field.Type);
-                EnsureNotVoidTypeRef(field.Type, "Object fields cannot be void", field.Name.Line, field.Name.Column);
+                EnsureNotVoidTypeRef(field.Type, $"{Capitalize(typeKind)} fields cannot be void", field.Name.Line, field.Name.Column);
                 symbol.Fields[field.Name.Lexeme] = field.Type;
             }
 
@@ -167,10 +169,15 @@ sealed class TypeChecker
                 string dispatchKey = ConstructorDispatchKey(obj.Name.Lexeme, paramTypeRefs);
                 if (!ctorSignatures.Add(dispatchKey))
                 {
-                    throw new CompilerException($"Constructor overload '{dispatchKey}' is already defined in object '{obj.Name.Lexeme}'", ctor.Keyword.Line, ctor.Keyword.Column);
+                    throw new CompilerException($"Constructor overload '{dispatchKey}' is already defined in {typeKind} '{obj.Name.Lexeme}'", ctor.Keyword.Line, ctor.Keyword.Column);
                 }
                 symbol.Constructors.Add(new ConstructorSignature(ctor.Keyword, paramTypes, paramTypeRefs, dispatchKey, ctor.Body));
             }
+
+            if (obj.IsRecord && obj.Methods.Count > 0)
+                throw new CompilerException($"Record '{obj.Name.Lexeme}' does not support methods yet", obj.Methods[0].Name.Line, obj.Methods[0].Name.Column);
+            if (obj.IsRecord && obj.InlineInterfaceMethods.Count > 0)
+                throw new CompilerException($"Record '{obj.Name.Lexeme}' does not support inline interface implementations", obj.InlineInterfaceMethods[0].InterfaceName.Line, obj.InlineInterfaceMethods[0].InterfaceName.Column);
 
             var methodKeys = new HashSet<string>(StringComparer.Ordinal);
             foreach (var method in obj.Methods)
@@ -188,7 +195,7 @@ sealed class TypeChecker
                 }
                 string methodKey = MethodDispatchKey(obj.Name.Lexeme, method.Name.Lexeme, paramTypeRefs);
                 if (!methodKeys.Add(methodKey))
-                    throw new CompilerException($"Method overload '{method.Name.Lexeme}' with the same signature is already defined in object '{obj.Name.Lexeme}'", method.Name.Line, method.Name.Column);
+                    throw new CompilerException($"Method overload '{method.Name.Lexeme}' with the same signature is already defined in {typeKind} '{obj.Name.Lexeme}'", method.Name.Line, method.Name.Column);
 
                 var paramTypes = method.Parameters.Select(p => MapType(p.Type!)).ToList();
                 var returnType = MapType(returnTypeRef);
@@ -197,9 +204,11 @@ sealed class TypeChecker
 
             if (symbol.Fields.Count > 0 && symbol.Constructors.Count == 0)
             {
-                throw new CompilerException($"Object '{obj.Name.Lexeme}' declares fields but has no constructor to initialize them", obj.Name.Line, obj.Name.Column);
+                throw new CompilerException($"{Capitalize(typeKind)} '{obj.Name.Lexeme}' declares fields but has no constructor to initialize them", obj.Name.Line, obj.Name.Column);
             }
         }
+
+        ValidateRecordLayouts();
 
         // Validate interface implementation blocks, allowing multiple declarations to contribute to the same pair.
         var implementGroups = new Dictionary<string, List<ImplementDecl>>(StringComparer.Ordinal);
@@ -224,6 +233,8 @@ sealed class TypeChecker
                 throw new CompilerException($"Unknown interface '{first.InterfaceName.Lexeme}'", first.InterfaceName.Line, first.InterfaceName.Column);
             if (!_objects.TryGetValue(first.ObjectName.Lexeme, out var obj))
                 throw new CompilerException($"Unknown object '{first.ObjectName.Lexeme}'", first.ObjectName.Line, first.ObjectName.Column);
+            if (obj.IsRecord)
+                throw new CompilerException($"Record '{first.ObjectName.Lexeme}' does not support interface implementations yet", first.ObjectName.Line, first.ObjectName.Column);
 
             var mapped = new HashSet<string>(StringComparer.Ordinal);
             for (int declIndex = 0; declIndex < pair.Value.Count; declIndex++)
@@ -379,7 +390,7 @@ sealed class TypeChecker
                 var ctorSig = symbol.Constructors[i];
                 var env = new TypeEnvironment();
                 var thisType = new TypeRef(obj.Name.Lexeme, null, obj.Name.Line, obj.Name.Column);
-                env.Define("this", TypeSymbol.Object, thisType, ctor.Keyword.Line, ctor.Keyword.Column, assigned: true);
+                env.Define("this", symbol.IsRecord ? TypeSymbol.Record : TypeSymbol.Object, thisType, ctor.Keyword.Line, ctor.Keyword.Column, assigned: true);
                 foreach (var param in ctor.Parameters)
                 {
                     var pType = MapType(param.Type!);
@@ -417,7 +428,7 @@ sealed class TypeChecker
             {
                 var env = new TypeEnvironment();
                 var thisType = new TypeRef(obj.Name.Lexeme, null, obj.Name.Line, obj.Name.Column);
-                env.Define("this", TypeSymbol.Object, thisType, method.Name.Line, method.Name.Column, assigned: true);
+                env.Define("this", symbol.IsRecord ? TypeSymbol.Record : TypeSymbol.Object, thisType, method.Name.Line, method.Name.Column, assigned: true);
                 var previousReturnRef = _currentReturnTypeRef;
                 _currentReturnTypeRef = method.ReturnTypeRef;
 
@@ -535,6 +546,55 @@ sealed class TypeChecker
             return false;
         fieldName = set.Target.Name.Lexeme;
         return true;
+    }
+
+    private void ValidateRecordLayouts()
+    {
+        var visiting = new HashSet<string>(StringComparer.Ordinal);
+        var visited = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var pair in _objects)
+        {
+            if (!pair.Value.IsRecord)
+                continue;
+
+            ValidateRecordLayout(pair.Value, visiting, visited);
+        }
+    }
+
+    private void ValidateRecordLayout(ObjectSymbol record, HashSet<string> visiting, HashSet<string> visited)
+    {
+        if (visited.Contains(record.Name.Lexeme))
+            return;
+
+        if (!visiting.Add(record.Name.Lexeme))
+            throw new CompilerException($"Record '{record.Name.Lexeme}' cannot contain itself by value", record.Name.Line, record.Name.Column);
+
+        foreach (var fieldType in record.Fields.Values)
+        {
+            foreach (var nestedRecord in EnumerateEmbeddedRecordTypes(fieldType))
+            {
+                if (_objects.TryGetValue(nestedRecord, out var nestedSymbol) && nestedSymbol.IsRecord)
+                    ValidateRecordLayout(nestedSymbol, visiting, visited);
+            }
+        }
+
+        visiting.Remove(record.Name.Lexeme);
+        visited.Add(record.Name.Lexeme);
+    }
+
+    private IEnumerable<string> EnumerateEmbeddedRecordTypes(TypeRef typeRef)
+    {
+        if (_objects.TryGetValue(typeRef.Name, out var symbol) && symbol.IsRecord)
+        {
+            yield return typeRef.Name;
+            yield break;
+        }
+
+        if (string.Equals(typeRef.Name, "optional", StringComparison.Ordinal) && typeRef.TypeArguments.Count == 1)
+        {
+            foreach (var nested in EnumerateEmbeddedRecordTypes(typeRef.TypeArguments[0]))
+                yield return nested;
+        }
     }
 
     private bool TryResolveImplicitField(Token name, TypeEnvironment env, out TypeSymbol type, out TypeRef? typeRef)
@@ -744,7 +804,7 @@ sealed class TypeChecker
             case NewObjectExpr no:
             {
                 if (!_objects.TryGetValue(no.TypeName.Lexeme, out var obj))
-                    throw new CompilerException($"Unknown object type '{no.TypeName.Lexeme}'", no.TypeName.Line, no.TypeName.Column);
+                    throw new CompilerException($"Unknown object or record type '{no.TypeName.Lexeme}'", no.TypeName.Line, no.TypeName.Column);
 
                 var argTypes = new List<(TypeSymbol Symbol, TypeRef? Ref)>(no.Arguments.Count);
                 for (int i = 0; i < no.Arguments.Count; i++)
@@ -758,14 +818,14 @@ sealed class TypeChecker
                 if (!TryResolveBestConstructor(obj, argTypes, out var ctor, out bool ambiguous))
                 {
                     if (obj.Constructors.Count == 0 && no.Arguments.Count == 0)
-                        return TypeSymbol.Object;
+                        return obj.IsRecord ? TypeSymbol.Record : TypeSymbol.Object;
                     if (ambiguous)
                         throw new CompilerException($"Ambiguous constructor call for '{no.TypeName.Lexeme}'", no.TypeName.Line, no.TypeName.Column);
                     throw new CompilerException($"No matching constructor overload for '{no.TypeName.Lexeme}'", no.TypeName.Line, no.TypeName.Column);
                 }
 
                 no.ResolvedConstructorKey = ctor!.DispatchKey;
-                return TypeSymbol.Object;
+                return obj.IsRecord ? TypeSymbol.Record : TypeSymbol.Object;
             }
             case ArrayLengthExpr alen:
                 var targType = CheckExpr(alen.Target, env, currentReturn);
@@ -808,11 +868,18 @@ sealed class TypeChecker
                 CheckExpr(ohv.Target, env, currentReturn);
                 return TypeSymbol.Boolean;
             case OptionalValueExpr oval:
-                CheckExpr(oval.Target, env, currentReturn);
-                return TypeSymbol.Unknown;
+            {
+                var optionalType = CheckExpr(oval.Target, env, currentReturn);
+                Require(optionalType == TypeSymbol.Optional, oval.Target, "'.value' requires optional target");
+                var optionalTypeRef = ResolveExprTypeRef(oval.Target, env);
+                if (optionalTypeRef is null || !optionalTypeRef.IsOptional || optionalTypeRef.TypeArguments.Count != 1)
+                    throw new CompilerException("Could not resolve optional element type", GetLine(oval.Target), GetCol(oval.Target));
+                return MapType(optionalTypeRef.TypeArguments[0]);
+            }
             case OptionalOrExpr oor:
                 var fbType = CheckExpr(oor.Fallback, env, currentReturn);
-                CheckExpr(oor.Optional, env, currentReturn);
+                var optionalValueType = CheckExpr(oor.Optional, env, currentReturn);
+                Require(optionalValueType == TypeSymbol.Optional, oor.Optional, "'.or' requires optional target");
                 return fbType;
             case FieldAccessExpr fa:
             {
@@ -826,7 +893,7 @@ sealed class TypeChecker
                 fa.ResolvedEnumTypeRef = null;
                 fa.ResolvedEnumValue = null;
                 var targetType = CheckExpr(fa.Target, env, currentReturn);
-                Require(targetType == TypeSymbol.Object, fa.Target, "Field access requires object target");
+                Require(targetType == TypeSymbol.Object || targetType == TypeSymbol.Record, fa.Target, "Field access requires object or record target");
                 var resolved = ResolveFieldType(fa, env);
                 return resolved ?? TypeSymbol.Unknown;
             }
@@ -873,7 +940,7 @@ sealed class TypeChecker
                     throw new CompilerException("Enum members are constants and cannot be assigned", fset.Target.Name.Line, fset.Target.Name.Column);
 
                 var targetType = CheckExpr(fset.Target.Target, env, currentReturn);
-                Require(targetType == TypeSymbol.Object, fset.Target.Target, "Field assignment requires object target");
+                Require(targetType == TypeSymbol.Object || targetType == TypeSymbol.Record, fset.Target.Target, "Field assignment requires object or record target");
                 var rhsType = CheckExpr(fset.Value, env, currentReturn);
                 var expectedType = ResolveFieldType(fset.Target, env);
                 if (expectedType is TypeSymbol expected)
@@ -1408,7 +1475,9 @@ sealed class TypeChecker
             "optional" => TypeSymbol.Optional,
             "void" => TypeSymbol.Void,
             _ when _enums.ContainsKey(typeRef.Name) => TypeSymbol.Enum,
-            _ => _interfaces.ContainsKey(typeRef.Name) ? TypeSymbol.Interface : TypeSymbol.Object
+            _ when _interfaces.ContainsKey(typeRef.Name) => TypeSymbol.Interface,
+            _ when _objects.TryGetValue(typeRef.Name, out var objectSymbol) && objectSymbol.IsRecord => TypeSymbol.Record,
+            _ => TypeSymbol.Object
         };
     }
 
@@ -1547,6 +1616,16 @@ sealed class TypeChecker
 
                 return false;
             }
+            if (expected == TypeSymbol.Record)
+            {
+                if (actualRef is not null && SameTypeRef(expectedRef, actualRef))
+                {
+                    cost = 0;
+                    return true;
+                }
+
+                return false;
+            }
             if (expected is TypeSymbol.Object or TypeSymbol.Interface)
             {
                 return TryReferenceConversionCost(expectedRef, actualRef, out cost);
@@ -1620,6 +1699,8 @@ sealed class TypeChecker
                 return leftRef is not null && rightRef is not null && TryCollectionConversionCost(leftRef, rightRef, out _);
             if (left == TypeSymbol.Enum)
                 return leftRef is not null && rightRef is not null && SameTypeRef(leftRef, rightRef);
+            if (left == TypeSymbol.Record)
+                return false;
             if (left is TypeSymbol.Object or TypeSymbol.Interface)
                 return leftRef is not null && rightRef is not null && TryReferenceConversionCost(leftRef, rightRef, out _);
             return left != TypeSymbol.Void;
@@ -1740,9 +1821,27 @@ sealed class TypeChecker
                 return ai.ResolvedElementTypeRef;
             case ArraySetExpr aset:
                 return ResolveExprTypeRef(aset.Target, env);
+            case OptionalValueExpr oval:
+            {
+                var optionalTypeRef = ResolveExprTypeRef(oval.Target, env);
+                if (optionalTypeRef is null || !optionalTypeRef.IsOptional || optionalTypeRef.TypeArguments.Count != 1)
+                    return null;
+                return optionalTypeRef.TypeArguments[0];
+            }
+            case OptionalOrExpr oor:
+                return ResolveExprTypeRef(oor.Fallback, env);
             default:
                 return null;
         }
+    }
+
+    private static string Capitalize(string value)
+    {
+        if (string.IsNullOrEmpty(value))
+            return value;
+        if (value.Length == 1)
+            return value.ToUpperInvariant();
+        return char.ToUpperInvariant(value[0]) + value[1..];
     }
 
     private (TypeSymbol Type, TypeRef? TypeRef, Token AssignmentToken) CheckCompoundAssignmentTarget(
@@ -1773,7 +1872,7 @@ sealed class TypeChecker
 
             {
                 var targetType = CheckExpr(fieldAccess.Target, env, currentReturn);
-                Require(targetType == TypeSymbol.Object, fieldAccess.Target, "Field access requires object target");
+                Require(targetType == TypeSymbol.Object || targetType == TypeSymbol.Record, fieldAccess.Target, "Field access requires object or record target");
                 return (
                     ResolveFieldType(fieldAccess, env) ?? TypeSymbol.Unknown,
                     ResolveFieldTypeRef(fieldAccess, env),
@@ -1859,6 +1958,8 @@ sealed class TypeChecker
                 if (typeRef.TypeArguments.Count != 1)
                     throw new CompilerException($"Type '{typeRef.Name}' expects exactly one type argument", typeRef.Line, typeRef.Column);
                 ValidateTypeRef(typeRef.TypeArguments[0]);
+                if (typeRef.Name == "set" && ContainsCopyByValueRecord(typeRef.TypeArguments[0]))
+                    throw new CompilerException("Set elements cannot currently use record value types", typeRef.Line, typeRef.Column);
                 return;
 
             case "map":
@@ -1866,6 +1967,8 @@ sealed class TypeChecker
                     throw new CompilerException($"Type '{typeRef.Name}' expects exactly two type arguments", typeRef.Line, typeRef.Column);
                 ValidateTypeRef(typeRef.TypeArguments[0]);
                 ValidateTypeRef(typeRef.TypeArguments[1]);
+                if (ContainsCopyByValueRecord(typeRef.TypeArguments[0]))
+                    throw new CompilerException("Map keys cannot currently use record value types", typeRef.Line, typeRef.Column);
                 return;
 
             default:
@@ -1875,6 +1978,16 @@ sealed class TypeChecker
                     throw new CompilerException($"Unknown type '{typeRef.Name}'", typeRef.Line, typeRef.Column);
                 return;
         }
+    }
+
+    private bool ContainsCopyByValueRecord(TypeRef typeRef)
+    {
+        if (_objects.TryGetValue(typeRef.Name, out var symbol) && symbol.IsRecord)
+            return true;
+
+        return string.Equals(typeRef.Name, "optional", StringComparison.Ordinal) &&
+               typeRef.TypeArguments.Count == 1 &&
+               ContainsCopyByValueRecord(typeRef.TypeArguments[0]);
     }
 
     private static TypeRef BuildImplicitVoidTypeRef(Token origin)
@@ -1930,6 +2043,13 @@ sealed class TypeChecker
             throw new CompilerException(message, line, col);
         }
 
+        if (target == TypeSymbol.Record)
+        {
+            if (targetRef is not null && valueRef is not null && SameTypeRef(targetRef, valueRef))
+                return;
+            throw new CompilerException(message, line, col);
+        }
+
         if (target == TypeSymbol.Enum)
         {
             if (targetRef is not null && valueRef is not null && SameTypeRef(targetRef, valueRef))
@@ -1982,7 +2102,7 @@ sealed class TypeChecker
     {
         if (ifaceMethod.ReturnType != objectMethod.ReturnType)
             return false;
-        if (ifaceMethod.ReturnType != TypeSymbol.Object)
+        if (ifaceMethod.ReturnType is not (TypeSymbol.Object or TypeSymbol.Record))
             return true;
         return SameTypeRef(ifaceMethod.ReturnTypeRef, objectMethod.ReturnTypeRef);
     }
@@ -2078,6 +2198,7 @@ sealed class TypeChecker
         Dictionary<string, int> Members);
     private sealed record ObjectSymbol(
         Token Name,
+        bool IsRecord,
         Dictionary<string, TypeRef> Fields,
         List<ConstructorSignature> Constructors,
         Dictionary<string, MethodSignature> Methods);

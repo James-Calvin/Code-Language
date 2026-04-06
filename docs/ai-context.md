@@ -16,7 +16,7 @@ Read this first. Update it whenever semantics or process change.
 - Compiler type model: AST/parser/type-checker use `TypeRef`; named object types resolve via object symbol tables (fields + constructors + forward refs).
 - Object rules: fields require constructor initialization; constructor/method overloads resolve by typed signature (best-match conversions), methods lower to hidden static call targets with implicit `this`, object bodies support implicit field access / implicit `this` method calls when names are not shadowed by locals or parameters, and object methods support implicit-void authoring; reserved field names are `length`, `hasValue`, `value`, `or`.
 - Interfaces: `interface Name { function<...> method(...); }` plus either inline object-body implementations `implement Interface.method(...) { ... }` or explicit `implement Interface for Object { method(types...) via Object.method; }`, with runtime dispatch for interface-typed locals/params/returns/fields/arrays.
-- Control flow: if/then[/else], while, for, foreach (numeric or array), break/continue, return (implicit 0).
+- Control flow: if/then[/else], switch (no fallthrough), while, for, foreach (numeric or array), break/continue, return (implicit 0).
 - Expressions: arithmetic (including `%`), comparisons, logical and/or/not (short-circuit), assignment (including `+=`, `-=`, `*=`, `/=`, `%=` and postfix `++/--` across variables, object fields, and array elements), function calls, full-expression string interpolation/concat.
 - Time and math intrinsics: `unix_ms()`, `unix_us()`, `mono_ns()`, `mono_ticks()`, `mono_ticks_per_second()`, `minimum()`, `maximum()`, `absolute()`, `sign()`, `lerp()`, `sine()`, `cosine()`, `random()`, plus native-only `sleep_ms(integer)`.
 - IO intrinsic: `read_line() -> string` (native-only).
@@ -38,7 +38,7 @@ Read this first. Update it whenever semantics or process change.
 - Tests: integration (core features, arrays, optionals, objects, interfaces, modules/imports, host ABI surfaces, target capability validation, panic) + fuzz (arith, boolean, strings, loop sums, panic). Run `dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- --run-tests`.
 
 ## Not Implemented (yet)
-- Language gaps: `switch`, `record` declarations/value semantics, visibility enforcement, and user-facing `fallible<T>` / `on error`.
+- Language gaps: `record` declarations/value semantics, visibility enforcement, and user-facing `fallible<T>` / `on error`.
 - Stdlib/runtime gaps: broader standard-library surface beyond the current math/random and core container baseline.
 - Dispatch/runtime polish: optimization beyond baseline interface dispatch tables.
 - Module namespaces and stdlib versioning/layout.
@@ -69,6 +69,7 @@ Read this first. Update it whenever semantics or process change.
 - Prefer fully spelled-out user-facing names; avoid arbitrary abbreviations unless the term is a widely accepted domain term such as `hud`.
 
 ## Change Log
+- 2026-04-05: Added `switch` statements with `case ... then ...` / optional `default then ...`, no fallthrough, single evaluation of the switch value, constructor definite-assignment support, runnable example coverage, and synced docs/tests.
 - 2026-04-05: Added built-in collections `map`, `set`, `queue`, and `stack` to the type checker/code generator/native VM/web VM, added a runnable collections example plus compile/runtime regression coverage, and updated docs/bytecode notes to move collections out of the planned bucket.
 - 2026-04-05: Added math/random intrinsics (`minimum`, `maximum`, `absolute`, `sign`, `lerp`, `sine`, `cosine`, `random`) to the native/web host ABI surface, added a runnable example, updated docs, and added target-parity plus web-runtime binding coverage.
 - 2026-04-05: Implemented enumerations with strongly typed `Enum.Member` access, explicit integer member values, import/export/re-export support, new enum examples/tests, and updated `shape_dodge.code` to replace obstacle-kind magic integers.

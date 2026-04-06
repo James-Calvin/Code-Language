@@ -484,6 +484,32 @@ sealed class TypeChecker
                 thenAssigned.IntersectWith(elseAssigned);
                 return thenAssigned;
             }
+            case SwitchStmt switchStmt:
+            {
+                if (switchStmt.DefaultBranch is null)
+                    return assigned;
+
+                HashSet<string>? branchAssigned = null;
+                for (int i = 0; i < switchStmt.Cases.Count; i++)
+                {
+                    var caseAssigned = ComputeDefiniteFieldAssignments(switchStmt.Cases[i].Body, assigned);
+                    if (branchAssigned is null)
+                    {
+                        branchAssigned = caseAssigned;
+                    }
+                    else
+                    {
+                        branchAssigned.IntersectWith(caseAssigned);
+                    }
+                }
+
+                var defaultAssigned = ComputeDefiniteFieldAssignments(switchStmt.DefaultBranch, assigned);
+                if (branchAssigned is null)
+                    return defaultAssigned;
+
+                branchAssigned.IntersectWith(defaultAssigned);
+                return branchAssigned;
+            }
             case WhileStmt:
             case ForStmt:
             case ForeachStmt:
@@ -576,6 +602,30 @@ sealed class TypeChecker
                 bool thenRet = CheckStmt(i.ThenBranch, env.CreateChild(), currentReturn);
                 bool elseRet = i.ElseBranch is not null && CheckStmt(i.ElseBranch, env.CreateChild(), currentReturn);
                 return thenRet && (i.ElseBranch is null ? false : elseRet);
+
+            case SwitchStmt s:
+            {
+                var switchType = CheckExpr(s.Value, env, currentReturn);
+                var switchTypeRef = ResolveExprTypeRef(s.Value, env);
+                bool allCasesReturn = true;
+                for (int i = 0; i < s.Cases.Count; i++)
+                {
+                    var caseClause = s.Cases[i];
+                    var caseType = CheckExpr(caseClause.Value, env, currentReturn);
+                    var caseTypeRef = ResolveExprTypeRef(caseClause.Value, env);
+                    Require(
+                        CanCompareForEquality(switchType, switchTypeRef, caseType, caseTypeRef),
+                        caseClause.Value,
+                        "Switch case value type must be comparable to switch value");
+                    allCasesReturn &= CheckStmt(caseClause.Body, env.CreateChild(), currentReturn);
+                }
+
+                if (s.DefaultBranch is null)
+                    return false;
+
+                bool defaultReturns = CheckStmt(s.DefaultBranch, env.CreateChild(), currentReturn);
+                return allCasesReturn && defaultReturns;
+            }
 
             case WhileStmt w:
                 var cType = CheckExpr(w.Condition, env, currentReturn);
@@ -1980,6 +2030,7 @@ sealed class TypeChecker
     private static int GetStmtLine(Stmt stmt) => stmt switch
     {
         ReturnStmt r when r.Value is Expr e => GetLine(e),
+        SwitchStmt s => s.Keyword.Line,
         ReturnStmt => 0,
         _ => 0
     };
@@ -1987,6 +2038,7 @@ sealed class TypeChecker
     private static int GetStmtCol(Stmt stmt) => stmt switch
     {
         ReturnStmt r when r.Value is Expr e => GetCol(e),
+        SwitchStmt s => s.Keyword.Column,
         ReturnStmt => 0,
         _ => 0
     };

@@ -11,10 +11,9 @@ This roadmap is implementation-truthful: items marked below are gaps from the cu
 ## Near-Term Gap Groups
 
 ### Language Gaps
-1. `switch`
-2. `record` declarations and value semantics
-3. Visibility/access control
-4. User-facing error-handling syntax and propagation (`fallible<T>`, `on error`)
+1. `record` declarations and value semantics
+2. Visibility/access control
+3. User-facing error-handling syntax and propagation (`fallible<T>`, `on error`)
 
 ### Stdlib and Runtime Gaps
 1. Broader standard-library modules after the core container/math baseline lands
@@ -46,7 +45,7 @@ This roadmap is implementation-truthful: items marked below are gaps from the cu
 | `[x]` | Core language | Collections: literals + foreach over collections | Array literals + array foreach + typed array declarations/new(size) + `.length` + indexing + mutation + `append` / `remove_at` with preserved element typing |
 | `[x]` | Core language | Optionals | `optional<T>` with `none`, `.hasValue`, `.value`, `.or(fallback)` |
 | `[x]` | Core language | Enumerations | Implemented: `enum Name { Member; Other = 5; }`, strongly typed equality/assignment, and module export/import/re-export support |
-| `[!]` | Core language | `switch` | Not implemented; current code must use `if`/`else` chains |
+| `[x]` | Core language | `switch` | Implemented: `switch value then { case expr then statement ... default then statement }`, no fallthrough, single evaluation of the switch value |
 | `[~]` | Core language | Structs/records (user types) | Planned via object-model build-out below |
 | `[~]` | Type system | Sized numerics & literal suffixes (`i8/w8/r32` etc.) | Lexer/parser/type support pending |
 | `[~]` | Type system | Optional/`optional<T>` semantics | Baseline works; flow narrowing and stricter typing rules pending |
@@ -117,7 +116,7 @@ This roadmap is implementation-truthful: items marked below are gaps from the cu
 | `[~]` | Testing | Object-model fuzz/property domains | Constructor/field mutation/member access invariants |
 
 ## Priority Rollup (benefit/effort)
-- High (`[!]`): `switch` and keeping example/docs status aligned with implementation truth.
+- High (`[!]`): keeping example/docs status aligned with implementation truth.
 - Medium (`[~]`): records, visibility/access control, fuller user-facing error-handling syntax, constant pool, optimizer expansion, tooling polish, and engine core/adapters.
 - Low (`[_]`): REPL, future stdlib/versioning, long-term runtime lifecycle strategy, remote package registry, and longer-horizon GPU/backend work.
 

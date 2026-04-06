@@ -23,6 +23,7 @@ enum TokenType
     Array, Object, Interface, Enum,
     Constant,
     If, Then, Else,
+    Switch, Case, Default,
     While,
     Return,
     Print,

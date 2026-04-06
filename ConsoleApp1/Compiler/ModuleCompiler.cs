@@ -889,6 +889,17 @@ static class ModuleCompiler
                         ScanStmtForCapabilities(i.ElseBranch, modulePath);
                     break;
 
+                case SwitchStmt s:
+                    ScanExprForCapabilities(s.Value, modulePath);
+                    for (int i = 0; i < s.Cases.Count; i++)
+                    {
+                        ScanExprForCapabilities(s.Cases[i].Value, modulePath);
+                        ScanStmtForCapabilities(s.Cases[i].Body, modulePath);
+                    }
+                    if (s.DefaultBranch is not null)
+                        ScanStmtForCapabilities(s.DefaultBranch, modulePath);
+                    break;
+
                 case WhileStmt w:
                     ScanExprForCapabilities(w.Condition, modulePath);
                     ScanStmtForCapabilities(w.Body, modulePath);
@@ -1428,6 +1439,14 @@ static class ModuleCompiler
                 RewriteExpr(i.Condition, typeAliases, namespaceAliases),
                 RewriteStmt(i.ThenBranch, typeAliases, namespaceAliases),
                 i.ElseBranch is null ? null : RewriteStmt(i.ElseBranch, typeAliases, namespaceAliases)),
+            SwitchStmt s => new SwitchStmt(
+                s.Keyword,
+                RewriteExpr(s.Value, typeAliases, namespaceAliases),
+                s.Cases.Select(c => new SwitchCase(
+                    c.Keyword,
+                    RewriteExpr(c.Value, typeAliases, namespaceAliases),
+                    RewriteStmt(c.Body, typeAliases, namespaceAliases))).ToList(),
+                s.DefaultBranch is null ? null : RewriteStmt(s.DefaultBranch, typeAliases, namespaceAliases)),
             WhileStmt w => new WhileStmt(RewriteExpr(w.Condition, typeAliases, namespaceAliases), RewriteStmt(w.Body, typeAliases, namespaceAliases)),
             ReturnStmt r => new ReturnStmt(r.Value is null ? null : RewriteExpr(r.Value, typeAliases, namespaceAliases)),
             PrintStmt p => new PrintStmt(RewriteExpr(p.Value, typeAliases, namespaceAliases)),

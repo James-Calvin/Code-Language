@@ -166,6 +166,45 @@ foreach i in n then print(i);",
 @"integer x = 3;
 print(""x={x}"");", "x=3\n")
             ,
+            ("switch-basic",
+@"integer value = 2;
+switch value then {
+  case 1 then print(""one"");
+  case 2 then print(""two"");
+  default then print(""other"");
+}", "two\n")
+            ,
+            ("switch-evaluates-value-once",
+@"object Counter {
+  integer calls;
+  constructor() {
+    calls = 0;
+  }
+  function<integer> nextValue() {
+    calls += 1;
+    return 2;
+  }
+}
+Counter counter = new Counter();
+switch counter.nextValue() then {
+  case 1 then print(""one"");
+  case 2 then print(""two"");
+  default then print(""other"");
+}
+print(counter.calls);", "two\n1\n")
+            ,
+            ("switch-enum",
+@"enum Direction {
+  Left;
+  Right;
+}
+Direction direction = Direction.Right;
+switch direction then {
+  case Direction.Left then print(""left"");
+  case Direction.Right then print(""right"");
+  default then print(""other"");
+}", "right\n")
+            ,
             ("enum-basic",
 @"enum Difficulty {
   Easy;
@@ -451,6 +490,23 @@ print(b.count);", "3\n999\n"),
 }
 Logger logger = new Logger();
 logger.ping();", "ok\n"),
+            ("object-constructor-switch-definite-init",
+@"enum Mode {
+  A;
+  B;
+}
+object Config {
+  integer amount;
+  constructor(Mode mode) {
+    switch mode then {
+      case Mode.A then amount = 1;
+      case Mode.B then amount = 2;
+      default then amount = 3;
+    }
+  }
+}
+Config config = new Config(Mode.B);
+print(config.amount);", "2\n"),
             ("object-implicit-this-field-read-write",
 @"object Counter {
   integer count;
@@ -1671,6 +1727,25 @@ Direction.Left = Direction.Left;", "Enum members are constants"),
   Right;
 }
 Direction direction = Direction.Up;", "has no member"),
+            ("switch-case-type-mismatch",
+@"switch 1 then {
+  case ""one"" then print(1);
+  default then print(2);
+}", "Switch case value type must be comparable to switch value"),
+            ("switch-default-duplicate",
+@"switch 1 then {
+  case 1 then print(1);
+  default then print(2);
+  default then print(3);
+}", "already has a 'default'"),
+            ("switch-case-after-default",
+@"switch 1 then {
+  default then print(2);
+  case 1 then print(1);
+}", "cannot appear after 'default'"),
+            ("switch-empty",
+@"switch 1 then {
+}", "at least one 'case' or 'default'"),
             ("map-type-argument-arity",
 @"map<integer> values = new map<integer>();", "expects exactly two type arguments"),
             ("map-key-type-mismatch",
@@ -2373,6 +2448,7 @@ export object MainScene {
         {
             ("example-arithmetic-runnable", @"ConsoleApp1/examples/arithmetic.code", Compiler.CompileTarget.VmNative),
             ("example-enum-runnable", @"ConsoleApp1/examples/enum.code", Compiler.CompileTarget.VmNative),
+            ("example-switch-runnable", @"ConsoleApp1/examples/switch.code", Compiler.CompileTarget.VmNative),
             ("example-time-runnable", @"ConsoleApp1/examples/time.code", Compiler.CompileTarget.VmNative),
             ("example-math-random-runnable", @"ConsoleApp1/examples/math_random.code", Compiler.CompileTarget.VmNative),
             ("example-collections-runnable", @"ConsoleApp1/examples/collections.code", Compiler.CompileTarget.VmNative),
@@ -2505,6 +2581,7 @@ export object MainScene {
             string catalogText = File.ReadAllText(GetRepoPath(@"docs/example-catalog.md"));
             bool matched =
                 catalogText.Contains("| `runnable` | `ConsoleApp1/examples/enum.code` | `run` |", StringComparison.Ordinal) &&
+                catalogText.Contains("| `runnable` | `ConsoleApp1/examples/switch.code` | `run` |", StringComparison.Ordinal) &&
                 catalogText.Contains("| `runnable` | `ConsoleApp1/examples/time.code` | `run` |", StringComparison.Ordinal) &&
                 catalogText.Contains("| `runnable` | `ConsoleApp1/examples/math_random.code` | `run` |", StringComparison.Ordinal) &&
                 catalogText.Contains("| `runnable` | `ConsoleApp1/examples/collections.code` | `run` |", StringComparison.Ordinal) &&

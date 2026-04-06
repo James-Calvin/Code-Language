@@ -170,12 +170,24 @@ function<integer> add(integer parameter1, integer parameter2) {
 - `then` is mandatory in all `if` forms.
 - `if` supports block and single-statement forms.
 - `else` is supported with block form.
+- `switch` uses `then` and has no fallthrough.
+- `switch` evaluates its target value once, then compares cases in order using normal equality compatibility rules.
 
 ```code
 if condition then {
   // branch
 } else {
   // branch
+}
+```
+
+```code
+switch value then {
+  case 1 then print("one");
+  case 2 then {
+    print("two");
+  }
+  default then print("other");
 }
 ```
 
@@ -595,7 +607,6 @@ if x > 3 then panic("x too large");
 - Built-in collections: `map`, `set`, `queue`, and `stack` lower to dedicated VM opcodes; `.length` also covers those collection types.
 
 ## 15. Planned But Not Implemented Yet
-- `switch`.
 - `record` declarations and value semantics.
 - Visibility/access modifiers such as `public`, `package`, and `private`.
 - User-facing `fallible<T>` / `on error` syntax.

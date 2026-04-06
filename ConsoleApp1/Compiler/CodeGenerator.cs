@@ -320,6 +320,33 @@ sealed class CodeGenerator
                 _builder.Label(endLabel);
                 break;
 
+            case SwitchStmt s:
+            {
+                int switchValueSlot = AllocateTemp();
+                Emit(s.Value);
+                _builder.Store(switchValueSlot);
+
+                string switchEndLabel = NewLabel("switch_end");
+                for (int i = 0; i < s.Cases.Count; i++)
+                {
+                    string nextCaseLabel = NewLabel("switch_next_case");
+                    _builder.Load(switchValueSlot);
+                    Emit(s.Cases[i].Value);
+                    _builder.Eq();
+                    _builder.JumpIfZero(nextCaseLabel);
+                    Emit(s.Cases[i].Body);
+                    _builder.Jump(switchEndLabel);
+                    _builder.Label(nextCaseLabel);
+                }
+
+                if (s.DefaultBranch is not null)
+                    Emit(s.DefaultBranch);
+
+                _builder.Label(switchEndLabel);
+                ReleaseTemp(switchValueSlot);
+                break;
+            }
+
             case WhileStmt w:
                 string loopStart = NewLabel("loop_start");
                 string loopEnd = NewLabel("loop_end");

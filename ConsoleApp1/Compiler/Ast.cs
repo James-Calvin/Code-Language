@@ -275,6 +275,36 @@ sealed class IfStmt : Stmt
     }
 }
 
+sealed class SwitchCase
+{
+    public Token Keyword { get; }
+    public Expr Value { get; }
+    public Stmt Body { get; }
+
+    public SwitchCase(Token keyword, Expr value, Stmt body)
+    {
+        Keyword = keyword;
+        Value = value;
+        Body = body;
+    }
+}
+
+sealed class SwitchStmt : Stmt
+{
+    public Token Keyword { get; }
+    public Expr Value { get; }
+    public IReadOnlyList<SwitchCase> Cases { get; }
+    public Stmt? DefaultBranch { get; }
+
+    public SwitchStmt(Token keyword, Expr value, IReadOnlyList<SwitchCase> cases, Stmt? defaultBranch)
+    {
+        Keyword = keyword;
+        Value = value;
+        Cases = cases;
+        DefaultBranch = defaultBranch;
+    }
+}
+
 sealed class WhileStmt : Stmt
 {
     public Expr Condition { get; }

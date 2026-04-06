@@ -416,6 +416,7 @@ sealed class Parser
     private Stmt Statement()
     {
         if (Match(TokenType.If)) return IfStatement();
+        if (Match(TokenType.Switch)) return SwitchStatement();
         if (Match(TokenType.While)) return WhileStatement();
         if (Match(TokenType.For)) return ForStatement();
         if (Match(TokenType.Foreach)) return ForeachStatement();
@@ -468,6 +469,54 @@ sealed class Parser
         Consume(TokenType.Then, "Expect 'then' after condition.");
         Stmt body = Statement();
         return new WhileStmt(condition, body);
+    }
+
+    private Stmt SwitchStatement()
+    {
+        Token switchKeyword = Previous();
+        Expr value = Expression();
+        Consume(TokenType.Then, "Expect 'then' after switch value.");
+        Consume(TokenType.LeftBrace, "Expect '{' after switch header.");
+
+        var cases = new List<SwitchCase>();
+        Stmt? defaultBranch = null;
+        bool sawDefault = false;
+
+        while (!Check(TokenType.RightBrace) && !IsAtEnd())
+        {
+            if (Match(TokenType.Case))
+            {
+                if (sawDefault)
+                    throw Error(Previous(), "'case' cannot appear after 'default' in switch.");
+
+                Token caseKeyword = Previous();
+                Expr caseValue = Expression();
+                Consume(TokenType.Then, "Expect 'then' after switch case value.");
+                Stmt body = Statement();
+                cases.Add(new SwitchCase(caseKeyword, caseValue, body));
+                continue;
+            }
+
+            if (Match(TokenType.Default))
+            {
+                if (sawDefault)
+                    throw Error(Previous(), "Switch already has a 'default' branch.");
+
+                sawDefault = true;
+                Consume(TokenType.Then, "Expect 'then' after 'default'.");
+                defaultBranch = Statement();
+                continue;
+            }
+
+            throw Error(Peek(), "Expect 'case' or 'default' in switch body.");
+        }
+
+        Consume(TokenType.RightBrace, "Expect '}' after switch body.");
+
+        if (cases.Count == 0 && defaultBranch is null)
+            throw Error(switchKeyword, "Switch must contain at least one 'case' or 'default'.");
+
+        return new SwitchStmt(switchKeyword, value, cases, defaultBranch);
     }
 
     private Stmt ForStatement()

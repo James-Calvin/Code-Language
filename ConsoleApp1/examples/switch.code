@@ -1,0 +1,21 @@
+enum Direction {
+  Left;
+  Right;
+  Up;
+}
+
+Direction direction = Direction.Right;
+
+switch direction then {
+  case Direction.Left then print("left");
+  case Direction.Right then print("right");
+  case Direction.Up then print("up");
+  default then print("unknown");
+}
+
+integer count = 2;
+switch count then {
+  case 1 then print("one");
+  case 2 then print("two");
+  default then print("other");
+}

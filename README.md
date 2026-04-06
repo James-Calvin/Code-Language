@@ -14,7 +14,7 @@ The repo contains:
 - Typed variables/functions; primitives: integer/whole/real, boolean, string
 - Enumerations with strongly typed members accessed as `EnumName.Member`
 - Constants: `constant Type name = value;` (immutable after init)
-- Control flow: `if/then/else`, `while`, `for`, `foreach` (numeric bounds and arrays)
+- Control flow: `if/then/else`, `switch`, `while`, `for`, `foreach` (numeric bounds and arrays)
 - Expressions: arithmetic (including `%`), comparisons, logical `and/or/not`, enhanced assignments (`+=`, `-=`, `*=`, `/=`, `%=` and postfix `++/--`) across variables, object fields, array elements, and map entries, plus string interpolation and concatenation
 - Time intrinsics: `unix_ms()`, `unix_us()`, `mono_ns()`, `mono_ticks()`, `mono_ticks_per_second()`, `sleep_ms(ms)`
 - Math and randomness intrinsics: `minimum()`, `maximum()`, `absolute()`, `sign()`, `lerp()`, `sine()`, `cosine()`, `random()`
@@ -33,8 +33,8 @@ The repo contains:
 See [the language spec](docs/code-language-spec.md), [the feature roadmap](docs/features-roadmap.md), and [the web app/runtime V1 contract](docs/web-app-v1.md) for the current scope and the target developer workflow.
 
 ## Implemented Today vs Planned
-- Implemented today: enumerations, objects, interfaces, arrays, built-in collections, optionals, time/math intrinsics, grouped/selective/namespace/re-export imports, package manifests/lockfiles/library artifacts, target capability checks, `panic`, and the current web build/runtime slice.
-- Planned, not implemented today: `switch`, `record`, visibility modifiers, and user-facing `fallible<T>` / `on error`.
+- Implemented today: enumerations, `switch`, objects, interfaces, arrays, built-in collections, optionals, time/math intrinsics, grouped/selective/namespace/re-export imports, package manifests/lockfiles/library artifacts, target capability checks, `panic`, and the current web build/runtime slice.
+- Planned, not implemented today: `record`, visibility modifiers, and user-facing `fallible<T>` / `on error`.
 - Example status and usage live in [the example catalog](docs/example-catalog.md).
 
 ## Current State vs Target Workflow
@@ -124,6 +124,7 @@ Test harness covers VM ops, compiler integration (print, arithmetic, functions, 
 - Source files end with `.code`; compiled bytecode uses `.bytecode`
 - Library artifacts use `.codelib` (`<package>-<version>-<target>.codelib`)
 - Semicolons required; `then` mandatory after `if/while/for/foreach` conditions
+- `switch` syntax: `switch value then { case expr then statement ... default then statement }`; no fallthrough
 - Function returns: explicit `function<T> name(...)` or implicit-void `function name(...)`
 - Naming rule: user-facing APIs prefer fully spelled-out words; accepted domain terms like `hud` remain allowed
 - Arrays: literals `{...}`, typed declarations `array<integer> xs = {1,2,3};`, dynamic `new array<integer>(n);`, `.length`, indexing `xs[i]`, mutation `xs[i] = value`, and growable methods `xs.append(value)` / `xs.remove_at(index)`
@@ -169,6 +170,11 @@ dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- ConsoleApp1/examples/arit
 Enumeration example:
 ```
 dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- ConsoleApp1/examples/enum.code
+```
+
+Switch example:
+```
+dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- ConsoleApp1/examples/switch.code
 ```
 
 Module import example:

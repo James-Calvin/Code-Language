@@ -20,7 +20,7 @@ enum TokenType
     True, False,
 
     Integer, Whole, Real, Boolean, Void, Optional,
-    Array, Object, Interface,
+    Array, Object, Interface, Enum,
     Constant,
     If, Then, Else,
     While,

@@ -23,6 +23,7 @@ sealed class Lexer
         { "array", TokenType.Array },
         { "object", TokenType.Object },
         { "interface", TokenType.Interface },
+        { "enum", TokenType.Enum },
         { "constant", TokenType.Constant },
         { "if", TokenType.If },
         { "then", TokenType.Then },

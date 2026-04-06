@@ -12,6 +12,7 @@ The repo contains:
 
 ## Features (implemented)
 - Typed variables/functions; primitives: integer/whole/real, boolean, string
+- Enumerations with strongly typed members accessed as `EnumName.Member`
 - Constants: `constant Type name = value;` (immutable after init)
 - Control flow: `if/then/else`, `while`, `for`, `foreach` (numeric bounds and arrays)
 - Expressions: arithmetic (including `%`), comparisons, logical `and/or/not`, enhanced assignments (`+=`, `-=`, `*=`, `/=`, `%=` and postfix `++/--`) across variables, object fields, and array elements, plus string interpolation and concatenation
@@ -30,8 +31,8 @@ The repo contains:
 See [the language spec](docs/code-language-spec.md), [the feature roadmap](docs/features-roadmap.md), and [the web app/runtime V1 contract](docs/web-app-v1.md) for the current scope and the target developer workflow.
 
 ## Implemented Today vs Planned
-- Implemented today: objects, interfaces, arrays, optionals, grouped/selective/namespace/re-export imports, package manifests/lockfiles/library artifacts, target capability checks, `panic`, and the current web build/runtime slice.
-- Planned, not implemented today: enumerations, `switch`, `record`, visibility modifiers, user-facing `fallible<T>` / `on error`, built-in `map` / `set` / `queue` / `stack`, and standard math/random helpers.
+- Implemented today: enumerations, objects, interfaces, arrays, optionals, grouped/selective/namespace/re-export imports, package manifests/lockfiles/library artifacts, target capability checks, `panic`, and the current web build/runtime slice.
+- Planned, not implemented today: `switch`, `record`, visibility modifiers, user-facing `fallible<T>` / `on error`, built-in `map` / `set` / `queue` / `stack`, and standard math/random helpers.
 - Example status and usage live in [the example catalog](docs/example-catalog.md).
 
 ## Current State vs Target Workflow
@@ -124,11 +125,12 @@ Test harness covers VM ops, compiler integration (print, arithmetic, functions, 
 - Function returns: explicit `function<T> name(...)` or implicit-void `function name(...)`
 - Naming rule: user-facing APIs prefer fully spelled-out words; accepted domain terms like `hud` remain allowed
 - Arrays: literals `{...}`, typed declarations `array<integer> xs = {1,2,3};`, dynamic `new array<integer>(n);`, `.length`, indexing `xs[i]`, mutation `xs[i] = value`, and growable methods `xs.append(value)` / `xs.remove_at(index)`
+- Enumerations: `enum Name { Member; Other = 5; }` with strongly typed values accessed as `Name.Member`
 - Optionals: `optional<T>` with `none`, `.hasValue`, `.value`, `.or(fallback)`
 - Objects: `object` declarations with constructors/methods, `new Type(...)`, field access/assignment (`obj.field`, `obj.field = ...`), method calls (`obj.method(...)`), and implicit `this` lookup inside object bodies for unshadowed fields and bare method calls
 - Interfaces: `interface` declarations + inline interface methods (`implement Interface.method(...) { ... }`) or explicit `implement Interface for Object { ... via Object.method; }` conformance checks
 - Interface-typed locals/params/returns/fields/arrays and runtime-dispatched interface method calls
-- Modules: `export` for top-level function/object/interface declarations; `import Name [as Alias] from "path";`
+- Modules: `export` for top-level function/object/interface/enum declarations; `import Name [as Alias] from "path";`
 - Grouped/selective imports: `import { add, sub as minus } from "math.code";`
 - Namespace imports: `import everything as Draw from "engine/drawing.code";` for function-only module surfaces
 - Re-export imports: `export import Name from "path";`, `export import { A, B } from "path";`
@@ -138,7 +140,7 @@ Test harness covers VM ops, compiler integration (print, arithmetic, functions, 
 - Library packages (`kind: "library"`) emit a `.codelib` artifact during compile; lockfile resolution prefers `.codelib` paths when present and validated
 - Import resolution: importing file directory first, then discovered ancestor `lib/` folders
 - Current engine wrapper modules live under `lib/engine/` and are imported as `"engine/colors.code"`, `"engine/drawing.code"`, `"engine/input.code"`, `"engine/viewport.code"`, and `"engine/scene.code"`; `"engine/view.code"` and `"engine/loop.code"` remain as compatibility re-export modules
-- Alias imports support exported functions, objects, and interfaces
+- Alias imports support exported functions, objects, interfaces, and enumerations
 - Module tooling flags: `--dump-module-graph [outputPath]`, `--module-graph-format <text|json|dot>`, and `--trace-linker`
 - Compile target flag: `--target vm-native|vm-web` (default `vm-native`)
 - Capability checks: package/import namespaces under `std.*` and `engine.*` are validated against the selected target (e.g., `std.fs` is rejected on `vm-web`)
@@ -159,6 +161,11 @@ See [docs/example-catalog.md](docs/example-catalog.md) for the implementation-tr
 Compile + run an example:
 ```
 dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- ConsoleApp1/examples/arithmetic.code
+```
+
+Enumeration example:
+```
+dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- ConsoleApp1/examples/enum.code
 ```
 
 Module import example:

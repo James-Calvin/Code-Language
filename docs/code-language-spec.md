@@ -99,6 +99,25 @@ integer y = 1;
 print(y);
 ```
 
+- Enumerations (current implementation):
+  - Declared as `enum Name { Member; Other = 5; }`.
+  - Members are accessed as `Name.Member`.
+  - Enum values are strongly typed; assignment and equality require the same enum type.
+  - Enum members lower to integer-backed constants, but arithmetic on enum values is not part of the type system.
+
+```code
+enum Difficulty {
+  Easy;
+  Normal = 5;
+  Hard;
+}
+
+Difficulty difficulty = Difficulty.Easy;
+if difficulty == Difficulty.Easy then {
+  difficulty = Difficulty.Hard;
+}
+```
+
 ## 5. Nullability and Optionals
 - `null` is not part of the language model.
 - Absence is represented with `optional<T>`.
@@ -410,7 +429,7 @@ object Person {
 - String-path imports resolve relative to the file containing the `import`.
 - Import resolution order (current implementation): current file directory, then `lib/` folders discovered while walking ancestor directories (including project root `lib/` when present).
 - Imported symbol must be exported by the target module.
-- Alias imports support exported `function`, `object`, and `interface` declarations.
+- Alias imports support exported `function`, `object`, `interface`, and `enum` declarations.
 - Namespace imports currently support exported functions in member-call position only and are compile-time aliases, not runtime values.
 - Source file extension is `.code`.
 - Package declaration syntax: `package Name;` (dot-separated segments allowed).
@@ -438,7 +457,7 @@ package Example.Package;
 ## 12. Exports
 - Exported declarations use `export` before the declaration.
 - Multiple exports can exist in one module.
-- Export is currently implemented for `function`, `object`, and `interface` declarations.
+- Export is currently implemented for `function`, `object`, `interface`, and `enum` declarations.
 
 ```code
 export function<integer> add(integer left, integer right) {
@@ -467,6 +486,7 @@ if x > 3 then panic("x too large");
 - Object symbols are collected before function/body checking, enabling duplicate object/field checks and forward references in object field types.
 - Constructor symbols are collected and used for `new Type(...)` arity/type validation.
 - Method symbols are collected and used for `obj.method(args)` arity/type validation.
+- Enum symbols are collected and used for `Enum.Member` validation plus strong enum-to-enum assignment/equality rules.
 - Interface symbols and `implement` mappings are validated, and interface-typed method calls are lowered to runtime dispatch tables over mapped object methods.
 - Arrays preserve element `TypeRef` metadata through declarations, indexing, mutation, `foreach`, and array method calls, which enables interface-typed arrays and scene registries in `lib/engine/scene.code`.
 - File compilation performs module linking: recursive import graph load, export-name validation, module-scope import/declaration conflict checks, cycle detection, and flattening to a single bytecode unit.
@@ -517,7 +537,6 @@ if x > 3 then panic("x too large");
 - Arrays: literals `{...}` create arrays; typed declarations `array<integer> xs = {1,2,3};`; dynamic `new array<integer>(n)` requires a size; `xs.length` yields length; `xs.append(value)` and `xs.remove_at(index)` grow/shrink arrays; `foreach` iterates arrays by element.
 
 ## 15. Planned But Not Implemented Yet
-- Enumerations.
 - `switch`.
 - `record` declarations and value semantics.
 - Visibility/access modifiers such as `public`, `package`, and `private`.

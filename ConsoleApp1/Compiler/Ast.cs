@@ -94,6 +94,9 @@ sealed class FieldAccessExpr : Expr
 {
     public Expr Target { get; }
     public Token Name { get; }
+    public TypeRef? ResolvedEnumTypeRef { get; set; }
+    public int? ResolvedEnumValue { get; set; }
+    public bool ResolvesToEnumMember => ResolvedEnumTypeRef is not null;
     public FieldAccessExpr(Expr target, Token name) { Target = target; Name = name; }
 }
 
@@ -216,6 +219,8 @@ sealed class PackageDecl : Stmt
 sealed record Parameter(TypeRef? Type, Token Name);
 
 sealed record FieldDecl(TypeRef Type, Token Name);
+
+sealed record EnumMemberDecl(Token Name, int? ExplicitValue);
 
 abstract class Stmt { }
 
@@ -341,6 +346,18 @@ sealed class ObjectDecl : Stmt
         Constructors = constructors;
         Methods = methods;
         InlineInterfaceMethods = inlineInterfaceMethods ?? [];
+    }
+}
+
+sealed class EnumDecl : Stmt
+{
+    public Token Name { get; }
+    public IReadOnlyList<EnumMemberDecl> Members { get; }
+
+    public EnumDecl(Token name, IReadOnlyList<EnumMemberDecl> members)
+    {
+        Name = name;
+        Members = members;
     }
 }
 

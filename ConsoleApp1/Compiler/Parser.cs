@@ -41,6 +41,11 @@ sealed class Parser
             if (_blockDepth > 0) throw Error(Previous(), "'package' is only valid at module scope.");
             return PackageDeclaration();
         }
+        if (Match(TokenType.Enum))
+        {
+            if (_blockDepth > 0) throw Error(Previous(), "'enum' is only valid at module scope.");
+            return EnumDeclaration();
+        }
         if (Match(TokenType.Function)) return FunctionDeclaration();
         if (Match(TokenType.Object)) return ObjectDeclaration();
         if (Match(TokenType.Interface)) return InterfaceDeclaration();
@@ -112,7 +117,9 @@ sealed class Parser
             return new ExportDecl(ObjectDeclaration());
         if (Match(TokenType.Interface))
             return new ExportDecl(InterfaceDeclaration());
-        throw Error(Peek(), "Expect function/object/interface declaration after 'export'.");
+        if (Match(TokenType.Enum))
+            return new ExportDecl(EnumDeclaration());
+        throw Error(Peek(), "Expect function/object/interface/enum declaration after 'export'.");
     }
 
     private Stmt PackageDeclaration()
@@ -126,6 +133,37 @@ sealed class Parser
         }
         Consume(TokenType.Semicolon, "Expect ';' after package declaration.");
         return new PackageDecl(start, name);
+    }
+
+    private Stmt EnumDeclaration()
+    {
+        Token name = Consume(TokenType.Identifier, "Expect enum name.");
+        Consume(TokenType.LeftBrace, "Expect '{' after enum name.");
+        var members = new List<EnumMemberDecl>();
+        while (!Check(TokenType.RightBrace) && !IsAtEnd())
+        {
+            Token memberName = Consume(TokenType.Identifier, "Expect enum member name.");
+            int? explicitValue = null;
+            if (Match(TokenType.Equal))
+                explicitValue = ParseEnumMemberValue();
+            Consume(TokenType.Semicolon, "Expect ';' after enum member.");
+            members.Add(new EnumMemberDecl(memberName, explicitValue));
+        }
+        Consume(TokenType.RightBrace, "Expect '}' after enum body.");
+        return new EnumDecl(name, members);
+    }
+
+    private int ParseEnumMemberValue()
+    {
+        bool negative = false;
+        if (Match(TokenType.Minus))
+            negative = true;
+        else
+            Match(TokenType.Plus);
+
+        Token number = Consume(TokenType.Number, "Expect integer literal for enum member value.");
+        int value = Convert.ToInt32(number.Literal ?? 0);
+        return negative ? -value : value;
     }
 
     private TypeRef ParseTypeRef()

@@ -1,0 +1,19 @@
+// Runnable example: enumerations are strongly typed named values backed by integer ordinals.
+
+enumeration Difficulty {
+  Easy;
+  Normal = 5;
+  Hard;
+}
+
+Difficulty difficulty = Difficulty.Easy;
+print(difficulty == Difficulty.Easy);
+
+difficulty = Difficulty.Hard;
+print(difficulty == Difficulty.Hard);
+
+array<Difficulty> presets = {Difficulty.Easy, Difficulty.Hard};
+print(presets[1] == Difficulty.Hard);
+
+print(Difficulty.Normal);
+print(Difficulty.Hard);

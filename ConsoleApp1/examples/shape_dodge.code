@@ -4,6 +4,12 @@ import { Color, rgb, rgba } from "engine/colors.code";
 import { key_is_down } from "engine/input.code";
 import { HudDrawable, Scene, SceneLoop, Updatable, WorldDrawable } from "engine/scene.code";
 
+enum ObstacleKind {
+  Rectangle;
+  Circle;
+  Diamond;
+}
+
 object GameState {
   integer score;
   integer lives;
@@ -103,9 +109,9 @@ object Obstacle {
   real y;
   real speed;
   real size;
-  integer kind;
+  ObstacleKind kind;
 
-  constructor(real x, real y, real speed, real size, integer kind) {
+  constructor(real x, real y, real speed, real size, ObstacleKind kind) {
     this.x = x;
     this.y = y;
     this.speed = speed;
@@ -188,16 +194,23 @@ object ObstacleManager {
     next_lane_index += 1;
     if next_lane_index >= lane_pattern.length then next_lane_index = 0;
 
-    integer kind = next_kind;
+    integer kind_index = next_kind;
     next_kind += 1;
     if next_kind >= 3 then next_kind = 0;
 
-    real size = 20 + kind * 6;
+    ObstacleKind kind = kind_from_index(kind_index);
+    real size = 20 + kind_index * 6;
     real lane_width = Viewport.safe_width() / 5;
     real x = Viewport.safe_left() + lane_width * lane + (lane_width - size) / 2;
     real y = Viewport.safe_top() - size - 8;
-    real speed = 2 + kind;
+    real speed = 2 + kind_index;
     obstacles.append(new Obstacle(x, y, speed, size, kind));
+  }
+
+  function<ObstacleKind> kind_from_index(integer kind_index) {
+    if kind_index == 0 then return ObstacleKind.Rectangle;
+    if kind_index == 1 then return ObstacleKind.Circle;
+    return ObstacleKind.Diamond;
   }
 
   function<boolean> overlaps_player(Obstacle obstacle) {
@@ -212,13 +225,13 @@ object ObstacleManager {
     Color fill = fill_color(obstacle);
     Color outline = outline_color(obstacle);
 
-    if obstacle.kind == 0 then {
+    if obstacle.kind == ObstacleKind.Rectangle then {
       Draw.rectangle(obstacle.x, obstacle.y, obstacle.size, obstacle.size, fill);
       Draw.rectangle_outline(obstacle.x, obstacle.y, obstacle.size, obstacle.size, 2, outline);
       return;
     }
 
-    if obstacle.kind == 1 then {
+    if obstacle.kind == ObstacleKind.Circle then {
       Draw.circle(obstacle.x + obstacle.size / 2, obstacle.y + obstacle.size / 2, obstacle.size / 2, fill);
       Draw.circle_outline(obstacle.x + obstacle.size / 2, obstacle.y + obstacle.size / 2, obstacle.size / 2, 2, outline);
       return;
@@ -239,14 +252,14 @@ object ObstacleManager {
   }
 
   function<Color> fill_color(Obstacle obstacle) {
-    if obstacle.kind == 0 then return rgb(1, 7 / 16, 7 / 16);
-    if obstacle.kind == 1 then return rgb(1, 13 / 16, 1 / 4);
+    if obstacle.kind == ObstacleKind.Rectangle then return rgb(1, 7 / 16, 7 / 16);
+    if obstacle.kind == ObstacleKind.Circle then return rgb(1, 13 / 16, 1 / 4);
     return rgb(1 / 4, 13 / 16, 1);
   }
 
   function<Color> outline_color(Obstacle obstacle) {
-    if obstacle.kind == 0 then return rgb(1, 7 / 8, 7 / 8);
-    if obstacle.kind == 1 then return rgb(1, 31 / 32, 3 / 4);
+    if obstacle.kind == ObstacleKind.Rectangle then return rgb(1, 7 / 8, 7 / 8);
+    if obstacle.kind == ObstacleKind.Circle then return rgb(1, 31 / 32, 3 / 4);
     return rgb(7 / 8, 1, 1);
   }
 }

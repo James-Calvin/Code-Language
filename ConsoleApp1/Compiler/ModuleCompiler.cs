@@ -622,6 +622,7 @@ static class ModuleCompiler
                                     break;
                                 case ObjectDecl:
                                 case InterfaceDecl:
+                                case EnumDecl:
                                     module.TypeAliases[binding.Alias.Lexeme] = binding.Name.Lexeme;
                                     break;
                                 default:
@@ -1261,8 +1262,9 @@ static class ModuleCompiler
             FunctionDecl fn => fn.Name.Lexeme,
             ObjectDecl obj => obj.Name.Lexeme,
             InterfaceDecl iface => iface.Name.Lexeme,
+            EnumDecl enumDecl => enumDecl.Name.Lexeme,
             _ => throw new CompilerException(
-                "Only function/object/interface declarations can be exported",
+                "Only function/object/interface/enum declarations can be exported",
                 GetDeclLine(declaration),
                 GetDeclColumn(declaration))
         };
@@ -1272,6 +1274,7 @@ static class ModuleCompiler
             FunctionDecl fn => fn.Name.Line,
             ObjectDecl obj => obj.Name.Line,
             InterfaceDecl iface => iface.Name.Line,
+            EnumDecl enumDecl => enumDecl.Name.Line,
             _ => 1
         };
 
@@ -1280,6 +1283,7 @@ static class ModuleCompiler
             FunctionDecl fn => fn.Name.Column,
             ObjectDecl obj => obj.Name.Column,
             InterfaceDecl iface => iface.Name.Column,
+            EnumDecl enumDecl => enumDecl.Name.Column,
             _ => 1
         };
 
@@ -1299,6 +1303,10 @@ static class ModuleCompiler
                     name = iface.Name.Lexeme;
                     token = iface.Name;
                     return true;
+                case EnumDecl enumDecl:
+                    name = enumDecl.Name.Lexeme;
+                    token = enumDecl.Name;
+                    return true;
                 default:
                     name = string.Empty;
                     token = new Token(TokenType.Identifier, string.Empty, null, 1, 1);
@@ -1311,6 +1319,7 @@ static class ModuleCompiler
             FunctionDecl fn => fn.Name,
             ObjectDecl obj => obj.Name,
             InterfaceDecl iface => iface.Name,
+            EnumDecl enumDecl => enumDecl.Name,
             _ => new Token(TokenType.Identifier, string.Empty, null, 1, 1)
         };
 
@@ -1432,6 +1441,7 @@ static class ModuleCompiler
                 fn.ReturnType is null ? null : RewriteTypeRef(fn.ReturnType, typeAliases),
                 fn.Parameters.Select(p => new Parameter(p.Type is null ? null : RewriteTypeRef(p.Type, typeAliases), p.Name)).ToList(),
                 (Block)RewriteStmt(fn.Body, typeAliases, namespaceAliases)),
+            EnumDecl enumDecl => enumDecl,
             ObjectDecl obj => new ObjectDecl(
                 obj.Name,
                 obj.Fields.Select(f => new FieldDecl(RewriteTypeRef(f.Type, typeAliases), f.Name)).ToList(),
@@ -1543,7 +1553,19 @@ static class ModuleCompiler
                     fieldAccess.Name.Column);
             }
 
-            return new FieldAccessExpr(RewriteExpr(fieldAccess.Target, typeAliases, namespaceAliases), fieldAccess.Name);
+            Expr rewrittenTarget = RewriteExpr(fieldAccess.Target, typeAliases, namespaceAliases);
+            if (fieldAccess.Target is Variable typeAliasVariable &&
+                typeAliases.TryGetValue(typeAliasVariable.Name.Lexeme, out var mappedTypeName))
+            {
+                var mappedToken = new Token(TokenType.Identifier, mappedTypeName, null, typeAliasVariable.Name.Line, typeAliasVariable.Name.Column);
+                rewrittenTarget = new Variable(mappedToken);
+            }
+
+            return new FieldAccessExpr(rewrittenTarget, fieldAccess.Name)
+            {
+                ResolvedEnumTypeRef = fieldAccess.ResolvedEnumTypeRef is null ? null : RewriteTypeRef(fieldAccess.ResolvedEnumTypeRef, typeAliases),
+                ResolvedEnumValue = fieldAccess.ResolvedEnumValue
+            };
         }
 
         private static Expr RewriteMethodCallExpr(

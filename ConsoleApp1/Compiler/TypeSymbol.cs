@@ -10,6 +10,7 @@ enum TypeSymbol
     Array,
     Optional,
     Void,
+    Enum,
     Object,
     Interface,
     Unknown

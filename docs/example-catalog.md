@@ -16,6 +16,7 @@ Use this document as the primary answer to "does this exist yet?"
 | Status | Path | Use | Notes |
 | --- | --- | --- | --- |
 | `runnable` | `ConsoleApp1/examples/arithmetic.code` | `run` | Basic arithmetic and typed locals |
+| `runnable` | `ConsoleApp1/examples/enum.code` | `run` | Strongly typed enumerations with `Enum.Member` access |
 | `runnable` | `ConsoleApp1/examples/forloop.code` | `run` | Counted `for` loop |
 | `runnable` | `ConsoleApp1/examples/foreach.code` | `run` | Numeric `foreach` |
 | `runnable` | `ConsoleApp1/examples/arrayloop.code` | `run` | Array literals and array iteration |
@@ -57,7 +58,6 @@ Current limitation:
 ## Planned But Not Implemented Yet
 
 No checked-in runnable examples exist yet for these planned features:
-- enumerations
 - `switch`
 - user-facing `fallible<T>` / `on error`
 - visibility modifiers (`public`, `package`, `private`)

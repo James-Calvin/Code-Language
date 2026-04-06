@@ -11,11 +11,10 @@ This roadmap is implementation-truthful: items marked below are gaps from the cu
 ## Near-Term Gap Groups
 
 ### Language Gaps
-1. Enumerations
-2. `switch`
-3. `record` declarations and value semantics
-4. Visibility/access control
-5. User-facing error-handling syntax and propagation (`fallible<T>`, `on error`)
+1. `switch`
+2. `record` declarations and value semantics
+3. Visibility/access control
+4. User-facing error-handling syntax and propagation (`fallible<T>`, `on error`)
 
 ### Stdlib and Runtime Gaps
 1. Math and randomness helpers (`minimum`, `maximum`, `absolute`, `sign`, `lerp`, `sine`, `cosine`, `random`)
@@ -47,7 +46,7 @@ This roadmap is implementation-truthful: items marked below are gaps from the cu
 | `[x]` | Core language | Return statements (implicit 0 if missing) | Implemented |
 | `[x]` | Core language | Collections: literals + foreach over collections | Array literals + array foreach + typed array declarations/new(size) + `.length` + indexing + mutation + `append` / `remove_at` with preserved element typing |
 | `[x]` | Core language | Optionals | `optional<T>` with `none`, `.hasValue`, `.value`, `.or(fallback)` |
-| `[!]` | Core language | Enumerations | Not implemented; needed to replace magic integers/strings in user code |
+| `[x]` | Core language | Enumerations | Implemented: `enum Name { Member; Other = 5; }`, strongly typed equality/assignment, and module export/import/re-export support |
 | `[!]` | Core language | `switch` | Not implemented; current code must use `if`/`else` chains |
 | `[~]` | Core language | Structs/records (user types) | Planned via object-model build-out below |
 | `[~]` | Type system | Sized numerics & literal suffixes (`i8/w8/r32` etc.) | Lexer/parser/type support pending |
@@ -69,7 +68,7 @@ This roadmap is implementation-truthful: items marked below are gaps from the cu
 | `[x]` | Object model | Interfaces + conformance checks | Compile-time interface declarations + explicit `implement Interface for Object { ... via Object.method; }` mapping with signature/return checks, plus inline object-body syntax `implement Interface.method(...) { ... }` |
 | `[~]` | Object model | Interface dispatch lowering/runtime model | Baseline runtime dispatch table opcode implemented for interface-typed locals/params/returns/fields/arrays; extend to broader container types and optimizer-grade fast paths |
 | `[_]` | Object model | Lifecycle/perf plan for heap instances (GC/ownership strategy) | Permanent runtime design decision; defer until objects are exercised |
-| `[~]` | Modules/imports | Exported declarations | `export` implemented for function/object/interface declarations |
+| `[~]` | Modules/imports | Exported declarations | `export` implemented for function/object/interface/enum declarations |
 | `[~]` | Modules/imports | Import syntax & package declarations | `import Name [as Alias] from \"path\";` + `package Name;` implemented; package namespace semantics still minimal |
 | `[~]` | Modules/imports | Package search paths/stdlib layout/versioning | Relative-path + `lib/` ancestor search implemented; stdlib layout/versioning still deferred |
 | `[x]` | Modules/imports | Package manifest parser/validator (`code.package.json`) | Implemented baseline schema v1 validation + target/capability checks + target override path validation |
@@ -78,7 +77,7 @@ This roadmap is implementation-truthful: items marked below are gaps from the cu
 | `[x]` | Modules/imports | Package declarations | `package Name;` parsing + module-level validation (single declaration, ordered before imports/declarations) |
 | `[x]` | Modules/imports | Module-scope symbol conflict checks | Detect duplicate top-level declarations and import-binding collisions within a module |
 | `[x]` | Modules/imports | Import-chain diagnostics | Circular/missing-export/import resolution errors include module chain (`a -> b -> c`) |
-| `[~]` | Modules/imports | Import ergonomics expansion | Alias support for object/interface exports, grouped/selective import forms, namespace imports for function-only module surfaces, and re-export imports |
+| `[~]` | Modules/imports | Import ergonomics expansion | Alias support for object/interface/enum exports, grouped/selective import forms, namespace imports for function-only module surfaces, and re-export imports |
 | `[x]` | Modules/imports | Module graph tooling | `--dump-module-graph [outputPath]` emits module graph (entry/modules/import edges) in text/json/dot; `--trace-linker` emits linker step trace |
 | `[x]` | Bytecode/VM | Header v0x05 + debug table | Implemented |
 | `[x]` | Bytecode/VM | Core opcodes (arith/stack/jump/load/store/PRINT/CALL/RET/PUSH_STRING) | Implemented; includes object/array/optional/error primitives and `GET_TYPE_NAME` for interface dispatch lowering |
@@ -119,7 +118,7 @@ This roadmap is implementation-truthful: items marked below are gaps from the cu
 | `[~]` | Testing | Object-model fuzz/property domains | Constructor/field mutation/member access invariants |
 
 ## Priority Rollup (benefit/effort)
-- High (`[!]`): enumerations, math/random support, collections beyond arrays, `switch`, and keeping example/docs status aligned with implementation truth.
+- High (`[!]`): math/random support, collections beyond arrays, `switch`, and keeping example/docs status aligned with implementation truth.
 - Medium (`[~]`): records, visibility/access control, fuller user-facing error-handling syntax, constant pool, optimizer expansion, tooling polish, and engine core/adapters.
 - Low (`[_]`): REPL, future stdlib/versioning, long-term runtime lifecycle strategy, remote package registry, and longer-horizon GPU/backend work.
 

@@ -166,6 +166,32 @@ foreach i in n then print(i);",
 @"integer x = 3;
 print(""x={x}"");", "x=3\n")
             ,
+            ("enum-basic",
+@"enum Difficulty {
+  Easy;
+  Normal = 5;
+  Hard;
+}
+Difficulty difficulty = Difficulty.Easy;
+print(difficulty == Difficulty.Easy);
+difficulty = Difficulty.Hard;
+print(difficulty == Difficulty.Hard);
+print(Difficulty.Normal);
+print(Difficulty.Hard);", "1\n1\n5\n6\n")
+            ,
+            ("enum-array-and-parameter",
+@"enum Direction {
+  Left;
+  Right;
+}
+function<Direction> choose(boolean goRight) {
+  if goRight then return Direction.Right;
+  return Direction.Left;
+}
+array<Direction> directions = {Direction.Left, choose(true)};
+print(directions[0] == Direction.Left);
+print(directions[1] == Direction.Right);", "1\n1\n")
+            ,
             ("modulo-op", @"integer value = 8 % 3; print(value);", "2\n"),
             ("function-void",
 @"function printHello() {
@@ -1014,6 +1040,41 @@ export function<integer> add(integer a, integer b) {
                 "3\n"
             ),
             (
+                "module-import-enum-alias",
+                new Dictionary<string, string>
+                {
+                    ["main.code"] =
+@"import Direction as Heading from ""types.code"";
+Heading heading = Heading.Right;
+print(heading == Heading.Right);",
+                    ["types.code"] =
+@"export enum Direction {
+  Left;
+  Right;
+}",
+                },
+                "main.code",
+                "1\n"
+            ),
+            (
+                "module-re-export-enum",
+                new Dictionary<string, string>
+                {
+                    ["main.code"] =
+@"import Direction from ""api.code"";
+Direction direction = Direction.Left;
+print(direction == Direction.Left);",
+                    ["api.code"] = "export import Direction from \"types.code\";",
+                    ["types.code"] =
+@"export enum Direction {
+  Left;
+  Right;
+}",
+                },
+                "main.code",
+                "1\n"
+            ),
+            (
                 "module-package-manifest-valid",
                 new Dictionary<string, string>
                 {
@@ -1536,6 +1597,23 @@ object Holder {
 }
 Holder h = new Holder(new Thing());
 h.current = new Other();", "Field assignment type mismatch"),
+            ("enum-init-from-integer-mismatch",
+@"enum Direction {
+  Left;
+  Right;
+}
+Direction direction = 0;", "Initializer type mismatch"),
+            ("enum-member-assignment-forbidden",
+@"enum Direction {
+  Left;
+}
+Direction.Left = Direction.Left;", "Enum members are constants"),
+            ("enum-unknown-member",
+@"enum Direction {
+  Left;
+  Right;
+}
+Direction direction = Direction.Up;", "has no member"),
         };
         var moduleErrorCases = new List<(string Name, IReadOnlyDictionary<string, string> Files, string Entry, string ErrorContains)>
         {
@@ -2226,6 +2304,7 @@ export object MainScene {
         var runnableCompileExamples = new List<(string Name, string RelativePath, Compiler.CompileTarget Target)>
         {
             ("example-arithmetic-runnable", @"ConsoleApp1/examples/arithmetic.code", Compiler.CompileTarget.VmNative),
+            ("example-enum-runnable", @"ConsoleApp1/examples/enum.code", Compiler.CompileTarget.VmNative),
             ("example-object-runnable", @"ConsoleApp1/examples/object.code", Compiler.CompileTarget.VmNative),
             ("example-implicit-this-runnable", @"ConsoleApp1/examples/implicit_this.code", Compiler.CompileTarget.VmNative),
             ("example-interface-dispatch-runnable", @"ConsoleApp1/examples/interface_dispatch.code", Compiler.CompileTarget.VmNative),
@@ -2354,6 +2433,7 @@ export object MainScene {
         {
             string catalogText = File.ReadAllText(GetRepoPath(@"docs/example-catalog.md"));
             bool matched =
+                catalogText.Contains("| `runnable` | `ConsoleApp1/examples/enum.code` | `run` |", StringComparison.Ordinal) &&
                 catalogText.Contains("| `negative` | `ConsoleApp1/examples/constants.code` | `expected compile error` |", StringComparison.Ordinal) &&
                 catalogText.Contains("| `planned` | `ConsoleApp1/examples/record.code` | `planned only` |", StringComparison.Ordinal) &&
                 catalogText.Contains("| `runnable` | `ConsoleApp1/examples/shape_dodge.code` | `build-web` |", StringComparison.Ordinal) &&

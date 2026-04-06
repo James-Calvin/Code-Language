@@ -386,6 +386,7 @@ sealed class CodeGenerator
             case ObjectDecl:
                 // object declarations are type metadata only for now
                 break;
+            case EnumDecl:
             case InterfaceDecl:
             case ImplementDecl:
             case ImportDecl:
@@ -484,6 +485,12 @@ sealed class CodeGenerator
                 _builder.OptionalOr();
                 break;
             case FieldAccessExpr fa:
+                if (fa.ResolvesToEnumMember)
+                {
+                    SetLoc(fa.Name);
+                    _builder.PushInt(fa.ResolvedEnumValue ?? 0);
+                    break;
+                }
                 Emit(fa.Target);
                 _builder.GetField(fa.Name.Lexeme);
                 break;
@@ -774,6 +781,8 @@ sealed class CodeGenerator
             case ArrayIndexExpr ai:
                 return ai.ResolvedElementTypeRef;
             case FieldAccessExpr fa:
+                if (fa.ResolvedEnumTypeRef is not null)
+                    return fa.ResolvedEnumTypeRef;
             {
                 var ownerType = TryResolveTypeRef(fa.Target);
                 if (ownerType is null) return null;

@@ -7,6 +7,7 @@ namespace ConsoleApp1.Compiler;
 sealed class TypeChecker
 {
     private readonly Dictionary<string, FunctionSignature> _functions = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, EnumSymbol> _enums = new(StringComparer.Ordinal);
     private readonly Dictionary<string, ObjectSymbol> _objects = new(StringComparer.Ordinal);
     private readonly Dictionary<string, InterfaceSymbol> _interfaces = new(StringComparer.Ordinal);
     private readonly HashSet<string> _interfaceObjectPairs = new(StringComparer.Ordinal);
@@ -18,6 +19,19 @@ sealed class TypeChecker
 
     public void Check(IList<Stmt> statements)
     {
+        // Collect enum names first to allow forward references in type positions.
+        foreach (var stmt in statements)
+        {
+            if (stmt is not EnumDecl enumDecl)
+                continue;
+
+            if (_enums.ContainsKey(enumDecl.Name.Lexeme))
+                throw new CompilerException($"Enum '{enumDecl.Name.Lexeme}' already defined", enumDecl.Name.Line, enumDecl.Name.Column);
+            if (_objects.ContainsKey(enumDecl.Name.Lexeme) || _interfaces.ContainsKey(enumDecl.Name.Lexeme))
+                throw new CompilerException($"Type name '{enumDecl.Name.Lexeme}' is already used", enumDecl.Name.Line, enumDecl.Name.Column);
+            _enums[enumDecl.Name.Lexeme] = new EnumSymbol(enumDecl.Name, new Dictionary<string, int>(StringComparer.Ordinal));
+        }
+
         // Collect object names first to allow forward references in field types.
         foreach (var stmt in statements)
         {
@@ -28,6 +42,8 @@ sealed class TypeChecker
                 throw new CompilerException($"Object '{obj.Name.Lexeme}' already defined", obj.Name.Line, obj.Name.Column);
             if (_interfaces.ContainsKey(obj.Name.Lexeme))
                 throw new CompilerException($"Type name '{obj.Name.Lexeme}' is already used by an interface", obj.Name.Line, obj.Name.Column);
+            if (_enums.ContainsKey(obj.Name.Lexeme))
+                throw new CompilerException($"Type name '{obj.Name.Lexeme}' is already used by an enum", obj.Name.Line, obj.Name.Column);
             _objects[obj.Name.Lexeme] = new ObjectSymbol(
                 obj.Name,
                 new Dictionary<string, TypeRef>(StringComparer.Ordinal),
@@ -45,9 +61,40 @@ sealed class TypeChecker
                 throw new CompilerException($"Interface '{iface.Name.Lexeme}' already defined", iface.Name.Line, iface.Name.Column);
             if (_objects.ContainsKey(iface.Name.Lexeme))
                 throw new CompilerException($"Type name '{iface.Name.Lexeme}' is already used by an object", iface.Name.Line, iface.Name.Column);
+            if (_enums.ContainsKey(iface.Name.Lexeme))
+                throw new CompilerException($"Type name '{iface.Name.Lexeme}' is already used by an enum", iface.Name.Line, iface.Name.Column);
             _interfaces[iface.Name.Lexeme] = new InterfaceSymbol(
                 iface.Name,
                 new Dictionary<string, InterfaceMethodSignature>(StringComparer.Ordinal));
+        }
+
+        // Validate enum member declarations.
+        foreach (var stmt in statements)
+        {
+            if (stmt is not EnumDecl enumDecl)
+                continue;
+
+            if (enumDecl.Members.Count == 0)
+                throw new CompilerException($"Enum '{enumDecl.Name.Lexeme}' must declare at least one member", enumDecl.Name.Line, enumDecl.Name.Column);
+
+            var symbol = _enums[enumDecl.Name.Lexeme];
+            int nextValue = 0;
+            foreach (var member in enumDecl.Members)
+            {
+                if (symbol.Members.ContainsKey(member.Name.Lexeme))
+                    throw new CompilerException($"Enum member '{member.Name.Lexeme}' is already defined in enum '{enumDecl.Name.Lexeme}'", member.Name.Line, member.Name.Column);
+
+                int assignedValue = member.ExplicitValue ?? nextValue;
+                symbol.Members[member.Name.Lexeme] = assignedValue;
+                try
+                {
+                    nextValue = checked(assignedValue + 1);
+                }
+                catch (OverflowException)
+                {
+                    throw new CompilerException($"Enum member '{member.Name.Lexeme}' value overflows the supported integer range", member.Name.Line, member.Name.Column);
+                }
+            }
         }
 
         // Validate interface method declarations.
@@ -277,7 +324,7 @@ sealed class TypeChecker
             {
                 CheckFunction(fn);
             }
-            else if (stmt is ObjectDecl or InterfaceDecl or ImplementDecl or ImportDecl or ExportDecl or PackageDecl)
+            else if (stmt is EnumDecl or ObjectDecl or InterfaceDecl or ImplementDecl or ImportDecl or ExportDecl or PackageDecl)
             {
                 // Declarations are compile-time metadata.
             }
@@ -586,6 +633,9 @@ sealed class TypeChecker
             case FunctionDecl:
                 // handled earlier
                 return false;
+            case EnumDecl:
+                // handled in symbol collection pass
+                return false;
             case ObjectDecl:
                 // handled in symbol collection pass
                 return false;
@@ -684,6 +734,15 @@ sealed class TypeChecker
                 return fbType;
             case FieldAccessExpr fa:
             {
+                if (TryResolveEnumMember(fa, env, out var enumTypeRef, out var enumValue))
+                {
+                    fa.ResolvedEnumTypeRef = enumTypeRef;
+                    fa.ResolvedEnumValue = enumValue;
+                    return TypeSymbol.Enum;
+                }
+
+                fa.ResolvedEnumTypeRef = null;
+                fa.ResolvedEnumValue = null;
                 var targetType = CheckExpr(fa.Target, env, currentReturn);
                 Require(targetType == TypeSymbol.Object, fa.Target, "Field access requires object target");
                 var resolved = ResolveFieldType(fa, env);
@@ -704,6 +763,9 @@ sealed class TypeChecker
                 return targetElementType;
             case FieldSetExpr fset:
             {
+                if (TryResolveEnumMember(fset.Target, env, out _, out _))
+                    throw new CompilerException("Enum members are constants and cannot be assigned", fset.Target.Name.Line, fset.Target.Name.Column);
+
                 var targetType = CheckExpr(fset.Target.Target, env, currentReturn);
                 Require(targetType == TypeSymbol.Object, fset.Target.Target, "Field assignment requires object target");
                 var rhsType = CheckExpr(fset.Value, env, currentReturn);
@@ -1052,6 +1114,7 @@ sealed class TypeChecker
             "array" => TypeSymbol.Array,
             "optional" => TypeSymbol.Optional,
             "void" => TypeSymbol.Void,
+            _ when _enums.ContainsKey(typeRef.Name) => TypeSymbol.Enum,
             _ => _interfaces.ContainsKey(typeRef.Name) ? TypeSymbol.Interface : TypeSymbol.Object
         };
     }
@@ -1181,6 +1244,16 @@ sealed class TypeChecker
         {
             if (expected == TypeSymbol.Array)
                 return TryArrayConversionCost(expectedRef, actualRef, out cost);
+            if (expected == TypeSymbol.Enum)
+            {
+                if (actualRef is not null && SameTypeRef(expectedRef, actualRef))
+                {
+                    cost = 0;
+                    return true;
+                }
+
+                return false;
+            }
             if (expected is TypeSymbol.Object or TypeSymbol.Interface)
             {
                 return TryReferenceConversionCost(expectedRef, actualRef, out cost);
@@ -1241,6 +1314,8 @@ sealed class TypeChecker
         {
             if (left == TypeSymbol.Array)
                 return leftRef is not null && rightRef is not null && TryArrayConversionCost(leftRef, rightRef, out _);
+            if (left == TypeSymbol.Enum)
+                return leftRef is not null && rightRef is not null && SameTypeRef(leftRef, rightRef);
             if (left is TypeSymbol.Object or TypeSymbol.Interface)
                 return leftRef is not null && rightRef is not null && TryReferenceConversionCost(leftRef, rightRef, out _);
             return left != TypeSymbol.Void;
@@ -1289,6 +1364,9 @@ sealed class TypeChecker
 
     private TypeSymbol? ResolveFieldType(FieldAccessExpr fieldAccess, TypeEnvironment env)
     {
+        if (fieldAccess.ResolvedEnumTypeRef is not null)
+            return TypeSymbol.Enum;
+
         var targetType = ResolveExprTypeRef(fieldAccess.Target, env);
         if (targetType is null)
             return null;
@@ -1304,6 +1382,9 @@ sealed class TypeChecker
 
     private TypeRef? ResolveFieldTypeRef(FieldAccessExpr fieldAccess, TypeEnvironment env)
     {
+        if (fieldAccess.ResolvedEnumTypeRef is not null)
+            return fieldAccess.ResolvedEnumTypeRef;
+
         var targetType = ResolveExprTypeRef(fieldAccess.Target, env);
         if (targetType is null)
             return null;
@@ -1337,6 +1418,8 @@ sealed class TypeChecker
                     return sig.ReturnTypeRef;
                 return null;
             case FieldAccessExpr fa:
+                if (fa.ResolvedEnumTypeRef is not null)
+                    return fa.ResolvedEnumTypeRef;
             {
                 var owner = ResolveExprTypeRef(fa.Target, env);
                 if (owner is null) return null;
@@ -1379,6 +1462,9 @@ sealed class TypeChecker
 
                 throw new CompilerException($"Undefined variable '{variable.Name.Lexeme}'", variable.Name.Line, variable.Name.Column);
             case FieldAccessExpr fieldAccess:
+                if (TryResolveEnumMember(fieldAccess, env, out _, out _))
+                    throw new CompilerException("Enum members are constants and cannot be assigned", fieldAccess.Name.Line, fieldAccess.Name.Column);
+
             {
                 var targetType = CheckExpr(fieldAccess.Target, env, currentReturn);
                 Require(targetType == TypeSymbol.Object, fieldAccess.Target, "Field access requires object target");
@@ -1465,7 +1551,7 @@ sealed class TypeChecker
             default:
                 if (typeRef.TypeArguments.Count > 0)
                     throw new CompilerException($"Type '{typeRef.Name}' does not support type arguments yet", typeRef.Line, typeRef.Column);
-                if (!_objects.ContainsKey(typeRef.Name) && !_interfaces.ContainsKey(typeRef.Name))
+                if (!_objects.ContainsKey(typeRef.Name) && !_interfaces.ContainsKey(typeRef.Name) && !_enums.ContainsKey(typeRef.Name))
                     throw new CompilerException($"Unknown type '{typeRef.Name}'", typeRef.Line, typeRef.Column);
                 return;
         }
@@ -1519,6 +1605,13 @@ sealed class TypeChecker
             if (TryReferenceConversionCost(targetRef, valueRef, out _))
                 return;
 
+            throw new CompilerException(message, line, col);
+        }
+
+        if (target == TypeSymbol.Enum)
+        {
+            if (targetRef is not null && valueRef is not null && SameTypeRef(targetRef, valueRef))
+                return;
             throw new CompilerException(message, line, col);
         }
 
@@ -1649,11 +1742,40 @@ sealed class TypeChecker
     private sealed record InterfaceSymbol(
         Token Name,
         Dictionary<string, InterfaceMethodSignature> Methods);
+    private sealed record EnumSymbol(
+        Token Name,
+        Dictionary<string, int> Members);
     private sealed record ObjectSymbol(
         Token Name,
         Dictionary<string, TypeRef> Fields,
         List<ConstructorSignature> Constructors,
         Dictionary<string, MethodSignature> Methods);
+
+    private bool TryResolveEnumMember(FieldAccessExpr fieldAccess, TypeEnvironment env, out TypeRef? enumTypeRef, out int value)
+    {
+        enumTypeRef = null;
+        value = 0;
+
+        if (fieldAccess.Target is not Variable variableTarget)
+            return false;
+
+        if (env.Contains(variableTarget.Name.Lexeme))
+            return false;
+
+        if (!_enums.TryGetValue(variableTarget.Name.Lexeme, out var enumSymbol))
+            return false;
+
+        if (!enumSymbol.Members.TryGetValue(fieldAccess.Name.Lexeme, out value))
+        {
+            throw new CompilerException(
+                $"Enum '{enumSymbol.Name.Lexeme}' has no member '{fieldAccess.Name.Lexeme}'",
+                fieldAccess.Name.Line,
+                fieldAccess.Name.Column);
+        }
+
+        enumTypeRef = new TypeRef(enumSymbol.Name.Lexeme, null, variableTarget.Name.Line, variableTarget.Name.Column);
+        return true;
+    }
 
     private sealed class TypeEnvironment
     {

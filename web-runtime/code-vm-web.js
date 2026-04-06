@@ -67,6 +67,7 @@ const OpCode = {
   StackPush: 0x3b,
   StackPop: 0x3c,
   StackPeek: 0x3d,
+  NewRecord: 0x3e,
   Halt: 0xff
 };
 
@@ -188,11 +189,241 @@ function isVmStack(value) {
   return value && typeof value === "object" && value.__vmStack === true && Array.isArray(value.items);
 }
 
+function isVmObject(value) {
+  return value && typeof value === "object" && value.__vmObject === true && value.fields instanceof Map;
+}
+
+function isVmMap(value) {
+  return value && typeof value === "object" && value.__vmMap === true && value.buckets instanceof Map;
+}
+
+function isVmSet(value) {
+  return value && typeof value === "object" && value.__vmSet === true && value.buckets instanceof Map;
+}
+
+function createVmObject(typeName, isRecord = false) {
+  return { __vmObject: true, typeName, isRecord, fields: new Map() };
+}
+
+function createVmMap() {
+  return { __vmMap: true, buckets: new Map(), size: 0 };
+}
+
+function createVmSet() {
+  return { __vmSet: true, buckets: new Map(), size: 0 };
+}
+
+function stringHash(value) {
+  let hash = 2166136261;
+  for (let i = 0; i < value.length; i += 1) {
+    hash ^= value.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash | 0;
+}
+
+function combineHash(hash, part) {
+  return Math.imul(hash ^ part, 16777619) | 0;
+}
+
+function valueEquals(left, right) {
+  if (left === right) {
+    return true;
+  }
+
+  if (left == null || right == null) {
+    return false;
+  }
+
+  if (isNumberValue(left) && isNumberValue(right)) {
+    return left === right;
+  }
+
+  if (isVmObject(left) && isVmObject(right)) {
+    if (left.isRecord || right.isRecord) {
+      if (!left.isRecord || !right.isRecord) {
+        return false;
+      }
+      if (left.typeName !== right.typeName || left.fields.size !== right.fields.size) {
+        return false;
+      }
+
+      for (const [fieldName, leftValue] of left.fields.entries()) {
+        if (!right.fields.has(fieldName)) {
+          return false;
+        }
+        if (!valueEquals(leftValue, right.fields.get(fieldName))) {
+          return false;
+        }
+      }
+
+      return true;
+    }
+
+    return false;
+  }
+
+  return left === right;
+}
+
+function valueHash(value) {
+  if (value == null) {
+    return 0;
+  }
+
+  if (isNumberValue(value)) {
+    return stringHash(String(value));
+  }
+
+  if (typeof value === "string") {
+    return stringHash(`s:${value}`);
+  }
+
+  if (typeof value === "boolean") {
+    return value ? 1 : 0;
+  }
+
+  if (value === OptionalNone) {
+    return stringHash("optional:none");
+  }
+
+  if (isVmObject(value)) {
+    if (!value.isRecord) {
+      if (!Object.prototype.hasOwnProperty.call(value, "__identityHash")) {
+        value.__identityHash = stringHash(`${value.typeName}:${Math.random()}:${performance.now()}`);
+      }
+      return value.__identityHash;
+    }
+
+    let hash = combineHash(2166136261, stringHash(`record:${value.typeName}`));
+    const fieldNames = Array.from(value.fields.keys()).sort();
+    for (const fieldName of fieldNames) {
+      hash = combineHash(hash, stringHash(fieldName));
+      hash = combineHash(hash, valueHash(value.fields.get(fieldName)));
+    }
+    return hash;
+  }
+
+  if (!Object.prototype.hasOwnProperty.call(value, "__identityHash")) {
+    Object.defineProperty(value, "__identityHash", {
+      value: stringHash(`${Object.prototype.toString.call(value)}:${Math.random()}:${performance.now()}`),
+      enumerable: false,
+      configurable: false,
+      writable: false
+    });
+  }
+
+  return value.__identityHash;
+}
+
+function getBucketEntries(container, key, createIfMissing = false) {
+  const hash = valueHash(key).toString();
+  let entries = container.buckets.get(hash);
+  if (!entries && createIfMissing) {
+    entries = [];
+    container.buckets.set(hash, entries);
+  }
+  return entries;
+}
+
+function vmMapTryGet(map, key) {
+  const entries = getBucketEntries(map, key, false);
+  if (!entries) {
+    return { found: false, value: 0 };
+  }
+
+  for (const entry of entries) {
+    if (valueEquals(entry.key, key)) {
+      return { found: true, value: entry.value };
+    }
+  }
+
+  return { found: false, value: 0 };
+}
+
+function vmMapSet(map, key, value) {
+  const entries = getBucketEntries(map, key, true);
+  for (const entry of entries) {
+    if (valueEquals(entry.key, key)) {
+      entry.value = value;
+      return;
+    }
+  }
+
+  entries.push({ key, value });
+  map.size += 1;
+}
+
+function vmMapContains(map, key) {
+  return vmMapTryGet(map, key).found;
+}
+
+function vmMapRemove(map, key) {
+  const entries = getBucketEntries(map, key, false);
+  if (!entries) {
+    return false;
+  }
+
+  for (let i = 0; i < entries.length; i += 1) {
+    if (valueEquals(entries[i].key, key)) {
+      entries.splice(i, 1);
+      map.size -= 1;
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function vmSetAdd(set, value) {
+  const entries = getBucketEntries(set, value, true);
+  for (const entry of entries) {
+    if (valueEquals(entry, value)) {
+      return;
+    }
+  }
+
+  entries.push(value);
+  set.size += 1;
+}
+
+function vmSetContains(set, value) {
+  const entries = getBucketEntries(set, value, false);
+  if (!entries) {
+    return false;
+  }
+
+  for (const entry of entries) {
+    if (valueEquals(entry, value)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function vmSetRemove(set, value) {
+  const entries = getBucketEntries(set, value, false);
+  if (!entries) {
+    return false;
+  }
+
+  for (let i = 0; i < entries.length; i += 1) {
+    if (valueEquals(entries[i], value)) {
+      entries.splice(i, 1);
+      set.size -= 1;
+      return true;
+    }
+  }
+
+  return false;
+}
+
 function tryGetCollectionLength(value) {
   if (Array.isArray(value)) {
     return value.length;
   }
-  if (value instanceof Map || value instanceof Set) {
+  if (isVmMap(value) || isVmSet(value)) {
     return value.size;
   }
   if (isVmQueue(value) || isVmStack(value)) {
@@ -1177,7 +1408,11 @@ export class WebVm {
   }
 
   createObject(typeName) {
-    return { __vmObject: true, typeName, fields: new Map() };
+    return createVmObject(typeName, false);
+  }
+
+  createRecord(typeName) {
+    return createVmObject(typeName, true);
   }
 
   invokeVoid(targetIp, localCount, args = []) {
@@ -1346,11 +1581,7 @@ export class WebVm {
 
         case OpCode.Eq: {
           const [left, right] = this.popAny2();
-          if (isNumberValue(left) && isNumberValue(right)) {
-            this.stack.push(left === right ? 1 : 0);
-          } else {
-            this.stack.push(left === right ? 1 : 0);
-          }
+          this.stack.push(valueEquals(left, right) ? 1 : 0);
           break;
         }
 
@@ -1471,20 +1702,21 @@ export class WebVm {
         }
 
         case OpCode.NewMap:
-          this.stack.push(new Map());
+          this.stack.push(createVmMap());
           break;
 
         case OpCode.MapGet: {
           this.ensureStack(2);
           const key = this.stack.pop();
           const map = this.stack.pop();
-          if (!(map instanceof Map)) {
+          if (!isVmMap(map)) {
             this.throwRuntime("MapGet expects map");
           }
-          if (!map.has(key)) {
+          const result = vmMapTryGet(map, key);
+          if (!result.found) {
             this.throwRuntime("Map key not found");
           }
-          this.stack.push(map.get(key));
+          this.stack.push(result.value);
           break;
         }
 
@@ -1493,10 +1725,10 @@ export class WebVm {
           const value = this.stack.pop();
           const key = this.stack.pop();
           const map = this.stack.pop();
-          if (!(map instanceof Map)) {
+          if (!isVmMap(map)) {
             this.throwRuntime("MapSet expects map");
           }
-          map.set(key, value);
+          vmMapSet(map, key, value);
           this.stack.push(value);
           break;
         }
@@ -1505,10 +1737,10 @@ export class WebVm {
           this.ensureStack(2);
           const key = this.stack.pop();
           const map = this.stack.pop();
-          if (!(map instanceof Map)) {
+          if (!isVmMap(map)) {
             this.throwRuntime("MapContains expects map");
           }
-          this.stack.push(map.has(key) ? 1 : 0);
+          this.stack.push(vmMapContains(map, key) ? 1 : 0);
           break;
         }
 
@@ -1516,26 +1748,26 @@ export class WebVm {
           this.ensureStack(2);
           const key = this.stack.pop();
           const map = this.stack.pop();
-          if (!(map instanceof Map)) {
+          if (!isVmMap(map)) {
             this.throwRuntime("MapRemove expects map");
           }
-          map.delete(key);
+          vmMapRemove(map, key);
           this.stack.push(0);
           break;
         }
 
         case OpCode.NewSet:
-          this.stack.push(new Set());
+          this.stack.push(createVmSet());
           break;
 
         case OpCode.SetAdd: {
           this.ensureStack(2);
           const value = this.stack.pop();
           const set = this.stack.pop();
-          if (!(set instanceof Set)) {
+          if (!isVmSet(set)) {
             this.throwRuntime("SetAdd expects set");
           }
-          set.add(value);
+          vmSetAdd(set, value);
           this.stack.push(0);
           break;
         }
@@ -1544,10 +1776,10 @@ export class WebVm {
           this.ensureStack(2);
           const value = this.stack.pop();
           const set = this.stack.pop();
-          if (!(set instanceof Set)) {
+          if (!isVmSet(set)) {
             this.throwRuntime("SetContains expects set");
           }
-          this.stack.push(set.has(value) ? 1 : 0);
+          this.stack.push(vmSetContains(set, value) ? 1 : 0);
           break;
         }
 
@@ -1555,10 +1787,10 @@ export class WebVm {
           this.ensureStack(2);
           const value = this.stack.pop();
           const set = this.stack.pop();
-          if (!(set instanceof Set)) {
+          if (!isVmSet(set)) {
             this.throwRuntime("SetRemove expects set");
           }
-          set.delete(value);
+          vmSetRemove(set, value);
           this.stack.push(0);
           break;
         }
@@ -1688,7 +1920,13 @@ export class WebVm {
 
         case OpCode.NewObject: {
           const typeName = this.readStringOperand();
-          this.stack.push({ __vmObject: true, typeName, fields: new Map() });
+          this.stack.push(createVmObject(typeName, false));
+          break;
+        }
+
+        case OpCode.NewRecord: {
+          const typeName = this.readStringOperand();
+          this.stack.push(createVmObject(typeName, true));
           break;
         }
 
@@ -1696,7 +1934,7 @@ export class WebVm {
           const fieldName = this.readStringOperand();
           this.ensureStack(1);
           const target = this.stack.pop();
-          if (!target || target.__vmObject !== true) {
+          if (!isVmObject(target)) {
             this.throwRuntime("GetField expects object");
           }
           if (!target.fields.has(fieldName)) {
@@ -1711,7 +1949,7 @@ export class WebVm {
           this.ensureStack(2);
           const value = this.stack.pop();
           const target = this.stack.pop();
-          if (!target || target.__vmObject !== true) {
+          if (!isVmObject(target)) {
             this.throwRuntime("SetField expects object");
           }
           target.fields.set(fieldName, value);
@@ -1722,7 +1960,7 @@ export class WebVm {
         case OpCode.GetTypeName: {
           this.ensureStack(1);
           const target = this.stack.pop();
-          if (!target || target.__vmObject !== true) {
+          if (!isVmObject(target)) {
             this.throwRuntime("GetTypeName expects object");
           }
           this.stack.push(target.typeName);
@@ -1746,7 +1984,7 @@ export class WebVm {
           }
 
           const target = this.stack.pop();
-          if (!target || target.__vmObject !== true) {
+          if (!isVmObject(target)) {
             this.throwRuntime("InterfaceCall expects object target");
           }
 

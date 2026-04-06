@@ -60,8 +60,7 @@ This roadmap is implementation-truthful: items marked below are gaps from the cu
 | `[x]` | Object model | Constructors + definite field initialization rules | Implemented baseline: fields require constructor init; constructors enforced |
 | `[x]` | Object model | Method declarations + call syntax (`obj.method(args)`) | Implemented with signature-based overload resolution; object methods support implicit-void authoring |
 | `[x]` | Object model | Temporary method lowering (`method` -> static fn with implicit `this`) | Implemented with compile-time signature binding (no dynamic dispatch yet) |
-| `[x]` | Object model | `record` declaration + value semantics (copy on assignment/pass/return) | Implemented baseline: constructors + fields, copy on assignment/pass/return/container insertion, nested record field cloning, and current limitations called out in docs/tests |
-| `[~]` | Object model | Record ergonomics follow-up | Method/interface design, equality semantics, and record suitability for `map` keys / `set` elements still need explicit design |
+| `[x]` | Object model | `record` declaration + value semantics (copy on assignment/pass/return) | Implemented: constructors, methods, inline/external interface implementations, copy-on-assignment/pass/return/container insertion, copy-by-value method receivers, structural equality for hashable records, and hashable record support in `map` / `set` |
 | `[~]` | Object model | Visibility enforcement (`public/package/private`) | Permanent; phase in from parser -> checker -> codegen |
 | `[x]` | Object model | Interfaces + conformance checks | Compile-time interface declarations + explicit `implement Interface for Object { ... via Object.method; }` mapping with signature/return checks, plus inline object-body syntax `implement Interface.method(...) { ... }` |
 | `[~]` | Object model | Interface dispatch lowering/runtime model | Baseline runtime dispatch table opcode implemented for interface-typed locals/params/returns/fields/arrays; extend to broader container types and optimizer-grade fast paths |
@@ -117,7 +116,7 @@ This roadmap is implementation-truthful: items marked below are gaps from the cu
 
 ## Priority Rollup (benefit/effort)
 - High (`[!]`): keeping example/docs status aligned with implementation truth.
-- Medium (`[~]`): visibility/access control, fuller user-facing error-handling syntax, record ergonomics follow-up, constant pool, optimizer expansion, tooling polish, and engine core/adapters.
+- Medium (`[~]`): visibility/access control, fuller user-facing error-handling syntax, constant pool, optimizer expansion, tooling polish, and engine core/adapters.
 - Low (`[_]`): REPL, future stdlib/versioning, long-term runtime lifecycle strategy, remote package registry, and longer-horizon GPU/backend work.
 
 See also: `docs/platform-roadmap.md` for ABI schema, package manifest schema, and phased execution plan.

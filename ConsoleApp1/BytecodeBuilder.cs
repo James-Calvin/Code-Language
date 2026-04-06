@@ -169,6 +169,7 @@ sealed class BytecodeBuilder
     public BytecodeBuilder StackPeek() { RecordDebug(); _bytes.Add((byte)OpCode.StackPeek); return this; }
 
     public BytecodeBuilder NewObject(string typeName) => AddStringOperand(OpCode.NewObject, typeName);
+    public BytecodeBuilder NewRecord(string typeName) => AddStringOperand(OpCode.NewRecord, typeName);
     public BytecodeBuilder GetField(string fieldName) => AddStringOperand(OpCode.GetField, fieldName);
     public BytecodeBuilder SetField(string fieldName) => AddStringOperand(OpCode.SetField, fieldName);
     public BytecodeBuilder HostCall(string symbol, int argCount)

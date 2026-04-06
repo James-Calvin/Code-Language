@@ -382,15 +382,6 @@ static class ModuleCompiler
                 continue;
             }
 
-            if (obj.IsRecord)
-            {
-                var inline = obj.InlineInterfaceMethods[0];
-                throw new CompilerException(
-                    $"Record '{obj.Name.Lexeme}' does not support inline interface implementations",
-                    inline.InterfaceName.Line,
-                    inline.InterfaceName.Column);
-            }
-
             var methods = new List<MethodDecl>(obj.Methods);
             for (int m = 0; m < obj.InlineInterfaceMethods.Count; m++)
             {

@@ -174,11 +174,6 @@ sealed class TypeChecker
                 symbol.Constructors.Add(new ConstructorSignature(ctor.Keyword, paramTypes, paramTypeRefs, dispatchKey, ctor.Body));
             }
 
-            if (obj.IsRecord && obj.Methods.Count > 0)
-                throw new CompilerException($"Record '{obj.Name.Lexeme}' does not support methods yet", obj.Methods[0].Name.Line, obj.Methods[0].Name.Column);
-            if (obj.IsRecord && obj.InlineInterfaceMethods.Count > 0)
-                throw new CompilerException($"Record '{obj.Name.Lexeme}' does not support inline interface implementations", obj.InlineInterfaceMethods[0].InterfaceName.Line, obj.InlineInterfaceMethods[0].InterfaceName.Column);
-
             var methodKeys = new HashSet<string>(StringComparer.Ordinal);
             foreach (var method in obj.Methods)
             {
@@ -233,8 +228,6 @@ sealed class TypeChecker
                 throw new CompilerException($"Unknown interface '{first.InterfaceName.Lexeme}'", first.InterfaceName.Line, first.InterfaceName.Column);
             if (!_objects.TryGetValue(first.ObjectName.Lexeme, out var obj))
                 throw new CompilerException($"Unknown object '{first.ObjectName.Lexeme}'", first.ObjectName.Line, first.ObjectName.Column);
-            if (obj.IsRecord)
-                throw new CompilerException($"Record '{first.ObjectName.Lexeme}' does not support interface implementations yet", first.ObjectName.Line, first.ObjectName.Column);
 
             var mapped = new HashSet<string>(StringComparer.Ordinal);
             for (int declIndex = 0; declIndex < pair.Value.Count; declIndex++)
@@ -971,7 +964,7 @@ sealed class TypeChecker
                     return CheckBuiltInCollectionMethodCall(mc, targetType, targetTypeRef, argTypes);
 
                 mc.ResolvedBuiltInCollectionMethodName = null;
-                Require(targetType == TypeSymbol.Object || targetType == TypeSymbol.Interface, mc.Target, "Method call target must be an object, interface, or built-in collection");
+                Require(targetType == TypeSymbol.Object || targetType == TypeSymbol.Record || targetType == TypeSymbol.Interface, mc.Target, "Method call target must be an object, record, interface, or built-in collection");
 
                 if (_interfaces.TryGetValue(targetTypeRef.Name, out var iface))
                 {
@@ -1700,7 +1693,18 @@ sealed class TypeChecker
             if (left == TypeSymbol.Enum)
                 return leftRef is not null && rightRef is not null && SameTypeRef(leftRef, rightRef);
             if (left == TypeSymbol.Record)
-                return false;
+                return leftRef is not null &&
+                       rightRef is not null &&
+                       SameTypeRef(leftRef, rightRef) &&
+                       IsHashableTypeRef(leftRef);
+            if (left == TypeSymbol.Optional)
+            {
+                if (leftRef is null || rightRef is null || !SameTypeRef(leftRef, rightRef))
+                    return false;
+                if (RequiresHashableRecordSemantics(leftRef))
+                    return IsHashableTypeRef(leftRef);
+                return true;
+            }
             if (left is TypeSymbol.Object or TypeSymbol.Interface)
                 return leftRef is not null && rightRef is not null && TryReferenceConversionCost(leftRef, rightRef, out _);
             return left != TypeSymbol.Void;
@@ -1958,8 +1962,12 @@ sealed class TypeChecker
                 if (typeRef.TypeArguments.Count != 1)
                     throw new CompilerException($"Type '{typeRef.Name}' expects exactly one type argument", typeRef.Line, typeRef.Column);
                 ValidateTypeRef(typeRef.TypeArguments[0]);
-                if (typeRef.Name == "set" && ContainsCopyByValueRecord(typeRef.TypeArguments[0]))
-                    throw new CompilerException("Set elements cannot currently use record value types", typeRef.Line, typeRef.Column);
+                if (typeRef.Name == "set" &&
+                    RequiresHashableRecordSemantics(typeRef.TypeArguments[0]) &&
+                    !IsHashableTypeRef(typeRef.TypeArguments[0]))
+                {
+                    throw new CompilerException("Set elements that use record value types must be hashable", typeRef.Line, typeRef.Column);
+                }
                 return;
 
             case "map":
@@ -1967,8 +1975,11 @@ sealed class TypeChecker
                     throw new CompilerException($"Type '{typeRef.Name}' expects exactly two type arguments", typeRef.Line, typeRef.Column);
                 ValidateTypeRef(typeRef.TypeArguments[0]);
                 ValidateTypeRef(typeRef.TypeArguments[1]);
-                if (ContainsCopyByValueRecord(typeRef.TypeArguments[0]))
-                    throw new CompilerException("Map keys cannot currently use record value types", typeRef.Line, typeRef.Column);
+                if (RequiresHashableRecordSemantics(typeRef.TypeArguments[0]) &&
+                    !IsHashableTypeRef(typeRef.TypeArguments[0]))
+                {
+                    throw new CompilerException("Map keys that use record value types must be hashable", typeRef.Line, typeRef.Column);
+                }
                 return;
 
             default:
@@ -1980,14 +1991,58 @@ sealed class TypeChecker
         }
     }
 
-    private bool ContainsCopyByValueRecord(TypeRef typeRef)
+    private bool RequiresHashableRecordSemantics(TypeRef typeRef)
     {
         if (_objects.TryGetValue(typeRef.Name, out var symbol) && symbol.IsRecord)
             return true;
 
         return string.Equals(typeRef.Name, "optional", StringComparison.Ordinal) &&
                typeRef.TypeArguments.Count == 1 &&
-               ContainsCopyByValueRecord(typeRef.TypeArguments[0]);
+               RequiresHashableRecordSemantics(typeRef.TypeArguments[0]);
+    }
+
+    private bool IsHashableTypeRef(TypeRef typeRef)
+    {
+        return IsHashableTypeRef(typeRef, new HashSet<string>(StringComparer.Ordinal));
+    }
+
+    private bool IsHashableTypeRef(TypeRef typeRef, HashSet<string> visitingRecords)
+    {
+        switch (typeRef.Name)
+        {
+            case "whole":
+            case "integer":
+            case "real":
+            case "boolean":
+            case "string":
+                return true;
+            case "optional":
+                return typeRef.TypeArguments.Count == 1 && IsHashableTypeRef(typeRef.TypeArguments[0], visitingRecords);
+        }
+
+        if (_enums.ContainsKey(typeRef.Name))
+            return true;
+
+        if (!_objects.TryGetValue(typeRef.Name, out var objectSymbol) || !objectSymbol.IsRecord)
+            return false;
+
+        if (!visitingRecords.Add(typeRef.Name))
+            return true;
+
+        try
+        {
+            foreach (var fieldType in objectSymbol.Fields.Values)
+            {
+                if (!IsHashableTypeRef(fieldType, visitingRecords))
+                    return false;
+            }
+
+            return true;
+        }
+        finally
+        {
+            visitingRecords.Remove(typeRef.Name);
+        }
     }
 
     private static TypeRef BuildImplicitVoidTypeRef(Token origin)
@@ -2098,13 +2153,14 @@ sealed class TypeChecker
     private static string MethodDispatchKey(string typeName, string methodName, IReadOnlyList<TypeRef> paramTypes) =>
         $"{typeName}.{methodName}({string.Join(",", paramTypes.Select(TypeRefKey))})";
 
-    private static bool IsCompatibleInterfaceReturn(InterfaceMethodSignature ifaceMethod, MethodSignature objectMethod)
+    private bool IsCompatibleInterfaceReturn(InterfaceMethodSignature ifaceMethod, MethodSignature objectMethod)
     {
-        if (ifaceMethod.ReturnType != objectMethod.ReturnType)
-            return false;
-        if (ifaceMethod.ReturnType is not (TypeSymbol.Object or TypeSymbol.Record))
-            return true;
-        return SameTypeRef(ifaceMethod.ReturnTypeRef, objectMethod.ReturnTypeRef);
+        return TryConversionCost(
+            ifaceMethod.ReturnType,
+            ifaceMethod.ReturnTypeRef,
+            objectMethod.ReturnType,
+            objectMethod.ReturnTypeRef,
+            out _);
     }
 
     private static bool SameTypeRef(TypeRef a, TypeRef b)

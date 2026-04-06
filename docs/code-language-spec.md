@@ -349,7 +349,7 @@ print(turns.dequeue());
 
 ## 9. Object Model and Interfaces
 - Current implementation status:
-  - Implemented: object declarations with fields/constructors/methods, record declarations with constructors and field access, `new Type(...)`, field read/write (`obj.field`, `obj.field = value`), method calls (`obj.method(args)`), interface conformance checks via either inline interface methods or `implement Interface for Object`, and interface-typed locals/parameters/returns/fields/arrays with runtime-dispatched interface method calls.
+  - Implemented: object declarations with fields/constructors/methods, record declarations with fields/constructors/methods, `new Type(...)`, field read/write (`obj.field`, `obj.field = value`), method calls (`obj.method(args)`), interface conformance checks via either inline interface methods or `implement Interface for Object/Record`, and interface-typed locals/parameters/returns/fields/arrays with runtime-dispatched interface method calls.
   - Not yet implemented: visibility enforcement.
 - No inheritance.
 - Contracts are declared as `interface`.
@@ -366,7 +366,6 @@ print(turns.dequeue());
 - Inline interface methods define the object method body directly and inherit the return type from the matched interface method signature.
 - Constructor overloading is supported by typed signatures.
 - Method overloading is supported by typed signatures.
-- Records currently support fields and constructors only.
 - Object fields must be initialized either:
   - at field declaration, or
   - during constructor execution.
@@ -382,12 +381,19 @@ print(turns.dequeue());
   - Inside constructors and methods, unshadowed bare field names resolve to the current object (`field` -> `this.field`), and bare method calls resolve to the current object before top-level/intrinsic functions.
 - Reserved field names (currently disallowed): `length`, `hasValue`, `value`, `or`.
 - `object` instances are passed by reference.
-- `record` values are copied on assignment, parameter passing, returns, and insertion into array/queue/stack fields or locals.
-- Current record limitations:
-  - record methods are not supported yet
-  - record interface implementations are not supported yet
-  - record equality is not supported yet
-  - record values cannot currently be used as `map` keys or `set` elements
+- `record` values are copied on assignment, parameter passing, returns, and insertion into arrays/collections.
+- Record methods and interface implementations are supported.
+- Record methods use copy-by-value receivers:
+  - the method body sees a cloned `this`
+  - mutating fields inside the method only updates that local copy
+  - persistent updates should return a record value and be assigned back at the call site
+- Record equality (`==` / `!=`) is structural for hashable records only.
+- Hashable record fields are recursively limited to:
+  - `whole`, `integer`, `real`, `boolean`, `string`
+  - enums
+  - hashable records
+  - `optional<T>` where `T` is hashable by the same rule
+- Records with non-hashable fields are still valid record types, but they cannot be compared for equality and cannot be used as `map` keys or `set` elements.
 - For remaining categories, reference/value behavior follows common C# conventions (provisional).
 
 Interface example:
@@ -610,7 +616,7 @@ if x > 3 then panic("x too large");
     - drawing: `clear(...)`, `draw_rectangle(...)`, `draw_rectangle_outline(...)`, `draw_line(...)`, `draw_circle(...)`, `draw_circle_outline(...)`, `draw_polygon(...)`, `draw_polygon_outline(...)`, `draw_text(...)`, `draw_image(...)`, `draw_sprite(...)`
   - The current repo ships a wrapper layer in `lib/engine/` over those scene/runtime intrinsics: canonical modules `engine.colors`, `engine.drawing`, `engine.input`, `engine.viewport`, and `engine.scene`, with compatibility re-export modules `engine.view` and `engine.loop`.
   - Note: high-range timing values may eventually need dedicated 64-bit numeric/value support for full precision guarantees.
-- Object and record construction and field access lower to dedicated VM opcodes (`NEW_OBJECT`, `GET_FIELD`, `SET_FIELD`).
+- Object and record construction and field access lower to dedicated VM opcodes (`NEW_OBJECT`, `NEW_RECORD`, `GET_FIELD`, `SET_FIELD`).
 - Arrays: literals `{...}` create arrays; typed declarations `array<integer> xs = {1,2,3};`; dynamic `new array<integer>(n)` requires a size; `xs.length` yields length; `xs.append(value)` and `xs.remove_at(index)` grow/shrink arrays; `foreach` iterates arrays by element.
 - Built-in collections: `map`, `set`, `queue`, and `stack` lower to dedicated VM opcodes; `.length` also covers those collection types.
 

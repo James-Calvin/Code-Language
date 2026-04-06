@@ -3,6 +3,7 @@ using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Runtime.CompilerServices;
 using System.Threading;
 
 namespace ConsoleApp1;
@@ -70,6 +71,7 @@ enum OpCode : byte
     StackPush = 0x3B,
     StackPop = 0x3C,
     StackPeek = 0x3D,
+    NewRecord = 0x3E,
     Halt = 0xFF
 }
 
@@ -259,14 +261,7 @@ sealed class Vm
                 case OpCode.Eq:
                 {
                     var (l, r) = PopAny2();
-                    if (IsNumber(l) && IsNumber(r))
-                    {
-                        _stack.Push(ToDouble(l) == ToDouble(r) ? 1.0 : 0.0);
-                    }
-                    else
-                    {
-                        _stack.Push(Equals(l, r) ? 1.0 : 0.0);
-                    }
+                    _stack.Push(VmValueSemantics.ValuesEqual(l, r) ? 1.0 : 0.0);
                     break;
                 }
 
@@ -620,6 +615,13 @@ sealed class Vm
                 {
                     string typeName = ReadStringOperand();
                     _stack.Push(new VmObject(typeName));
+                    break;
+                }
+
+                case OpCode.NewRecord:
+                {
+                    string typeName = ReadStringOperand();
+                    _stack.Push(new VmObject(typeName, isRecord: true));
                     break;
                 }
 
@@ -1213,6 +1215,19 @@ file sealed class VmValueComparer : IEqualityComparer<object>
 {
     bool IEqualityComparer<object>.Equals(object? x, object? y)
     {
+        return VmValueSemantics.ValuesEqual(x, y);
+    }
+
+    int IEqualityComparer<object>.GetHashCode(object obj)
+    {
+        return VmValueSemantics.ValueHash(obj);
+    }
+}
+
+file static class VmValueSemantics
+{
+    public static bool ValuesEqual(object? x, object? y)
+    {
         if (ReferenceEquals(x, y))
             return true;
 
@@ -1222,15 +1237,72 @@ file sealed class VmValueComparer : IEqualityComparer<object>
         if (IsNumeric(x) && IsNumeric(y))
             return Convert.ToDouble(x) == Convert.ToDouble(y);
 
+        if (x is VmObject leftObject && y is VmObject rightObject)
+        {
+            if (leftObject.IsRecord || rightObject.IsRecord)
+                return RecordEquals(leftObject, rightObject);
+
+            return ReferenceEquals(leftObject, rightObject);
+        }
+
         return EqualityComparer<object>.Default.Equals(x, y);
     }
 
-    int IEqualityComparer<object>.GetHashCode(object obj)
+    public static int ValueHash(object? value)
     {
-        if (IsNumeric(obj))
-            return Convert.ToDouble(obj).GetHashCode();
+        if (value is null)
+            return 0;
 
-        return EqualityComparer<object>.Default.GetHashCode(obj);
+        if (IsNumeric(value))
+            return Convert.ToDouble(value).GetHashCode();
+
+        if (value is VmObject vmObject)
+        {
+            if (vmObject.IsRecord)
+                return RecordHash(vmObject);
+
+            return RuntimeHelpers.GetHashCode(vmObject);
+        }
+
+        return value.GetHashCode();
+    }
+
+    private static bool RecordEquals(VmObject left, VmObject right)
+    {
+        if (!left.IsRecord || !right.IsRecord)
+            return false;
+        if (!string.Equals(left.TypeName, right.TypeName, StringComparison.Ordinal))
+            return false;
+        if (left.Fields.Count != right.Fields.Count)
+            return false;
+
+        foreach (var pair in left.Fields)
+        {
+            if (!right.Fields.TryGetValue(pair.Key, out var otherValue))
+                return false;
+            if (!ValuesEqual(pair.Value, otherValue))
+                return false;
+        }
+
+        return true;
+    }
+
+    private static int RecordHash(VmObject record)
+    {
+        var hash = new HashCode();
+        hash.Add(record.TypeName, StringComparer.Ordinal);
+
+        var fieldNames = new List<string>(record.Fields.Keys);
+        fieldNames.Sort(StringComparer.Ordinal);
+        for (int i = 0; i < fieldNames.Count; i++)
+        {
+            string fieldName = fieldNames[i];
+            hash.Add(fieldName, StringComparer.Ordinal);
+            record.Fields.TryGetValue(fieldName, out var fieldValue);
+            hash.Add(ValueHash(fieldValue));
+        }
+
+        return hash.ToHashCode();
     }
 
     private static bool IsNumeric(object value) => value is int or long or double;

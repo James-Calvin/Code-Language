@@ -282,6 +282,94 @@ Stats backup = second.backup.value;
 print(second.stats.strength);
 print(backup.strength);", "5\n5\n")
             ,
+            ("record-method-value-receiver",
+@"record Stats {
+  integer strength;
+  constructor(integer strength) {
+    this.strength = strength;
+  }
+  function<Stats> boosted(integer amount) {
+    strength += amount;
+    return this;
+  }
+  function<integer> read() {
+    return strength;
+  }
+}
+Stats base = new Stats(3);
+Stats boosted = base.boosted(2);
+array<Stats> items = new array<Stats>(0);
+items.append(base);
+Stats from_item = items[0].boosted(4);
+print(base.strength);
+print(boosted.strength);
+print(items[0].strength);
+print(from_item.read());", "3\n5\n3\n7\n")
+            ,
+            ("record-interface-inline-and-external",
+@"interface Reader {
+  function<integer> read();
+}
+record InlineStats {
+  integer strength;
+  constructor(integer strength) {
+    this.strength = strength;
+  }
+  implement Reader.read() {
+    return strength;
+  }
+}
+record ExternalStats {
+  integer strength;
+  constructor(integer strength) {
+    this.strength = strength;
+  }
+  function<integer> read() {
+    return strength;
+  }
+}
+implement Reader for ExternalStats {
+  read() via ExternalStats.read;
+}
+function<integer> sample(Reader reader) {
+  return reader.read();
+}
+function<Reader> expose_inline(InlineStats stats) {
+  return stats;
+}
+InlineStats inline_stats = new InlineStats(4);
+ExternalStats external_stats = new ExternalStats(6);
+Reader first = expose_inline(inline_stats);
+array<Reader> readers = new array<Reader>(0);
+readers.append(external_stats);
+print(inline_stats.strength);
+print(first.read());
+print(sample(external_stats));
+print(readers[0].read());", "4\n4\n6\n6\n")
+            ,
+            ("record-hashable-equality-and-collections",
+@"record Point {
+  integer x;
+  integer y;
+  constructor(integer x, integer y) {
+    this.x = x;
+    this.y = y;
+  }
+}
+Point left = new Point(1, 2);
+Point right = new Point(1, 2);
+optional<Point> left_optional = left;
+optional<Point> right_optional = right;
+set<Point> points = new set<Point>();
+points.add(left);
+map<Point, integer> scores = new map<Point, integer>();
+scores[left] = 7;
+left.x = 9;
+print(left == right);
+print(left_optional == right_optional);
+print(points.contains(right));
+print(scores[right]);", "0\n1\n1\n7\n")
+            ,
             ("modulo-op", @"integer value = 8 % 3; print(value);", "2\n"),
             ("function-void",
 @"function printHello() {
@@ -1824,67 +1912,31 @@ items.enqueue();", "expects 1 argument"),
             ("stack-push-type-mismatch",
 @"stack<integer> items = new stack<integer>();
 items.push(""oops"");", "Stack element type mismatch"),
-            ("record-methods-not-supported",
+            ("record-nonhashable-set-element",
 @"record Stats {
-  integer strength;
-  constructor(integer strength) {
-    this.strength = strength;
-  }
-  function<integer> read() {
-    return strength;
-  }
-}", "does not support methods yet"),
-            ("record-inline-interface-not-supported",
-@"interface IReadable {
-  function<integer> read();
-}
-record Stats {
-  integer strength;
-  constructor(integer strength) {
-    this.strength = strength;
-  }
-  implement IReadable.read() {
-    return strength;
-  }
-}", "does not support inline interface implementations"),
-            ("record-external-interface-not-supported",
-@"interface IReadable {
-  function<integer> read();
-}
-record Stats {
-  integer strength;
-  constructor(integer strength) {
-    this.strength = strength;
+  array<integer> history;
+  constructor() {
+    history = {1, 2};
   }
 }
-implement IReadable for Stats {
-  read() via Stats.read;
-}", "does not support interface implementations yet"),
-            ("record-set-element-not-supported",
+set<Stats> items = new set<Stats>();", "must be hashable"),
+            ("record-nonhashable-map-key",
 @"record Stats {
-  integer strength;
-  constructor(integer strength) {
-    this.strength = strength;
+  array<integer> history;
+  constructor() {
+    history = {1, 2};
   }
 }
-set<Stats> items = new set<Stats>();", "Set elements cannot currently use record value types"),
-            ("record-map-key-not-supported",
+map<Stats, integer> values = new map<Stats, integer>();", "must be hashable"),
+            ("record-nonhashable-equality",
 @"record Stats {
-  integer strength;
-  constructor(integer strength) {
-    this.strength = strength;
+  array<integer> history;
+  constructor() {
+    history = {1, 2};
   }
 }
-map<Stats, integer> values = new map<Stats, integer>();", "Map keys cannot currently use record value types"),
-            ("record-equality-not-supported",
-@"record Stats {
-  integer strength;
-  constructor(integer strength) {
-    this.strength = strength;
-  }
-}
-Stats left = new Stats(1);
-Stats right = left;
+Stats left = new Stats();
+Stats right = new Stats();
 print(left == right);", "Equality requires compatible types"),
             ("record-cycle-not-supported",
 @"record Node {
@@ -2843,6 +2895,63 @@ print(1);";
         {
             failures++;
             Console.WriteLine($"[FAIL] target-parity-engine-stubs: threw {ex.GetType().Name} - {ex.Message}");
+        }
+
+        string recordSource =
+@"interface Reader {
+  function<integer> read();
+}
+record Point {
+  integer x;
+  integer y;
+  constructor(integer x, integer y) {
+    this.x = x;
+    this.y = y;
+  }
+  function<Point> moved(integer amount) {
+    x += amount;
+    return this;
+  }
+  implement Reader.read() {
+    return x;
+  }
+}
+Point left = new Point(1, 2);
+Point right = new Point(1, 2);
+set<Point> points = new set<Point>();
+points.add(left);
+map<Point, integer> scores = new map<Point, integer>();
+scores[left] = 9;
+Reader reader = left.moved(3);
+print(left == right);
+print(points.contains(right));
+print(scores[right]);
+print(reader.read());";
+
+        try
+        {
+            const string expected = "1\n1\n9\n4\n";
+            string nativeOutput = Normalize(CompileAndRun(recordSource, Compiler.CompileTarget.VmNative, VmHostTarget.Native));
+            string webOutput = Normalize(CompileAndRun(recordSource, Compiler.CompileTarget.VmWeb, VmHostTarget.Web));
+            if (!string.Equals(nativeOutput, expected, StringComparison.Ordinal))
+            {
+                failures++;
+                Console.WriteLine($"[FAIL] target-parity-record-values: native expected '{Escape(expected)}' got '{Escape(nativeOutput)}'");
+            }
+            else if (!string.Equals(webOutput, expected, StringComparison.Ordinal))
+            {
+                failures++;
+                Console.WriteLine($"[FAIL] target-parity-record-values: web expected '{Escape(expected)}' got '{Escape(webOutput)}'");
+            }
+            else
+            {
+                Console.WriteLine("[PASS] target-parity-record-values");
+            }
+        }
+        catch (Exception ex)
+        {
+            failures++;
+            Console.WriteLine($"[FAIL] target-parity-record-values: threw {ex.GetType().Name} - {ex.Message}");
         }
 
         return failures;

@@ -17,7 +17,7 @@ Use this document as the primary answer to "does this exist yet?"
 | --- | --- | --- | --- |
 | `runnable` | `ConsoleApp1/examples/arithmetic.code` | `run` | Basic arithmetic and typed locals |
 | `runnable` | `ConsoleApp1/examples/enum.code` | `run` | Strongly typed enumerations with `Enum.Member` access |
-| `runnable` | `ConsoleApp1/examples/record.code` | `run` | Copy-by-value records with constructors, assignment, parameter passing, and returns |
+| `runnable` | `ConsoleApp1/examples/record.code` | `run` | Copy-by-value records with methods, interface conformance, and return-and-reassign value updates |
 | `runnable` | `ConsoleApp1/examples/switch.code` | `run` | `switch` statements with enum and integer cases |
 | `runnable` | `ConsoleApp1/examples/forloop.code` | `run` | Counted `for` loop |
 | `runnable` | `ConsoleApp1/examples/foreach.code` | `run` | Numeric `foreach` |
@@ -70,7 +70,7 @@ No checked-in runnable examples exist yet for these planned features:
 - user-facing `fallible<T>` / `on error`
 - visibility modifiers (`public`, `package`, `private`)
 
-Current record limitations:
-- Record methods and record interface implementations are rejected.
-- Record equality is not implemented.
-- Record values cannot currently be used as `map` keys or `set` elements.
+Record notes:
+- Record methods are value-helper methods: `this` is cloned at method entry.
+- Hashable records support structural equality and may be used as `map` keys or `set` elements.
+- Records with non-hashable fields still work as data types, but equality and key/set usage are rejected at compile time.

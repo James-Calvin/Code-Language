@@ -25,7 +25,7 @@ Version: 0.9 (2026-04-05)
 - VM execution/disassembly tools may consume `.codelib` by decoding embedded `bytecode`.
 
 ## Stack conventions
-- Operand stack stores numeric values as `int`, `long`, or `double` (numeric ops coerce to double math); strings and runtime objects are boxed.
+- Operand stack stores numeric values as `int`, `long`, or `double` (numeric ops coerce to double math); strings and runtime object/record values are boxed.
 - Locals are indexed slots separate from the operand stack; they auto-grow on demand. Functions record a high-water mark for frame size.
 - Call frames: `CALL` creates a new locals array sized by the callee; `RET` restores previous locals and IP, leaving the return value on the operand stack.
 
@@ -93,6 +93,7 @@ Version: 0.9 (2026-04-05)
 | 0x3B | `STACK_PUSH` | - | -2+1 | Pop value, pop stack, push value, push `0` |
 | 0x3C | `STACK_POP` | - | 0 | Pop stack, push popped value; throws if empty |
 | 0x3D | `STACK_PEEK` | - | 0 | Pop stack, push top value; throws if empty |
+| 0x3E | `NEW_RECORD` | int32 length, UTF-8 type name | +1 | Create VM record value instance |
 | 0xFF | `HALT` | - | 0 | Stop execution |
 
 ## Planned additions
@@ -109,7 +110,7 @@ Version: 0.9 (2026-04-05)
 - `ARRAY_LENGTH` also reports the size of VM-managed `map`, `set`, `queue`, and `stack` values.
 - Maps and sets use VM-managed keyed containers. `MAP_GET` throws on missing keys. `MAP_CONTAINS` / `SET_CONTAINS` return `1` or `0`. Remove operations are no-ops when the entry is absent.
 - Queues and stacks use VM-managed containers with empty-checking on `QUEUE_DEQUEUE` / `QUEUE_PEEK` / `STACK_POP` / `STACK_PEEK`.
-- Objects are stored as VM-managed instances with a type name and field dictionary; field access is name-based via `GET_FIELD` / `SET_FIELD`.
+- Objects and records are stored as VM-managed instances with a type name and field dictionary; field access is name-based via `GET_FIELD` / `SET_FIELD`. `NEW_OBJECT` creates reference-identity objects; `NEW_RECORD` creates value-semantic record instances used by record construction and record cloning.
 - Object methods currently lower to regular `CALL` sites with implicit `this` prepended to explicit arguments; overload choice is resolved at compile time.
 - Interface declarations and `implement` mappings remain compile-time metadata; interface-typed calls lower to `INTERFACE_CALL` dispatch tables that map runtime type names to method targets.
 - VM caches decoded `INTERFACE_CALL` tables by call-site IP to avoid reparsing dispatch metadata on hot paths.

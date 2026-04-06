@@ -1,27 +1,44 @@
-// Runnable example: records are copy-by-value data types.
+// Runnable example: records are copy-by-value helper types.
+
+interface StrengthReader {
+  function<integer> read();
+}
 
 record Stats {
   integer strength;
-  integer defense;
+  integer bonus;
 
-  constructor(integer strength, integer defense) {
+  constructor(integer strength, integer bonus) {
     this.strength = strength;
-    this.defense = defense;
+    this.bonus = bonus;
+  }
+
+  function<Stats> boosted(integer amount) {
+    strength += amount;
+    bonus += 1;
+    return this;
+  }
+
+  implement StrengthReader.read() {
+    return strength;
   }
 }
 
-function<Stats> raised(Stats base_stats) {
-  base_stats.strength += 2;
-  return base_stats;
+function<StrengthReader> expose(Stats stats) {
+  return stats;
 }
 
-Stats player = new Stats(3, 4);
+Stats player = new Stats(3, 1);
 Stats player_copy = player;
 player.strength = 9;
 
 print(player.strength);
 print(player_copy.strength);
 
-Stats promoted = raised(player_copy);
+Stats promoted = player_copy.boosted(2);
 print(player_copy.strength);
 print(promoted.strength);
+print(promoted.bonus);
+
+StrengthReader reader = expose(promoted);
+print(reader.read());

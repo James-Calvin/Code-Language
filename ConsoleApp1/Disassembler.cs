@@ -108,6 +108,7 @@ static class Disassembler
                     break;
                 case OpCode.PushString:
                 case OpCode.NewObject:
+                case OpCode.NewRecord:
                 case OpCode.GetField:
                 case OpCode.SetField:
                 case OpCode.HostCall:

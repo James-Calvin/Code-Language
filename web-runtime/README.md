@@ -9,6 +9,10 @@ Current contents:
 - `code-vm-web.js`: JavaScript VM + web host ABI bindings
 - `index.html`: load and run `.bytecode` or `.codelib` files in a browser
 
+Current VM data-structure support:
+- Arrays plus built-in `map`, `set`, `queue`, and `stack` bytecode operations
+- Shared `.length` behavior across arrays and the built-in collections
+
 ## Supported host ABI (web)
 - `standard.input_output.print`
 - `std.time.unix_ms`

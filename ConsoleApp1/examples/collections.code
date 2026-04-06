@@ -1,0 +1,34 @@
+map<string, integer> scores = new map<string, integer>();
+scores["coins"] = 10;
+scores["coins"] += 5;
+print(scores.length);
+print(scores.contains("coins"));
+print(scores["coins"]);
+scores.remove("coins");
+print(scores.contains("coins"));
+print(scores.length);
+
+set<string> tags = new set<string>();
+tags.add("web");
+tags.add("web");
+tags.add("game");
+print(tags.length);
+print(tags.contains("web"));
+tags.remove("web");
+print(tags.contains("web"));
+
+queue<integer> turns = new queue<integer>();
+turns.enqueue(3);
+turns.enqueue(5);
+print(turns.length);
+print(turns.peek());
+print(turns.dequeue());
+print(turns.length);
+
+stack<string> history = new stack<string>();
+history.push("start");
+history.push("play");
+print(history.length);
+print(history.peek());
+print(history.pop());
+print(history.length);

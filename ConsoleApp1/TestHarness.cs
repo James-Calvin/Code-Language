@@ -287,6 +287,39 @@ print(1);", "1\n")
             ("array-set", @"array<integer> items = {10,20,30}; items[1] = 99; print(items[0]); print(items[1]); print(items[2]);", "10\n99\n30\n"),
             ("array-compound-assignment", @"array<integer> items = {10,20,30}; integer index = 1; items[index] += 5; items[index]--; print(items[index]);", "24\n"),
             ("array-append-remove", @"array<integer> items = new array<integer>(0); items.append(10); items.append(20); items.remove_at(0); print(items.length); print(items[0]);", "1\n20\n"),
+            ("built-in-collections",
+@"map<string, integer> scores = new map<string, integer>();
+scores[""coins""] = 10;
+scores[""coins""] += 5;
+print(scores.length);
+print(scores.contains(""coins""));
+print(scores[""coins""]);
+scores.remove(""coins"");
+print(scores.contains(""coins""));
+print(scores.length);
+set<string> tags = new set<string>();
+tags.add(""web"");
+tags.add(""web"");
+tags.add(""game"");
+print(tags.length);
+print(tags.contains(""web""));
+tags.remove(""web"");
+print(tags.contains(""web""));
+queue<integer> turns = new queue<integer>();
+turns.enqueue(3);
+turns.enqueue(5);
+print(turns.length);
+print(turns.peek());
+print(turns.dequeue());
+print(turns.length);
+stack<string> history = new stack<string>();
+history.push(""start"");
+history.push(""play"");
+print(history.length);
+print(history.peek());
+print(history.pop());
+print(history.length);",
+                "1\n1\n15\n0\n0\n2\n1\n0\n2\n3\n3\n1\n2\nplay\nplay\n1\n"),
             ("optional-hasvalue", @"optional<integer> v; print(v.hasValue);", "0\n"),
             ("optional-or", @"optional<integer> v; print(v.or(42));", "42\n"),
             ("optional-some", @"optional<integer> v = 5; print(v.hasValue); print(v.value);", "1\n5\n")
@@ -1419,6 +1452,15 @@ export function<string> readText() { return ""ok""; }",
         var errorCases = new List<(string Name, string Source, string ExpectedType)>
         {
             ("panic-basic", @"panic(""boom"");", "UserError"),
+            ("map-missing-key-runtime",
+@"map<string, integer> scores = new map<string, integer>();
+print(scores[""coins""]);", "RuntimeError"),
+            ("queue-empty-runtime",
+@"queue<integer> items = new queue<integer>();
+print(items.dequeue());", "RuntimeError"),
+            ("stack-empty-runtime",
+@"stack<integer> items = new stack<integer>();
+print(items.peek());", "RuntimeError"),
         };
         var compileErrorCases = new List<(string Name, string Source, string ErrorContains)>
         {
@@ -1629,6 +1671,17 @@ Direction.Left = Direction.Left;", "Enum members are constants"),
   Right;
 }
 Direction direction = Direction.Up;", "has no member"),
+            ("map-type-argument-arity",
+@"map<integer> values = new map<integer>();", "expects exactly two type arguments"),
+            ("map-key-type-mismatch",
+@"map<string, integer> scores = new map<string, integer>();
+scores[1] = 2;", "Map key type mismatch"),
+            ("queue-enqueue-arity",
+@"queue<integer> items = new queue<integer>();
+items.enqueue();", "expects 1 argument"),
+            ("stack-push-type-mismatch",
+@"stack<integer> items = new stack<integer>();
+items.push(""oops"");", "Stack element type mismatch"),
         };
         var moduleErrorCases = new List<(string Name, IReadOnlyDictionary<string, string> Files, string Entry, string ErrorContains)>
         {
@@ -2322,6 +2375,7 @@ export object MainScene {
             ("example-enum-runnable", @"ConsoleApp1/examples/enum.code", Compiler.CompileTarget.VmNative),
             ("example-time-runnable", @"ConsoleApp1/examples/time.code", Compiler.CompileTarget.VmNative),
             ("example-math-random-runnable", @"ConsoleApp1/examples/math_random.code", Compiler.CompileTarget.VmNative),
+            ("example-collections-runnable", @"ConsoleApp1/examples/collections.code", Compiler.CompileTarget.VmNative),
             ("example-object-runnable", @"ConsoleApp1/examples/object.code", Compiler.CompileTarget.VmNative),
             ("example-implicit-this-runnable", @"ConsoleApp1/examples/implicit_this.code", Compiler.CompileTarget.VmNative),
             ("example-interface-dispatch-runnable", @"ConsoleApp1/examples/interface_dispatch.code", Compiler.CompileTarget.VmNative),
@@ -2453,6 +2507,7 @@ export object MainScene {
                 catalogText.Contains("| `runnable` | `ConsoleApp1/examples/enum.code` | `run` |", StringComparison.Ordinal) &&
                 catalogText.Contains("| `runnable` | `ConsoleApp1/examples/time.code` | `run` |", StringComparison.Ordinal) &&
                 catalogText.Contains("| `runnable` | `ConsoleApp1/examples/math_random.code` | `run` |", StringComparison.Ordinal) &&
+                catalogText.Contains("| `runnable` | `ConsoleApp1/examples/collections.code` | `run` |", StringComparison.Ordinal) &&
                 catalogText.Contains("| `negative` | `ConsoleApp1/examples/constants.code` | `expected compile error` |", StringComparison.Ordinal) &&
                 catalogText.Contains("| `planned` | `ConsoleApp1/examples/record.code` | `planned only` |", StringComparison.Ordinal) &&
                 catalogText.Contains("| `runnable` | `ConsoleApp1/examples/shape_dodge.code` | `build-web` |", StringComparison.Ordinal) &&

@@ -15,9 +15,10 @@ The repo contains:
 - Enumerations with strongly typed members accessed as `EnumName.Member`
 - Constants: `constant Type name = value;` (immutable after init)
 - Control flow: `if/then/else`, `while`, `for`, `foreach` (numeric bounds and arrays)
-- Expressions: arithmetic (including `%`), comparisons, logical `and/or/not`, enhanced assignments (`+=`, `-=`, `*=`, `/=`, `%=` and postfix `++/--`) across variables, object fields, and array elements, plus string interpolation and concatenation
+- Expressions: arithmetic (including `%`), comparisons, logical `and/or/not`, enhanced assignments (`+=`, `-=`, `*=`, `/=`, `%=` and postfix `++/--`) across variables, object fields, array elements, and map entries, plus string interpolation and concatenation
 - Time intrinsics: `unix_ms()`, `unix_us()`, `mono_ns()`, `mono_ticks()`, `mono_ticks_per_second()`, `sleep_ms(ms)`
 - Math and randomness intrinsics: `minimum()`, `maximum()`, `absolute()`, `sign()`, `lerp()`, `sine()`, `cosine()`, `random()`
+- Built-in collections: arrays plus `map<Key, Value>`, `set<Value>`, `queue<Value>`, and `stack<Value>` with shared `.length`
 - Native-only IO intrinsic: `read_line()`
 - Functions with CALL/RET, locals, return (implicit 0)
 - File modules: `export` + imports (`import Name [as Alias] from "path";`, `import { A, B as C } from "path";`, `import everything as Namespace from "path";`, `export import ...`) with recursive linking and `lib/` search
@@ -32,8 +33,8 @@ The repo contains:
 See [the language spec](docs/code-language-spec.md), [the feature roadmap](docs/features-roadmap.md), and [the web app/runtime V1 contract](docs/web-app-v1.md) for the current scope and the target developer workflow.
 
 ## Implemented Today vs Planned
-- Implemented today: enumerations, objects, interfaces, arrays, optionals, time/math intrinsics, grouped/selective/namespace/re-export imports, package manifests/lockfiles/library artifacts, target capability checks, `panic`, and the current web build/runtime slice.
-- Planned, not implemented today: `switch`, `record`, visibility modifiers, user-facing `fallible<T>` / `on error`, and built-in `map` / `set` / `queue` / `stack`.
+- Implemented today: enumerations, objects, interfaces, arrays, built-in collections, optionals, time/math intrinsics, grouped/selective/namespace/re-export imports, package manifests/lockfiles/library artifacts, target capability checks, `panic`, and the current web build/runtime slice.
+- Planned, not implemented today: `switch`, `record`, visibility modifiers, and user-facing `fallible<T>` / `on error`.
 - Example status and usage live in [the example catalog](docs/example-catalog.md).
 
 ## Current State vs Target Workflow
@@ -126,6 +127,7 @@ Test harness covers VM ops, compiler integration (print, arithmetic, functions, 
 - Function returns: explicit `function<T> name(...)` or implicit-void `function name(...)`
 - Naming rule: user-facing APIs prefer fully spelled-out words; accepted domain terms like `hud` remain allowed
 - Arrays: literals `{...}`, typed declarations `array<integer> xs = {1,2,3};`, dynamic `new array<integer>(n);`, `.length`, indexing `xs[i]`, mutation `xs[i] = value`, and growable methods `xs.append(value)` / `xs.remove_at(index)`
+- Built-in collections: `map<Key, Value>` with `items[key]`, `items[key] = value`, `contains(key)`, `remove(key)`; `set<Value>` with `add`, `contains`, `remove`; `queue<Value>` with `enqueue`, `dequeue`, `peek`; `stack<Value>` with `push`, `pop`, `peek`; all expose `.length`
 - Enumerations: `enum Name { Member; Other = 5; }` with strongly typed values accessed as `Name.Member`
 - Optionals: `optional<T>` with `none`, `.hasValue`, `.value`, `.or(fallback)`
 - Objects: `object` declarations with constructors/methods, `new Type(...)`, field access/assignment (`obj.field`, `obj.field = ...`), method calls (`obj.method(...)`), and implicit `this` lookup inside object bodies for unshadowed fields and bare method calls
@@ -151,7 +153,7 @@ Test harness covers VM ops, compiler integration (print, arithmetic, functions, 
 - Method/constructor overload resolution: compile-time signature-based dispatch (with best-match conversions)
 - Constructor rules: objects with fields must define constructors, and constructors must assign all fields
 - Errors are reported with line/column and call stack when possible
-- Interface-typed arrays now participate in type checking, indexing, `foreach`, and runtime dispatch; broader container types beyond arrays are still planned
+- Interface-typed arrays now participate in type checking, indexing, `foreach`, and runtime dispatch; `foreach` support for the newer built-in collections is still deferred
 
 ## Roadmap (high level)
 Active priorities: grow the current `lib/engine/` wrapper layer beyond scene composition into a fuller engine-facing API, continue replacing raw engine stubs with real browser-backed implementations, and expand the browser runtime beyond the current primitives/keyboard/image-sprite slice into richer rendering, input, and audio. The web runtime remains JavaScript for now; a Wasm path is deferred until performance or parity data justifies the extra toolchain cost. Full detail is in [docs/features-roadmap.md](docs/features-roadmap.md) and [docs/platform-roadmap.md](docs/platform-roadmap.md).
@@ -187,6 +189,11 @@ dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- ConsoleApp1/examples/time
 Math and randomness example:
 ```
 dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- ConsoleApp1/examples/math_random.code
+```
+
+Built-in collections example:
+```
+dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- ConsoleApp1/examples/collections.code
 ```
 
 Engine host stub example:

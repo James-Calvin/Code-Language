@@ -25,6 +25,8 @@ sealed class TypeChecker
             if (stmt is not EnumDecl enumDecl)
                 continue;
 
+            if (IsReservedBuiltInTypeName(enumDecl.Name.Lexeme))
+                throw new CompilerException($"Type name '{enumDecl.Name.Lexeme}' is reserved for a built-in collection type", enumDecl.Name.Line, enumDecl.Name.Column);
             if (_enums.ContainsKey(enumDecl.Name.Lexeme))
                 throw new CompilerException($"Enum '{enumDecl.Name.Lexeme}' already defined", enumDecl.Name.Line, enumDecl.Name.Column);
             if (_objects.ContainsKey(enumDecl.Name.Lexeme) || _interfaces.ContainsKey(enumDecl.Name.Lexeme))
@@ -38,6 +40,8 @@ sealed class TypeChecker
             if (stmt is not ObjectDecl obj)
                 continue;
 
+            if (IsReservedBuiltInTypeName(obj.Name.Lexeme))
+                throw new CompilerException($"Type name '{obj.Name.Lexeme}' is reserved for a built-in collection type", obj.Name.Line, obj.Name.Column);
             if (_objects.ContainsKey(obj.Name.Lexeme))
                 throw new CompilerException($"Object '{obj.Name.Lexeme}' already defined", obj.Name.Line, obj.Name.Column);
             if (_interfaces.ContainsKey(obj.Name.Lexeme))
@@ -57,6 +61,8 @@ sealed class TypeChecker
             if (stmt is not InterfaceDecl iface)
                 continue;
 
+            if (IsReservedBuiltInTypeName(iface.Name.Lexeme))
+                throw new CompilerException($"Type name '{iface.Name.Lexeme}' is reserved for a built-in collection type", iface.Name.Line, iface.Name.Column);
             if (_interfaces.ContainsKey(iface.Name.Lexeme))
                 throw new CompilerException($"Interface '{iface.Name.Lexeme}' already defined", iface.Name.Line, iface.Name.Column);
             if (_objects.ContainsKey(iface.Name.Lexeme))
@@ -682,6 +688,9 @@ sealed class TypeChecker
                 var sizeType = CheckExpr(na.Size, env, currentReturn);
                 Require(IsNumeric(sizeType), na.Size, "Array size must be numeric");
                 return TypeSymbol.Array;
+            case NewCollectionExpr nc:
+                ValidateTypeRef(nc.CollectionType);
+                return MapType(nc.CollectionType);
             case NewObjectExpr no:
             {
                 if (!_objects.TryGetValue(no.TypeName.Lexeme, out var obj))
@@ -710,17 +719,40 @@ sealed class TypeChecker
             }
             case ArrayLengthExpr alen:
                 var targType = CheckExpr(alen.Target, env, currentReturn);
-                Require(targType == TypeSymbol.Array, alen.Target, "'.length' is only valid on arrays");
+                Require(IsBuiltInCollection(targType), alen.Target, "'.length' is only valid on arrays, maps, sets, queues, and stacks");
                 return TypeSymbol.Integer;
             case ArrayIndexExpr aidx:
                 var arrType = CheckExpr(aidx.Array, env, currentReturn);
-                Require(arrType == TypeSymbol.Array, aidx.Array, "Indexing requires an array");
                 var idxType = CheckExpr(aidx.Index, env, currentReturn);
-                Require(IsNumeric(idxType), aidx.Index, "Array index must be numeric");
                 var arrayTypeRef = ResolveExprTypeRef(aidx.Array, env);
-                if (arrayTypeRef is null || !arrayTypeRef.IsArray || arrayTypeRef.TypeArguments.Count != 1)
-                    throw new CompilerException("Could not resolve array element type", GetLine(aidx.Array), GetCol(aidx.Array));
-                aidx.ResolvedElementTypeRef = arrayTypeRef.TypeArguments[0];
+                if (arrayTypeRef is null)
+                    throw new CompilerException("Could not resolve indexed collection type", GetLine(aidx.Array), GetCol(aidx.Array));
+
+                if (arrType == TypeSymbol.Array)
+                {
+                    Require(IsNumeric(idxType), aidx.Index, "Array index must be numeric");
+                    if (!arrayTypeRef.IsArray || arrayTypeRef.TypeArguments.Count != 1)
+                        throw new CompilerException("Could not resolve array element type", GetLine(aidx.Array), GetCol(aidx.Array));
+                    aidx.ResolvedElementTypeRef = arrayTypeRef.TypeArguments[0];
+                }
+                else if (arrType == TypeSymbol.Map)
+                {
+                    if (!arrayTypeRef.IsMap || arrayTypeRef.TypeArguments.Count != 2)
+                        throw new CompilerException("Could not resolve map key/value types", GetLine(aidx.Array), GetCol(aidx.Array));
+                    RequireAssignable(
+                        MapType(arrayTypeRef.TypeArguments[0]),
+                        arrayTypeRef.TypeArguments[0],
+                        idxType,
+                        ResolveExprTypeRef(aidx.Index, env),
+                        GetLine(aidx.Index),
+                        GetCol(aidx.Index),
+                        "Map key type mismatch");
+                    aidx.ResolvedElementTypeRef = arrayTypeRef.TypeArguments[1];
+                }
+                else
+                {
+                    throw new CompilerException("Indexing requires an array or map", GetLine(aidx.Array), GetCol(aidx.Array));
+                }
                 return MapType(aidx.ResolvedElementTypeRef);
             case OptionalHasValueExpr ohv:
                 CheckExpr(ohv.Target, env, currentReturn);
@@ -750,16 +782,40 @@ sealed class TypeChecker
             }
             case ArraySetExpr aset:
                 var arrT = CheckExpr(aset.Target.Array, env, currentReturn);
-                Require(arrT == TypeSymbol.Array, aset.Target.Array, "Indexing requires an array");
                 var idxT = CheckExpr(aset.Target.Index, env, currentReturn);
-                Require(IsNumeric(idxT), aset.Target.Index, "Array index must be numeric");
                 var valT = CheckExpr(aset.Value, env, currentReturn);
+                var collectionTypeRef = ResolveExprTypeRef(aset.Target.Array, env);
+                if (collectionTypeRef is null)
+                    throw new CompilerException("Could not resolve indexed collection type", GetLine(aset.Target.Array), GetCol(aset.Target.Array));
+
+                if (arrT == TypeSymbol.Array)
+                {
+                    Require(IsNumeric(idxT), aset.Target.Index, "Array index must be numeric");
+                }
+                else if (arrT == TypeSymbol.Map)
+                {
+                    if (!collectionTypeRef.IsMap || collectionTypeRef.TypeArguments.Count != 2)
+                        throw new CompilerException("Could not resolve map key/value types", GetLine(aset.Target.Array), GetCol(aset.Target.Array));
+                    RequireAssignable(
+                        MapType(collectionTypeRef.TypeArguments[0]),
+                        collectionTypeRef.TypeArguments[0],
+                        idxT,
+                        ResolveExprTypeRef(aset.Target.Index, env),
+                        GetLine(aset.Target.Index),
+                        GetCol(aset.Target.Index),
+                        "Map key type mismatch");
+                }
+                else
+                {
+                    throw new CompilerException("Indexing requires an array or map", GetLine(aset.Target.Array), GetCol(aset.Target.Array));
+                }
+
                 var targetElementType = CheckExpr(aset.Target, env, currentReturn);
                 var targetElementTypeRef = ResolveExprTypeRef(aset.Target, env);
                 if (targetElementTypeRef is null)
-                    throw new CompilerException("Could not resolve array element type", GetLine(aset.Target.Array), GetCol(aset.Target.Array));
+                    throw new CompilerException("Could not resolve indexed value type", GetLine(aset.Target.Array), GetCol(aset.Target.Array));
                 var valueTypeRef = ResolveExprTypeRef(aset.Value, env);
-                RequireAssignable(targetElementType, targetElementTypeRef, valT, valueTypeRef, GetLine(aset.Target), GetCol(aset.Target), "Array assignment type mismatch");
+                RequireAssignable(targetElementType, targetElementTypeRef, valT, valueTypeRef, GetLine(aset.Target), GetCol(aset.Target), "Indexed assignment type mismatch");
                 return targetElementType;
             case FieldSetExpr fset:
             {
@@ -794,14 +850,11 @@ sealed class TypeChecker
                     argTypes.Add((argType, argTypeRef));
                 }
 
-                if (targetType == TypeSymbol.Array)
-                {
-                    return CheckArrayMethodCall(mc, targetTypeRef, argTypes);
-                }
+                if (IsBuiltInCollection(targetType))
+                    return CheckBuiltInCollectionMethodCall(mc, targetType, targetTypeRef, argTypes);
 
-                mc.ResolvedArrayMethodName = null;
-                mc.ResolvedArrayElementTypeRef = null;
-                Require(targetType == TypeSymbol.Object || targetType == TypeSymbol.Interface, mc.Target, "Method call target must be an object, interface, or array");
+                mc.ResolvedBuiltInCollectionMethodName = null;
+                Require(targetType == TypeSymbol.Object || targetType == TypeSymbol.Interface, mc.Target, "Method call target must be an object, interface, or built-in collection");
 
                 if (_interfaces.TryGetValue(targetTypeRef.Name, out var iface))
                 {
@@ -986,49 +1039,191 @@ sealed class TypeChecker
         return IntrinsicFunctions.TryGetValue(name, out signature!);
     }
 
-    private TypeSymbol CheckArrayMethodCall(
+    private TypeSymbol CheckBuiltInCollectionMethodCall(
         MethodCallExpr methodCall,
-        TypeRef arrayTypeRef,
+        TypeSymbol targetType,
+        TypeRef collectionTypeRef,
         IReadOnlyList<(TypeSymbol Symbol, TypeRef? Ref)> arguments)
     {
-        if (!arrayTypeRef.IsArray || arrayTypeRef.TypeArguments.Count != 1)
-            throw new CompilerException("Could not resolve array element type", methodCall.MethodName.Line, methodCall.MethodName.Column);
-
-        var elementTypeRef = arrayTypeRef.TypeArguments[0];
-        var elementType = MapType(elementTypeRef);
-        methodCall.ResolvedArrayElementTypeRef = elementTypeRef;
+        methodCall.ResolvedBuiltInCollectionMethodName = null;
         methodCall.ResolvedMethodKey = null;
         methodCall.ResolvedInterfaceName = null;
         methodCall.ResolvedInterfaceMethodKey = null;
 
-        if (string.Equals(methodCall.MethodName.Lexeme, "append", StringComparison.Ordinal))
+        if (targetType == TypeSymbol.Array)
         {
-            if (arguments.Count != 1)
-                throw new CompilerException("Array method 'append' expects 1 argument", methodCall.MethodName.Line, methodCall.MethodName.Column);
-            RequireAssignable(
-                elementType,
-                elementTypeRef,
-                arguments[0].Symbol,
-                arguments[0].Ref,
-                methodCall.MethodName.Line,
-                methodCall.MethodName.Column,
-                "Array append element type mismatch");
-            methodCall.ResolvedArrayMethodName = "append";
-            methodCall.ResolvedReturnTypeRef = BuildImplicitVoidTypeRef(methodCall.MethodName);
-            return TypeSymbol.Void;
+            if (!collectionTypeRef.IsArray || collectionTypeRef.TypeArguments.Count != 1)
+                throw new CompilerException("Could not resolve array element type", methodCall.MethodName.Line, methodCall.MethodName.Column);
+
+            var elementTypeRef = collectionTypeRef.TypeArguments[0];
+            var elementType = MapType(elementTypeRef);
+
+            if (string.Equals(methodCall.MethodName.Lexeme, "append", StringComparison.Ordinal))
+            {
+                if (arguments.Count != 1)
+                    throw new CompilerException("Array method 'append' expects 1 argument", methodCall.MethodName.Line, methodCall.MethodName.Column);
+                RequireAssignable(
+                    elementType,
+                    elementTypeRef,
+                    arguments[0].Symbol,
+                    arguments[0].Ref,
+                    methodCall.MethodName.Line,
+                    methodCall.MethodName.Column,
+                    "Array append element type mismatch");
+                methodCall.ResolvedBuiltInCollectionMethodName = "append";
+                methodCall.ResolvedReturnTypeRef = BuildImplicitVoidTypeRef(methodCall.MethodName);
+                return TypeSymbol.Void;
+            }
+
+            if (string.Equals(methodCall.MethodName.Lexeme, "remove_at", StringComparison.Ordinal))
+            {
+                if (arguments.Count != 1)
+                    throw new CompilerException("Array method 'remove_at' expects 1 argument", methodCall.MethodName.Line, methodCall.MethodName.Column);
+                Require(IsNumeric(arguments[0].Symbol), methodCall.Arguments[0], "Array method 'remove_at' index must be numeric");
+                methodCall.ResolvedBuiltInCollectionMethodName = "remove_at";
+                methodCall.ResolvedReturnTypeRef = BuildImplicitVoidTypeRef(methodCall.MethodName);
+                return TypeSymbol.Void;
+            }
+
+            throw new CompilerException($"Array has no method '{methodCall.MethodName.Lexeme}'", methodCall.MethodName.Line, methodCall.MethodName.Column);
         }
 
-        if (string.Equals(methodCall.MethodName.Lexeme, "remove_at", StringComparison.Ordinal))
+        if (targetType == TypeSymbol.Map)
         {
-            if (arguments.Count != 1)
-                throw new CompilerException("Array method 'remove_at' expects 1 argument", methodCall.MethodName.Line, methodCall.MethodName.Column);
-            Require(IsNumeric(arguments[0].Symbol), methodCall.Arguments[0], "Array method 'remove_at' index must be numeric");
-            methodCall.ResolvedArrayMethodName = "remove_at";
-            methodCall.ResolvedReturnTypeRef = BuildImplicitVoidTypeRef(methodCall.MethodName);
-            return TypeSymbol.Void;
+            if (!collectionTypeRef.IsMap || collectionTypeRef.TypeArguments.Count != 2)
+                throw new CompilerException("Could not resolve map key/value types", methodCall.MethodName.Line, methodCall.MethodName.Column);
+
+            var keyTypeRef = collectionTypeRef.TypeArguments[0];
+            var valueTypeRef = collectionTypeRef.TypeArguments[1];
+            var keyType = MapType(keyTypeRef);
+
+            if (string.Equals(methodCall.MethodName.Lexeme, "contains", StringComparison.Ordinal))
+            {
+                if (arguments.Count != 1)
+                    throw new CompilerException("Map method 'contains' expects 1 argument", methodCall.MethodName.Line, methodCall.MethodName.Column);
+                RequireAssignable(keyType, keyTypeRef, arguments[0].Symbol, arguments[0].Ref, methodCall.MethodName.Line, methodCall.MethodName.Column, "Map key type mismatch");
+                methodCall.ResolvedBuiltInCollectionMethodName = "contains";
+                methodCall.ResolvedReturnTypeRef = new TypeRef("boolean", null, methodCall.MethodName.Line, methodCall.MethodName.Column);
+                return TypeSymbol.Boolean;
+            }
+
+            if (string.Equals(methodCall.MethodName.Lexeme, "remove", StringComparison.Ordinal))
+            {
+                if (arguments.Count != 1)
+                    throw new CompilerException("Map method 'remove' expects 1 argument", methodCall.MethodName.Line, methodCall.MethodName.Column);
+                RequireAssignable(keyType, keyTypeRef, arguments[0].Symbol, arguments[0].Ref, methodCall.MethodName.Line, methodCall.MethodName.Column, "Map key type mismatch");
+                methodCall.ResolvedBuiltInCollectionMethodName = "remove";
+                methodCall.ResolvedReturnTypeRef = BuildImplicitVoidTypeRef(methodCall.MethodName);
+                return TypeSymbol.Void;
+            }
+
+            throw new CompilerException($"Map has no method '{methodCall.MethodName.Lexeme}'", methodCall.MethodName.Line, methodCall.MethodName.Column);
         }
 
-        throw new CompilerException($"Array has no method '{methodCall.MethodName.Lexeme}'", methodCall.MethodName.Line, methodCall.MethodName.Column);
+        if (targetType == TypeSymbol.Set)
+        {
+            if (!collectionTypeRef.IsSet || collectionTypeRef.TypeArguments.Count != 1)
+                throw new CompilerException("Could not resolve set element type", methodCall.MethodName.Line, methodCall.MethodName.Column);
+
+            var elementTypeRef = collectionTypeRef.TypeArguments[0];
+            var elementType = MapType(elementTypeRef);
+
+            if (string.Equals(methodCall.MethodName.Lexeme, "add", StringComparison.Ordinal))
+            {
+                if (arguments.Count != 1)
+                    throw new CompilerException("Set method 'add' expects 1 argument", methodCall.MethodName.Line, methodCall.MethodName.Column);
+                RequireAssignable(elementType, elementTypeRef, arguments[0].Symbol, arguments[0].Ref, methodCall.MethodName.Line, methodCall.MethodName.Column, "Set element type mismatch");
+                methodCall.ResolvedBuiltInCollectionMethodName = "add";
+                methodCall.ResolvedReturnTypeRef = BuildImplicitVoidTypeRef(methodCall.MethodName);
+                return TypeSymbol.Void;
+            }
+
+            if (string.Equals(methodCall.MethodName.Lexeme, "contains", StringComparison.Ordinal))
+            {
+                if (arguments.Count != 1)
+                    throw new CompilerException("Set method 'contains' expects 1 argument", methodCall.MethodName.Line, methodCall.MethodName.Column);
+                RequireAssignable(elementType, elementTypeRef, arguments[0].Symbol, arguments[0].Ref, methodCall.MethodName.Line, methodCall.MethodName.Column, "Set element type mismatch");
+                methodCall.ResolvedBuiltInCollectionMethodName = "contains";
+                methodCall.ResolvedReturnTypeRef = new TypeRef("boolean", null, methodCall.MethodName.Line, methodCall.MethodName.Column);
+                return TypeSymbol.Boolean;
+            }
+
+            if (string.Equals(methodCall.MethodName.Lexeme, "remove", StringComparison.Ordinal))
+            {
+                if (arguments.Count != 1)
+                    throw new CompilerException("Set method 'remove' expects 1 argument", methodCall.MethodName.Line, methodCall.MethodName.Column);
+                RequireAssignable(elementType, elementTypeRef, arguments[0].Symbol, arguments[0].Ref, methodCall.MethodName.Line, methodCall.MethodName.Column, "Set element type mismatch");
+                methodCall.ResolvedBuiltInCollectionMethodName = "remove";
+                methodCall.ResolvedReturnTypeRef = BuildImplicitVoidTypeRef(methodCall.MethodName);
+                return TypeSymbol.Void;
+            }
+
+            throw new CompilerException($"Set has no method '{methodCall.MethodName.Lexeme}'", methodCall.MethodName.Line, methodCall.MethodName.Column);
+        }
+
+        if (targetType == TypeSymbol.Queue)
+        {
+            if (!collectionTypeRef.IsQueue || collectionTypeRef.TypeArguments.Count != 1)
+                throw new CompilerException("Could not resolve queue element type", methodCall.MethodName.Line, methodCall.MethodName.Column);
+
+            var elementTypeRef = collectionTypeRef.TypeArguments[0];
+            var elementType = MapType(elementTypeRef);
+
+            if (string.Equals(methodCall.MethodName.Lexeme, "enqueue", StringComparison.Ordinal))
+            {
+                if (arguments.Count != 1)
+                    throw new CompilerException("Queue method 'enqueue' expects 1 argument", methodCall.MethodName.Line, methodCall.MethodName.Column);
+                RequireAssignable(elementType, elementTypeRef, arguments[0].Symbol, arguments[0].Ref, methodCall.MethodName.Line, methodCall.MethodName.Column, "Queue element type mismatch");
+                methodCall.ResolvedBuiltInCollectionMethodName = "enqueue";
+                methodCall.ResolvedReturnTypeRef = BuildImplicitVoidTypeRef(methodCall.MethodName);
+                return TypeSymbol.Void;
+            }
+
+            if (string.Equals(methodCall.MethodName.Lexeme, "dequeue", StringComparison.Ordinal) ||
+                string.Equals(methodCall.MethodName.Lexeme, "peek", StringComparison.Ordinal))
+            {
+                if (arguments.Count != 0)
+                    throw new CompilerException($"Queue method '{methodCall.MethodName.Lexeme}' expects 0 arguments", methodCall.MethodName.Line, methodCall.MethodName.Column);
+                methodCall.ResolvedBuiltInCollectionMethodName = methodCall.MethodName.Lexeme;
+                methodCall.ResolvedReturnTypeRef = elementTypeRef;
+                return elementType;
+            }
+
+            throw new CompilerException($"Queue has no method '{methodCall.MethodName.Lexeme}'", methodCall.MethodName.Line, methodCall.MethodName.Column);
+        }
+
+        if (targetType == TypeSymbol.Stack)
+        {
+            if (!collectionTypeRef.IsStack || collectionTypeRef.TypeArguments.Count != 1)
+                throw new CompilerException("Could not resolve stack element type", methodCall.MethodName.Line, methodCall.MethodName.Column);
+
+            var elementTypeRef = collectionTypeRef.TypeArguments[0];
+            var elementType = MapType(elementTypeRef);
+
+            if (string.Equals(methodCall.MethodName.Lexeme, "push", StringComparison.Ordinal))
+            {
+                if (arguments.Count != 1)
+                    throw new CompilerException("Stack method 'push' expects 1 argument", methodCall.MethodName.Line, methodCall.MethodName.Column);
+                RequireAssignable(elementType, elementTypeRef, arguments[0].Symbol, arguments[0].Ref, methodCall.MethodName.Line, methodCall.MethodName.Column, "Stack element type mismatch");
+                methodCall.ResolvedBuiltInCollectionMethodName = "push";
+                methodCall.ResolvedReturnTypeRef = BuildImplicitVoidTypeRef(methodCall.MethodName);
+                return TypeSymbol.Void;
+            }
+
+            if (string.Equals(methodCall.MethodName.Lexeme, "pop", StringComparison.Ordinal) ||
+                string.Equals(methodCall.MethodName.Lexeme, "peek", StringComparison.Ordinal))
+            {
+                if (arguments.Count != 0)
+                    throw new CompilerException($"Stack method '{methodCall.MethodName.Lexeme}' expects 0 arguments", methodCall.MethodName.Line, methodCall.MethodName.Column);
+                methodCall.ResolvedBuiltInCollectionMethodName = methodCall.MethodName.Lexeme;
+                methodCall.ResolvedReturnTypeRef = elementTypeRef;
+                return elementType;
+            }
+
+            throw new CompilerException($"Stack has no method '{methodCall.MethodName.Lexeme}'", methodCall.MethodName.Line, methodCall.MethodName.Column);
+        }
+
+        throw new CompilerException($"Unsupported built-in collection target '{collectionTypeRef.Name}'", methodCall.MethodName.Line, methodCall.MethodName.Column);
     }
 
     private TypeRef InferArrayLiteralTypeRef(ArrayLiteral arrayLiteral, TypeEnvironment env, TypeSymbol? currentReturn)
@@ -1071,10 +1266,14 @@ sealed class TypeChecker
             TypeSymbol.Real => "real",
             TypeSymbol.Boolean => "boolean",
             TypeSymbol.String => "string",
+            TypeSymbol.Map => "map",
+            TypeSymbol.Set => "set",
+            TypeSymbol.Queue => "queue",
+            TypeSymbol.Stack => "stack",
             TypeSymbol.Void => "void",
             _ => throw new CompilerException("Could not infer concrete type", line, column)
         };
-        return new TypeRef(name, null, line, column);
+        return new TypeRef(name, [], line, column);
     }
 
     private static Dictionary<string, FunctionSignature> BuildIntrinsicFunctions()
@@ -1082,13 +1281,13 @@ sealed class TypeChecker
         var map = new Dictionary<string, FunctionSignature>(StringComparer.Ordinal);
         foreach (var intrinsic in HostAbiCatalog.IntrinsicSignatures)
         {
-            var returnType = new TypeRef(intrinsic.ReturnTypeName, null, 0, 0);
+            var returnType = ParseIntrinsicTypeRef(intrinsic.ReturnTypeName);
             var paramTypes = new List<TypeSymbol>(intrinsic.ParameterTypes.Count);
             var paramTypeRefs = new List<TypeRef>(intrinsic.ParameterTypeNames.Count);
             for (int i = 0; i < intrinsic.ParameterTypes.Count; i++)
             {
                 paramTypes.Add(intrinsic.ParameterTypes[i]);
-                paramTypeRefs.Add(new TypeRef(intrinsic.ParameterTypeNames[i], null, 0, 0));
+                paramTypeRefs.Add(ParseIntrinsicTypeRef(intrinsic.ParameterTypeNames[i]));
             }
 
             map[intrinsic.Name] = new FunctionSignature(
@@ -1098,6 +1297,46 @@ sealed class TypeChecker
                 paramTypeRefs);
         }
         return map;
+    }
+
+    private static TypeRef ParseIntrinsicTypeRef(string text)
+    {
+        int genericStart = text.IndexOf('<');
+        if (genericStart < 0)
+            return new TypeRef(text, null, 0, 0);
+
+        if (!text.EndsWith(">", StringComparison.Ordinal))
+            throw new InvalidOperationException($"Invalid intrinsic type reference '{text}'.");
+
+        string name = text[..genericStart];
+        string argsText = text[(genericStart + 1)..^1];
+        var typeArguments = new List<TypeRef>();
+        int depth = 0;
+        int segmentStart = 0;
+
+        for (int i = 0; i <= argsText.Length; i++)
+        {
+            bool atEnd = i == argsText.Length;
+            char ch = atEnd ? '\0' : argsText[i];
+            if (!atEnd)
+            {
+                if (ch == '<')
+                    depth++;
+                else if (ch == '>')
+                    depth--;
+            }
+
+            if (atEnd || (ch == ',' && depth == 0))
+            {
+                string part = argsText[segmentStart..i].Trim();
+                if (part.Length == 0)
+                    throw new InvalidOperationException($"Invalid intrinsic type reference '{text}'.");
+                typeArguments.Add(ParseIntrinsicTypeRef(part));
+                segmentStart = i + 1;
+            }
+        }
+
+        return new TypeRef(name, typeArguments, 0, 0);
     }
 
     private TypeSymbol MapType(TypeRef typeRef)
@@ -1112,6 +1351,10 @@ sealed class TypeChecker
             "boolean" => TypeSymbol.Boolean,
             "string" => TypeSymbol.String,
             "array" => TypeSymbol.Array,
+            "map" => TypeSymbol.Map,
+            "set" => TypeSymbol.Set,
+            "queue" => TypeSymbol.Queue,
+            "stack" => TypeSymbol.Stack,
             "optional" => TypeSymbol.Optional,
             "void" => TypeSymbol.Void,
             _ when _enums.ContainsKey(typeRef.Name) => TypeSymbol.Enum,
@@ -1242,8 +1485,8 @@ sealed class TypeChecker
         cost = int.MaxValue;
         if (expected == actual)
         {
-            if (expected == TypeSymbol.Array)
-                return TryArrayConversionCost(expectedRef, actualRef, out cost);
+            if (IsBuiltInCollection(expected))
+                return TryCollectionConversionCost(expectedRef, actualRef, out cost);
             if (expected == TypeSymbol.Enum)
             {
                 if (actualRef is not null && SameTypeRef(expectedRef, actualRef))
@@ -1261,9 +1504,6 @@ sealed class TypeChecker
             cost = 0;
             return true;
         }
-
-        if (expected == TypeSymbol.Array && actual == TypeSymbol.Array)
-            return TryArrayConversionCost(expectedRef, actualRef, out cost);
 
         if (expected is TypeSymbol.Object or TypeSymbol.Interface)
         {
@@ -1291,29 +1531,43 @@ sealed class TypeChecker
         return false;
     }
 
-    private bool TryArrayConversionCost(TypeRef expectedRef, TypeRef? actualRef, out int cost)
+    private bool TryCollectionConversionCost(TypeRef expectedRef, TypeRef? actualRef, out int cost)
     {
         cost = int.MaxValue;
-        if (actualRef is null || !expectedRef.IsArray || !actualRef.IsArray ||
-            expectedRef.TypeArguments.Count != 1 || actualRef.TypeArguments.Count != 1)
+        if (actualRef is null ||
+            !expectedRef.IsBuiltInCollection ||
+            !actualRef.IsBuiltInCollection ||
+            !string.Equals(expectedRef.Name, actualRef.Name, StringComparison.Ordinal) ||
+            expectedRef.TypeArguments.Count != actualRef.TypeArguments.Count)
             return false;
 
-        var expectedElementRef = expectedRef.TypeArguments[0];
-        var actualElementRef = actualRef.TypeArguments[0];
-        return TryConversionCost(
-            MapType(expectedElementRef),
-            expectedElementRef,
-            MapType(actualElementRef),
-            actualElementRef,
-            out cost);
+        int totalCost = 0;
+        for (int i = 0; i < expectedRef.TypeArguments.Count; i++)
+        {
+            var expectedArgRef = expectedRef.TypeArguments[i];
+            var actualArgRef = actualRef.TypeArguments[i];
+            if (!TryConversionCost(
+                MapType(expectedArgRef),
+                expectedArgRef,
+                MapType(actualArgRef),
+                actualArgRef,
+                out int argCost))
+            {
+                return false;
+            }
+            totalCost += argCost;
+        }
+
+        cost = totalCost;
+        return true;
     }
 
     private bool CanCompareForEquality(TypeSymbol left, TypeRef? leftRef, TypeSymbol right, TypeRef? rightRef)
     {
         if (left == right)
         {
-            if (left == TypeSymbol.Array)
-                return leftRef is not null && rightRef is not null && TryArrayConversionCost(leftRef, rightRef, out _);
+            if (IsBuiltInCollection(left))
+                return leftRef is not null && rightRef is not null && TryCollectionConversionCost(leftRef, rightRef, out _);
             if (left == TypeSymbol.Enum)
                 return leftRef is not null && rightRef is not null && SameTypeRef(leftRef, rightRef);
             if (left is TypeSymbol.Object or TypeSymbol.Interface)
@@ -1403,6 +1657,8 @@ sealed class TypeChecker
                 return al.ResolvedTypeRef;
             case NewArrayExpr na:
                 return new TypeRef("array", [na.ElementType], na.Line, na.Column);
+            case NewCollectionExpr nc:
+                return nc.CollectionType;
             case Variable v:
                 if (v.ResolvedImplicitFieldTypeRef is not null)
                     return v.ResolvedImplicitFieldTypeRef;
@@ -1476,13 +1732,12 @@ sealed class TypeChecker
             case ArrayIndexExpr arrayIndex:
             {
                 var arrayType = CheckExpr(arrayIndex.Array, env, currentReturn);
-                Require(arrayType == TypeSymbol.Array, arrayIndex.Array, "Indexing requires an array");
                 var indexType = CheckExpr(arrayIndex.Index, env, currentReturn);
-                Require(IsNumeric(indexType), arrayIndex.Index, "Array index must be numeric");
                 var elementType = CheckExpr(arrayIndex, env, currentReturn);
                 var elementTypeRef = ResolveExprTypeRef(arrayIndex, env);
                 if (elementTypeRef is null)
-                    throw new CompilerException("Could not resolve array element type", GetLine(arrayIndex.Array), GetCol(arrayIndex.Array));
+                    throw new CompilerException("Could not resolve indexed value type", GetLine(arrayIndex.Array), GetCol(arrayIndex.Array));
+                Require(arrayType == TypeSymbol.Array || arrayType == TypeSymbol.Map, arrayIndex.Array, "Indexing requires an array or map");
                 return (
                     elementType,
                     elementTypeRef,
@@ -1548,6 +1803,21 @@ sealed class TypeChecker
                 ValidateTypeRef(typeRef.TypeArguments[0]);
                 return;
 
+            case "set":
+            case "queue":
+            case "stack":
+                if (typeRef.TypeArguments.Count != 1)
+                    throw new CompilerException($"Type '{typeRef.Name}' expects exactly one type argument", typeRef.Line, typeRef.Column);
+                ValidateTypeRef(typeRef.TypeArguments[0]);
+                return;
+
+            case "map":
+                if (typeRef.TypeArguments.Count != 2)
+                    throw new CompilerException($"Type '{typeRef.Name}' expects exactly two type arguments", typeRef.Line, typeRef.Column);
+                ValidateTypeRef(typeRef.TypeArguments[0]);
+                ValidateTypeRef(typeRef.TypeArguments[1]);
+                return;
+
             default:
                 if (typeRef.TypeArguments.Count > 0)
                     throw new CompilerException($"Type '{typeRef.Name}' does not support type arguments yet", typeRef.Line, typeRef.Column);
@@ -1569,6 +1839,8 @@ sealed class TypeChecker
     }
 
     private static bool IsNumeric(TypeSymbol t) => t is TypeSymbol.Integer or TypeSymbol.Whole or TypeSymbol.Real;
+    private static bool IsBuiltInCollection(TypeSymbol t) => t is TypeSymbol.Array or TypeSymbol.Map or TypeSymbol.Set or TypeSymbol.Queue or TypeSymbol.Stack;
+    private static bool IsReservedBuiltInTypeName(string name) => name is "map" or "set" or "queue" or "stack";
 
     private static TypeSymbol Promote(TypeSymbol a, TypeSymbol b)
     {
@@ -1611,6 +1883,13 @@ sealed class TypeChecker
         if (target == TypeSymbol.Enum)
         {
             if (targetRef is not null && valueRef is not null && SameTypeRef(targetRef, valueRef))
+                return;
+            throw new CompilerException(message, line, col);
+        }
+
+        if (IsBuiltInCollection(target))
+        {
+            if (targetRef is not null && valueRef is not null && TryCollectionConversionCost(targetRef, valueRef, out _))
                 return;
             throw new CompilerException(message, line, col);
         }

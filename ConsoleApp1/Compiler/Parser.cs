@@ -820,18 +820,29 @@ sealed class Parser
 
     private Expr ParseNewExpression(Token newTok)
     {
-        if (Match(TokenType.Array))
+        if (!IsTypeStart(Peek()))
+            throw Error(Peek(), "Expect type name after 'new'.");
+
+        TypeRef newType = ParseTypeRef();
+        if (newType.IsArray)
         {
-            Consume(TokenType.Less, "Expect '<' after array.");
-            var inner = ParseTypeRef();
-            Consume(TokenType.Greater, "Expect '>' after element type.");
             Consume(TokenType.LeftParen, "Expect '(' after array type.");
             Expr size = Expression();
             Consume(TokenType.RightParen, "Expect ')' after array size.");
-            return new NewArrayExpr(inner, size, newTok.Line, newTok.Column);
+            return new NewArrayExpr(newType.TypeArguments[0], size, newTok.Line, newTok.Column);
         }
 
-        Token typeName = Consume(TokenType.Identifier, "Expect type name after 'new'.");
+        if (newType.IsMap || newType.IsSet || newType.IsQueue || newType.IsStack)
+        {
+            Consume(TokenType.LeftParen, "Expect '(' after collection type.");
+            Consume(TokenType.RightParen, "Expect ')' after collection constructor.");
+            return new NewCollectionExpr(newType, newTok.Line, newTok.Column);
+        }
+
+        if (newType.TypeArguments.Count > 0)
+            throw Error(Peek(), $"Type '{newType.Name}' does not support constructor type arguments.");
+
+        Token typeName = new Token(TokenType.Identifier, newType.Name, null, newType.Line, newType.Column);
         Consume(TokenType.LeftParen, "Expect '(' after type name.");
         var args = new List<Expr>();
         if (!Check(TokenType.RightParen))

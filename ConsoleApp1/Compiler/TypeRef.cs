@@ -20,6 +20,12 @@ sealed class TypeRef
 
     public bool IsOptional => Name == "optional";
     public bool IsArray => Name == "array";
+    public bool IsMap => Name == "map";
+    public bool IsSet => Name == "set";
+    public bool IsQueue => Name == "queue";
+    public bool IsStack => Name == "stack";
+    public bool IsBuiltInCollection => IsArray || IsMap || IsSet || IsQueue || IsStack;
+    public bool IsIndexableCollection => IsArray || IsMap;
 
     public override string ToString()
     {

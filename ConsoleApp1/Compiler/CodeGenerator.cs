@@ -439,6 +439,9 @@ sealed class CodeGenerator
                 Emit(na.Size);
                 _builder.NewArrayN();
                 break;
+            case NewCollectionExpr nc:
+                EmitNewCollection(nc);
+                break;
             case NewObjectExpr no:
             {
                 if (!_objectNames.Contains(no.TypeName.Lexeme))
@@ -469,7 +472,7 @@ sealed class CodeGenerator
             case ArrayIndexExpr aidx:
                 Emit(aidx.Array);
                 Emit(aidx.Index);
-                _builder.ArrayGet();
+                EmitIndexGet(aidx.Array);
                 break;
             case OptionalHasValueExpr ohv:
                 Emit(ohv.Target);
@@ -529,7 +532,7 @@ sealed class CodeGenerator
                 Emit(aset.Target.Array);
                 Emit(aset.Target.Index);
                 Emit(aset.Value);
-                _builder.ArraySet();
+                EmitIndexSet(aset.Target.Array);
                 break;
             case FieldSetExpr fset:
                 Emit(fset.Target.Target);
@@ -543,9 +546,9 @@ sealed class CodeGenerator
                 if (targetType is null)
                     throw new InvalidOperationException($"Unable to resolve method target type for '{mc.MethodName.Lexeme}'");
 
-                if (mc.ResolvesToArrayMethod || targetType.IsArray)
+                if (mc.ResolvesToBuiltInCollectionMethod || targetType.IsBuiltInCollection)
                 {
-                    EmitArrayMethodCall(mc);
+                    EmitBuiltInCollectionMethodCall(mc, targetType);
                 }
                 else if (mc.ResolvedInterfaceName is not null || _interfaceNames.Contains(targetType.Name))
                 {
@@ -770,6 +773,8 @@ sealed class CodeGenerator
                 return al.ResolvedTypeRef;
             case NewArrayExpr na:
                 return new TypeRef("array", [na.ElementType], na.Line, na.Column);
+            case NewCollectionExpr nc:
+                return nc.CollectionType;
             case Variable v:
                 if (v.ResolvedImplicitFieldTypeRef is not null)
                     return v.ResolvedImplicitFieldTypeRef;
@@ -868,14 +873,14 @@ sealed class CodeGenerator
                 _builder.Store(indexSlot);
                 _builder.Load(arraySlot);
                 _builder.Load(indexSlot);
-                _builder.ArrayGet();
+                EmitIndexGet(arrayIndex.Array);
                 Emit(expr.Value);
                 EmitBinaryOperator(expr.Operator);
                 _builder.Store(valueSlot);
                 _builder.Load(arraySlot);
                 _builder.Load(indexSlot);
                 _builder.Load(valueSlot);
-                _builder.ArraySet();
+                EmitIndexSet(arrayIndex.Array);
                 ReleaseTemp(valueSlot);
                 ReleaseTemp(indexSlot);
                 ReleaseTemp(arraySlot);
@@ -910,10 +915,10 @@ sealed class CodeGenerator
         }
     }
 
-    private void EmitArrayMethodCall(MethodCallExpr mc)
+    private void EmitBuiltInCollectionMethodCall(MethodCallExpr mc, TypeRef targetType)
     {
-        if (mc.ResolvedArrayMethodName is null)
-            throw new InvalidOperationException($"Missing resolved array method for '{mc.MethodName.Lexeme}'");
+        if (mc.ResolvedBuiltInCollectionMethodName is null)
+            throw new InvalidOperationException($"Missing resolved built-in collection method for '{mc.MethodName.Lexeme}'");
 
         Emit(mc.Target);
         foreach (var arg in mc.Arguments)
@@ -921,16 +926,106 @@ sealed class CodeGenerator
             Emit(arg);
         }
 
-        switch (mc.ResolvedArrayMethodName)
+        switch (targetType.Name, mc.ResolvedBuiltInCollectionMethodName)
         {
-            case "append":
+            case ("array", "append"):
                 _builder.ArrayAppend();
                 break;
-            case "remove_at":
+            case ("array", "remove_at"):
                 _builder.ArrayRemoveAt();
                 break;
+            case ("map", "contains"):
+                _builder.MapContains();
+                break;
+            case ("map", "remove"):
+                _builder.MapRemove();
+                break;
+            case ("set", "add"):
+                _builder.SetAdd();
+                break;
+            case ("set", "contains"):
+                _builder.SetContains();
+                break;
+            case ("set", "remove"):
+                _builder.SetRemove();
+                break;
+            case ("queue", "enqueue"):
+                _builder.QueueEnqueue();
+                break;
+            case ("queue", "dequeue"):
+                _builder.QueueDequeue();
+                break;
+            case ("queue", "peek"):
+                _builder.QueuePeek();
+                break;
+            case ("stack", "push"):
+                _builder.StackPush();
+                break;
+            case ("stack", "pop"):
+                _builder.StackPop();
+                break;
+            case ("stack", "peek"):
+                _builder.StackPeek();
+                break;
             default:
-                throw new InvalidOperationException($"Unsupported array method '{mc.ResolvedArrayMethodName}'");
+                throw new InvalidOperationException($"Unsupported built-in collection method '{targetType.Name}.{mc.ResolvedBuiltInCollectionMethodName}'");
+        }
+    }
+
+    private void EmitNewCollection(NewCollectionExpr collection)
+    {
+        switch (collection.CollectionType.Name)
+        {
+            case "map":
+                _builder.NewMap();
+                break;
+            case "set":
+                _builder.NewSet();
+                break;
+            case "queue":
+                _builder.NewQueue();
+                break;
+            case "stack":
+                _builder.NewStack();
+                break;
+            default:
+                throw new InvalidOperationException($"Unsupported built-in collection type '{collection.CollectionType.Name}'");
+        }
+    }
+
+    private void EmitIndexGet(Expr collectionExpr)
+    {
+        var collectionType = TryResolveTypeRef(collectionExpr)
+            ?? throw new InvalidOperationException("Unable to resolve indexed collection type.");
+
+        switch (collectionType.Name)
+        {
+            case "array":
+                _builder.ArrayGet();
+                break;
+            case "map":
+                _builder.MapGet();
+                break;
+            default:
+                throw new InvalidOperationException($"Unsupported indexed collection type '{collectionType.Name}'");
+        }
+    }
+
+    private void EmitIndexSet(Expr collectionExpr)
+    {
+        var collectionType = TryResolveTypeRef(collectionExpr)
+            ?? throw new InvalidOperationException("Unable to resolve indexed collection type.");
+
+        switch (collectionType.Name)
+        {
+            case "array":
+                _builder.ArraySet();
+                break;
+            case "map":
+                _builder.MapSet();
+                break;
+            default:
+                throw new InvalidOperationException($"Unsupported indexed collection type '{collectionType.Name}'");
         }
     }
 

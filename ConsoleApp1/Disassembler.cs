@@ -75,6 +75,23 @@ static class Disassembler
                 case OpCode.ArraySet:
                 case OpCode.ArrayAppend:
                 case OpCode.ArrayRemoveAt:
+                case OpCode.NewMap:
+                case OpCode.MapGet:
+                case OpCode.MapSet:
+                case OpCode.MapContains:
+                case OpCode.MapRemove:
+                case OpCode.NewSet:
+                case OpCode.SetAdd:
+                case OpCode.SetContains:
+                case OpCode.SetRemove:
+                case OpCode.NewQueue:
+                case OpCode.QueueEnqueue:
+                case OpCode.QueueDequeue:
+                case OpCode.QueuePeek:
+                case OpCode.NewStack:
+                case OpCode.StackPush:
+                case OpCode.StackPop:
+                case OpCode.StackPeek:
                 case OpCode.NewArrayN:
                 case OpCode.OptionalNone:
                 case OpCode.OptionalHas:

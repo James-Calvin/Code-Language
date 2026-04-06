@@ -56,6 +56,20 @@ sealed class NewArrayExpr : Expr
     }
 }
 
+sealed class NewCollectionExpr : Expr
+{
+    public TypeRef CollectionType { get; }
+    public int Line { get; }
+    public int Column { get; }
+
+    public NewCollectionExpr(TypeRef collectionType, int line, int column)
+    {
+        CollectionType = collectionType;
+        Line = line;
+        Column = column;
+    }
+}
+
 sealed class ArrayLengthExpr : Expr
 {
     public Expr Target { get; }
@@ -169,13 +183,12 @@ sealed class MethodCallExpr : Expr
     public Expr Target { get; }
     public Token MethodName { get; }
     public IReadOnlyList<Expr> Arguments { get; }
-    public string? ResolvedArrayMethodName { get; set; }
-    public TypeRef? ResolvedArrayElementTypeRef { get; set; }
+    public string? ResolvedBuiltInCollectionMethodName { get; set; }
     public string? ResolvedMethodKey { get; set; }
     public string? ResolvedInterfaceName { get; set; }
     public string? ResolvedInterfaceMethodKey { get; set; }
     public TypeRef? ResolvedReturnTypeRef { get; set; }
-    public bool ResolvesToArrayMethod => ResolvedArrayMethodName is not null;
+    public bool ResolvesToBuiltInCollectionMethod => ResolvedBuiltInCollectionMethodName is not null;
     public MethodCallExpr(Expr target, Token methodName, IReadOnlyList<Expr> args)
     {
         Target = target; MethodName = methodName; Arguments = args;

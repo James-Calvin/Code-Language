@@ -1043,6 +1043,7 @@ static class ModuleCompiler
             InterpString i => i.Line,
             ArrayLiteral a => a.Line,
             NewArrayExpr n => n.Line,
+            NewCollectionExpr n => n.Line,
             Variable v => v.Name.Line,
             Assign a => a.Name.Line,
             CompoundAssignExpr c => GetExprLine(c.Target),
@@ -1068,6 +1069,7 @@ static class ModuleCompiler
             InterpString i => i.Column,
             ArrayLiteral a => a.Column,
             NewArrayExpr n => n.Column,
+            NewCollectionExpr n => n.Column,
             Variable v => v.Name.Column,
             Assign a => a.Name.Column,
             CompoundAssignExpr c => GetExprColumn(c.Target),
@@ -1490,6 +1492,7 @@ static class ModuleCompiler
                 ResolvedTypeRef = a.ResolvedTypeRef is null ? null : RewriteTypeRef(a.ResolvedTypeRef, typeAliases)
             },
             NewArrayExpr na => new NewArrayExpr(RewriteTypeRef(na.ElementType, typeAliases), RewriteExpr(na.Size, typeAliases, namespaceAliases), na.Line, na.Column),
+            NewCollectionExpr nc => new NewCollectionExpr(RewriteTypeRef(nc.CollectionType, typeAliases), nc.Line, nc.Column),
             ArrayLengthExpr al => new ArrayLengthExpr(RewriteExpr(al.Target, typeAliases, namespaceAliases), al.DotToken),
             ArrayIndexExpr ai => new ArrayIndexExpr(RewriteExpr(ai.Array, typeAliases, namespaceAliases), RewriteExpr(ai.Index, typeAliases, namespaceAliases))
             {
@@ -1593,8 +1596,7 @@ static class ModuleCompiler
                 methodCall.MethodName,
                 methodCall.Arguments.Select(a => RewriteExpr(a, typeAliases, namespaceAliases)).ToList())
             {
-                ResolvedArrayMethodName = methodCall.ResolvedArrayMethodName,
-                ResolvedArrayElementTypeRef = methodCall.ResolvedArrayElementTypeRef is null ? null : RewriteTypeRef(methodCall.ResolvedArrayElementTypeRef, typeAliases),
+                ResolvedBuiltInCollectionMethodName = methodCall.ResolvedBuiltInCollectionMethodName,
                 ResolvedMethodKey = methodCall.ResolvedMethodKey,
                 ResolvedInterfaceName = methodCall.ResolvedInterfaceName,
                 ResolvedInterfaceMethodKey = methodCall.ResolvedInterfaceMethodKey,

@@ -53,6 +53,23 @@ enum OpCode : byte
     HostCall = 0x2A,
     ArrayAppend = 0x2B,
     ArrayRemoveAt = 0x2C,
+    NewMap = 0x2D,
+    MapGet = 0x2E,
+    MapSet = 0x2F,
+    MapContains = 0x30,
+    MapRemove = 0x31,
+    NewSet = 0x32,
+    SetAdd = 0x33,
+    SetContains = 0x34,
+    SetRemove = 0x35,
+    NewQueue = 0x36,
+    QueueEnqueue = 0x37,
+    QueueDequeue = 0x38,
+    QueuePeek = 0x39,
+    NewStack = 0x3A,
+    StackPush = 0x3B,
+    StackPop = 0x3C,
+    StackPeek = 0x3D,
     Halt = 0xFF
 }
 
@@ -310,12 +327,12 @@ sealed class Vm
                 {
                     EnsureStack(1);
                     var obj = _stack.Pop();
-                    if (obj is not List<object> arr)
+                    if (!TryGetCollectionLength(obj, out int count))
                     {
-                        throwRuntimeType("ArrayLength expects array");
+                        throwRuntimeType("Length expects array, map, set, queue, or stack");
                         break;
                     }
-                    _stack.Push(arr.Count);
+                    _stack.Push(count);
                     break;
                 }
 
@@ -385,6 +402,217 @@ sealed class Vm
                         ThrowRuntime("Array index out of range");
                     arr.RemoveAt(idx);
                     _stack.Push(0);
+                    break;
+                }
+
+                case OpCode.NewMap:
+                    _stack.Push(new VmMap());
+                    break;
+
+                case OpCode.MapGet:
+                {
+                    EnsureStack(2);
+                    var key = _stack.Pop();
+                    var mapObj = _stack.Pop();
+                    if (mapObj is not VmMap map)
+                    {
+                        throwRuntimeType("MapGet expects map");
+                        break;
+                    }
+                    if (!map.Entries.TryGetValue(key, out var value))
+                        ThrowRuntime("Map key not found");
+                    _stack.Push(value!);
+                    break;
+                }
+
+                case OpCode.MapSet:
+                {
+                    EnsureStack(3);
+                    var value = _stack.Pop();
+                    var key = _stack.Pop();
+                    var mapObj = _stack.Pop();
+                    if (mapObj is not VmMap map)
+                    {
+                        throwRuntimeType("MapSet expects map");
+                        break;
+                    }
+                    map.Entries[key] = value;
+                    _stack.Push(value);
+                    break;
+                }
+
+                case OpCode.MapContains:
+                {
+                    EnsureStack(2);
+                    var key = _stack.Pop();
+                    var mapObj = _stack.Pop();
+                    if (mapObj is not VmMap map)
+                    {
+                        throwRuntimeType("MapContains expects map");
+                        break;
+                    }
+                    _stack.Push(map.Entries.ContainsKey(key) ? 1 : 0);
+                    break;
+                }
+
+                case OpCode.MapRemove:
+                {
+                    EnsureStack(2);
+                    var key = _stack.Pop();
+                    var mapObj = _stack.Pop();
+                    if (mapObj is not VmMap map)
+                    {
+                        throwRuntimeType("MapRemove expects map");
+                        break;
+                    }
+                    map.Entries.Remove(key);
+                    _stack.Push(0);
+                    break;
+                }
+
+                case OpCode.NewSet:
+                    _stack.Push(new VmSet());
+                    break;
+
+                case OpCode.SetAdd:
+                {
+                    EnsureStack(2);
+                    var value = _stack.Pop();
+                    var setObj = _stack.Pop();
+                    if (setObj is not VmSet set)
+                    {
+                        throwRuntimeType("SetAdd expects set");
+                        break;
+                    }
+                    set.Entries.Add(value);
+                    _stack.Push(0);
+                    break;
+                }
+
+                case OpCode.SetContains:
+                {
+                    EnsureStack(2);
+                    var value = _stack.Pop();
+                    var setObj = _stack.Pop();
+                    if (setObj is not VmSet set)
+                    {
+                        throwRuntimeType("SetContains expects set");
+                        break;
+                    }
+                    _stack.Push(set.Entries.Contains(value) ? 1 : 0);
+                    break;
+                }
+
+                case OpCode.SetRemove:
+                {
+                    EnsureStack(2);
+                    var value = _stack.Pop();
+                    var setObj = _stack.Pop();
+                    if (setObj is not VmSet set)
+                    {
+                        throwRuntimeType("SetRemove expects set");
+                        break;
+                    }
+                    set.Entries.Remove(value);
+                    _stack.Push(0);
+                    break;
+                }
+
+                case OpCode.NewQueue:
+                    _stack.Push(new VmQueue());
+                    break;
+
+                case OpCode.QueueEnqueue:
+                {
+                    EnsureStack(2);
+                    var value = _stack.Pop();
+                    var queueObj = _stack.Pop();
+                    if (queueObj is not VmQueue queue)
+                    {
+                        throwRuntimeType("QueueEnqueue expects queue");
+                        break;
+                    }
+                    queue.Items.Enqueue(value);
+                    _stack.Push(0);
+                    break;
+                }
+
+                case OpCode.QueueDequeue:
+                {
+                    EnsureStack(1);
+                    var queueObj = _stack.Pop();
+                    if (queueObj is not VmQueue queue)
+                    {
+                        throwRuntimeType("QueueDequeue expects queue");
+                        break;
+                    }
+                    if (queue.Items.Count == 0)
+                        ThrowRuntime("Queue is empty");
+                    _stack.Push(queue.Items.Dequeue());
+                    break;
+                }
+
+                case OpCode.QueuePeek:
+                {
+                    EnsureStack(1);
+                    var queueObj = _stack.Pop();
+                    if (queueObj is not VmQueue queue)
+                    {
+                        throwRuntimeType("QueuePeek expects queue");
+                        break;
+                    }
+                    if (queue.Items.Count == 0)
+                        ThrowRuntime("Queue is empty");
+                    _stack.Push(queue.Items.Peek());
+                    break;
+                }
+
+                case OpCode.NewStack:
+                    _stack.Push(new VmStack());
+                    break;
+
+                case OpCode.StackPush:
+                {
+                    EnsureStack(2);
+                    var value = _stack.Pop();
+                    var stackObj = _stack.Pop();
+                    if (stackObj is not VmStack stack)
+                    {
+                        throwRuntimeType("StackPush expects stack");
+                        break;
+                    }
+                    stack.Items.Push(value);
+                    _stack.Push(0);
+                    break;
+                }
+
+                case OpCode.StackPop:
+                {
+                    EnsureStack(1);
+                    var stackObj = _stack.Pop();
+                    if (stackObj is not VmStack stack)
+                    {
+                        throwRuntimeType("StackPop expects stack");
+                        break;
+                    }
+                    if (stack.Items.Count == 0)
+                        ThrowRuntime("Stack is empty");
+                    _stack.Push(stack.Items.Pop());
+                    break;
+                }
+
+                case OpCode.StackPeek:
+                {
+                    EnsureStack(1);
+                    var stackObj = _stack.Pop();
+                    if (stackObj is not VmStack stack)
+                    {
+                        throwRuntimeType("StackPeek expects stack");
+                        break;
+                    }
+                    if (stack.Items.Count == 0)
+                        ThrowRuntime("Stack is empty");
+                    _stack.Push(stack.Items.Peek());
                     break;
                 }
 
@@ -613,8 +841,8 @@ sealed class Vm
         _stack.Push(op(a, b));
     }
 
-    private static bool IsNumber(object v) => v is int or long or double;
-    private static double ToDouble(object v) => v is double d ? d : Convert.ToDouble(v);
+    private static bool IsNumber(object? v) => v is int or long or double;
+    private static double ToDouble(object? v) => v is double d ? d : Convert.ToDouble(v);
 
     private sealed record HostBinding(int ArgCount, Func<object?[], object?> Handler);
 
@@ -890,6 +1118,31 @@ sealed class Vm
         return (a, b);
     }
 
+    private static bool TryGetCollectionLength(object obj, out int count)
+    {
+        switch (obj)
+        {
+            case List<object> array:
+                count = array.Count;
+                return true;
+            case VmMap map:
+                count = map.Entries.Count;
+                return true;
+            case VmSet set:
+                count = set.Entries.Count;
+                return true;
+            case VmQueue queue:
+                count = queue.Items.Count;
+                return true;
+            case VmStack stack:
+                count = stack.Items.Count;
+                return true;
+            default:
+                count = 0;
+                return false;
+        }
+    }
+
     private void ThrowRuntime(string message, string type = "RuntimeError")
     {
         var calls = new List<VmFrame>();
@@ -934,4 +1187,51 @@ sealed class Vm
         int NextIp,
         int ExplicitArgCount,
         Dictionary<string, InterfaceDispatchEntry> Entries);
+}
+
+file sealed class VmMap
+{
+    public Dictionary<object, object> Entries { get; } = new(new VmValueComparer());
+}
+
+file sealed class VmSet
+{
+    public HashSet<object> Entries { get; } = new(new VmValueComparer());
+}
+
+file sealed class VmQueue
+{
+    public Queue<object> Items { get; } = new();
+}
+
+file sealed class VmStack
+{
+    public Stack<object> Items { get; } = new();
+}
+
+file sealed class VmValueComparer : IEqualityComparer<object>
+{
+    bool IEqualityComparer<object>.Equals(object? x, object? y)
+    {
+        if (ReferenceEquals(x, y))
+            return true;
+
+        if (x is null || y is null)
+            return false;
+
+        if (IsNumeric(x) && IsNumeric(y))
+            return Convert.ToDouble(x) == Convert.ToDouble(y);
+
+        return EqualityComparer<object>.Default.Equals(x, y);
+    }
+
+    int IEqualityComparer<object>.GetHashCode(object obj)
+    {
+        if (IsNumeric(obj))
+            return Convert.ToDouble(obj).GetHashCode();
+
+        return EqualityComparer<object>.Default.GetHashCode(obj);
+    }
+
+    private static bool IsNumeric(object value) => value is int or long or double;
 }

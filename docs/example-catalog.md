@@ -29,6 +29,7 @@ Use this document as the primary answer to "does this exist yet?"
 | --- | --- | --- | --- |
 | `runnable` | `ConsoleApp1/examples/time.code` | `run` | Time intrinsics |
 | `runnable` | `ConsoleApp1/examples/math_random.code` | `run` | Math and randomness helpers |
+| `runnable` | `ConsoleApp1/examples/collections.code` | `run` | Built-in `map`, `set`, `queue`, `stack`, shared `.length`, and map indexing |
 
 ## Objects and Interfaces
 
@@ -68,4 +69,3 @@ No checked-in runnable examples exist yet for these planned features:
 - `switch`
 - user-facing `fallible<T>` / `on error`
 - visibility modifiers (`public`, `package`, `private`)
-- built-in `map`, `set`, `queue`, `stack`

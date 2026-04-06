@@ -222,6 +222,12 @@ while value != someValue then {
 ```
 
 - Arrays (current impl): array literal syntax `{a, b, c}` builds a runtime array; typed declarations `array<integer> xs = {1,2,3};`; dynamic `new array<integer>(n)` requires a size; `xs.length` yields length; `xs[index]` reads an element; `xs[index] = value` writes an element; `xs.append(value)` grows the array; `xs.remove_at(index)` removes an element; `foreach` can iterate arrays by element in addition to numeric bounds.
+- Built-in collections (current impl):
+  - `map<Key, Value>` uses `new map<Key, Value>()`, supports `.length`, indexing (`items[key]`, `items[key] = value`), `contains(key)`, and `remove(key)`.
+  - `set<Value>` uses `new set<Value>()`, supports `.length`, `add(value)`, `contains(value)`, and `remove(value)`.
+  - `queue<Value>` uses `new queue<Value>()`, supports `.length`, `enqueue(value)`, `dequeue()`, and `peek()`.
+  - `stack<Value>` uses `new stack<Value>()`, supports `.length`, `push(value)`, `pop()`, and `peek()`.
+  - `foreach` support for these newer built-in collections is not implemented yet.
 - Optionals (current impl): `optional<T>` types store `none` or a value; `none` literal; `opt.hasValue` returns boolean; `opt.value` returns contained value or panics if empty; `opt.or(fallback)` returns value or fallback without panicking.
 
 ```code
@@ -268,6 +274,7 @@ if not isReady then {
   - variables
   - object fields
   - array elements
+  - map entries
   - `+=`, `-=`, `*=`, `/=`, `%=`
   - postfix `++`, `--`
 - Standard math and randomness helpers are currently available as built-in functions:
@@ -285,22 +292,53 @@ if not isReady then {
 - Array literal syntax uses braces.
 - Arrays can be allocated with `new array<Type>(size)`.
 - Array element types are preserved through declarations, indexing, mutation, and `foreach`.
-- Arrays are currently the built-in growable collection type.
+- Built-in collection types:
+  - `map<Key, Value>`
+  - `set<Value>`
+  - `queue<Value>`
+  - `stack<Value>`
 - Growable array methods:
   - `items.append(value)`
   - `items.remove_at(index)`
+- Map operations:
+  - `items[key]`
+  - `items[key] = value`
+  - `items.contains(key)`
+  - `items.remove(key)`
+- Set operations:
+  - `items.add(value)`
+  - `items.contains(value)`
+  - `items.remove(value)`
+- Queue operations:
+  - `items.enqueue(value)`
+  - `items.dequeue()`
+  - `items.peek()`
+- Stack operations:
+  - `items.push(value)`
+  - `items.pop()`
+  - `items.peek()`
+- `.length` is available on arrays, maps, sets, queues, and stacks.
+- `foreach` currently iterates arrays only.
 
 ```code
 array<integer> numbers = {1, 1, 2, 3, 5, 8, 13};
 array<integer> otherNumbers = new array<integer>(10);
 numbers.append(21);
 numbers.remove_at(0);
+
+map<string, integer> scores = new map<string, integer>();
+scores["coins"] = 10;
+scores["coins"] += 5;
+
+queue<integer> turns = new queue<integer>();
+turns.enqueue(1);
+print(turns.dequeue());
 ```
 
 ## 9. Object Model and Interfaces
 - Current implementation status:
   - Implemented: object declarations with fields/constructors/methods, `new Type(...)`, object field read/write (`obj.field`, `obj.field = value`), method calls (`obj.method(args)`), interface conformance checks via either inline interface methods or `implement Interface for Object`, and interface-typed locals/parameters/returns/fields/arrays with runtime-dispatched interface method calls.
-  - Not yet implemented: non-array container types, visibility enforcement, records.
+  - Not yet implemented: visibility enforcement, records.
 - No inheritance.
 - Contracts are declared as `interface`.
 - Concrete types are declared as `object`.
@@ -554,13 +592,13 @@ if x > 3 then panic("x too large");
   - Note: high-range timing values may eventually need dedicated 64-bit numeric/value support for full precision guarantees.
 - Object construction and field access lower to dedicated VM opcodes (`NEW_OBJECT`, `GET_FIELD`, `SET_FIELD`).
 - Arrays: literals `{...}` create arrays; typed declarations `array<integer> xs = {1,2,3};`; dynamic `new array<integer>(n)` requires a size; `xs.length` yields length; `xs.append(value)` and `xs.remove_at(index)` grow/shrink arrays; `foreach` iterates arrays by element.
+- Built-in collections: `map`, `set`, `queue`, and `stack` lower to dedicated VM opcodes; `.length` also covers those collection types.
 
 ## 15. Planned But Not Implemented Yet
 - `switch`.
 - `record` declarations and value semantics.
 - Visibility/access modifiers such as `public`, `package`, and `private`.
 - User-facing `fallible<T>` / `on error` syntax.
-- Built-in container types beyond arrays: `map`, `set`, `queue`, `stack`.
 
 ## 16. Comments
 - Single-line comments:

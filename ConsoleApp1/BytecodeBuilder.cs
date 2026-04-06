@@ -150,6 +150,24 @@ sealed class BytecodeBuilder
         return this;
     }
 
+    public BytecodeBuilder NewMap() { RecordDebug(); _bytes.Add((byte)OpCode.NewMap); return this; }
+    public BytecodeBuilder MapGet() { RecordDebug(); _bytes.Add((byte)OpCode.MapGet); return this; }
+    public BytecodeBuilder MapSet() { RecordDebug(); _bytes.Add((byte)OpCode.MapSet); return this; }
+    public BytecodeBuilder MapContains() { RecordDebug(); _bytes.Add((byte)OpCode.MapContains); return this; }
+    public BytecodeBuilder MapRemove() { RecordDebug(); _bytes.Add((byte)OpCode.MapRemove); return this; }
+    public BytecodeBuilder NewSet() { RecordDebug(); _bytes.Add((byte)OpCode.NewSet); return this; }
+    public BytecodeBuilder SetAdd() { RecordDebug(); _bytes.Add((byte)OpCode.SetAdd); return this; }
+    public BytecodeBuilder SetContains() { RecordDebug(); _bytes.Add((byte)OpCode.SetContains); return this; }
+    public BytecodeBuilder SetRemove() { RecordDebug(); _bytes.Add((byte)OpCode.SetRemove); return this; }
+    public BytecodeBuilder NewQueue() { RecordDebug(); _bytes.Add((byte)OpCode.NewQueue); return this; }
+    public BytecodeBuilder QueueEnqueue() { RecordDebug(); _bytes.Add((byte)OpCode.QueueEnqueue); return this; }
+    public BytecodeBuilder QueueDequeue() { RecordDebug(); _bytes.Add((byte)OpCode.QueueDequeue); return this; }
+    public BytecodeBuilder QueuePeek() { RecordDebug(); _bytes.Add((byte)OpCode.QueuePeek); return this; }
+    public BytecodeBuilder NewStack() { RecordDebug(); _bytes.Add((byte)OpCode.NewStack); return this; }
+    public BytecodeBuilder StackPush() { RecordDebug(); _bytes.Add((byte)OpCode.StackPush); return this; }
+    public BytecodeBuilder StackPop() { RecordDebug(); _bytes.Add((byte)OpCode.StackPop); return this; }
+    public BytecodeBuilder StackPeek() { RecordDebug(); _bytes.Add((byte)OpCode.StackPeek); return this; }
+
     public BytecodeBuilder NewObject(string typeName) => AddStringOperand(OpCode.NewObject, typeName);
     public BytecodeBuilder GetField(string fieldName) => AddStringOperand(OpCode.GetField, fieldName);
     public BytecodeBuilder SetField(string fieldName) => AddStringOperand(OpCode.SetField, fieldName);

@@ -50,6 +50,23 @@ const OpCode = {
   HostCall: 0x2a,
   ArrayAppend: 0x2b,
   ArrayRemoveAt: 0x2c,
+  NewMap: 0x2d,
+  MapGet: 0x2e,
+  MapSet: 0x2f,
+  MapContains: 0x30,
+  MapRemove: 0x31,
+  NewSet: 0x32,
+  SetAdd: 0x33,
+  SetContains: 0x34,
+  SetRemove: 0x35,
+  NewQueue: 0x36,
+  QueueEnqueue: 0x37,
+  QueueDequeue: 0x38,
+  QueuePeek: 0x39,
+  NewStack: 0x3a,
+  StackPush: 0x3b,
+  StackPop: 0x3c,
+  StackPeek: 0x3d,
   Halt: 0xff
 };
 
@@ -161,6 +178,27 @@ function toNumberArray(value, fail) {
     result[i] = toNumber(value[i], fail);
   }
   return result;
+}
+
+function isVmQueue(value) {
+  return value && typeof value === "object" && value.__vmQueue === true && Array.isArray(value.items);
+}
+
+function isVmStack(value) {
+  return value && typeof value === "object" && value.__vmStack === true && Array.isArray(value.items);
+}
+
+function tryGetCollectionLength(value) {
+  if (Array.isArray(value)) {
+    return value.length;
+  }
+  if (value instanceof Map || value instanceof Set) {
+    return value.size;
+  }
+  if (isVmQueue(value) || isVmStack(value)) {
+    return value.items.length;
+  }
+  return null;
 }
 
 function formatVmError(errorObject) {
@@ -1366,11 +1404,12 @@ export class WebVm {
 
         case OpCode.ArrayLength: {
           this.ensureStack(1);
-          const arr = this.stack.pop();
-          if (!Array.isArray(arr)) {
-            this.throwRuntime("ArrayLength expects array");
+          const collection = this.stack.pop();
+          const length = tryGetCollectionLength(collection);
+          if (length === null) {
+            this.throwRuntime("ArrayLength expects array, map, set, queue, or stack");
           }
-          this.stack.push(arr.length);
+          this.stack.push(length);
           break;
         }
 
@@ -1428,6 +1467,183 @@ export class WebVm {
           }
           arr.splice(index, 1);
           this.stack.push(0);
+          break;
+        }
+
+        case OpCode.NewMap:
+          this.stack.push(new Map());
+          break;
+
+        case OpCode.MapGet: {
+          this.ensureStack(2);
+          const key = this.stack.pop();
+          const map = this.stack.pop();
+          if (!(map instanceof Map)) {
+            this.throwRuntime("MapGet expects map");
+          }
+          if (!map.has(key)) {
+            this.throwRuntime("Map key not found");
+          }
+          this.stack.push(map.get(key));
+          break;
+        }
+
+        case OpCode.MapSet: {
+          this.ensureStack(3);
+          const value = this.stack.pop();
+          const key = this.stack.pop();
+          const map = this.stack.pop();
+          if (!(map instanceof Map)) {
+            this.throwRuntime("MapSet expects map");
+          }
+          map.set(key, value);
+          this.stack.push(value);
+          break;
+        }
+
+        case OpCode.MapContains: {
+          this.ensureStack(2);
+          const key = this.stack.pop();
+          const map = this.stack.pop();
+          if (!(map instanceof Map)) {
+            this.throwRuntime("MapContains expects map");
+          }
+          this.stack.push(map.has(key) ? 1 : 0);
+          break;
+        }
+
+        case OpCode.MapRemove: {
+          this.ensureStack(2);
+          const key = this.stack.pop();
+          const map = this.stack.pop();
+          if (!(map instanceof Map)) {
+            this.throwRuntime("MapRemove expects map");
+          }
+          map.delete(key);
+          this.stack.push(0);
+          break;
+        }
+
+        case OpCode.NewSet:
+          this.stack.push(new Set());
+          break;
+
+        case OpCode.SetAdd: {
+          this.ensureStack(2);
+          const value = this.stack.pop();
+          const set = this.stack.pop();
+          if (!(set instanceof Set)) {
+            this.throwRuntime("SetAdd expects set");
+          }
+          set.add(value);
+          this.stack.push(0);
+          break;
+        }
+
+        case OpCode.SetContains: {
+          this.ensureStack(2);
+          const value = this.stack.pop();
+          const set = this.stack.pop();
+          if (!(set instanceof Set)) {
+            this.throwRuntime("SetContains expects set");
+          }
+          this.stack.push(set.has(value) ? 1 : 0);
+          break;
+        }
+
+        case OpCode.SetRemove: {
+          this.ensureStack(2);
+          const value = this.stack.pop();
+          const set = this.stack.pop();
+          if (!(set instanceof Set)) {
+            this.throwRuntime("SetRemove expects set");
+          }
+          set.delete(value);
+          this.stack.push(0);
+          break;
+        }
+
+        case OpCode.NewQueue:
+          this.stack.push({ __vmQueue: true, items: [] });
+          break;
+
+        case OpCode.QueueEnqueue: {
+          this.ensureStack(2);
+          const value = this.stack.pop();
+          const queue = this.stack.pop();
+          if (!isVmQueue(queue)) {
+            this.throwRuntime("QueueEnqueue expects queue");
+          }
+          queue.items.push(value);
+          this.stack.push(0);
+          break;
+        }
+
+        case OpCode.QueueDequeue: {
+          this.ensureStack(1);
+          const queue = this.stack.pop();
+          if (!isVmQueue(queue)) {
+            this.throwRuntime("QueueDequeue expects queue");
+          }
+          if (queue.items.length === 0) {
+            this.throwRuntime("Queue is empty");
+          }
+          this.stack.push(queue.items.shift());
+          break;
+        }
+
+        case OpCode.QueuePeek: {
+          this.ensureStack(1);
+          const queue = this.stack.pop();
+          if (!isVmQueue(queue)) {
+            this.throwRuntime("QueuePeek expects queue");
+          }
+          if (queue.items.length === 0) {
+            this.throwRuntime("Queue is empty");
+          }
+          this.stack.push(queue.items[0]);
+          break;
+        }
+
+        case OpCode.NewStack:
+          this.stack.push({ __vmStack: true, items: [] });
+          break;
+
+        case OpCode.StackPush: {
+          this.ensureStack(2);
+          const value = this.stack.pop();
+          const stack = this.stack.pop();
+          if (!isVmStack(stack)) {
+            this.throwRuntime("StackPush expects stack");
+          }
+          stack.items.push(value);
+          this.stack.push(0);
+          break;
+        }
+
+        case OpCode.StackPop: {
+          this.ensureStack(1);
+          const stack = this.stack.pop();
+          if (!isVmStack(stack)) {
+            this.throwRuntime("StackPop expects stack");
+          }
+          if (stack.items.length === 0) {
+            this.throwRuntime("Stack is empty");
+          }
+          this.stack.push(stack.items.pop());
+          break;
+        }
+
+        case OpCode.StackPeek: {
+          this.ensureStack(1);
+          const stack = this.stack.pop();
+          if (!isVmStack(stack)) {
+            this.throwRuntime("StackPeek expects stack");
+          }
+          if (stack.items.length === 0) {
+            this.throwRuntime("Stack is empty");
+          }
+          this.stack.push(stack.items[stack.items.length - 1]);
           break;
         }
 

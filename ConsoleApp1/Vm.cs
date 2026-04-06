@@ -658,6 +658,20 @@ sealed class Vm
         });
         _hostBindings["std.time.mono_ticks"] = new HostBinding(0, _ => Stopwatch.GetTimestamp());
         _hostBindings["std.time.mono_ticks_per_second"] = new HostBinding(0, _ => (long)Stopwatch.Frequency);
+        _hostBindings["std.math.minimum"] = new HostBinding(2, args => Math.Min(ToDouble(args[0]), ToDouble(args[1])));
+        _hostBindings["std.math.maximum"] = new HostBinding(2, args => Math.Max(ToDouble(args[0]), ToDouble(args[1])));
+        _hostBindings["std.math.absolute"] = new HostBinding(1, args => Math.Abs(ToDouble(args[0])));
+        _hostBindings["std.math.sign"] = new HostBinding(1, args => Math.Sign(ToDouble(args[0])));
+        _hostBindings["std.math.lerp"] = new HostBinding(3, args =>
+        {
+            double start = ToDouble(args[0]);
+            double end = ToDouble(args[1]);
+            double amount = ToDouble(args[2]);
+            return start + ((end - start) * amount);
+        });
+        _hostBindings["std.math.sine"] = new HostBinding(1, args => Math.Sin(ToDouble(args[0])));
+        _hostBindings["std.math.cosine"] = new HostBinding(1, args => Math.Cos(ToDouble(args[0])));
+        _hostBindings["std.math.random"] = new HostBinding(0, _ => Random.Shared.NextDouble());
 
         _hostBindings["engine.window.create"] = new HostBinding(3, _ => _nextWindowHandle++);
         _hostBindings["engine.window.should_close"] = new HostBinding(1, _ => 1);

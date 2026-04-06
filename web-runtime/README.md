@@ -16,6 +16,14 @@ Current contents:
 - `std.time.mono_ns`
 - `std.time.mono_ticks`
 - `std.time.mono_ticks_per_second`
+- `std.math.minimum`
+- `std.math.maximum`
+- `std.math.absolute`
+- `std.math.sign`
+- `std.math.lerp`
+- `std.math.sine`
+- `std.math.cosine`
+- `std.math.random`
 
 Native-only host calls are present with explicit runtime diagnostics:
 - `standard.input_output.read_line` -> `HostBindingError` on `vm-web`

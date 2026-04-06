@@ -17,8 +17,7 @@ This roadmap is implementation-truthful: items marked below are gaps from the cu
 4. User-facing error-handling syntax and propagation (`fallible<T>`, `on error`)
 
 ### Stdlib and Runtime Gaps
-1. Math and randomness helpers (`minimum`, `maximum`, `absolute`, `sign`, `lerp`, `sine`, `cosine`, `random`)
-2. Built-in collections beyond arrays (`map`, `set`, `queue`, `stack`)
+1. Built-in collections beyond arrays (`map`, `set`, `queue`, `stack`)
 
 ### Engine Gaps
 1. Broader engine wrapper packages
@@ -89,8 +88,8 @@ This roadmap is implementation-truthful: items marked below are gaps from the cu
 | `[!]` | Compiler pipeline | Type checker tightening (def-assignment done; improve return/flow) | Continue refining |
 | `[~]` | Compiler pipeline | Frame sizing/temp management | Function-local slots are unique; CALL uses precise frame size; temps reused within foreach; further temp reuse/liveness possible |
 | `[~]` | Compiler pipeline | Optimizations: const fold/DCE | Initial literal fold in place |
-| `[~]` | Runtime/stdlib | Basic stdlib (IO/math/time) | Print + time intrinsics (`unix_ms`, `unix_us`, `mono_ns`, `mono_ticks`, `mono_ticks_per_second`) implemented; native-only `read_line` + `sleep_ms` added with target checks; expand broader IO/math surface |
-| `[!]` | Runtime/stdlib | Math helpers and randomness | Add `minimum`, `maximum`, `absolute`, `sign`, `lerp`, `sine`, `cosine`, and `random` |
+| `[~]` | Runtime/stdlib | Basic stdlib (IO/math/time) | Print + time intrinsics (`unix_ms`, `unix_us`, `mono_ns`, `mono_ticks`, `mono_ticks_per_second`) and native-only `read_line` + `sleep_ms` are implemented; expand broader stdlib surface |
+| `[x]` | Runtime/stdlib | Math helpers and randomness | Implemented on `vm-native` and `vm-web`: `minimum`, `maximum`, `absolute`, `sign`, `lerp`, `sine`, `cosine`, `random` |
 | `[!]` | Runtime/stdlib | Collections beyond arrays | Add `map`, `set`, `queue`, and `stack` |
 | `[x]` | Platform/targets | Compile target model (`--target vm-native|vm-web`) | Implemented: target threads through linker/codegen entry points; default `vm-native` |
 | `[x]` | Platform/targets | Target capability validation | Implemented baseline: inferred capability groups (`std.*`, `engine.*`) from package/imports with compile-time matrix checks (`vm-web` rejects `std.fs`) |
@@ -118,7 +117,7 @@ This roadmap is implementation-truthful: items marked below are gaps from the cu
 | `[~]` | Testing | Object-model fuzz/property domains | Constructor/field mutation/member access invariants |
 
 ## Priority Rollup (benefit/effort)
-- High (`[!]`): math/random support, collections beyond arrays, `switch`, and keeping example/docs status aligned with implementation truth.
+- High (`[!]`): collections beyond arrays, `switch`, and keeping example/docs status aligned with implementation truth.
 - Medium (`[~]`): records, visibility/access control, fuller user-facing error-handling syntax, constant pool, optimizer expansion, tooling polish, and engine core/adapters.
 - Low (`[_]`): REPL, future stdlib/versioning, long-term runtime lifecycle strategy, remote package registry, and longer-horizon GPU/backend work.
 

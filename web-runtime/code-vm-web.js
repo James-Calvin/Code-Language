@@ -791,6 +791,65 @@ export class WebVm {
       handler: () => 1_000_000
     });
 
+    this.hostBindings.set("std.math.minimum", {
+      arity: 2,
+      handler: args => Math.min(
+        toNumber(args[0], message => this.throwRuntime(message)),
+        toNumber(args[1], message => this.throwRuntime(message))
+      )
+    });
+
+    this.hostBindings.set("std.math.maximum", {
+      arity: 2,
+      handler: args => Math.max(
+        toNumber(args[0], message => this.throwRuntime(message)),
+        toNumber(args[1], message => this.throwRuntime(message))
+      )
+    });
+
+    this.hostBindings.set("std.math.absolute", {
+      arity: 1,
+      handler: args => Math.abs(
+        toNumber(args[0], message => this.throwRuntime(message))
+      )
+    });
+
+    this.hostBindings.set("std.math.sign", {
+      arity: 1,
+      handler: args => Math.sign(
+        toNumber(args[0], message => this.throwRuntime(message))
+      )
+    });
+
+    this.hostBindings.set("std.math.lerp", {
+      arity: 3,
+      handler: args => {
+        const start = toNumber(args[0], message => this.throwRuntime(message));
+        const end = toNumber(args[1], message => this.throwRuntime(message));
+        const amount = toNumber(args[2], message => this.throwRuntime(message));
+        return start + ((end - start) * amount);
+      }
+    });
+
+    this.hostBindings.set("std.math.sine", {
+      arity: 1,
+      handler: args => Math.sin(
+        toNumber(args[0], message => this.throwRuntime(message))
+      )
+    });
+
+    this.hostBindings.set("std.math.cosine", {
+      arity: 1,
+      handler: args => Math.cos(
+        toNumber(args[0], message => this.throwRuntime(message))
+      )
+    });
+
+    this.hostBindings.set("std.math.random", {
+      arity: 0,
+      handler: () => Math.random()
+    });
+
     this.registerUnsupportedBinding("standard.input_output.read_line", 0, "native-only API");
     this.registerUnsupportedBinding("std.io.read_line", 0, "native-only API");
     this.registerUnsupportedBinding("std.time.sleep_ms", 1, "native-only API");

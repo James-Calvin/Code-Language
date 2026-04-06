@@ -259,6 +259,20 @@ print(mono_ticks() > 0);
 print(mono_ticks_per_second() > 0);",
              "1\n1\n1\n1\n1\n")
             ,
+            ("math-random-intrinsics",
+@"print(minimum(4, 9));
+print(maximum(4, 9));
+print(absolute(-3));
+print(sign(-3));
+print(sign(0));
+print(sign(3));
+print(lerp(10, 20, 1 / 4));
+print(sine(0));
+print(cosine(0));
+real value = random();
+print(value >= 0 and value < 1);",
+             "4\n9\n3\n-1\n0\n1\n12.5\n0\n1\n1\n")
+            ,
             ("legacy-draw-rectangle-alias",
 @"draw_rect(0, 0, 8, 8, 1, 1, 1, 1);
 print(1);", "1\n")
@@ -1454,6 +1468,7 @@ print(w.read());", "Undefined variable"),
 PI = 4;", "Cannot assign to constant 'PI'"),
             ("constant-missing-init", @"constant integer value;", "must be initialized"),
             ("time-intrinsic-arity", @"print(unix_ms(1));", "expects 0 args"),
+            ("math-intrinsic-arity", @"print(minimum(1));", "expects 2 args"),
             ("void-return-value",
 @"function<void> nope() {
   return 1;
@@ -2305,6 +2320,8 @@ export object MainScene {
         {
             ("example-arithmetic-runnable", @"ConsoleApp1/examples/arithmetic.code", Compiler.CompileTarget.VmNative),
             ("example-enum-runnable", @"ConsoleApp1/examples/enum.code", Compiler.CompileTarget.VmNative),
+            ("example-time-runnable", @"ConsoleApp1/examples/time.code", Compiler.CompileTarget.VmNative),
+            ("example-math-random-runnable", @"ConsoleApp1/examples/math_random.code", Compiler.CompileTarget.VmNative),
             ("example-object-runnable", @"ConsoleApp1/examples/object.code", Compiler.CompileTarget.VmNative),
             ("example-implicit-this-runnable", @"ConsoleApp1/examples/implicit_this.code", Compiler.CompileTarget.VmNative),
             ("example-interface-dispatch-runnable", @"ConsoleApp1/examples/interface_dispatch.code", Compiler.CompileTarget.VmNative),
@@ -2434,6 +2451,8 @@ export object MainScene {
             string catalogText = File.ReadAllText(GetRepoPath(@"docs/example-catalog.md"));
             bool matched =
                 catalogText.Contains("| `runnable` | `ConsoleApp1/examples/enum.code` | `run` |", StringComparison.Ordinal) &&
+                catalogText.Contains("| `runnable` | `ConsoleApp1/examples/time.code` | `run` |", StringComparison.Ordinal) &&
+                catalogText.Contains("| `runnable` | `ConsoleApp1/examples/math_random.code` | `run` |", StringComparison.Ordinal) &&
                 catalogText.Contains("| `negative` | `ConsoleApp1/examples/constants.code` | `expected compile error` |", StringComparison.Ordinal) &&
                 catalogText.Contains("| `planned` | `ConsoleApp1/examples/record.code` | `planned only` |", StringComparison.Ordinal) &&
                 catalogText.Contains("| `runnable` | `ConsoleApp1/examples/shape_dodge.code` | `build-web` |", StringComparison.Ordinal) &&
@@ -2486,6 +2505,45 @@ print(mono_ticks_per_second() > 0);";
         {
             failures++;
             Console.WriteLine($"[FAIL] target-parity-time-print: threw {ex.GetType().Name} - {ex.Message}");
+        }
+
+        string mathSource =
+@"print(minimum(4, 9));
+print(maximum(4, 9));
+print(absolute(-3));
+print(sign(-3));
+print(sign(0));
+print(sign(3));
+print(lerp(10, 20, 1 / 4));
+print(sine(0));
+print(cosine(0));
+real value = random();
+print(value >= 0 and value < 1);";
+
+        try
+        {
+            string nativeOutput = Normalize(CompileAndRun(mathSource, Compiler.CompileTarget.VmNative, VmHostTarget.Native));
+            string webOutput = Normalize(CompileAndRun(mathSource, Compiler.CompileTarget.VmWeb, VmHostTarget.Web));
+            const string expected = "4\n9\n3\n-1\n0\n1\n12.5\n0\n1\n1\n";
+            if (!string.Equals(nativeOutput, expected, StringComparison.Ordinal))
+            {
+                failures++;
+                Console.WriteLine($"[FAIL] target-parity-math-print: native expected '{Escape(expected)}' got '{Escape(nativeOutput)}'");
+            }
+            else if (!string.Equals(webOutput, expected, StringComparison.Ordinal))
+            {
+                failures++;
+                Console.WriteLine($"[FAIL] target-parity-math-print: web expected '{Escape(expected)}' got '{Escape(webOutput)}'");
+            }
+            else
+            {
+                Console.WriteLine("[PASS] target-parity-math-print");
+            }
+        }
+        catch (Exception ex)
+        {
+            failures++;
+            Console.WriteLine($"[FAIL] target-parity-math-print: threw {ex.GetType().Name} - {ex.Message}");
         }
 
         string engineSource =
@@ -2577,6 +2635,37 @@ print(1);";
         {
             failures++;
             Console.WriteLine($"[FAIL] web-runtime-opcode-parity: {ex.GetType().Name} - {ex.Message}");
+        }
+
+        try
+        {
+            string runtimePath = Path.Combine(Directory.GetCurrentDirectory(), "web-runtime", "code-vm-web.js");
+            string runtimeText = File.ReadAllText(runtimePath);
+            string[] requiredSymbols =
+            {
+                "std.math.minimum",
+                "std.math.maximum",
+                "std.math.absolute",
+                "std.math.sign",
+                "std.math.lerp",
+                "std.math.sine",
+                "std.math.cosine",
+                "std.math.random"
+            };
+
+            foreach (string symbol in requiredSymbols)
+            {
+                string marker = $"this.hostBindings.set(\"{symbol}\"";
+                if (!runtimeText.Contains(marker, StringComparison.Ordinal))
+                    throw new Exception($"Web runtime is missing host binding '{symbol}'.");
+            }
+
+            Console.WriteLine("[PASS] web-runtime-math-host-bindings");
+        }
+        catch (Exception ex)
+        {
+            failures++;
+            Console.WriteLine($"[FAIL] web-runtime-math-host-bindings: {ex.GetType().Name} - {ex.Message}");
         }
 
         return failures;

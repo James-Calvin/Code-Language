@@ -1,0 +1,12 @@
+print(minimum(4, 9));
+print(maximum(4, 9));
+print(absolute(-3));
+print(sign(-3));
+print(sign(0));
+print(sign(3));
+print(lerp(10, 20, 1 / 4));
+print(sine(0));
+print(cosine(0));
+
+real value = random();
+print(value >= 0 and value < 1);

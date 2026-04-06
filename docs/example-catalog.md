@@ -23,6 +23,13 @@ Use this document as the primary answer to "does this exist yet?"
 | `runnable` | `ConsoleApp1/examples/optional.code` | `run` | `optional<T>`, `none`, `.hasValue`, `.value`, `.or(...)` |
 | `negative` | `ConsoleApp1/examples/constants.code` | `expected compile error` | Constant reassignment rejection |
 
+## Stdlib and Runtime Helpers
+
+| Status | Path | Use | Notes |
+| --- | --- | --- | --- |
+| `runnable` | `ConsoleApp1/examples/time.code` | `run` | Time intrinsics |
+| `runnable` | `ConsoleApp1/examples/math_random.code` | `run` | Math and randomness helpers |
+
 ## Objects and Interfaces
 
 | Status | Path | Use | Notes |
@@ -62,4 +69,3 @@ No checked-in runnable examples exist yet for these planned features:
 - user-facing `fallible<T>` / `on error`
 - visibility modifiers (`public`, `package`, `private`)
 - built-in `map`, `set`, `queue`, `stack`
-- standard math/random helpers such as `minimum`, `maximum`, `absolute`, `sign`, `lerp`, `sine`, `cosine`, and `random`

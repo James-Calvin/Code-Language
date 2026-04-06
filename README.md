@@ -17,11 +17,12 @@ The repo contains:
 - Control flow: `if/then/else`, `while`, `for`, `foreach` (numeric bounds and arrays)
 - Expressions: arithmetic (including `%`), comparisons, logical `and/or/not`, enhanced assignments (`+=`, `-=`, `*=`, `/=`, `%=` and postfix `++/--`) across variables, object fields, and array elements, plus string interpolation and concatenation
 - Time intrinsics: `unix_ms()`, `unix_us()`, `mono_ns()`, `mono_ticks()`, `mono_ticks_per_second()`, `sleep_ms(ms)`
+- Math and randomness intrinsics: `minimum()`, `maximum()`, `absolute()`, `sign()`, `lerp()`, `sine()`, `cosine()`, `random()`
 - Native-only IO intrinsic: `read_line()`
 - Functions with CALL/RET, locals, return (implicit 0)
 - File modules: `export` + imports (`import Name [as Alias] from "path";`, `import { A, B as C } from "path";`, `import everything as Namespace from "path";`, `export import ...`) with recursive linking and `lib/` search
 - Package manifest + lockfile baseline: nearest `code.package.json` is parsed/validated during module compile; local dependency graph resolves and `code.lock.json` is generated
-- Host ABI baseline: compiler emits `HOST_CALL` for `print`, time intrinsics, native-only APIs (`standard.input_output.read_line`, `std.time.sleep_ms`), and engine stubs (`engine.window/*`, `engine.input/*`, `engine.gfx/*`)
+- Host ABI baseline: compiler emits `HOST_CALL` for `print`, time/math intrinsics, native-only APIs (`standard.input_output.read_line`, `std.time.sleep_ms`), and engine stubs (`engine.window/*`, `engine.input/*`, `engine.gfx/*`)
 - Web app build/runtime V1 slice: `--build-web` emits a runnable static site folder with `index.html`, `app.bytecode`, copied `assets/` content when present, a full-bleed canvas runtime, `MainScene` scene-object lifecycle (`start/update/draw` plus optional `draw_hud()`), guaranteed `640x360` safe area, hybrid-expand world framing, HUD screen-space, and browser-backed `key_down()`/`clear()`/`draw_rectangle()`/`draw_rectangle_outline()`/`draw_line()`/`draw_circle()`/`draw_circle_outline()`/`draw_polygon()`/`draw_polygon_outline()`/`draw_text()`/`draw_image()`/`draw_sprite()`
 - Higher-level engine wrapper layer: root `lib/engine/` modules now provide `engine.colors`, `engine.drawing`, `engine.input`, `engine.viewport`, and `engine.scene`, with compatibility modules `engine.view` and `engine.loop`, including explicit child-object scene composition over split lifecycle interfaces
 - Browser runtime harness (`web-runtime/`): lower-level JavaScript VM harness for loading raw `.bytecode` / `.codelib` files during bring-up and debugging
@@ -31,8 +32,8 @@ The repo contains:
 See [the language spec](docs/code-language-spec.md), [the feature roadmap](docs/features-roadmap.md), and [the web app/runtime V1 contract](docs/web-app-v1.md) for the current scope and the target developer workflow.
 
 ## Implemented Today vs Planned
-- Implemented today: enumerations, objects, interfaces, arrays, optionals, grouped/selective/namespace/re-export imports, package manifests/lockfiles/library artifacts, target capability checks, `panic`, and the current web build/runtime slice.
-- Planned, not implemented today: `switch`, `record`, visibility modifiers, user-facing `fallible<T>` / `on error`, built-in `map` / `set` / `queue` / `stack`, and standard math/random helpers.
+- Implemented today: enumerations, objects, interfaces, arrays, optionals, time/math intrinsics, grouped/selective/namespace/re-export imports, package manifests/lockfiles/library artifacts, target capability checks, `panic`, and the current web build/runtime slice.
+- Planned, not implemented today: `switch`, `record`, visibility modifiers, user-facing `fallible<T>` / `on error`, and built-in `map` / `set` / `queue` / `stack`.
 - Example status and usage live in [the example catalog](docs/example-catalog.md).
 
 ## Current State vs Target Workflow
@@ -181,6 +182,11 @@ dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- ConsoleApp1/examples/modu
 Time intrinsics example:
 ```
 dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- ConsoleApp1/examples/time.code
+```
+
+Math and randomness example:
+```
+dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- ConsoleApp1/examples/math_random.code
 ```
 
 Engine host stub example:

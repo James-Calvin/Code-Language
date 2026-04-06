@@ -9,6 +9,7 @@ static class CapabilityCatalog
     {
         "std.time",
         "std.time.sleep_ms",
+        "std.math",
         "standard.input_output",
         "standard.input_output.read_line",
         "std.io",
@@ -23,6 +24,7 @@ static class CapabilityCatalog
     private static readonly IReadOnlySet<string> VmWeb = new HashSet<string>(StringComparer.Ordinal)
     {
         "std.time",
+        "std.math",
         "standard.input_output",
         "engine.window",
         "engine.input",

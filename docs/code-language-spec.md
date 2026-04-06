@@ -270,6 +270,15 @@ if not isReady then {
   - array elements
   - `+=`, `-=`, `*=`, `/=`, `%=`
   - postfix `++`, `--`
+- Standard math and randomness helpers are currently available as built-in functions:
+  - `minimum(real left, real right) -> real`
+  - `maximum(real left, real right) -> real`
+  - `absolute(real value) -> real`
+  - `sign(real value) -> integer`
+  - `lerp(real start, real end, real amount) -> real`
+  - `sine(real angle) -> real`
+  - `cosine(real angle) -> real`
+  - `random() -> real`
 
 ## 8. Collections (Observed)
 - Generic array type syntax: `array<Type>`.
@@ -519,6 +528,16 @@ if x > 3 then panic("x too large");
   - `sleep_ms(integer ms) -> void` (native-only host API; compile-time target check rejects it for `vm-web`)
   - `read_line() -> string` (native-only host API; compile-time target check rejects it for `vm-web`)
   - These currently lower through host ABI symbols (`std.time.*`) rather than dedicated language-level stdlib modules.
+- Math and randomness intrinsics (current baseline):
+  - `minimum(real left, real right) -> real`
+  - `maximum(real left, real right) -> real`
+  - `absolute(real value) -> real`
+  - `sign(real value) -> integer`
+  - `lerp(real start, real end, real amount) -> real`
+  - `sine(real angle) -> real`
+  - `cosine(real angle) -> real`
+  - `random() -> real`
+  - These currently lower through host ABI symbols (`std.math.*`) rather than dedicated language-level stdlib modules.
 - Print lowering (current baseline):
   - `print(expr);` lowers through host ABI symbol `standard.input_output.print`.
   - VM host binding mismatch (missing symbol/arity) raises `HostBindingError` at runtime.
@@ -542,7 +561,6 @@ if x > 3 then panic("x too large");
 - Visibility/access modifiers such as `public`, `package`, and `private`.
 - User-facing `fallible<T>` / `on error` syntax.
 - Built-in container types beyond arrays: `map`, `set`, `queue`, `stack`.
-- Standard math and randomness helpers such as `minimum`, `maximum`, `absolute`, `sign`, `lerp`, `sine`, `cosine`, and `random`.
 
 ## 16. Comments
 - Single-line comments:

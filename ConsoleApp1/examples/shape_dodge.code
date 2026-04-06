@@ -99,8 +99,7 @@ object Player {
   function clamp_to_safe_area() {
     real left = Viewport.safe_left() + 10;
     real right = Viewport.safe_right() - width - 10;
-    if x < left then x = left;
-    if x > right then x = right;
+    x = maximum(left, minimum(x, right));
   }
 }
 

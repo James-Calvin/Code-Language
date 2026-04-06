@@ -18,9 +18,9 @@ Read this first. Update it whenever semantics or process change.
 - Interfaces: `interface Name { function<...> method(...); }` plus either inline object-body implementations `implement Interface.method(...) { ... }` or explicit `implement Interface for Object { method(types...) via Object.method; }`, with runtime dispatch for interface-typed locals/params/returns/fields/arrays.
 - Control flow: if/then[/else], while, for, foreach (numeric or array), break/continue, return (implicit 0).
 - Expressions: arithmetic (including `%`), comparisons, logical and/or/not (short-circuit), assignment (including `+=`, `-=`, `*=`, `/=`, `%=` and postfix `++/--` across variables, object fields, and array elements), function calls, full-expression string interpolation/concat.
-- Time intrinsics: `unix_ms()`, `unix_us()`, `mono_ns()`, `mono_ticks()`, `mono_ticks_per_second()`, plus `sleep_ms(integer)` (native-only).
+- Time and math intrinsics: `unix_ms()`, `unix_us()`, `mono_ns()`, `mono_ticks()`, `mono_ticks_per_second()`, `minimum()`, `maximum()`, `absolute()`, `sign()`, `lerp()`, `sine()`, `cosine()`, `random()`, plus native-only `sleep_ms(integer)`.
 - IO intrinsic: `read_line() -> string` (native-only).
-- Host ABI baseline: compiler lowers print/time/native-only/engine intrinsic calls to `HOST_CALL` symbols; capability inference includes lowered host features (`standard.input_output.read_line`, `std.time.sleep_ms`, `engine.window/input/gfx`); VM resolves via native/web host binding tables and throws target-aware `HostBindingError` on unsupported host calls.
+- Host ABI baseline: compiler lowers print/time/math/native-only/engine intrinsic calls to `HOST_CALL` symbols; capability inference includes lowered host features (`standard.input_output.read_line`, `std.time.sleep_ms`, `std.math`, `engine.window/input/gfx`); VM resolves via native/web host binding tables and throws target-aware `HostBindingError` on unsupported host calls.
 - Engine ABI status: legacy window-handle calls (`window_create`, `window_should_close`, `window_present`, `input_key_down`, `gfx_clear`, `gfx_draw_rect`) remain no-op stubs on native/web hosts, while the scene-runtime intrinsics `key_down`, `clear`, `draw_rectangle`, `draw_rectangle_outline`, `draw_line`, `draw_circle`, `draw_circle_outline`, `draw_polygon`, `draw_polygon_outline`, `draw_text`, `draw_image`, `draw_sprite`, `camera_view_*`, `camera_safe_*`, `screen_width`, and `screen_height` now have browser-backed implementations for `vm-web`.
 - Web app/runtime slice: `--build-web` emits a static site folder (`index.html` + `app.bytecode`, plus copied `assets/` content when present) with a generated full-window browser runtime, centered `640x360` safe area, hybrid-expanded visible world, `MainScene` metadata, and `start/update/draw` plus optional `draw_hud` driving the JS VM.
 - Engine wrapper layer: root `lib/engine/` currently provides canonical `engine.colors`, `engine.drawing`, `engine.input`, `engine.viewport`, and `engine.scene` modules over the raw scene-runtime helpers, with `engine.view` and `engine.loop` retained as compatibility re-exports.
@@ -39,7 +39,7 @@ Read this first. Update it whenever semantics or process change.
 
 ## Not Implemented (yet)
 - Language gaps: `switch`, `record` declarations/value semantics, visibility enforcement, and user-facing `fallible<T>` / `on error`.
-- Stdlib/runtime gaps: math/random helpers (`minimum`, `maximum`, `absolute`, `sign`, `lerp`, `sine`, `cosine`, `random`) and broader container types beyond arrays (`map`, `set`, `queue`, `stack`).
+- Stdlib/runtime gaps: broader container types beyond arrays (`map`, `set`, `queue`, `stack`).
 - Dispatch/runtime polish: optimization beyond baseline interface dispatch tables.
 - Module namespaces and stdlib versioning/layout.
 - Constant pool, formatter/linter, REPL.
@@ -69,6 +69,7 @@ Read this first. Update it whenever semantics or process change.
 - Prefer fully spelled-out user-facing names; avoid arbitrary abbreviations unless the term is a widely accepted domain term such as `hud`.
 
 ## Change Log
+- 2026-04-05: Added math/random intrinsics (`minimum`, `maximum`, `absolute`, `sign`, `lerp`, `sine`, `cosine`, `random`) to the native/web host ABI surface, added a runnable example, updated docs, and added target-parity plus web-runtime binding coverage.
 - 2026-04-05: Implemented enumerations with strongly typed `Enum.Member` access, explicit integer member values, import/export/re-export support, new enum examples/tests, and updated `shape_dodge.code` to replace obstacle-kind magic integers.
 - 2026-04-05: Added `docs/example-catalog.md`, reclassified examples as runnable/negative/planned, added focused examples for implicit `this`, interface-array dispatch, re-export imports, and library artifacts, and updated the harness/docs to align example status with implementation truth.
 - 2026-04-05: Fixed web-runtime VM opcode parity for growable arrays by adding browser support for `ARRAY_APPEND` / `ARRAY_REMOVE_AT` and a regression test that compares native VM opcodes against the browser runtime opcode table and switch handlers.

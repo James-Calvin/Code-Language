@@ -1,6 +1,6 @@
-// Runnable example: enumerations are strongly typed named values backed by integer ordinals.
+// Runnable example: enums are strongly typed named values backed by integer ordinals.
 
-enumeration Difficulty {
+enum Difficulty {
   Easy;
   Normal = 5;
   Hard;

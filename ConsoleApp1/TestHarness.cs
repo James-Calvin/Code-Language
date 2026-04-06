@@ -958,6 +958,43 @@ print(item.read());", "7\n"),
                 "9\n"
             ),
             (
+                "module-public-visibility-import",
+                new Dictionary<string, string>
+                {
+                    ["main.code"] = "import add from \"math.code\";\nprint(add(3, 4));",
+                    ["math.code"] = "public function<integer> add(integer a, integer b) { return a + b; }",
+                },
+                "main.code",
+                "7\n"
+            ),
+            (
+                "module-private-visibility-local-only",
+                new Dictionary<string, string>
+                {
+                    ["main.code"] =
+@"private function<integer> hidden() { return 7; }
+function<integer> read() { return hidden(); }
+print(read());",
+                },
+                "main.code",
+                "7\n"
+            ),
+            (
+                "module-package-visibility-same-package",
+                new Dictionary<string, string>
+                {
+                    ["main.code"] =
+@"package demo.pkg;
+import helper from ""helper.code"";
+print(helper(4));",
+                    ["helper.code"] =
+@"package demo.pkg;
+package function<integer> helper(integer value) { return value + 2; }",
+                },
+                "main.code",
+                "6\n"
+            ),
+            (
                 "module-grouped-imports",
                 new Dictionary<string, string>
                 {
@@ -1959,6 +1996,54 @@ print(left == right);", "Equality requires compatible types"),
                 "does not export"
             ),
             (
+                "module-import-private-declaration",
+                new Dictionary<string, string>
+                {
+                    ["main.code"] = "import hidden from \"lib.code\";\nprint(hidden());",
+                    ["lib.code"] = "private function<integer> hidden() { return 1; }",
+                },
+                "main.code",
+                "does not export 'hidden'"
+            ),
+            (
+                "module-import-package-declaration-cross-package",
+                new Dictionary<string, string>
+                {
+                    ["main.code"] =
+@"package app.main;
+import helper from ""lib.code"";
+print(helper(1));",
+                    ["lib.code"] =
+@"package app.shared;
+package function<integer> helper(integer value) { return value + 1; }",
+                },
+                "main.code",
+                "package-visible"
+            ),
+            (
+                "module-package-visibility-requires-package-declaration",
+                new Dictionary<string, string>
+                {
+                    ["main.code"] = "package function<integer> helper(integer value) { return value + 1; }",
+                },
+                "main.code",
+                "require a preceding package declaration"
+            ),
+            (
+                "module-public-reexport-package-visible-rejected",
+                new Dictionary<string, string>
+                {
+                    ["main.code"] =
+@"package demo.pkg;
+export import helper from ""helper.code"";",
+                    ["helper.code"] =
+@"package demo.pkg;
+package function<integer> helper(integer value) { return value + 1; }",
+                },
+                "main.code",
+                "Cannot publicly re-export non-public declaration"
+            ),
+            (
                 "module-grouped-import-missing-export",
                 new Dictionary<string, string>
                 {
@@ -2648,6 +2733,7 @@ export object MainScene {
             ("example-modules-main-runnable", @"ConsoleApp1/examples/modules/main.code", Compiler.CompileTarget.VmNative),
             ("example-modules-grouped-imports-runnable", @"ConsoleApp1/examples/modules/grouped-imports.code", Compiler.CompileTarget.VmNative),
             ("example-modules-re-exports-runnable", @"ConsoleApp1/examples/modules/re_exports_main.code", Compiler.CompileTarget.VmNative),
+            ("example-modules-visibility-runnable", @"ConsoleApp1/examples/modules/visibility_main.code", Compiler.CompileTarget.VmNative),
         };
 
         foreach (var (name, relativePath, target) in runnableCompileExamples)
@@ -2775,6 +2861,7 @@ export object MainScene {
                 catalogText.Contains("| `runnable` | `ConsoleApp1/examples/time.code` | `run` |", StringComparison.Ordinal) &&
                 catalogText.Contains("| `runnable` | `ConsoleApp1/examples/math_random.code` | `run` |", StringComparison.Ordinal) &&
                 catalogText.Contains("| `runnable` | `ConsoleApp1/examples/collections.code` | `run` |", StringComparison.Ordinal) &&
+                catalogText.Contains("| `runnable` | `ConsoleApp1/examples/modules/visibility_main.code` | `run` |", StringComparison.Ordinal) &&
                 catalogText.Contains("| `negative` | `ConsoleApp1/examples/constants.code` | `expected compile error` |", StringComparison.Ordinal) &&
                 catalogText.Contains("| `runnable` | `ConsoleApp1/examples/shape_dodge.code` | `build-web` |", StringComparison.Ordinal) &&
                 catalogText.Contains("| `runnable` | `ConsoleApp1/examples/web_scene.code` | `build-web` |", StringComparison.Ordinal);

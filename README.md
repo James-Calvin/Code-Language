@@ -22,7 +22,7 @@ The repo contains:
 - Built-in collections: arrays plus `map<Key, Value>`, `set<Value>`, `queue<Value>`, and `stack<Value>` with shared `.length`
 - Native-only IO intrinsic: `read_line()`
 - Functions with CALL/RET, locals, return (implicit 0)
-- File modules: `export` + imports (`import Name [as Alias] from "path";`, `import { A, B as C } from "path";`, `import everything as Namespace from "path";`, `export import ...`) with recursive linking and `lib/` search
+- File modules: top-level declaration visibility (`public`, `package`, `private`) plus legacy `export`, imports (`import Name [as Alias] from "path";`, `import { A, B as C } from "path";`, `import everything as Namespace from "path";`, `export import ...`), package-aware import checks, recursive linking, and `lib/` search
 - Package manifest + lockfile baseline: nearest `code.package.json` is parsed/validated during module compile; local dependency graph resolves and `code.lock.json` is generated
 - Host ABI baseline: compiler emits `HOST_CALL` for `print`, time/math intrinsics, native-only APIs (`standard.input_output.read_line`, `std.time.sleep_ms`), and engine stubs (`engine.window/*`, `engine.input/*`, `engine.gfx/*`)
 - Web app build/runtime V1 slice: `--build-web` emits a runnable static site folder with `index.html`, `app.bytecode`, copied `assets/` content when present, a full-bleed canvas runtime, `MainScene` scene-object lifecycle (`start/update/draw` plus optional `draw_hud()`), guaranteed `640x360` safe area, hybrid-expand world framing, HUD screen-space, and browser-backed `key_down()`/`clear()`/`draw_rectangle()`/`draw_rectangle_outline()`/`draw_line()`/`draw_circle()`/`draw_circle_outline()`/`draw_polygon()`/`draw_polygon_outline()`/`draw_text()`/`draw_image()`/`draw_sprite()`
@@ -35,7 +35,8 @@ See [the language spec](docs/code-language-spec.md), [the feature roadmap](docs/
 
 ## Implemented Today vs Planned
 - Implemented today: enumerations, records, `switch`, objects, interfaces, arrays, built-in collections, optionals, time/math intrinsics, grouped/selective/namespace/re-export imports, package manifests/lockfiles/library artifacts, target capability checks, `panic`, and the current web build/runtime slice.
-- Planned, not implemented today: visibility modifiers and user-facing `fallible<T>` / `on error`.
+- Implemented today: top-level module visibility modifiers (`public`, `package`, `private`) with legacy `export` compatibility.
+- Planned, not implemented today: member-level visibility/access control and user-facing `fallible<T>` / `on error`.
 - Example status and usage live in [the example catalog](docs/example-catalog.md).
 
 ## Current State vs Target Workflow
@@ -136,11 +137,12 @@ Test harness covers VM ops, compiler integration (print, arithmetic, functions, 
 - Objects: `object` declarations with constructors/methods, `new Type(...)`, field access/assignment (`obj.field`, `obj.field = ...`), method calls (`obj.method(...)`), and implicit `this` lookup inside object bodies for unshadowed fields and bare method calls
 - Interfaces: `interface` declarations + inline interface methods (`implement Interface.method(...) { ... }`) or explicit `implement Interface for Object { ... via Object.method; }` conformance checks
 - Interface-typed locals/params/returns/fields/arrays and runtime-dispatched interface method calls
-- Modules: `export` for top-level function/object/interface/enum declarations; `import Name [as Alias] from "path";`
+- Modules: top-level `public`, `package`, and `private` declaration visibility; legacy `export` remains a compatibility alias for `public`
+- Imports: `import Name [as Alias] from "path";`
 - Grouped/selective imports: `import { add, sub as minus } from "math.code";`
 - Namespace imports: `import everything as Draw from "engine/drawing.code";` for function-only module surfaces
 - Re-export imports: `export import Name from "path";`, `export import { A, B } from "path";`
-- Package declarations: optional `package Name;` at top of module (before imports/declarations)
+- Package declarations: optional `package Name;` at top of module (before imports/declarations); matching package names enable `package`-visible imports
 - Package manifest: optional `code.package.json` (nearest ancestor) with validated fields (`schemaVersion`, `name`, `version`, `kind`, `entry`, optional `targets`, `targetOverrides`, `hostAbi.requires`, deps maps); `targetOverrides` are currently schema-validated but not yet used to auto-select a different entry file at compile time
 - Lockfile: `code.lock.json` is written in the package root during compile when a manifest is present (schema v1, target, resolved package list with integrity hashes)
 - Library packages (`kind: "library"`) emit a `.codelib` artifact during compile; lockfile resolution prefers `.codelib` paths when present and validated
@@ -192,6 +194,11 @@ dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- ConsoleApp1/examples/modu
 Re-export import example:
 ```
 dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- ConsoleApp1/examples/modules/re_exports_main.code
+```
+
+Visibility example:
+```
+dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- ConsoleApp1/examples/modules/visibility_main.code
 ```
 
 Time intrinsics example:

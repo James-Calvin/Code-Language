@@ -30,7 +30,7 @@ Read this first. Update it whenever semantics or process change.
 - Web app/runtime contract: `docs/web-app-v1.md` freezes the first implementation target around a scene object with `start/update/draw`, optional `draw_hud`, full-window browser runtime ownership, centered `640x360` safe area, hybrid-expanded framing, and static-site output.
 - Errors: `panic <expr>;` raises `UserError` with line/col + call stack (from bytecode debug map).
 - Bytecode/VM: header v0x05, spec v0.9; ops include strings, arrays (NEW_ARRAY/GET/LEN/SET/NEW_ARRAY_N/APPEND/REMOVE_AT), built-in collections (`NEW_MAP`/`MAP_*`, `NEW_SET`/`SET_*`, `NEW_QUEUE`/`QUEUE_*`, `NEW_STACK`/`STACK_*`), optionals (NONE/HAS/VALUE/OR), objects/records (NEW_OBJECT/NEW_RECORD/GET_FIELD/SET_FIELD/GET_TYPE_NAME), interface dispatch (INTERFACE_CALL), and THROW_ERROR.
-- Modules/imports: recursive file-based module linking for `.code` files with `import`/`export`, package declarations, grouped/selective imports, namespace imports, re-export imports, module-scope symbol conflict checks, import-chain diagnostics, alias imports for function/object/interface/enum exports, and `lib/` ancestor search.
+- Modules/imports: recursive file-based module linking for `.code` files with top-level `public` / `package` / `private` visibility, legacy `export` compatibility, package-aware import checks, package declarations, grouped/selective imports, namespace imports, re-export imports, module-scope symbol conflict checks, import-chain diagnostics, alias imports for function/object/interface/enum exports, and `lib/` ancestor search.
 - Package manifest/lockfile: nearest `code.package.json` is auto-discovered and schema-validated (v1 baseline) with compile-target gating (`targets`), validated `targetOverrides`, and host capability requirements (`hostAbi.requires`); local dependencies resolve and `code.lock.json` is emitted. `targetOverrides` are not yet used to auto-select a different compile entry.
 - Library artifact: packages with `kind: "library"` emit `<package>-<version>-<target>.codelib` with embedded bytecode + metadata; resolver validates and prefers artifact paths in lockfile when present.
 - Module tooling: `--dump-module-graph [outputPath]` emits entry/modules/import edges; supports text/json/dot output (via `--module-graph-format` or output extension inference); `--trace-linker` emits linker resolution steps.
@@ -39,7 +39,7 @@ Read this first. Update it whenever semantics or process change.
 - Tests: integration (core features, arrays, optionals, objects, interfaces, modules/imports, host ABI surfaces, target capability validation, panic) + fuzz (arith, boolean, strings, loop sums, panic). Run `dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- --run-tests`.
 
 ## Not Implemented (yet)
-- Language gaps: visibility enforcement and user-facing `fallible<T>` / `on error`.
+- Language gaps: member-level visibility/access control follow-up and user-facing `fallible<T>` / `on error`.
 - Stdlib/runtime gaps: broader standard-library surface beyond the current math/random and core container baseline.
 - Dispatch/runtime polish: optimization beyond baseline interface dispatch tables.
 - Module namespaces and stdlib versioning/layout.
@@ -70,6 +70,7 @@ Read this first. Update it whenever semantics or process change.
 - Prefer fully spelled-out user-facing names; avoid arbitrary abbreviations unless the term is a widely accepted domain term such as `hud`.
 
 ## Change Log
+- 2026-04-05: Added top-level module visibility/access control with `public`, `package`, and `private`, kept legacy `export` as a compatibility alias for `public`, enforced package-aware import boundaries in the linker, added runnable visibility examples/tests, and synced docs.
 - 2026-04-05: Completed record ergonomics: record methods, inline/external interface implementations, copy-by-value record receivers, structural equality for hashable records, `map`/`set` support for hashable record keys/elements, `NEW_RECORD` bytecode/runtime parity, new examples/tests, and synced docs.
 - 2026-04-05: Implemented baseline `record` support with constructor/field syntax, copy-on-assignment/pass/return semantics, deep cloning for nested record and `optional<Record>` fields, and example/test coverage; this was later completed the same day by the full record ergonomics pass above.
 - 2026-04-05: Added `switch` statements with `case ... then ...` / optional `default then ...`, no fallthrough, single evaluation of the switch value, constructor definite-assignment support, runnable example coverage, and synced docs/tests.

@@ -26,6 +26,17 @@ sealed class Parser
 
     private Stmt Declaration()
     {
+        if (Match(TokenType.Public, TokenType.Private))
+        {
+            if (_blockDepth > 0) throw Error(Previous(), $"'{Previous().Lexeme}' is only valid at module scope.");
+            return VisibilityDeclaration(Previous());
+        }
+        if (Check(TokenType.Package) && IsPackageVisibilityModifier())
+        {
+            if (_blockDepth > 0) throw Error(Peek(), "'package' visibility is only valid at module scope.");
+            Token visibilityToken = Advance();
+            return VisibilityDeclaration(visibilityToken);
+        }
         if (Match(TokenType.Import))
         {
             if (_blockDepth > 0) throw Error(Previous(), "'import' is only valid at module scope.");
@@ -58,6 +69,29 @@ sealed class Parser
             return VarDeclaration(typeRef);
         }
         return Statement();
+    }
+
+    private Stmt VisibilityDeclaration(Token visibilityToken)
+    {
+        DeclarationVisibility visibility = visibilityToken.Type switch
+        {
+            TokenType.Public => DeclarationVisibility.Public,
+            TokenType.Package => DeclarationVisibility.Package,
+            TokenType.Private => DeclarationVisibility.Private,
+            _ => throw Error(visibilityToken, $"Unsupported visibility modifier '{visibilityToken.Lexeme}'.")
+        };
+
+        Stmt declaration = visibilityToken.Type switch
+        {
+            _ when Match(TokenType.Function) => FunctionDeclaration(),
+            _ when Match(TokenType.Object) => ObjectDeclaration(isRecord: false),
+            _ when Match(TokenType.Record) => ObjectDeclaration(isRecord: true),
+            _ when Match(TokenType.Interface) => InterfaceDeclaration(),
+            _ when Match(TokenType.Enum) => EnumDeclaration(),
+            _ => throw Error(Peek(), $"Expect function/object/record/interface/enum declaration after '{visibilityToken.Lexeme}'.")
+        };
+
+        return new VisibilityDecl(visibilityToken, visibility, declaration);
     }
 
     private Stmt ImportDeclaration(bool isExported = false)
@@ -106,6 +140,31 @@ sealed class Parser
         if (_current + 1 >= _tokens.Count)
             return false;
         return _tokens[_current + 1].Type == type;
+    }
+
+    private bool CheckNextAny(params TokenType[] types)
+    {
+        if (_current + 1 >= _tokens.Count)
+            return false;
+
+        TokenType nextType = _tokens[_current + 1].Type;
+        for (int i = 0; i < types.Length; i++)
+        {
+            if (nextType == types[i])
+                return true;
+        }
+
+        return false;
+    }
+
+    private bool IsPackageVisibilityModifier()
+    {
+        return CheckNextAny(
+            TokenType.Function,
+            TokenType.Object,
+            TokenType.Record,
+            TokenType.Interface,
+            TokenType.Enum);
     }
 
     private Stmt ExportDeclaration()

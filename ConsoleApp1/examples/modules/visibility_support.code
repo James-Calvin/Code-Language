@@ -1,0 +1,17 @@
+package examples.modules.visibility;
+
+public function<integer> public_add(integer value) {
+  return value + 10;
+}
+
+package function<integer> package_add(integer value) {
+  return value + 20;
+}
+
+private function<integer> private_add(integer value) {
+  return value + 30;
+}
+
+public function<integer> read_private(integer value) {
+  return private_add(value);
+}

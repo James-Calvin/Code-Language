@@ -1,5 +1,5 @@
 package examples.modules.math;
 
-export function<integer> add(integer a, integer b) {
+public function<integer> add(integer a, integer b) {
   return a + b;
 }

@@ -1,9 +1,9 @@
 package examples.modules.mathops;
 
-export function<integer> add(integer a, integer b) {
+public function<integer> add(integer a, integer b) {
   return a + b;
 }
 
-export function<integer> sub(integer a, integer b) {
+public function<integer> sub(integer a, integer b) {
   return a - b;
 }

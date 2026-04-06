@@ -237,6 +237,7 @@ static class ModuleCompiler
         var tokens = lexer.ScanTokens();
         var parser = new Parser(tokens);
         var ast = parser.Parse();
+        ast = LowerModuleSurfaceDeclarations(ast);
         ast = LowerInlineInterfaceImplementations(ast);
         var typeChecker = new TypeChecker();
         typeChecker.Check(ast);
@@ -435,6 +436,32 @@ static class ModuleCompiler
         return lowered;
     }
 
+    private static IList<Stmt> LowerModuleSurfaceDeclarations(IList<Stmt> statements)
+    {
+        bool hasWrappers = statements.Any(stmt => stmt is ExportDecl or VisibilityDecl);
+        if (!hasWrappers)
+            return statements;
+
+        var lowered = new List<Stmt>(statements.Count);
+        for (int i = 0; i < statements.Count; i++)
+        {
+            switch (statements[i])
+            {
+                case ExportDecl exportDecl:
+                    lowered.Add(exportDecl.Declaration);
+                    break;
+                case VisibilityDecl visibilityDecl:
+                    lowered.Add(visibilityDecl.Declaration);
+                    break;
+                default:
+                    lowered.Add(statements[i]);
+                    break;
+            }
+        }
+
+        return lowered;
+    }
+
     private static InterfaceMethodDecl? FindMatchingInterfaceMethod(InterfaceDecl iface, InlineImplementMethodDecl inline)
     {
         for (int i = 0; i < iface.Methods.Count; i++)
@@ -589,29 +616,42 @@ static class ModuleCompiler
                                 binding.Name.Column);
 
                             var namespaceMembers = new Dictionary<string, string>(StringComparer.Ordinal);
-                            foreach (var exportedPair in dependency.ExportedDeclarations.OrderBy(pair => pair.Key, StringComparer.Ordinal))
+                            foreach (var importablePair in GetAccessibleImportableDeclarations(module.PackageName, dependency).OrderBy(pair => pair.Key, StringComparer.Ordinal))
                             {
-                                if (exportedPair.Value is not FunctionDecl exportedFunction)
+                                if (importablePair.Value.Declaration is not FunctionDecl exportedFunction)
                                     continue;
 
                                 string wrapperName = BuildNamespaceWrapperName(aliasName, exportedFunction.Name.Lexeme, binding.Alias ?? binding.Name);
                                 module.LinkedStatements.Add(BuildNamespaceWrapper(wrapperName, exportedFunction, binding.Alias ?? binding.Name));
-                                namespaceMembers[exportedPair.Key] = wrapperName;
+                                namespaceMembers[importablePair.Key] = wrapperName;
                             }
 
                             module.NamespaceAliases[aliasName] = namespaceMembers;
                             continue;
                         }
 
-                        if (!dependency.ExportedDeclarations.TryGetValue(binding.Name.Lexeme, out var exported))
+                        if (!TryResolveAccessibleImportableDeclaration(module.PackageName, dependency, binding.Name, out var imported))
                         {
-                            var chain = BuildImportChain(dependencyPath);
+                            if (dependency.ImportableDeclarations.TryGetValue(binding.Name.Lexeme, out var inaccessibleDecl) &&
+                                inaccessibleDecl.Visibility == DeclarationVisibility.Package)
+                            {
+                                var packageChain = BuildImportChain(dependencyPath);
+                                throw BuildChainedError(
+                                    $"Declaration '{binding.Name.Lexeme}' is package-visible in module '{Path.GetFileName(dependencyPath)}' and cannot be imported from package '{module.PackageName ?? "(none)"}'",
+                                    binding.Name.Line,
+                                    binding.Name.Column,
+                                    packageChain);
+                            }
+
+                            var importChain = BuildImportChain(dependencyPath);
                             throw BuildChainedError(
                                 $"Module '{Path.GetFileName(dependencyPath)}' does not export '{binding.Name.Lexeme}'",
                                 binding.Name.Line,
                                 binding.Name.Column,
-                                chain);
+                                importChain);
                         }
+
+                        var exported = imported.Declaration;
 
                         if (binding.Alias is not null)
                         {
@@ -635,6 +675,14 @@ static class ModuleCompiler
 
                         if (import.IsExported)
                         {
+                            if (imported.Visibility != DeclarationVisibility.Public)
+                            {
+                                throw new CompilerException(
+                                    $"Cannot publicly re-export non-public declaration '{binding.Name.Lexeme}'",
+                                    binding.Alias?.Line ?? binding.Name.Line,
+                                    binding.Alias?.Column ?? binding.Name.Column);
+                            }
+
                             string exportName = binding.Alias?.Lexeme ?? binding.Name.Lexeme;
                             if (module.ExportedDeclarations.ContainsKey(exportName))
                             {
@@ -645,6 +693,7 @@ static class ModuleCompiler
                             }
 
                             module.ExportedDeclarations[exportName] = exported;
+                            module.ImportableDeclarations[exportName] = new ImportableDeclaration(exported, DeclarationVisibility.Public);
                         }
                     }
                 }
@@ -699,6 +748,7 @@ static class ModuleCompiler
             var imports = new List<ImportDecl>();
             var locals = new List<Stmt>();
             var exports = new Dictionary<string, Stmt>(StringComparer.Ordinal);
+            var importables = new Dictionary<string, ImportableDeclaration>(StringComparer.Ordinal);
             var topLevelNames = new Dictionary<string, Token>(StringComparer.Ordinal);
             var importBindings = new Dictionary<string, Token>(StringComparer.Ordinal);
             PackageDecl? package = null;
@@ -764,8 +814,42 @@ static class ModuleCompiler
                                 GetDeclColumn(exp.Declaration));
                         }
                         exports[exportName] = exp.Declaration;
+                        importables[exportName] = new ImportableDeclaration(exp.Declaration, DeclarationVisibility.Public);
                         RegisterTopLevelName(topLevelNames, importBindings, exportName, GetDeclToken(exp.Declaration));
                         locals.Add(exp.Declaration);
+                        break;
+                    }
+                    case VisibilityDecl visibilityDecl:
+                    {
+                        string name = GetExportName(visibilityDecl.Declaration);
+                        Token visibilityDeclToken = GetDeclToken(visibilityDecl.Declaration);
+
+                        if (visibilityDecl.Visibility == DeclarationVisibility.Package && package is null)
+                        {
+                            throw new CompilerException(
+                                "Package-visible declarations require a preceding package declaration.",
+                                visibilityDecl.VisibilityToken.Line,
+                                visibilityDecl.VisibilityToken.Column);
+                        }
+
+                        if (visibilityDecl.Visibility == DeclarationVisibility.Public)
+                        {
+                            if (exports.ContainsKey(name))
+                            {
+                                throw new CompilerException(
+                                    $"Module export '{name}' is already declared",
+                                    GetDeclLine(visibilityDecl.Declaration),
+                                    GetDeclColumn(visibilityDecl.Declaration));
+                            }
+
+                            exports[name] = visibilityDecl.Declaration;
+                        }
+
+                        if (visibilityDecl.Visibility is DeclarationVisibility.Public or DeclarationVisibility.Package)
+                            importables[name] = new ImportableDeclaration(visibilityDecl.Declaration, visibilityDecl.Visibility);
+
+                        RegisterTopLevelName(topLevelNames, importBindings, name, visibilityDeclToken);
+                        locals.Add(visibilityDecl.Declaration);
                         break;
                     }
                     default:
@@ -786,6 +870,7 @@ static class ModuleCompiler
                 imports,
                 locals,
                 exports,
+                importables,
                 new List<Stmt>(),
                 new Dictionary<string, string>(StringComparer.Ordinal),
                 new Dictionary<string, Dictionary<string, string>>(StringComparer.Ordinal));
@@ -826,6 +911,58 @@ static class ModuleCompiler
                 $"Could not resolve import '{sourcePath}'",
                 sourceToken.Line,
                 sourceToken.Column);
+        }
+
+        private static IReadOnlyDictionary<string, ImportableDeclaration> GetAccessibleImportableDeclarations(
+            string? importerPackageName,
+            ModuleInfo dependency)
+        {
+            var accessible = new Dictionary<string, ImportableDeclaration>(StringComparer.Ordinal);
+            foreach (var pair in dependency.ImportableDeclarations)
+            {
+                if (pair.Value.Visibility == DeclarationVisibility.Public ||
+                    (pair.Value.Visibility == DeclarationVisibility.Package &&
+                     ArePackagesEqual(importerPackageName, dependency.PackageName)))
+                {
+                    accessible[pair.Key] = pair.Value;
+                }
+            }
+
+            return accessible;
+        }
+
+        private static bool TryResolveAccessibleImportableDeclaration(
+            string? importerPackageName,
+            ModuleInfo dependency,
+            Token importName,
+            out ImportableDeclaration declaration)
+        {
+            if (dependency.ImportableDeclarations.TryGetValue(importName.Lexeme, out var resolvedDeclaration))
+            {
+                if (resolvedDeclaration.Visibility == DeclarationVisibility.Public)
+                {
+                    declaration = resolvedDeclaration;
+                    return true;
+                }
+
+                if (resolvedDeclaration.Visibility == DeclarationVisibility.Package &&
+                    ArePackagesEqual(importerPackageName, dependency.PackageName))
+                {
+                    declaration = resolvedDeclaration;
+                    return true;
+                }
+            }
+
+            declaration = default!;
+            return false;
+        }
+
+        private static bool ArePackagesEqual(string? left, string? right)
+        {
+            if (string.IsNullOrWhiteSpace(left) || string.IsNullOrWhiteSpace(right))
+                return false;
+
+            return string.Equals(left, right, StringComparison.Ordinal);
         }
 
         private void RegisterManifestCapabilities()
@@ -1644,6 +1781,8 @@ static class ModuleCompiler
 
     private sealed record LinkResult(IList<Stmt> Statements, ModuleGraph Graph, IReadOnlyList<string> RequiredCapabilities);
 
+    private sealed record ImportableDeclaration(Stmt Declaration, DeclarationVisibility Visibility);
+
     private sealed record ModuleInfo(
         string Path,
         string? PackageName,
@@ -1652,6 +1791,7 @@ static class ModuleCompiler
         List<ImportDecl> Imports,
         List<Stmt> LocalStatements,
         Dictionary<string, Stmt> ExportedDeclarations,
+        Dictionary<string, ImportableDeclaration> ImportableDeclarations,
         List<Stmt> LinkedStatements,
         Dictionary<string, string> TypeAliases,
         Dictionary<string, Dictionary<string, string>> NamespaceAliases);

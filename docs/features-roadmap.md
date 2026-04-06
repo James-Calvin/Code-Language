@@ -11,8 +11,8 @@ This roadmap is implementation-truthful: items marked below are gaps from the cu
 ## Near-Term Gap Groups
 
 ### Language Gaps
-1. Visibility/access control
-2. User-facing error-handling syntax and propagation (`fallible<T>`, `on error`)
+1. User-facing error-handling syntax and propagation (`fallible<T>`, `on error`)
+2. Member-level visibility/access control follow-up
 
 ### Stdlib and Runtime Gaps
 1. Broader standard-library modules after the core container/math baseline lands
@@ -61,12 +61,13 @@ This roadmap is implementation-truthful: items marked below are gaps from the cu
 | `[x]` | Object model | Method declarations + call syntax (`obj.method(args)`) | Implemented with signature-based overload resolution; object methods support implicit-void authoring |
 | `[x]` | Object model | Temporary method lowering (`method` -> static fn with implicit `this`) | Implemented with compile-time signature binding (no dynamic dispatch yet) |
 | `[x]` | Object model | `record` declaration + value semantics (copy on assignment/pass/return) | Implemented: constructors, methods, inline/external interface implementations, copy-on-assignment/pass/return/container insertion, copy-by-value method receivers, structural equality for hashable records, and hashable record support in `map` / `set` |
-| `[~]` | Object model | Visibility enforcement (`public/package/private`) | Permanent; phase in from parser -> checker -> codegen |
+| `[x]` | Object model | Top-level visibility/access control (`public/package/private`) | Implemented for module declarations; `public`/`package`/`private` gate imports, and legacy `export` remains as a compatibility alias for `public` |
+| `[~]` | Object model | Member-level visibility/access control | Fields and methods still use the current all-visible member model |
 | `[x]` | Object model | Interfaces + conformance checks | Compile-time interface declarations + explicit `implement Interface for Object { ... via Object.method; }` mapping with signature/return checks, plus inline object-body syntax `implement Interface.method(...) { ... }` |
 | `[~]` | Object model | Interface dispatch lowering/runtime model | Baseline runtime dispatch table opcode implemented for interface-typed locals/params/returns/fields/arrays; extend to broader container types and optimizer-grade fast paths |
 | `[_]` | Object model | Lifecycle/perf plan for heap instances (GC/ownership strategy) | Permanent runtime design decision; defer until objects are exercised |
-| `[~]` | Modules/imports | Exported declarations | `export` implemented for function/object/interface/enum declarations |
-| `[~]` | Modules/imports | Import syntax & package declarations | `import Name [as Alias] from \"path\";` + `package Name;` implemented; package namespace semantics still minimal |
+| `[~]` | Modules/imports | Exported declarations | Canonical `public` declarations plus legacy `export` compatibility are implemented for function/object/record/interface/enum declarations |
+| `[~]` | Modules/imports | Import syntax & package declarations | `import Name [as Alias] from \"path\";` + `package Name;` implemented; package names now participate in `package` visibility checks, while broader package namespace semantics remain minimal |
 | `[~]` | Modules/imports | Package search paths/stdlib layout/versioning | Relative-path + `lib/` ancestor search implemented; stdlib layout/versioning still deferred |
 | `[x]` | Modules/imports | Package manifest parser/validator (`code.package.json`) | Implemented baseline schema v1 validation + target/capability checks + target override path validation |
 | `[x]` | Modules/imports | Package lockfile + resolver (`code.lock.json`) | Implemented baseline local resolver (workspace `packages/` search), semver range checks (`x.y.z`, `^x.y.z`), deterministic lockfile emission with integrity hashes |
@@ -116,7 +117,7 @@ This roadmap is implementation-truthful: items marked below are gaps from the cu
 
 ## Priority Rollup (benefit/effort)
 - High (`[!]`): keeping example/docs status aligned with implementation truth.
-- Medium (`[~]`): visibility/access control, fuller user-facing error-handling syntax, constant pool, optimizer expansion, tooling polish, and engine core/adapters.
+- Medium (`[~]`): member-level visibility/access control, fuller user-facing error-handling syntax, constant pool, optimizer expansion, tooling polish, and engine core/adapters.
 - Low (`[_]`): REPL, future stdlib/versioning, long-term runtime lifecycle strategy, remote package registry, and longer-horizon GPU/backend work.
 
 See also: `docs/platform-roadmap.md` for ABI schema, package manifest schema, and phased execution plan.

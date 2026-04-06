@@ -1,10 +1,10 @@
 package examples.modules.types;
 
-export interface IValue {
+public interface IValue {
   function<integer> read();
 }
 
-export object Counter {
+public object Counter {
   integer count;
 
   constructor(integer initial) {

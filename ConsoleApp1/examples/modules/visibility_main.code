@@ -1,0 +1,7 @@
+package examples.modules.visibility;
+
+import { public_add, package_add, read_private } from "visibility_support.code";
+
+print(public_add(1));
+print(package_add(1));
+print(read_private(1));

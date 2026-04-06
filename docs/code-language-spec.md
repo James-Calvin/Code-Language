@@ -350,7 +350,8 @@ print(turns.dequeue());
 ## 9. Object Model and Interfaces
 - Current implementation status:
   - Implemented: object declarations with fields/constructors/methods, record declarations with fields/constructors/methods, `new Type(...)`, field read/write (`obj.field`, `obj.field = value`), method calls (`obj.method(args)`), interface conformance checks via either inline interface methods or `implement Interface for Object/Record`, and interface-typed locals/parameters/returns/fields/arrays with runtime-dispatched interface method calls.
-  - Not yet implemented: visibility enforcement.
+  - Implemented: top-level declaration visibility for modules (`public`, `package`, `private`) with package-aware import checks.
+  - Not yet implemented: member-level visibility for fields and methods.
 - No inheritance.
 - Contracts are declared as `interface`.
 - Concrete types are declared as `object`.
@@ -469,7 +470,9 @@ Person instance = new Person("Ada");
 ```
 
 ## 10. Member Access
-- Visibility/access modifiers are not implemented yet.
+- Current visibility scope:
+  - Implemented for top-level module declarations only: `public`, `package`, `private`.
+  - Not implemented for object/record fields or methods.
 - `constant` fields are supported through `constant` declarations.
 - Field access allows both unqualified and `this.`-qualified forms.
 - If a local variable shadows a field, unqualified access resolves to the local variable.
@@ -492,6 +495,11 @@ object Person {
 ```
 
 ## 11. Modules and Imports
+- Top-level declaration visibility (current implementation):
+  - `public function/object/record/interface/enum ...` makes a declaration importable from any module.
+  - `package function/object/record/interface/enum ...` makes a declaration importable only from modules with the same `package Name;`.
+  - `private function/object/record/interface/enum ...` keeps a declaration module-local.
+  - Legacy `export` remains supported as a compatibility alias for `public`.
 - Import syntax:
   - `import identifier from "FilePath";`
   - Alias form: `import sourceName as localName from "FilePath";`
@@ -509,7 +517,8 @@ object Person {
 - Package declaration rules (current implementation):
   - at most one per module;
   - must appear before imports/declarations;
-  - package names are currently metadata only (namespace enforcement deferred).
+  - package names participate in `package` visibility checks for imports;
+  - broader package namespace enforcement is still deferred.
 - Package manifest baseline (current implementation):
   - Compiler auto-discovers nearest ancestor `code.package.json` from the entry module.
   - Manifest schema v1 is validated (`schemaVersion`, `name`, `version`, `kind`, `entry`; optional exports/deps/target overrides/host capabilities).
@@ -525,15 +534,28 @@ import exportedFunction as errorExample from "PathToExampleAbove";
 import { add, subtract as minus } from "math.code";
 import everything as Draw from "engine/drawing.code";
 package Example.Package;
+
+public function<integer> add(integer left, integer right) {
+  return left + right;
+}
+
+package function<integer> helper(integer value) {
+  return value + 1;
+}
+
+private function<integer> hidden(integer value) {
+  return value + 2;
+}
 ```
 
 ## 12. Exports
-- Exported declarations use `export` before the declaration.
+- Canonical public declarations use `public` before the declaration.
+- Legacy exported declarations may still use `export` before the declaration.
 - Multiple exports can exist in one module.
-- Export is currently implemented for `function`, `object`, `interface`, and `enum` declarations.
+- `public` / `export` are currently implemented for `function`, `object`, `record`, `interface`, and `enum` declarations.
 
 ```code
-export function<integer> add(integer left, integer right) {
+public function<integer> add(integer left, integer right) {
   return left + right;
 }
 ```
@@ -621,7 +643,7 @@ if x > 3 then panic("x too large");
 - Built-in collections: `map`, `set`, `queue`, and `stack` lower to dedicated VM opcodes; `.length` also covers those collection types.
 
 ## 15. Planned But Not Implemented Yet
-- Visibility/access modifiers such as `public`, `package`, and `private`.
+- Member-level visibility/access modifiers for fields and methods.
 - User-facing `fallible<T>` / `on error` syntax.
 
 ## 16. Comments

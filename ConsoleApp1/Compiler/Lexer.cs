@@ -44,6 +44,8 @@ sealed class Lexer
         { "from", TokenType.From },
         { "as", TokenType.As },
         { "package", TokenType.Package },
+        { "public", TokenType.Public },
+        { "private", TokenType.Private },
         { "new", TokenType.New },
         { "true", TokenType.True },
         { "false", TokenType.False },

@@ -237,6 +237,27 @@ sealed record EnumMemberDecl(Token Name, int? ExplicitValue);
 
 abstract class Stmt { }
 
+enum DeclarationVisibility
+{
+    Public,
+    Package,
+    Private
+}
+
+sealed class VisibilityDecl : Stmt
+{
+    public Token VisibilityToken { get; }
+    public DeclarationVisibility Visibility { get; }
+    public Stmt Declaration { get; }
+
+    public VisibilityDecl(Token visibilityToken, DeclarationVisibility visibility, Stmt declaration)
+    {
+        VisibilityToken = visibilityToken;
+        Visibility = visibility;
+        Declaration = declaration;
+    }
+}
+
 sealed class VarDecl : Stmt
 {
     public TypeRef Type { get; }

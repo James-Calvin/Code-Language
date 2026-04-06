@@ -49,6 +49,7 @@ Use this document as the primary answer to "does this exist yet?"
 | `runnable` | `ConsoleApp1/examples/modules/main.code` | `run` | Basic imports with aliasing |
 | `runnable` | `ConsoleApp1/examples/modules/grouped-imports.code` | `run` | Grouped/selective imports |
 | `runnable` | `ConsoleApp1/examples/modules/re_exports_main.code` | `run` | Re-export imports |
+| `runnable` | `ConsoleApp1/examples/modules/visibility_main.code` | `run` | Top-level `public` / `package` / `private` visibility with package-aware imports |
 | `runnable` | `ConsoleApp1/examples/package_manifest_host_requirements/ok/main.code` | `run (--target vm-web)` | Package manifest plus allowed host requirements |
 | `negative` | `ConsoleApp1/examples/package_manifest_host_requirements/web_blocked/main.code` | `expected compile error (--target vm-web)` | Manifest host requirement rejected for web target |
 | `runnable` | `ConsoleApp1/examples/package_library_artifact/main.code` | `compile-only artifact` | Library package emits `.codelib` and `code.lock.json` |
@@ -68,7 +69,7 @@ Current limitation:
 
 No checked-in runnable examples exist yet for these planned features:
 - user-facing `fallible<T>` / `on error`
-- visibility modifiers (`public`, `package`, `private`)
+- member-level visibility for fields and methods
 
 Record notes:
 - Record methods are value-helper methods: `this` is cloned at method entry.

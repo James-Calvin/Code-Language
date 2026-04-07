@@ -12,6 +12,7 @@ Current contents:
 Current VM data-structure support:
 - Arrays plus built-in `map`, `set`, `queue`, and `stack` bytecode operations
 - Shared `.length` behavior across arrays and the built-in collections
+- Recoverable `fallible<Value, ErrorCode>` success/error value opcodes
 
 ## Supported host ABI (web)
 - `standard.input_output.print`

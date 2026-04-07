@@ -1061,6 +1061,10 @@ static class ModuleCompiler
                     ScanExprForCapabilities(p.Value, modulePath);
                     break;
 
+                case YieldStmt y:
+                    ScanExprForCapabilities(y.Value, modulePath);
+                    break;
+
                 case ForStmt f:
                     if (f.Initializer is not null)
                         ScanStmtForCapabilities(f.Initializer, modulePath);
@@ -1139,6 +1143,14 @@ static class ModuleCompiler
                 case OptionalValueExpr o:
                     ScanExprForCapabilities(o.Target, modulePath);
                     break;
+                case FallibleErrorExpr f:
+                    for (int i = 0; i < f.Arguments.Count; i++)
+                        ScanExprForCapabilities(f.Arguments[i], modulePath);
+                    break;
+                case OnErrorExpr o:
+                    ScanExprForCapabilities(o.Fallible, modulePath);
+                    ScanStmtForCapabilities(o.Handler, modulePath);
+                    break;
                 case FieldAccessExpr f:
                     ScanExprForCapabilities(f.Target, modulePath);
                     break;
@@ -1207,6 +1219,8 @@ static class ModuleCompiler
             OptionalOrExpr o => GetExprLine(o.Optional),
             OptionalHasValueExpr o => GetExprLine(o.Target),
             OptionalValueExpr o => GetExprLine(o.Target),
+            FallibleErrorExpr e => e.ErrorToken.Line,
+            OnErrorExpr o => GetExprLine(o.Fallible),
             ArrayLengthExpr a => GetExprLine(a.Target),
             _ => 1
         };
@@ -1233,6 +1247,8 @@ static class ModuleCompiler
             OptionalOrExpr o => GetExprColumn(o.Optional),
             OptionalHasValueExpr o => GetExprColumn(o.Target),
             OptionalValueExpr o => GetExprColumn(o.Target),
+            FallibleErrorExpr e => e.ErrorToken.Column,
+            OnErrorExpr o => GetExprColumn(o.Fallible),
             ArrayLengthExpr a => GetExprColumn(a.Target),
             _ => 1
         };
@@ -1588,6 +1604,7 @@ static class ModuleCompiler
             ReturnStmt r => new ReturnStmt(r.Value is null ? null : RewriteExpr(r.Value, typeAliases, namespaceAliases)),
             PrintStmt p => new PrintStmt(RewriteExpr(p.Value, typeAliases, namespaceAliases)),
             PanicStmt p => new PanicStmt(RewriteExpr(p.Value, typeAliases, namespaceAliases)),
+            YieldStmt y => new YieldStmt(y.Keyword, RewriteExpr(y.Value, typeAliases, namespaceAliases)),
             ForStmt f => new ForStmt(
                 f.Initializer is null ? null : RewriteStmt(f.Initializer, typeAliases, namespaceAliases),
                 RewriteExpr(f.Condition, typeAliases, namespaceAliases),
@@ -1658,6 +1675,18 @@ static class ModuleCompiler
             OptionalOrExpr o => new OptionalOrExpr(RewriteExpr(o.Optional, typeAliases, namespaceAliases), RewriteExpr(o.Fallback, typeAliases, namespaceAliases)),
             OptionalHasValueExpr o => new OptionalHasValueExpr(RewriteExpr(o.Target, typeAliases, namespaceAliases)),
             OptionalValueExpr o => new OptionalValueExpr(RewriteExpr(o.Target, typeAliases, namespaceAliases)),
+            FallibleErrorExpr e => new FallibleErrorExpr(e.ErrorToken, e.Arguments.Select(a => RewriteExpr(a, typeAliases, namespaceAliases)).ToList())
+            {
+                ResolvedFallibleTypeRef = e.ResolvedFallibleTypeRef is null ? null : RewriteTypeRef(e.ResolvedFallibleTypeRef, typeAliases)
+            },
+            OnErrorExpr o => new OnErrorExpr(
+                RewriteExpr(o.Fallible, typeAliases, namespaceAliases),
+                o.OnToken,
+                (Block)RewriteStmt(o.Handler, typeAliases, namespaceAliases))
+            {
+                ResolvedSuccessTypeRef = o.ResolvedSuccessTypeRef is null ? null : RewriteTypeRef(o.ResolvedSuccessTypeRef, typeAliases),
+                ResolvedErrorCodeTypeRef = o.ResolvedErrorCodeTypeRef is null ? null : RewriteTypeRef(o.ResolvedErrorCodeTypeRef, typeAliases)
+            },
             FieldAccessExpr f => RewriteFieldAccessExpr(f, typeAliases, namespaceAliases),
             FieldSetExpr f => new FieldSetExpr((FieldAccessExpr)RewriteExpr(f.Target, typeAliases, namespaceAliases), RewriteExpr(f.Value, typeAliases, namespaceAliases)),
             NewObjectExpr no => new NewObjectExpr(RewriteTypeToken(no.TypeName, typeAliases), no.Arguments.Select(a => RewriteExpr(a, typeAliases, namespaceAliases)).ToList()),
@@ -1724,7 +1753,8 @@ static class ModuleCompiler
             return new FieldAccessExpr(rewrittenTarget, fieldAccess.Name)
             {
                 ResolvedEnumTypeRef = fieldAccess.ResolvedEnumTypeRef is null ? null : RewriteTypeRef(fieldAccess.ResolvedEnumTypeRef, typeAliases),
-                ResolvedEnumValue = fieldAccess.ResolvedEnumValue
+                ResolvedEnumValue = fieldAccess.ResolvedEnumValue,
+                ResolvedFallibleErrorFieldTypeRef = fieldAccess.ResolvedFallibleErrorFieldTypeRef is null ? null : RewriteTypeRef(fieldAccess.ResolvedFallibleErrorFieldTypeRef, typeAliases)
             };
         }
 

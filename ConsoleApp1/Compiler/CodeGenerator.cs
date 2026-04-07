@@ -75,6 +75,8 @@ sealed class CodeGenerator
     private readonly Dictionary<string, Dictionary<string, TypeRef>> _objectFieldTypes = new(StringComparer.Ordinal);
     private readonly Dictionary<string, List<InterfaceDispatchTarget>> _interfaceDispatch = new(StringComparer.Ordinal);
     private TypeRef? _currentCallableReturnTypeRef;
+    private readonly Stack<(int CodeSlot, int MessageSlot)> _fallibleErrorSlots = new();
+    private readonly Stack<string> _yieldTargetLabels = new();
     private int _labelCounter;
 
     public byte[] Generate(IList<Stmt> statements) => GenerateWithMetadata(statements).Bytecode;
@@ -176,7 +178,7 @@ sealed class CodeGenerator
         string label = _functions[fn.Name.Lexeme].Label;
         _builder.Label(label);
         var previousReturnTypeRef = _currentCallableReturnTypeRef;
-        _currentCallableReturnTypeRef = fn.ReturnType;
+        _currentCallableReturnTypeRef = fn.ReturnType ?? BuildImplicitVoidTypeRef(fn.Name);
 
         // reset per-function allocators
         _nextLocalIndex = 0;
@@ -277,7 +279,7 @@ sealed class CodeGenerator
         var info = _methods[key];
         _builder.Label(info.Label);
         var previousReturnTypeRef = _currentCallableReturnTypeRef;
-        _currentCallableReturnTypeRef = method.ReturnType;
+        _currentCallableReturnTypeRef = method.ReturnType ?? BuildImplicitVoidTypeRef(method.Name);
 
         _nextLocalIndex = 0;
         _functionLocalHighWater = 0;
@@ -411,7 +413,7 @@ sealed class CodeGenerator
                 if (r.Value is not null)
                 {
                     Emit(r.Value);
-                    EmitCloneForSourceExprIfNeeded(r.Value);
+                    EmitReturnValue(r.Value);
                 }
                 else _builder.PushInt(0);
                 _builder.Ret();
@@ -426,6 +428,14 @@ sealed class CodeGenerator
             case PanicStmt p:
                 Emit(p.Value);
                 _builder.ThrowError();
+                break;
+
+            case YieldStmt y:
+                if (_yieldTargetLabels.Count == 0)
+                    throw new InvalidOperationException("'yield' emitted outside an on error handler.");
+                Emit(y.Value);
+                EmitCloneForSourceExprIfNeeded(y.Value);
+                _builder.Jump(_yieldTargetLabels.Peek());
                 break;
 
             case ForStmt f:
@@ -571,11 +581,22 @@ sealed class CodeGenerator
                 Emit(oor.Fallback);
                 _builder.OptionalOr();
                 break;
+            case FallibleErrorExpr ferr:
+                EmitFallibleError(ferr);
+                break;
+            case OnErrorExpr onError:
+                EmitOnError(onError);
+                break;
             case FieldAccessExpr fa:
                 if (fa.ResolvesToEnumMember)
                 {
                     SetLoc(fa.Name);
                     _builder.PushInt(fa.ResolvedEnumValue ?? 0);
+                    break;
+                }
+                if (fa.ResolvesToFallibleErrorField)
+                {
+                    EmitFallibleErrorField(fa);
                     break;
                 }
                 Emit(fa.Target);
@@ -754,6 +775,103 @@ sealed class CodeGenerator
         }
     }
 
+    private void EmitReturnValue(Expr value)
+    {
+        if (_currentCallableReturnTypeRef is not null &&
+            _currentCallableReturnTypeRef.IsFallible &&
+            _currentCallableReturnTypeRef.TypeArguments.Count == 2)
+        {
+            var sourceTypeRef = TryResolveTypeRef(value);
+            if (sourceTypeRef is not null && sourceTypeRef.IsFallible)
+            {
+                EmitCloneIfNeeded(sourceTypeRef);
+            }
+            else
+            {
+                EmitCloneForSourceExprIfNeeded(value);
+                _builder.FallibleSuccess();
+            }
+            return;
+        }
+
+        EmitCloneForSourceExprIfNeeded(value);
+    }
+
+    private void EmitFallibleError(FallibleErrorExpr expr)
+    {
+        if (expr.Arguments.Count is < 1 or > 2)
+            throw new InvalidOperationException("error(...) expects one or two arguments after type checking.");
+
+        Emit(expr.Arguments[0]);
+        if (expr.Arguments.Count == 2)
+            Emit(expr.Arguments[1]);
+        else
+            _builder.PushString(string.Empty);
+
+        _builder.FallibleError();
+    }
+
+    private void EmitOnError(OnErrorExpr expr)
+    {
+        int fallibleSlot = AllocateTemp();
+        Emit(expr.Fallible);
+        _builder.Store(fallibleSlot);
+
+        string errorLabel = NewLabel("fallible_error");
+        string endLabel = NewLabel("fallible_end");
+
+        _builder.Load(fallibleSlot);
+        _builder.FallibleIsError();
+        _builder.JumpIfNotZero(errorLabel);
+
+        _builder.Load(fallibleSlot);
+        _builder.FallibleValue();
+        _builder.Jump(endLabel);
+
+        _builder.Label(errorLabel);
+        int codeSlot = AllocateTemp();
+        int messageSlot = AllocateTemp();
+
+        _builder.Load(fallibleSlot);
+        _builder.FallibleErrorCode();
+        _builder.Store(codeSlot);
+
+        _builder.Load(fallibleSlot);
+        _builder.FallibleErrorMessage();
+        _builder.Store(messageSlot);
+
+        _fallibleErrorSlots.Push((codeSlot, messageSlot));
+        _yieldTargetLabels.Push(endLabel);
+        Emit(expr.Handler);
+        _yieldTargetLabels.Pop();
+        _fallibleErrorSlots.Pop();
+
+        _builder.Label(endLabel);
+        ReleaseTemp(messageSlot);
+        ReleaseTemp(codeSlot);
+        ReleaseTemp(fallibleSlot);
+    }
+
+    private void EmitFallibleErrorField(FieldAccessExpr expr)
+    {
+        if (_fallibleErrorSlots.Count == 0)
+            throw new InvalidOperationException("Fallible error field emitted outside an on error handler.");
+
+        var slots = _fallibleErrorSlots.Peek();
+        SetLoc(expr.Name);
+        switch (expr.Name.Lexeme)
+        {
+            case "code":
+                _builder.Load(slots.CodeSlot);
+                break;
+            case "message":
+                _builder.Load(slots.MessageSlot);
+                break;
+            default:
+                throw new InvalidOperationException($"Unsupported fallible error field '{expr.Name.Lexeme}'.");
+        }
+    }
+
     private int GetOrAllocate(string name)
     {
         if (_locals.TryGetValue(name, out var slot)) return slot;
@@ -887,6 +1005,8 @@ sealed class CodeGenerator
             case ArrayIndexExpr ai:
                 return ai.ResolvedElementTypeRef;
             case FieldAccessExpr fa:
+                if (fa.ResolvedFallibleErrorFieldTypeRef is not null)
+                    return fa.ResolvedFallibleErrorFieldTypeRef;
                 if (fa.ResolvedEnumTypeRef is not null)
                     return fa.ResolvedEnumTypeRef;
             {
@@ -912,6 +1032,10 @@ sealed class CodeGenerator
             }
             case OptionalOrExpr oor:
                 return TryResolveTypeRef(oor.Fallback);
+            case FallibleErrorExpr ferr:
+                return ferr.ResolvedFallibleTypeRef;
+            case OnErrorExpr onError:
+                return onError.ResolvedSuccessTypeRef;
             default:
                 return null;
         }
@@ -1177,8 +1301,14 @@ sealed class CodeGenerator
             return false;
         if (IsRecordType(typeRef))
             return true;
-        return string.Equals(typeRef.Name, "optional", StringComparison.Ordinal) &&
-               typeRef.TypeArguments.Count == 1 &&
+        if (string.Equals(typeRef.Name, "optional", StringComparison.Ordinal) &&
+            typeRef.TypeArguments.Count == 1)
+        {
+            return RequiresCopyOnAssignment(typeRef.TypeArguments[0]);
+        }
+
+        return string.Equals(typeRef.Name, "fallible", StringComparison.Ordinal) &&
+               typeRef.TypeArguments.Count == 2 &&
                RequiresCopyOnAssignment(typeRef.TypeArguments[0]);
     }
 
@@ -1203,6 +1333,12 @@ sealed class CodeGenerator
             _builder.JumpIfZero(endLabel);
             EmitCloneIfNeeded(typeRef.TypeArguments[0]);
             _builder.Label(endLabel);
+            return;
+        }
+
+        if (string.Equals(typeRef.Name, "fallible", StringComparison.Ordinal) && typeRef.TypeArguments.Count == 2)
+        {
+            EmitCloneFallibleValue(typeRef);
         }
     }
 
@@ -1234,6 +1370,35 @@ sealed class CodeGenerator
 
         _builder.Load(cloneSlot);
         ReleaseTemp(cloneSlot);
+        ReleaseTemp(originalSlot);
+    }
+
+    private void EmitCloneFallibleValue(TypeRef fallibleType)
+    {
+        int originalSlot = AllocateTemp();
+        _builder.Store(originalSlot);
+
+        string errorLabel = NewLabel("clone_fallible_error");
+        string endLabel = NewLabel("clone_fallible_end");
+
+        _builder.Load(originalSlot);
+        _builder.FallibleIsError();
+        _builder.JumpIfNotZero(errorLabel);
+
+        _builder.Load(originalSlot);
+        _builder.FallibleValue();
+        EmitCloneIfNeeded(fallibleType.TypeArguments[0]);
+        _builder.FallibleSuccess();
+        _builder.Jump(endLabel);
+
+        _builder.Label(errorLabel);
+        _builder.Load(originalSlot);
+        _builder.FallibleErrorCode();
+        _builder.Load(originalSlot);
+        _builder.FallibleErrorMessage();
+        _builder.FallibleError();
+
+        _builder.Label(endLabel);
         ReleaseTemp(originalSlot);
     }
 

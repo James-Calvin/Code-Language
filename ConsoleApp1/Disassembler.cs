@@ -97,6 +97,12 @@ static class Disassembler
                 case OpCode.OptionalHas:
                 case OpCode.OptionalValue:
                 case OpCode.OptionalOr:
+                case OpCode.FallibleSuccess:
+                case OpCode.FallibleError:
+                case OpCode.FallibleIsError:
+                case OpCode.FallibleValue:
+                case OpCode.FallibleErrorCode:
+                case OpCode.FallibleErrorMessage:
                 case OpCode.ThrowError:
                 case OpCode.GetTypeName:
                 case OpCode.TimeUnixMs:

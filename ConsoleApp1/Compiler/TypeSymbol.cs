@@ -13,6 +13,8 @@ enum TypeSymbol
     Queue,
     Stack,
     Optional,
+    Fallible,
+    Error,
     Void,
     Enum,
     Record,

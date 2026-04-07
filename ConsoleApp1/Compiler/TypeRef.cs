@@ -24,6 +24,8 @@ sealed class TypeRef
     public bool IsSet => Name == "set";
     public bool IsQueue => Name == "queue";
     public bool IsStack => Name == "stack";
+    public bool IsFallible => Name == "fallible";
+    public bool IsError => Name == "__error";
     public bool IsBuiltInCollection => IsArray || IsMap || IsSet || IsQueue || IsStack;
     public bool IsIndexableCollection => IsArray || IsMap;
 

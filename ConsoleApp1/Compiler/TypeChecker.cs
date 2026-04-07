@@ -13,6 +13,7 @@ sealed class TypeChecker
     private readonly HashSet<string> _interfaceObjectPairs = new(StringComparer.Ordinal);
     private readonly Dictionary<string, HashSet<string>> _interfaceMethodImplementers = new(StringComparer.Ordinal);
     private TypeRef? _currentReturnTypeRef;
+    private TypeRef? _currentYieldTypeRef;
     private ObjectSymbol? _currentObjectSymbol;
     private TypeRef? _currentObjectTypeRef;
     private static readonly Dictionary<string, FunctionSignature> IntrinsicFunctions = BuildIntrinsicFunctions();
@@ -636,7 +637,8 @@ sealed class TypeChecker
                 return false;
 
             case ExprStmt e:
-                CheckExpr(e.Expression, env, currentReturn);
+                if (CheckExpr(e.Expression, env, currentReturn) == TypeSymbol.Error)
+                    throw new CompilerException("Use error.code or error.message inside an 'on error' handler", GetLine(e.Expression), GetCol(e.Expression));
                 return false;
 
             case Block b:
@@ -728,16 +730,49 @@ sealed class TypeChecker
                 }
                 var rval = r.Value is null ? TypeSymbol.Integer : CheckExpr(r.Value, env, currentReturn);
                 var retRef = r.Value is null ? null : ResolveExprTypeRef(r.Value, env);
-                RequireAssignable(currentReturn.Value, _currentReturnTypeRef, rval, retRef, GetStmtLine(r), GetStmtCol(r), "Return type mismatch");
+                if (_currentReturnTypeRef is not null && _currentReturnTypeRef.IsFallible && _currentReturnTypeRef.TypeArguments.Count == 2)
+                {
+                    if (rval == TypeSymbol.Fallible)
+                    {
+                        RequireAssignable(currentReturn.Value, _currentReturnTypeRef, rval, retRef, GetStmtLine(r), GetStmtCol(r), "Return type mismatch");
+                    }
+                    else
+                    {
+                        var successTypeRef = _currentReturnTypeRef.TypeArguments[0];
+                        RequireAssignable(MapType(successTypeRef), successTypeRef, rval, retRef, GetStmtLine(r), GetStmtCol(r), "Return type mismatch");
+                    }
+                }
+                else
+                {
+                    RequireAssignable(currentReturn.Value, _currentReturnTypeRef, rval, retRef, GetStmtLine(r), GetStmtCol(r), "Return type mismatch");
+                }
                 return true;
 
             case PrintStmt p:
-                CheckExpr(p.Value, env, currentReturn);
+                if (CheckExpr(p.Value, env, currentReturn) == TypeSymbol.Error)
+                    throw new CompilerException("Use error.code or error.message inside an 'on error' handler", GetLine(p.Value), GetCol(p.Value));
                 return false;
 
             case PanicStmt p:
                 CheckExpr(p.Value, env, currentReturn);
-                return false;
+                return true;
+
+            case YieldStmt y:
+            {
+                if (_currentYieldTypeRef is null)
+                    throw new CompilerException("'yield' is only valid inside an 'on error' handler", y.Keyword.Line, y.Keyword.Column);
+                var valueType = CheckExpr(y.Value, env, currentReturn);
+                var valueTypeRef = ResolveExprTypeRef(y.Value, env);
+                RequireAssignable(
+                    MapType(_currentYieldTypeRef),
+                    _currentYieldTypeRef,
+                    valueType,
+                    valueTypeRef,
+                    y.Keyword.Line,
+                    y.Keyword.Column,
+                    "Yield value type mismatch");
+                return true;
+            }
 
             case FunctionDecl:
                 // handled earlier
@@ -874,6 +909,10 @@ sealed class TypeChecker
                 var optionalValueType = CheckExpr(oor.Optional, env, currentReturn);
                 Require(optionalValueType == TypeSymbol.Optional, oor.Optional, "'.or' requires optional target");
                 return fbType;
+            case FallibleErrorExpr ferr:
+                return CheckFallibleErrorExpr(ferr, env, currentReturn);
+            case OnErrorExpr onError:
+                return CheckOnErrorExpr(onError, env, currentReturn);
             case FieldAccessExpr fa:
             {
                 if (TryResolveEnumMember(fa, env, out var enumTypeRef, out var enumValue))
@@ -885,7 +924,28 @@ sealed class TypeChecker
 
                 fa.ResolvedEnumTypeRef = null;
                 fa.ResolvedEnumValue = null;
+                fa.ResolvedFallibleErrorFieldTypeRef = null;
                 var targetType = CheckExpr(fa.Target, env, currentReturn);
+                if (targetType == TypeSymbol.Error)
+                {
+                    var targetTypeRef = ResolveExprTypeRef(fa.Target, env);
+                    if (targetTypeRef is null || !targetTypeRef.IsError || targetTypeRef.TypeArguments.Count != 1)
+                        throw new CompilerException("Could not resolve error value type", fa.Name.Line, fa.Name.Column);
+
+                    if (string.Equals(fa.Name.Lexeme, "code", StringComparison.Ordinal))
+                    {
+                        fa.ResolvedFallibleErrorFieldTypeRef = targetTypeRef.TypeArguments[0];
+                        return MapType(targetTypeRef.TypeArguments[0]);
+                    }
+
+                    if (string.Equals(fa.Name.Lexeme, "message", StringComparison.Ordinal))
+                    {
+                        fa.ResolvedFallibleErrorFieldTypeRef = new TypeRef("string", null, fa.Name.Line, fa.Name.Column);
+                        return TypeSymbol.String;
+                    }
+
+                    throw new CompilerException($"Recoverable error has no field '{fa.Name.Lexeme}'", fa.Name.Line, fa.Name.Column);
+                }
                 Require(targetType == TypeSymbol.Object || targetType == TypeSymbol.Record, fa.Target, "Field access requires object or record target");
                 var resolved = ResolveFieldType(fa, env);
                 return resolved ?? TypeSymbol.Unknown;
@@ -1147,6 +1207,85 @@ sealed class TypeChecker
         if (_functions.TryGetValue(name, out signature!))
             return true;
         return IntrinsicFunctions.TryGetValue(name, out signature!);
+    }
+
+    private TypeSymbol CheckFallibleErrorExpr(FallibleErrorExpr expr, TypeEnvironment env, TypeSymbol? currentReturn)
+    {
+        if (_currentReturnTypeRef is null ||
+            !_currentReturnTypeRef.IsFallible ||
+            _currentReturnTypeRef.TypeArguments.Count != 2 ||
+            currentReturn != TypeSymbol.Fallible)
+        {
+            throw new CompilerException("'error(...)' is only valid inside a function or method returning fallible<Value, ErrorCode>", expr.ErrorToken.Line, expr.ErrorToken.Column);
+        }
+
+        if (expr.Arguments.Count is < 1 or > 2)
+            throw new CompilerException("error(...) expects an error code and optional message", expr.ErrorToken.Line, expr.ErrorToken.Column);
+
+        var errorCodeTypeRef = _currentReturnTypeRef.TypeArguments[1];
+        var codeType = CheckExpr(expr.Arguments[0], env, currentReturn);
+        var codeTypeRef = ResolveExprTypeRef(expr.Arguments[0], env);
+        if (expr.Arguments.Count == 1 && codeType == TypeSymbol.String)
+            throw new CompilerException("error(message) is not supported; use error(code) or error(code, message)", GetLine(expr.Arguments[0]), GetCol(expr.Arguments[0]));
+
+        RequireAssignable(
+            MapType(errorCodeTypeRef),
+            errorCodeTypeRef,
+            codeType,
+            codeTypeRef,
+            GetLine(expr.Arguments[0]),
+            GetCol(expr.Arguments[0]),
+            "Error code type mismatch");
+
+        if (expr.Arguments.Count == 2)
+        {
+            var messageType = CheckExpr(expr.Arguments[1], env, currentReturn);
+            Require(messageType == TypeSymbol.String, expr.Arguments[1], "Error message must be a string");
+        }
+
+        expr.ResolvedFallibleTypeRef = _currentReturnTypeRef;
+        return TypeSymbol.Fallible;
+    }
+
+    private TypeSymbol CheckOnErrorExpr(OnErrorExpr expr, TypeEnvironment env, TypeSymbol? currentReturn)
+    {
+        var fallibleType = CheckExpr(expr.Fallible, env, currentReturn);
+        Require(fallibleType == TypeSymbol.Fallible, expr.Fallible, "'on error' requires a fallible value");
+
+        var fallibleTypeRef = ResolveExprTypeRef(expr.Fallible, env);
+        if (fallibleTypeRef is null || !fallibleTypeRef.IsFallible || fallibleTypeRef.TypeArguments.Count != 2)
+            throw new CompilerException("Could not resolve fallible value type", GetLine(expr.Fallible), GetCol(expr.Fallible));
+
+        var successTypeRef = fallibleTypeRef.TypeArguments[0];
+        var errorCodeTypeRef = fallibleTypeRef.TypeArguments[1];
+        expr.ResolvedSuccessTypeRef = successTypeRef;
+        expr.ResolvedErrorCodeTypeRef = errorCodeTypeRef;
+
+        var handlerEnv = env.CreateChild();
+        handlerEnv.Define(
+            "error",
+            TypeSymbol.Error,
+            BuildErrorValueTypeRef(errorCodeTypeRef, expr.OnToken.Line, expr.OnToken.Column),
+            expr.OnToken.Line,
+            expr.OnToken.Column,
+            assigned: true);
+
+        var previousYieldTypeRef = _currentYieldTypeRef;
+        _currentYieldTypeRef = successTypeRef;
+        bool handlerTerminates;
+        try
+        {
+            handlerTerminates = CheckStmt(expr.Handler, handlerEnv, currentReturn);
+        }
+        finally
+        {
+            _currentYieldTypeRef = previousYieldTypeRef;
+        }
+
+        if (!handlerTerminates)
+            throw new CompilerException("'on error' handler must yield a fallback value, return, or panic", expr.OnToken.Line, expr.OnToken.Column);
+
+        return MapType(successTypeRef);
     }
 
     private TypeSymbol CheckBuiltInCollectionMethodCall(
@@ -1466,7 +1605,9 @@ sealed class TypeChecker
             "queue" => TypeSymbol.Queue,
             "stack" => TypeSymbol.Stack,
             "optional" => TypeSymbol.Optional,
+            "fallible" => TypeSymbol.Fallible,
             "void" => TypeSymbol.Void,
+            "__error" => TypeSymbol.Error,
             _ when _enums.ContainsKey(typeRef.Name) => TypeSymbol.Enum,
             _ when _interfaces.ContainsKey(typeRef.Name) => TypeSymbol.Interface,
             _ when _objects.TryGetValue(typeRef.Name, out var objectSymbol) && objectSymbol.IsRecord => TypeSymbol.Record,
@@ -1599,6 +1740,16 @@ sealed class TypeChecker
         {
             if (IsBuiltInCollection(expected))
                 return TryCollectionConversionCost(expectedRef, actualRef, out cost);
+            if (expected == TypeSymbol.Fallible)
+            {
+                if (actualRef is not null && SameTypeRef(expectedRef, actualRef))
+                {
+                    cost = 0;
+                    return true;
+                }
+
+                return false;
+            }
             if (expected == TypeSymbol.Enum)
             {
                 if (actualRef is not null && SameTypeRef(expectedRef, actualRef))
@@ -1707,6 +1858,8 @@ sealed class TypeChecker
             }
             if (left is TypeSymbol.Object or TypeSymbol.Interface)
                 return leftRef is not null && rightRef is not null && TryReferenceConversionCost(leftRef, rightRef, out _);
+            if (left is TypeSymbol.Fallible or TypeSymbol.Error)
+                return false;
             return left != TypeSymbol.Void;
         }
 
@@ -1756,6 +1909,9 @@ sealed class TypeChecker
         if (fieldAccess.ResolvedEnumTypeRef is not null)
             return TypeSymbol.Enum;
 
+        if (fieldAccess.ResolvedFallibleErrorFieldTypeRef is not null)
+            return MapType(fieldAccess.ResolvedFallibleErrorFieldTypeRef);
+
         var targetType = ResolveExprTypeRef(fieldAccess.Target, env);
         if (targetType is null)
             return null;
@@ -1773,6 +1929,9 @@ sealed class TypeChecker
     {
         if (fieldAccess.ResolvedEnumTypeRef is not null)
             return fieldAccess.ResolvedEnumTypeRef;
+
+        if (fieldAccess.ResolvedFallibleErrorFieldTypeRef is not null)
+            return fieldAccess.ResolvedFallibleErrorFieldTypeRef;
 
         var targetType = ResolveExprTypeRef(fieldAccess.Target, env);
         if (targetType is null)
@@ -1809,6 +1968,8 @@ sealed class TypeChecker
                     return sig.ReturnTypeRef;
                 return null;
             case FieldAccessExpr fa:
+                if (fa.ResolvedFallibleErrorFieldTypeRef is not null)
+                    return fa.ResolvedFallibleErrorFieldTypeRef;
                 if (fa.ResolvedEnumTypeRef is not null)
                     return fa.ResolvedEnumTypeRef;
             {
@@ -1834,6 +1995,10 @@ sealed class TypeChecker
             }
             case OptionalOrExpr oor:
                 return ResolveExprTypeRef(oor.Fallback, env);
+            case FallibleErrorExpr ferr:
+                return ferr.ResolvedFallibleTypeRef;
+            case OnErrorExpr onError:
+                return onError.ResolvedSuccessTypeRef;
             default:
                 return null;
         }
@@ -1949,11 +2114,28 @@ sealed class TypeChecker
                     throw new CompilerException($"Type '{typeRef.Name}' does not accept type arguments", typeRef.Line, typeRef.Column);
                 return;
 
+            case "__error":
+                if (typeRef.TypeArguments.Count != 1)
+                    throw new CompilerException("Internal error value type expects exactly one type argument", typeRef.Line, typeRef.Column);
+                ValidateTypeRef(typeRef.TypeArguments[0]);
+                return;
+
             case "array":
             case "optional":
                 if (typeRef.TypeArguments.Count != 1)
                     throw new CompilerException($"Type '{typeRef.Name}' expects exactly one type argument", typeRef.Line, typeRef.Column);
                 ValidateTypeRef(typeRef.TypeArguments[0]);
+                return;
+
+            case "fallible":
+                if (typeRef.TypeArguments.Count != 2)
+                    throw new CompilerException("Type 'fallible' expects exactly two type arguments", typeRef.Line, typeRef.Column);
+                ValidateTypeRef(typeRef.TypeArguments[0]);
+                ValidateTypeRef(typeRef.TypeArguments[1]);
+                EnsureNotVoidTypeRef(typeRef.TypeArguments[0], "fallible success type cannot be void", typeRef.TypeArguments[0].Line, typeRef.TypeArguments[0].Column);
+                var errorType = MapType(typeRef.TypeArguments[1]);
+                if (errorType is not TypeSymbol.Enum and not TypeSymbol.Integer)
+                    throw new CompilerException("fallible error code type must be an enum or integer", typeRef.TypeArguments[1].Line, typeRef.TypeArguments[1].Column);
                 return;
 
             case "set":
@@ -2050,6 +2232,11 @@ sealed class TypeChecker
         return new TypeRef("void", null, origin.Line, origin.Column);
     }
 
+    private static TypeRef BuildErrorValueTypeRef(TypeRef errorCodeTypeRef, int line, int column)
+    {
+        return new TypeRef("__error", [errorCodeTypeRef], line, column);
+    }
+
     private static void EnsureNotVoidTypeRef(TypeRef typeRef, string message, int line, int col)
     {
         if (string.Equals(typeRef.Name, "void", StringComparison.Ordinal))
@@ -2058,7 +2245,7 @@ sealed class TypeChecker
 
     private static bool IsNumeric(TypeSymbol t) => t is TypeSymbol.Integer or TypeSymbol.Whole or TypeSymbol.Real;
     private static bool IsBuiltInCollection(TypeSymbol t) => t is TypeSymbol.Array or TypeSymbol.Map or TypeSymbol.Set or TypeSymbol.Queue or TypeSymbol.Stack;
-    private static bool IsReservedBuiltInTypeName(string name) => name is "map" or "set" or "queue" or "stack";
+    private static bool IsReservedBuiltInTypeName(string name) => name is "map" or "set" or "queue" or "stack" or "fallible";
 
     private static TypeSymbol Promote(TypeSymbol a, TypeSymbol b)
     {
@@ -2106,6 +2293,13 @@ sealed class TypeChecker
         }
 
         if (target == TypeSymbol.Enum)
+        {
+            if (targetRef is not null && valueRef is not null && SameTypeRef(targetRef, valueRef))
+                return;
+            throw new CompilerException(message, line, col);
+        }
+
+        if (target == TypeSymbol.Fallible)
         {
             if (targetRef is not null && valueRef is not null && SameTypeRef(targetRef, valueRef))
                 return;
@@ -2185,6 +2379,8 @@ sealed class TypeChecker
         CompoundAssignExpr c => GetLine(c.Target),
         Call c => c.Callee.Line,
         MethodCallExpr mc => mc.MethodName.Line,
+        FallibleErrorExpr e => e.ErrorToken.Line,
+        OnErrorExpr e => GetLine(e.Fallible),
         Unary u => GetLine(u.Right),
         Binary b => GetLine(b.Left),
         _ => 0
@@ -2198,6 +2394,8 @@ sealed class TypeChecker
         CompoundAssignExpr c => GetCol(c.Target),
         Call c => c.Callee.Column,
         MethodCallExpr mc => mc.MethodName.Column,
+        FallibleErrorExpr e => e.ErrorToken.Column,
+        OnErrorExpr e => GetCol(e.Fallible),
         Unary u => GetCol(u.Right),
         Binary b => GetCol(b.Left),
         _ => 0
@@ -2207,6 +2405,7 @@ sealed class TypeChecker
     {
         ReturnStmt r when r.Value is Expr e => GetLine(e),
         SwitchStmt s => s.Keyword.Line,
+        YieldStmt y => y.Keyword.Line,
         ReturnStmt => 0,
         _ => 0
     };
@@ -2215,6 +2414,7 @@ sealed class TypeChecker
     {
         ReturnStmt r when r.Value is Expr e => GetCol(e),
         SwitchStmt s => s.Keyword.Column,
+        YieldStmt y => y.Keyword.Column,
         ReturnStmt => 0,
         _ => 0
     };

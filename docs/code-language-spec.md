@@ -1,7 +1,7 @@
 # Code Language Specification (Living Draft)
 
 Version: 1.0
-Last updated: 2026-04-05
+Last updated: 2026-04-07
 
 ## 1. Goals and Design
 - `Code` is a code-first language for building 2D interactive applications that target the web first.
@@ -132,6 +132,42 @@ optional<integer> maybeCount = getCount();
 if maybeCount.hasValue then {
   // use value
 }
+```
+
+## 5.1 Recoverable Errors
+- `panic(...)` is for unrecoverable failures and raises a `UserError`.
+- Expected recoverable failures use `fallible<Value, ErrorCode>`.
+- `ErrorCode` must be an `enum` or `integer`; examples should prefer enums.
+- `fallible<void, ErrorCode>` is not implemented in v1.
+- Functions returning `fallible<Value, ErrorCode>` may return a plain `Value` as success.
+- The same functions may return recoverable errors with `return error(code);` or `return error(code, message);`.
+- `error(message)` is intentionally unsupported to avoid message-string branching.
+- Callers unwrap with `expression on error { ... }`.
+- Inside the handler, `error.code` has type `ErrorCode` and `error.message` has type `string`.
+- `yield value;` returns a fallback value from the handler.
+- `return` inside an `on error` handler returns from the enclosing function, not just the handler.
+- There is no propagation shorthand in v1.
+- If an `on error` handler uses `switch`, the current definite-return analysis requires a `default` branch; enum switch exhaustiveness is not implemented yet.
+
+```code
+enum ParseError {
+  Empty;
+  Invalid;
+}
+
+function<fallible<integer, ParseError>> parse_count(string text) {
+  if text == "" then return error(ParseError.Empty, "count was empty");
+  if text == "one" then return 1;
+  return error(ParseError.Invalid, "expected one");
+}
+
+integer count = parse_count("") on error {
+  switch error.code then {
+    case ParseError.Empty then yield 0;
+    case ParseError.Invalid then panic(error.message);
+    default then yield 0;
+  }
+};
 ```
 
 ## 6. Functions
@@ -561,11 +597,12 @@ public function<integer> add(integer left, integer right) {
 ```
 
 ## 13. Error Model (Current Implementation)
-- Current user-facing error syntax is `panic(expression);`.
+- User-facing unrecoverable error syntax is `panic(expression);`.
 - `panic(...)` raises a `UserError` with a message and stack information.
+- User-facing recoverable errors use `fallible<Value, ErrorCode>` and `on error` as described in section 5.1.
 - Runtime and host failures also surface as VM/runtime errors with line/column information and a bytecode-derived call stack when debug data is available.
 - The VM has internal typed error objects (`type`, `message`, `stacktrace`) for diagnostics.
-- User-facing `fallible<T>` and `on error` syntax are not implemented yet.
+- Recoverable fallible values are VM-managed success/error wrappers and are not the same as thrown VM/runtime errors.
 
 ```code
 integer x = 5;
@@ -641,10 +678,11 @@ if x > 3 then panic("x too large");
 - Object and record construction and field access lower to dedicated VM opcodes (`NEW_OBJECT`, `NEW_RECORD`, `GET_FIELD`, `SET_FIELD`).
 - Arrays: literals `{...}` create arrays; typed declarations `array<integer> xs = {1,2,3};`; dynamic `new array<integer>(n)` requires a size; `xs.length` yields length; `xs.append(value)` and `xs.remove_at(index)` grow/shrink arrays; `foreach` iterates arrays by element.
 - Built-in collections: `map`, `set`, `queue`, and `stack` lower to dedicated VM opcodes; `.length` also covers those collection types.
+- Recoverable fallible values lower to dedicated VM opcodes (`FALLIBLE_SUCCESS`, `FALLIBLE_ERROR`, `FALLIBLE_IS_ERROR`, `FALLIBLE_VALUE`, `FALLIBLE_ERROR_CODE`, `FALLIBLE_ERROR_MESSAGE`); `panic(...)` still lowers to `THROW_ERROR`.
 
 ## 15. Planned But Not Implemented Yet
 - Member-level visibility/access modifiers for fields and methods.
-- User-facing `fallible<T>` / `on error` syntax.
+- Fallible-error propagation shorthand such as `try`.
 
 ## 16. Comments
 - Single-line comments:

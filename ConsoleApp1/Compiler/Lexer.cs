@@ -20,6 +20,7 @@ sealed class Lexer
         { "boolean", TokenType.Boolean },
         { "void", TokenType.Void },
         { "optional", TokenType.Optional },
+        { "fallible", TokenType.Fallible },
         { "array", TokenType.Array },
         { "object", TokenType.Object },
         { "record", TokenType.Record },
@@ -56,6 +57,9 @@ sealed class Lexer
         { "foreach", TokenType.Foreach },
         { "in", TokenType.In },
         { "panic", TokenType.Panic },
+        { "error", TokenType.Error },
+        { "on", TokenType.On },
+        { "yield", TokenType.Yield },
         { "none", TokenType.None },
     };
 

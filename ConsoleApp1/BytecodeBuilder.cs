@@ -170,6 +170,12 @@ sealed class BytecodeBuilder
 
     public BytecodeBuilder NewObject(string typeName) => AddStringOperand(OpCode.NewObject, typeName);
     public BytecodeBuilder NewRecord(string typeName) => AddStringOperand(OpCode.NewRecord, typeName);
+    public BytecodeBuilder FallibleSuccess() { RecordDebug(); _bytes.Add((byte)OpCode.FallibleSuccess); return this; }
+    public BytecodeBuilder FallibleError() { RecordDebug(); _bytes.Add((byte)OpCode.FallibleError); return this; }
+    public BytecodeBuilder FallibleIsError() { RecordDebug(); _bytes.Add((byte)OpCode.FallibleIsError); return this; }
+    public BytecodeBuilder FallibleValue() { RecordDebug(); _bytes.Add((byte)OpCode.FallibleValue); return this; }
+    public BytecodeBuilder FallibleErrorCode() { RecordDebug(); _bytes.Add((byte)OpCode.FallibleErrorCode); return this; }
+    public BytecodeBuilder FallibleErrorMessage() { RecordDebug(); _bytes.Add((byte)OpCode.FallibleErrorMessage); return this; }
     public BytecodeBuilder GetField(string fieldName) => AddStringOperand(OpCode.GetField, fieldName);
     public BytecodeBuilder SetField(string fieldName) => AddStringOperand(OpCode.SetField, fieldName);
     public BytecodeBuilder HostCall(string symbol, int argCount)

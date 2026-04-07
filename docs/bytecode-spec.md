@@ -1,6 +1,6 @@
 # Bytecode Specification (draft)
 
-Version: 0.9 (2026-04-05)
+Version: 0.10 (2026-04-07)
 
 ## File format
 - Header: `CODE` ASCII (4 bytes) + version byte (`0x05`) + int32 `codeSize` + int32 `debugCount`.
@@ -25,7 +25,7 @@ Version: 0.9 (2026-04-05)
 - VM execution/disassembly tools may consume `.codelib` by decoding embedded `bytecode`.
 
 ## Stack conventions
-- Operand stack stores numeric values as `int`, `long`, or `double` (numeric ops coerce to double math); strings and runtime object/record values are boxed.
+- Operand stack stores numeric values as `int`, `long`, or `double` (numeric ops coerce to double math); strings, runtime object/record values, and fallible success/error values are boxed.
 - Locals are indexed slots separate from the operand stack; they auto-grow on demand. Functions record a high-water mark for frame size.
 - Call frames: `CALL` creates a new locals array sized by the callee; `RET` restores previous locals and IP, leaving the return value on the operand stack.
 
@@ -94,11 +94,17 @@ Version: 0.9 (2026-04-05)
 | 0x3C | `STACK_POP` | - | 0 | Pop stack, push popped value; throws if empty |
 | 0x3D | `STACK_PEEK` | - | 0 | Pop stack, push top value; throws if empty |
 | 0x3E | `NEW_RECORD` | int32 length, UTF-8 type name | +1 | Create VM record value instance |
+| 0x3F | `FALLIBLE_SUCCESS` | - | 0 | Pop success value, push fallible success wrapper |
+| 0x40 | `FALLIBLE_ERROR` | - | -1 | Pop message, pop code, push fallible error wrapper |
+| 0x41 | `FALLIBLE_IS_ERROR` | - | 0 | Pop fallible, push `1` if error else `0` |
+| 0x42 | `FALLIBLE_VALUE` | - | 0 | Pop fallible success, push success value; throws if error |
+| 0x43 | `FALLIBLE_ERROR_CODE` | - | 0 | Pop fallible error, push error code; throws if success |
+| 0x44 | `FALLIBLE_ERROR_MESSAGE` | - | 0 | Pop fallible error, push error message string; throws if success |
 | 0xFF | `HALT` | - | 0 | Stop execution |
 
 ## Planned additions
 - Constant pool for strings and other literals
-- Structured exception objects beyond `UserError` / `RuntimeError`
+- Propagation shorthand for recoverable fallible errors
 - Magic header evolution and validation rules
 
 ## Notes
@@ -110,6 +116,7 @@ Version: 0.9 (2026-04-05)
 - `ARRAY_LENGTH` also reports the size of VM-managed `map`, `set`, `queue`, and `stack` values.
 - Maps and sets use VM-managed keyed containers. `MAP_GET` throws on missing keys. `MAP_CONTAINS` / `SET_CONTAINS` return `1` or `0`. Remove operations are no-ops when the entry is absent.
 - Queues and stacks use VM-managed containers with empty-checking on `QUEUE_DEQUEUE` / `QUEUE_PEEK` / `STACK_POP` / `STACK_PEEK`.
+- Fallible values are VM-managed success/error wrappers used by user-facing `fallible<Value, ErrorCode>` recoverable errors. `panic(...)` remains separate and lowers to `THROW_ERROR`.
 - Objects and records are stored as VM-managed instances with a type name and field dictionary; field access is name-based via `GET_FIELD` / `SET_FIELD`. `NEW_OBJECT` creates reference-identity objects; `NEW_RECORD` creates value-semantic record instances used by record construction and record cloning.
 - Object methods currently lower to regular `CALL` sites with implicit `this` prepended to explicit arguments; overload choice is resolved at compile time.
 - Interface declarations and `implement` mappings remain compile-time metadata; interface-typed calls lower to `INTERFACE_CALL` dispatch tables that map runtime type names to method targets.

@@ -81,7 +81,19 @@ internal static class TestHarness
             ("hostcall-engine-window-create", BytecodeBuilder.New()
                 .PushString("demo").PushInt(640).PushInt(480)
                 .HostCall("engine.window.create", 3).Print().Halt().ToArray(),
-                "1" + nl)
+                "1" + nl),
+
+            ("fallible-bytecode-success", BytecodeBuilder.New()
+                .PushInt(7).FallibleSuccess().FallibleValue().Print().Halt().ToArray(),
+                "7" + nl),
+
+            ("fallible-bytecode-error-fields", BytecodeBuilder.New()
+                .PushInt(2).PushString("bad").FallibleError()
+                .Dup().FallibleIsError().Print()
+                .Dup().FallibleErrorCode().Print()
+                .FallibleErrorMessage().Print()
+                .Halt().ToArray(),
+                "1" + nl + "2" + nl + "bad" + nl)
         };
 
         int failures = 0;
@@ -450,6 +462,79 @@ print(cosine(0));
 real value = random();
 print(value >= 0 and value < 1);",
              "4\n9\n3\n-1\n0\n1\n12.5\n0\n1\n1\n")
+            ,
+            ("fallible-success-and-error-handling",
+@"enum ParseError {
+  Empty;
+  Invalid;
+}
+function<fallible<integer, ParseError>> parse_number(string text) {
+  if text == """" then return error(ParseError.Empty, ""text was empty"");
+  if text == ""one"" then return 1;
+  return error(ParseError.Invalid, ""not a number"");
+}
+integer first = parse_number(""one"") on error {
+  print(""should not run"");
+  yield 0;
+};
+integer second = parse_number("""") on error {
+  print(error.message);
+  switch error.code then {
+    case ParseError.Empty then yield 10;
+    case ParseError.Invalid then yield 20;
+    default then yield 0;
+  }
+};
+print(first);
+print(second);", "text was empty\n1\n10\n")
+            ,
+            ("fallible-integer-error-code",
+@"function<fallible<integer, integer>> load_count(boolean ok) {
+  if ok then return 4;
+  return error(404);
+}
+integer value = load_count(false) on error {
+  print(error.code);
+  print(error.message == """");
+  yield 9;
+};
+print(value);", "404\n1\n9\n")
+            ,
+            ("fallible-return-existing-fallible",
+@"enum LoadError {
+  Missing;
+}
+function<fallible<integer, LoadError>> inner() {
+  return error(LoadError.Missing, ""missing"");
+}
+function<fallible<integer, LoadError>> outer() {
+  return inner();
+}
+integer value = outer() on error {
+  print(error.message);
+  yield 3;
+};
+print(value);", "missing\n3\n")
+            ,
+            ("fallible-handler-return-exits-enclosing-function",
+@"enum LoadError {
+  Missing;
+  Invalid;
+}
+function<fallible<integer, LoadError>> inner() {
+  return error(LoadError.Missing, ""missing"");
+}
+function<fallible<integer, LoadError>> outer() {
+  integer value = inner() on error {
+    return error(LoadError.Invalid, ""wrapped"");
+  };
+  return value;
+}
+integer value = outer() on error {
+  print(error.message);
+  yield 8;
+};
+print(value);", "wrapped\n8\n")
             ,
             ("legacy-draw-rectangle-alias",
 @"draw_rect(0, 0, 8, 8, 1, 1, 1, 1);
@@ -1759,6 +1844,57 @@ PI = 4;", "Cannot assign to constant 'PI'"),
             ("constant-missing-init", @"constant integer value;", "must be initialized"),
             ("time-intrinsic-arity", @"print(unix_ms(1));", "expects 0 args"),
             ("math-intrinsic-arity", @"print(minimum(1));", "expects 2 args"),
+            ("fallible-type-argument-arity",
+@"function<fallible<integer>> parse() {
+  return 1;
+}", "expects exactly two type arguments"),
+            ("fallible-error-code-type",
+@"function<fallible<integer, string>> parse() {
+  return 1;
+}", "fallible error code type must be an enum or integer"),
+            ("fallible-void-success-deferred",
+@"enum LoadError {
+  Missing;
+}
+function<fallible<void, LoadError>> load() {
+  return error(LoadError.Missing);
+}", "fallible success type cannot be void"),
+            ("fallible-message-only-error-rejected",
+@"enum LoadError {
+  Missing;
+}
+function<fallible<integer, LoadError>> load() {
+  return error(""missing"");
+}", "error(message) is not supported"),
+            ("fallible-error-outside-fallible-function",
+@"integer value = error(1);", "error(...)' is only valid"),
+            ("fallible-on-error-non-fallible",
+@"integer value = 1 on error {
+  yield 0;
+};", "requires a fallible value"),
+            ("fallible-yield-wrong-type",
+@"enum LoadError {
+  Missing;
+}
+function<fallible<integer, LoadError>> load() {
+  return error(LoadError.Missing);
+}
+integer value = load() on error {
+  yield ""missing"";
+};", "Yield value type mismatch"),
+            ("fallible-bare-error-value-rejected",
+@"enum LoadError {
+  Missing;
+}
+function<fallible<integer, LoadError>> load() {
+  return error(LoadError.Missing);
+}
+integer value = load() on error {
+  print(error);
+  yield 0;
+};", "Use error.code or error.message"),
+            ("fallible-yield-outside-handler",
+@"yield 1;", "yield' is only valid"),
             ("void-return-value",
 @"function<void> nope() {
   return 1;
@@ -2723,6 +2859,7 @@ export object MainScene {
             ("example-enum-runnable", @"ConsoleApp1/examples/enum.code", Compiler.CompileTarget.VmNative),
             ("example-record-runnable", @"ConsoleApp1/examples/record.code", Compiler.CompileTarget.VmNative),
             ("example-switch-runnable", @"ConsoleApp1/examples/switch.code", Compiler.CompileTarget.VmNative),
+            ("example-fallible-runnable", @"ConsoleApp1/examples/fallible.code", Compiler.CompileTarget.VmNative),
             ("example-time-runnable", @"ConsoleApp1/examples/time.code", Compiler.CompileTarget.VmNative),
             ("example-math-random-runnable", @"ConsoleApp1/examples/math_random.code", Compiler.CompileTarget.VmNative),
             ("example-collections-runnable", @"ConsoleApp1/examples/collections.code", Compiler.CompileTarget.VmNative),
@@ -2858,6 +2995,7 @@ export object MainScene {
                 catalogText.Contains("| `runnable` | `ConsoleApp1/examples/enum.code` | `run` |", StringComparison.Ordinal) &&
                 catalogText.Contains("| `runnable` | `ConsoleApp1/examples/record.code` | `run` |", StringComparison.Ordinal) &&
                 catalogText.Contains("| `runnable` | `ConsoleApp1/examples/switch.code` | `run` |", StringComparison.Ordinal) &&
+                catalogText.Contains("| `runnable` | `ConsoleApp1/examples/fallible.code` | `run` |", StringComparison.Ordinal) &&
                 catalogText.Contains("| `runnable` | `ConsoleApp1/examples/time.code` | `run` |", StringComparison.Ordinal) &&
                 catalogText.Contains("| `runnable` | `ConsoleApp1/examples/math_random.code` | `run` |", StringComparison.Ordinal) &&
                 catalogText.Contains("| `runnable` | `ConsoleApp1/examples/collections.code` | `run` |", StringComparison.Ordinal) &&
@@ -3039,6 +3177,54 @@ print(reader.read());";
         {
             failures++;
             Console.WriteLine($"[FAIL] target-parity-record-values: threw {ex.GetType().Name} - {ex.Message}");
+        }
+
+        string fallibleSource =
+@"enum LoadError {
+  Missing;
+  Invalid;
+}
+function<fallible<integer, LoadError>> read(boolean ok) {
+  if ok then return 4;
+  return error(LoadError.Invalid, ""bad data"");
+}
+print(read(true) on error {
+  yield 0;
+});
+integer value = read(false) on error {
+  print(error.message);
+  switch error.code then {
+    case LoadError.Missing then yield 1;
+    case LoadError.Invalid then yield 9;
+    default then yield 0;
+  }
+};
+print(value);";
+
+        try
+        {
+            const string expected = "4\nbad data\n9\n";
+            string nativeOutput = Normalize(CompileAndRun(fallibleSource, Compiler.CompileTarget.VmNative, VmHostTarget.Native));
+            string webOutput = Normalize(CompileAndRun(fallibleSource, Compiler.CompileTarget.VmWeb, VmHostTarget.Web));
+            if (!string.Equals(nativeOutput, expected, StringComparison.Ordinal))
+            {
+                failures++;
+                Console.WriteLine($"[FAIL] target-parity-fallible-values: native expected '{Escape(expected)}' got '{Escape(nativeOutput)}'");
+            }
+            else if (!string.Equals(webOutput, expected, StringComparison.Ordinal))
+            {
+                failures++;
+                Console.WriteLine($"[FAIL] target-parity-fallible-values: web expected '{Escape(expected)}' got '{Escape(webOutput)}'");
+            }
+            else
+            {
+                Console.WriteLine("[PASS] target-parity-fallible-values");
+            }
+        }
+        catch (Exception ex)
+        {
+            failures++;
+            Console.WriteLine($"[FAIL] target-parity-fallible-values: threw {ex.GetType().Name} - {ex.Message}");
         }
 
         return failures;

@@ -72,6 +72,12 @@ enum OpCode : byte
     StackPop = 0x3C,
     StackPeek = 0x3D,
     NewRecord = 0x3E,
+    FallibleSuccess = 0x3F,
+    FallibleError = 0x40,
+    FallibleIsError = 0x41,
+    FallibleValue = 0x42,
+    FallibleErrorCode = 0x43,
+    FallibleErrorMessage = 0x44,
     Halt = 0xFF
 }
 
@@ -759,6 +765,60 @@ sealed class Vm
                     break;
                 }
 
+                case OpCode.FallibleSuccess:
+                {
+                    EnsureStack(1);
+                    _stack.Push(VmFallible.Success(_stack.Pop()));
+                    break;
+                }
+
+                case OpCode.FallibleError:
+                {
+                    EnsureStack(2);
+                    var message = _stack.Pop()?.ToString() ?? string.Empty;
+                    var code = _stack.Pop();
+                    _stack.Push(VmFallible.Error(code, message));
+                    break;
+                }
+
+                case OpCode.FallibleIsError:
+                {
+                    EnsureStack(1);
+                    var fallible = PopFallible(OpCode.FallibleIsError);
+                    _stack.Push(fallible.IsError ? 1 : 0);
+                    break;
+                }
+
+                case OpCode.FallibleValue:
+                {
+                    EnsureStack(1);
+                    var fallible = PopFallible(OpCode.FallibleValue);
+                    if (fallible.IsError)
+                        ThrowRuntime("Cannot unwrap failed fallible value without handling");
+                    _stack.Push(fallible.Value ?? 0);
+                    break;
+                }
+
+                case OpCode.FallibleErrorCode:
+                {
+                    EnsureStack(1);
+                    var fallible = PopFallible(OpCode.FallibleErrorCode);
+                    if (!fallible.IsError)
+                        ThrowRuntime("Cannot read error code from successful fallible value");
+                    _stack.Push(fallible.Code ?? 0);
+                    break;
+                }
+
+                case OpCode.FallibleErrorMessage:
+                {
+                    EnsureStack(1);
+                    var fallible = PopFallible(OpCode.FallibleErrorMessage);
+                    if (!fallible.IsError)
+                        ThrowRuntime("Cannot read error message from successful fallible value");
+                    _stack.Push(fallible.Message);
+                    break;
+                }
+
                 case OpCode.ThrowError:
                 {
                     EnsureStack(1);
@@ -1060,6 +1120,16 @@ sealed class Vm
         return PopAsNumber(v);
     }
 
+    private VmFallible PopFallible(OpCode op)
+    {
+        var value = _stack.Pop();
+        if (value is VmFallible fallible)
+            return fallible;
+
+        ThrowRuntime($"{op} expects fallible value");
+        return null!; // unreachable
+    }
+
     private void EnsureBytes(int count)
     {
         if (_ip + count > _codeEnd)
@@ -1189,6 +1259,25 @@ sealed class Vm
         int NextIp,
         int ExplicitArgCount,
         Dictionary<string, InterfaceDispatchEntry> Entries);
+}
+
+sealed class VmFallible
+{
+    private VmFallible(bool isError, object? value, object? code, string message)
+    {
+        IsError = isError;
+        Value = value;
+        Code = code;
+        Message = message;
+    }
+
+    public bool IsError { get; }
+    public object? Value { get; }
+    public object? Code { get; }
+    public string Message { get; }
+
+    public static VmFallible Success(object? value) => new(false, value, null, string.Empty);
+    public static VmFallible Error(object? code, string message) => new(true, null, code, message);
 }
 
 file sealed class VmMap

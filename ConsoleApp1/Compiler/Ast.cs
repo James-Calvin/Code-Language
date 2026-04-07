@@ -104,13 +104,42 @@ sealed class OptionalValueExpr : Expr
     public OptionalValueExpr(Expr target) { Target = target; }
 }
 
+sealed class FallibleErrorExpr : Expr
+{
+    public Token ErrorToken { get; }
+    public IReadOnlyList<Expr> Arguments { get; }
+    public TypeRef? ResolvedFallibleTypeRef { get; set; }
+    public FallibleErrorExpr(Token errorToken, IReadOnlyList<Expr> arguments)
+    {
+        ErrorToken = errorToken;
+        Arguments = arguments;
+    }
+}
+
+sealed class OnErrorExpr : Expr
+{
+    public Expr Fallible { get; }
+    public Token OnToken { get; }
+    public Block Handler { get; }
+    public TypeRef? ResolvedSuccessTypeRef { get; set; }
+    public TypeRef? ResolvedErrorCodeTypeRef { get; set; }
+    public OnErrorExpr(Expr fallible, Token onToken, Block handler)
+    {
+        Fallible = fallible;
+        OnToken = onToken;
+        Handler = handler;
+    }
+}
+
 sealed class FieldAccessExpr : Expr
 {
     public Expr Target { get; }
     public Token Name { get; }
     public TypeRef? ResolvedEnumTypeRef { get; set; }
     public int? ResolvedEnumValue { get; set; }
+    public TypeRef? ResolvedFallibleErrorFieldTypeRef { get; set; }
     public bool ResolvesToEnumMember => ResolvedEnumTypeRef is not null;
+    public bool ResolvesToFallibleErrorField => ResolvedFallibleErrorFieldTypeRef is not null;
     public FieldAccessExpr(Expr target, Token name) { Target = target; Name = name; }
 }
 
@@ -352,6 +381,17 @@ sealed class PanicStmt : Stmt
 {
     public Expr Value { get; }
     public PanicStmt(Expr value) { Value = value; }
+}
+
+sealed class YieldStmt : Stmt
+{
+    public Token Keyword { get; }
+    public Expr Value { get; }
+    public YieldStmt(Token keyword, Expr value)
+    {
+        Keyword = keyword;
+        Value = value;
+    }
 }
 
 sealed class ForStmt : Stmt

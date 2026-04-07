@@ -20,6 +20,7 @@ The repo contains:
 - Time intrinsics: `unix_ms()`, `unix_us()`, `mono_ns()`, `mono_ticks()`, `mono_ticks_per_second()`, `sleep_ms(ms)`
 - Math and randomness intrinsics: `minimum()`, `maximum()`, `absolute()`, `sign()`, `lerp()`, `sine()`, `cosine()`, `random()`
 - Built-in collections: arrays plus `map<Key, Value>`, `set<Value>`, `queue<Value>`, and `stack<Value>` with shared `.length`
+- Typed recoverable errors: `fallible<Value, ErrorCode>`, `return error(code[, message]);`, `expression on error { ... yield fallback; }`
 - Native-only IO intrinsic: `read_line()`
 - Functions with CALL/RET, locals, return (implicit 0)
 - File modules: top-level declaration visibility (`public`, `package`, `private`) plus legacy `export`, imports (`import Name [as Alias] from "path";`, `import { A, B as C } from "path";`, `import everything as Namespace from "path";`, `export import ...`), package-aware import checks, recursive linking, and `lib/` search
@@ -29,14 +30,14 @@ The repo contains:
 - Higher-level engine wrapper layer: root `lib/engine/` modules now provide `engine.colors`, `engine.drawing`, `engine.input`, `engine.viewport`, and `engine.scene`, with compatibility modules `engine.view` and `engine.loop`, including explicit child-object scene composition over split lifecycle interfaces
 - Browser runtime harness (`web-runtime/`): lower-level JavaScript VM harness for loading raw `.bytecode` / `.codelib` files during bring-up and debugging
 - Runtime diagnostics: bytecode debug map -> line/column stack traces
-- Error objects: `panic <expr>;` emits a `UserError` with call stack
+- Error handling: `panic <expr>;` emits an unrecoverable `UserError` with call stack; `fallible<Value, ErrorCode>` handles expected recoverable failures
 
 See [the language spec](docs/code-language-spec.md), [the feature roadmap](docs/features-roadmap.md), and [the web app/runtime V1 contract](docs/web-app-v1.md) for the current scope and the target developer workflow.
 
 ## Implemented Today vs Planned
-- Implemented today: enumerations, records, `switch`, objects, interfaces, arrays, built-in collections, optionals, time/math intrinsics, grouped/selective/namespace/re-export imports, package manifests/lockfiles/library artifacts, target capability checks, `panic`, and the current web build/runtime slice.
+- Implemented today: enumerations, records, `switch`, objects, interfaces, arrays, built-in collections, optionals, typed recoverable `fallible<Value, ErrorCode>` errors, time/math intrinsics, grouped/selective/namespace/re-export imports, package manifests/lockfiles/library artifacts, target capability checks, `panic`, and the current web build/runtime slice.
 - Implemented today: top-level module visibility modifiers (`public`, `package`, `private`) with legacy `export` compatibility.
-- Planned, not implemented today: member-level visibility/access control and user-facing `fallible<T>` / `on error`.
+- Planned, not implemented today: member-level visibility/access control and propagation shorthand for fallible errors.
 - Example status and usage live in [the example catalog](docs/example-catalog.md).
 
 ## Current State vs Target Workflow
@@ -120,7 +121,7 @@ dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- --compile-only --dump-mod
 ```
 dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- --run-tests
 ```
-Test harness covers VM ops, compiler integration (print, arithmetic, functions, loops, foreach, strings, interfaces, modules/imports, panic), and fuzz suites (arithmetic, boolean, strings, loop sums, panic).
+Test harness covers VM ops, compiler integration (print, arithmetic, functions, loops, foreach, strings, interfaces, modules/imports, fallible errors, panic), and fuzz suites (arithmetic, boolean, strings, loop sums, panic).
 
 ## Project conventions
 - Source files end with `.code`; compiled bytecode uses `.bytecode`
@@ -134,6 +135,7 @@ Test harness covers VM ops, compiler integration (print, arithmetic, functions, 
 - Enumerations: `enum Name { Member; Other = 5; }` with strongly typed values accessed as `Name.Member`
 - Records: `record Name { ... }` with constructors, methods, inline/external interface implementations, structural equality for hashable records, and value semantics across assignment, parameter passing, returns, and container insertion. Record methods receive a copied `this`, so persistent changes use a return-and-reassign pattern.
 - Optionals: `optional<T>` with `none`, `.hasValue`, `.value`, `.or(fallback)`
+- Fallible recoverable errors: `fallible<Value, ErrorCode>` where `ErrorCode` is an enum or `integer`; functions may `return` a plain success value or `return error(code);` / `return error(code, message);`; callers unwrap with `expr on error { ... yield fallback; }`; handler code can read `error.code` and `error.message`; `fallible<void, E>` and propagation shorthand are deferred
 - Objects: `object` declarations with constructors/methods, `new Type(...)`, field access/assignment (`obj.field`, `obj.field = ...`), method calls (`obj.method(...)`), and implicit `this` lookup inside object bodies for unshadowed fields and bare method calls
 - Interfaces: `interface` declarations + inline interface methods (`implement Interface.method(...) { ... }`) or explicit `implement Interface for Object { ... via Object.method; }` conformance checks
 - Interface-typed locals/params/returns/fields/arrays and runtime-dispatched interface method calls
@@ -184,6 +186,11 @@ dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- ConsoleApp1/examples/reco
 Switch example:
 ```
 dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- ConsoleApp1/examples/switch.code
+```
+
+Typed recoverable error example:
+```
+dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- ConsoleApp1/examples/fallible.code
 ```
 
 Module import example:

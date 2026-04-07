@@ -240,6 +240,7 @@ sealed class Parser
             TokenType.Void => "void",
             TokenType.Array => "array",
             TokenType.Optional => "optional",
+            TokenType.Fallible => "fallible",
             TokenType.Identifier => t.Lexeme,
             _ => throw Error(t, "Expect type.")
         };
@@ -486,6 +487,7 @@ sealed class Parser
         if (Match(TokenType.Return)) return ReturnStatement();
         if (Match(TokenType.Print)) return PrintStatement();
         if (Match(TokenType.Panic)) return PanicStatement();
+        if (Match(TokenType.Yield)) return YieldStatement();
         if (Match(TokenType.Object)) return ObjectDeclaration(isRecord: false);
         if (Match(TokenType.Record)) return ObjectDeclaration(isRecord: true);
 
@@ -653,7 +655,29 @@ sealed class Parser
         return new PanicStmt(value);
     }
 
+    private Stmt YieldStatement()
+    {
+        Token yieldToken = Previous();
+        Expr value = Expression();
+        Consume(TokenType.Semicolon, "Expect ';' after yield value.");
+        return new YieldStmt(yieldToken, value);
+    }
+
     private Expr Expression() => Assignment();
+
+    private Expr OnError()
+    {
+        Expr expr = Or();
+        if (Match(TokenType.On))
+        {
+            Token onToken = Previous();
+            Consume(TokenType.Error, "Expect 'error' after 'on'.");
+            Consume(TokenType.LeftBrace, "Expect '{' before on error handler.");
+            expr = new OnErrorExpr(expr, onToken, new Block(BlockStatements()));
+        }
+
+        return expr;
+    }
 
     private Expr Or()
     {
@@ -681,7 +705,7 @@ sealed class Parser
 
     private Expr Assignment()
     {
-        Expr expr = Or();
+        Expr expr = OnError();
 
         if (Match(TokenType.Equal))
         {
@@ -782,6 +806,27 @@ sealed class Parser
         if (Match(TokenType.LeftBrace)) return ParseArrayLiteral(Previous());
         if (Match(TokenType.New)) return ParseNewExpression(Previous());
         if (Match(TokenType.None)) return new Literal(OptionalNone.Value, Previous().Line, Previous().Column);
+        if (Match(TokenType.Error))
+        {
+            Token errorToken = Previous();
+            if (Match(TokenType.LeftParen))
+            {
+                var args = new List<Expr>();
+                if (!Check(TokenType.RightParen))
+                {
+                    do
+                    {
+                        args.Add(Expression());
+                    } while (Match(TokenType.Comma));
+                }
+                Consume(TokenType.RightParen, "Expect ')' after error arguments.");
+                return new FallibleErrorExpr(errorToken, args);
+            }
+
+            Expr expr = new Variable(new Token(TokenType.Identifier, "error", null, errorToken.Line, errorToken.Column));
+            expr = FinishPostfix(expr);
+            return expr;
+        }
         if (Match(TokenType.Identifier))
         {
             Expr expr = new Variable(Previous());
@@ -838,7 +883,7 @@ sealed class Parser
     private Token Previous() => _tokens[_current - 1];
 
     private bool IsTypeStart(Token token) =>
-        token.Type is TokenType.Integer or TokenType.Whole or TokenType.Real or TokenType.Boolean or TokenType.Void or TokenType.Array or TokenType.Optional or TokenType.Identifier;
+        token.Type is TokenType.Integer or TokenType.Whole or TokenType.Real or TokenType.Boolean or TokenType.Void or TokenType.Array or TokenType.Optional or TokenType.Fallible or TokenType.Identifier;
 
     private Token ConsumeTypeStart(string message)
     {

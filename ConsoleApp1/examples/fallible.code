@@ -1,0 +1,40 @@
+// Runnable example: typed recoverable errors use fallible<Value, ErrorCode>.
+// Use panic for unrecoverable bugs; use fallible when the caller should choose a fallback.
+
+enum ParseError {
+  Empty;
+  Invalid;
+}
+
+function<fallible<integer, ParseError>> parse_count(string text) {
+  if text == "" then return error(ParseError.Empty, "count was empty");
+  if text == "one" then return 1;
+  if text == "two" then return 2;
+  return error(ParseError.Invalid, "expected 'one' or 'two'");
+}
+
+integer first = parse_count("two") on error {
+  yield 0;
+};
+
+integer second = parse_count("") on error {
+  print(error.message);
+  switch error.code then {
+    case ParseError.Empty then yield 0;
+    case ParseError.Invalid then yield -1;
+    default then yield -1;
+  }
+};
+
+integer third = parse_count("many") on error {
+  print(error.message);
+  switch error.code then {
+    case ParseError.Empty then yield 0;
+    case ParseError.Invalid then yield -1;
+    default then yield -1;
+  }
+};
+
+print(first);
+print(second);
+print(third);

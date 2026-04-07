@@ -11,8 +11,8 @@ This roadmap is implementation-truthful: items marked below are gaps from the cu
 ## Near-Term Gap Groups
 
 ### Language Gaps
-1. User-facing error-handling syntax and propagation (`fallible<T>`, `on error`)
-2. Member-level visibility/access control follow-up
+1. Member-level visibility/access control follow-up
+2. Fallible-error propagation shorthand after the explicit `on error` model is exercised
 
 ### Stdlib and Runtime Gaps
 1. Broader standard-library modules after the core container/math baseline lands
@@ -51,7 +51,8 @@ This roadmap is implementation-truthful: items marked below are gaps from the cu
 | `[_]` | Type system | Overload resolution rules (spec’d) | Engine not implemented |
 | `[x]` | Error model | Runtime IP + call stack + snippets | Debug-map backed |
 | `[x]` | Error model | Typed errors / exception objects in VM | VmError objects, THROW opcode, panic statement, tests |
-| `[~]` | Error model | User-facing `fallible<T>` / `on error` syntax and propagation | Spec draft exists, but parser/type-checker/codegen do not implement it today |
+| `[x]` | Error model | User-facing `fallible<Value, ErrorCode>` / `on error` syntax | Implemented: typed recoverable errors with enum/integer error codes, `return error(code[, message])`, implicit handler `error.code` / `error.message`, and handler `yield` fallback |
+| `[~]` | Error model | Fallible propagation shorthand | Deferred; v1 requires explicit `on error` handlers and does not include `try`/automatic propagation |
 | `[x]` | Object model | Type references in AST/type checker (`TypeRef`) for named/generic user types | Implemented; parser/type-checker now use `TypeRef` instead of token-only types |
 | `[x]` | Object model | Object symbol table pass (object names + fields + forward refs) | Implemented; duplicate checks + field type validation in place |
 | `[x]` | Object model | Constructor symbol collection (typed signatures) | Implemented with signature-based overload resolution |
@@ -80,7 +81,7 @@ This roadmap is implementation-truthful: items marked below are gaps from the cu
 | `[x]` | Bytecode/VM | Header v0x05 + debug table | Implemented |
 | `[x]` | Bytecode/VM | Core opcodes (arith/stack/jump/load/store/PRINT/CALL/RET/PUSH_STRING) | Implemented; includes object/array/optional/error primitives and `GET_TYPE_NAME` for interface dispatch lowering |
 | `[~]` | Bytecode/VM | Constant pool for literals | To reduce code size |
-| `[!]` | Bytecode/VM | Real exception/error objects | Needed for typed errors |
+| `[x]` | Bytecode/VM | Recoverable fallible values | Implemented with VM-managed success/error variants and native/web opcode parity |
 | `[x]` | Compiler pipeline | Lexer/parser/AST | Implemented |
 | `[x]` | Compiler pipeline | Codegen to VM bytecode | Implemented |
 | `[x]` | Compiler pipeline | CLI: compile/run/disasm/token-dump | Implemented |
@@ -117,7 +118,7 @@ This roadmap is implementation-truthful: items marked below are gaps from the cu
 
 ## Priority Rollup (benefit/effort)
 - High (`[!]`): keeping example/docs status aligned with implementation truth.
-- Medium (`[~]`): member-level visibility/access control, fuller user-facing error-handling syntax, constant pool, optimizer expansion, tooling polish, and engine core/adapters.
+- Medium (`[~]`): member-level visibility/access control, fallible propagation shorthand, constant pool, optimizer expansion, tooling polish, and engine core/adapters.
 - Low (`[_]`): REPL, future stdlib/versioning, long-term runtime lifecycle strategy, remote package registry, and longer-horizon GPU/backend work.
 
 See also: `docs/platform-roadmap.md` for ABI schema, package manifest schema, and phased execution plan.

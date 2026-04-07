@@ -68,6 +68,12 @@ const OpCode = {
   StackPop: 0x3c,
   StackPeek: 0x3d,
   NewRecord: 0x3e,
+  FallibleSuccess: 0x3f,
+  FallibleError: 0x40,
+  FallibleIsError: 0x41,
+  FallibleValue: 0x42,
+  FallibleErrorCode: 0x43,
+  FallibleErrorMessage: 0x44,
   Halt: 0xff
 };
 
@@ -201,6 +207,10 @@ function isVmSet(value) {
   return value && typeof value === "object" && value.__vmSet === true && value.buckets instanceof Map;
 }
 
+function isVmFallible(value) {
+  return value && typeof value === "object" && value.__vmFallible === true;
+}
+
 function createVmObject(typeName, isRecord = false) {
   return { __vmObject: true, typeName, isRecord, fields: new Map() };
 }
@@ -211,6 +221,14 @@ function createVmMap() {
 
 function createVmSet() {
   return { __vmSet: true, buckets: new Map(), size: 0 };
+}
+
+function createFallibleSuccess(value) {
+  return { __vmFallible: true, isError: false, value, code: 0, message: "" };
+}
+
+function createFallibleError(code, message) {
+  return { __vmFallible: true, isError: true, value: 0, code, message: String(message ?? "") };
 }
 
 function stringHash(value) {
@@ -1915,6 +1933,69 @@ export class WebVm {
           const fallback = this.stack.pop();
           const value = this.stack.pop();
           this.stack.push(value === OptionalNone ? fallback : value);
+          break;
+        }
+
+        case OpCode.FallibleSuccess: {
+          this.ensureStack(1);
+          this.stack.push(createFallibleSuccess(this.stack.pop()));
+          break;
+        }
+
+        case OpCode.FallibleError: {
+          this.ensureStack(2);
+          const message = String(this.stack.pop() ?? "");
+          const code = this.stack.pop();
+          this.stack.push(createFallibleError(code, message));
+          break;
+        }
+
+        case OpCode.FallibleIsError: {
+          this.ensureStack(1);
+          const value = this.stack.pop();
+          if (!isVmFallible(value)) {
+            this.throwRuntime("FallibleIsError expects fallible value");
+          }
+          this.stack.push(value.isError ? 1 : 0);
+          break;
+        }
+
+        case OpCode.FallibleValue: {
+          this.ensureStack(1);
+          const value = this.stack.pop();
+          if (!isVmFallible(value)) {
+            this.throwRuntime("FallibleValue expects fallible value");
+          }
+          if (value.isError) {
+            this.throwRuntime("Cannot unwrap failed fallible value without handling");
+          }
+          this.stack.push(value.value ?? 0);
+          break;
+        }
+
+        case OpCode.FallibleErrorCode: {
+          this.ensureStack(1);
+          const value = this.stack.pop();
+          if (!isVmFallible(value)) {
+            this.throwRuntime("FallibleErrorCode expects fallible value");
+          }
+          if (!value.isError) {
+            this.throwRuntime("Cannot read error code from successful fallible value");
+          }
+          this.stack.push(value.code ?? 0);
+          break;
+        }
+
+        case OpCode.FallibleErrorMessage: {
+          this.ensureStack(1);
+          const value = this.stack.pop();
+          if (!isVmFallible(value)) {
+            this.throwRuntime("FallibleErrorMessage expects fallible value");
+          }
+          if (!value.isError) {
+            this.throwRuntime("Cannot read error message from successful fallible value");
+          }
+          this.stack.push(value.message);
           break;
         }
 

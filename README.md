@@ -23,7 +23,7 @@ The repo contains:
 - Typed recoverable errors: `fallible<Value, ErrorCode>`, `return error(code[, message]);`, `expression on error { ... yield fallback; }`
 - Native-only IO intrinsic: `read_line()`
 - Functions with CALL/RET, locals, return (implicit 0)
-- File modules: top-level declaration visibility (`public`, `package`, `private`) plus legacy `export`, imports (`import Name [as Alias] from "path";`, `import { A, B as C } from "path";`, `import everything as Namespace from "path";`, `export import ...`), package-aware import checks, recursive linking, and `lib/` search
+- File modules: top-level declaration visibility (`public`, `package`, `private`) plus member-level visibility for object/record fields, constructors, and methods; legacy `export`; imports (`import Name [as Alias] from "path";`, `import { A, B as C } from "path";`, `import everything as Namespace from "path";`, `export import ...`); package-aware import checks; recursive linking; and `lib/` search
 - Package manifest + lockfile baseline: nearest `code.package.json` is parsed/validated during module compile; local dependency graph resolves and `code.lock.json` is generated
 - Host ABI baseline: compiler emits `HOST_CALL` for `print`, time/math intrinsics, native-only APIs (`standard.input_output.read_line`, `std.time.sleep_ms`), and engine stubs (`engine.window/*`, `engine.input/*`, `engine.gfx/*`)
 - Web app build/runtime V1 slice: `--build-web` emits a runnable static site folder with `index.html`, `app.bytecode`, copied `assets/` content when present, a full-bleed canvas runtime, `MainScene` scene-object lifecycle (`start/update/draw` plus optional `draw_hud()`), guaranteed `640x360` safe area, hybrid-expand world framing, HUD screen-space, and browser-backed `key_down()`/`clear()`/`draw_rectangle()`/`draw_rectangle_outline()`/`draw_line()`/`draw_circle()`/`draw_circle_outline()`/`draw_polygon()`/`draw_polygon_outline()`/`draw_text()`/`draw_image()`/`draw_sprite()`
@@ -36,8 +36,8 @@ See [the language spec](docs/code-language-spec.md), [the feature roadmap](docs/
 
 ## Implemented Today vs Planned
 - Implemented today: enumerations, records, `switch`, objects, interfaces, arrays, built-in collections, optionals, typed recoverable `fallible<Value, ErrorCode>` errors, time/math intrinsics, grouped/selective/namespace/re-export imports, package manifests/lockfiles/library artifacts, target capability checks, `panic`, and the current web build/runtime slice.
-- Implemented today: top-level module visibility modifiers (`public`, `package`, `private`) with legacy `export` compatibility.
-- Planned, not implemented today: member-level visibility/access control and propagation shorthand for fallible errors.
+- Implemented today: top-level module visibility modifiers (`public`, `package`, `private`) with legacy `export` compatibility, plus member-level visibility for object/record fields, constructors, and methods.
+- Planned, not implemented today: propagation shorthand for fallible errors.
 - Example status and usage live in [the example catalog](docs/example-catalog.md).
 
 ## Current State vs Target Workflow
@@ -136,10 +136,10 @@ Test harness covers VM ops, compiler integration (print, arithmetic, functions, 
 - Records: `record Name { ... }` with constructors, methods, inline/external interface implementations, structural equality for hashable records, and value semantics across assignment, parameter passing, returns, and container insertion. Record methods receive a copied `this`, so persistent changes use a return-and-reassign pattern.
 - Optionals: `optional<T>` with `none`, `.hasValue`, `.value`, `.or(fallback)`
 - Fallible recoverable errors: `fallible<Value, ErrorCode>` where `ErrorCode` is an enum or `integer`; functions may `return` a plain success value or `return error(code);` / `return error(code, message);`; callers unwrap with `expr on error { ... yield fallback; }`; handler code can read `error.code` and `error.message`; `fallible<void, E>` and propagation shorthand are deferred
-- Objects: `object` declarations with constructors/methods, `new Type(...)`, field access/assignment (`obj.field`, `obj.field = ...`), method calls (`obj.method(...)`), and implicit `this` lookup inside object bodies for unshadowed fields and bare method calls
+- Objects: `object` declarations with constructors/methods, `new Type(...)`, field access/assignment (`obj.field`, `obj.field = ...`), method calls (`obj.method(...)`), member-level `public` / `package` / `private` visibility, and implicit `this` lookup inside object bodies for unshadowed fields and bare method calls
 - Interfaces: `interface` declarations + inline interface methods (`implement Interface.method(...) { ... }`) or explicit `implement Interface for Object { ... via Object.method; }` conformance checks
 - Interface-typed locals/params/returns/fields/arrays and runtime-dispatched interface method calls
-- Modules: top-level `public`, `package`, and `private` declaration visibility; legacy `export` remains a compatibility alias for `public`
+- Modules: top-level `public`, `package`, and `private` declaration visibility; matching packages also gate `package` members; legacy `export` remains a compatibility alias for `public`
 - Imports: `import Name [as Alias] from "path";`
 - Grouped/selective imports: `import { add, sub as minus } from "math.code";`
 - Namespace imports: `import everything as Draw from "engine/drawing.code";` for function-only module surfaces
@@ -206,6 +206,11 @@ dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- ConsoleApp1/examples/modu
 Visibility example:
 ```
 dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- ConsoleApp1/examples/modules/visibility_main.code
+```
+
+Member visibility example:
+```
+dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- ConsoleApp1/examples/modules/member_visibility_main.code
 ```
 
 Time intrinsics example:

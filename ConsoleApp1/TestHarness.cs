@@ -848,6 +848,56 @@ object Walker {
 }
 Walker w = new Walker();
 print(w.read());", "1\n"),
+            ("object-member-private-access-inside-type",
+@"object Box {
+  private integer amount;
+  public constructor(integer start) {
+    amount = start;
+  }
+  private function<integer> hidden() {
+    return amount;
+  }
+  public function<integer> add(Box other) {
+    return hidden() + other.amount;
+  }
+}
+Box left = new Box(3);
+Box right = new Box(4);
+print(left.add(right));", "7\n"),
+            ("object-member-private-constructor-inside-type",
+@"object Secret {
+  private integer amount;
+  public constructor() {
+    amount = 1;
+  }
+  private constructor(integer nextValue) {
+    amount = nextValue;
+  }
+  public function<Secret> next() {
+    return new Secret(amount + 1);
+  }
+  public function<integer> read() {
+    return amount;
+  }
+}
+Secret first = new Secret();
+Secret second = first.next();
+print(second.read());", "2\n"),
+            ("record-member-private-field-and-method",
+@"record Point {
+  private integer x;
+  public constructor(integer value) {
+    x = value;
+  }
+  private function<integer> doubled() {
+    return x * 2;
+  }
+  public function<integer> read() {
+    return doubled();
+  }
+}
+Point point = new Point(5);
+print(point.read());", "10\n"),
             ("scene-intrinsics-native-stubs",
 @"object MainScene {
   constructor() { }
@@ -1078,6 +1128,47 @@ package function<integer> helper(integer value) { return value + 2; }",
                 },
                 "main.code",
                 "6\n"
+            ),
+            (
+                "module-member-package-visibility-same-package",
+                new Dictionary<string, string>
+                {
+                    ["main.code"] =
+@"package demo.pkg;
+import Box from ""box.code"";
+Box box = new Box(3);
+box.add_bonus();
+print(box.read());
+print(box.bonus);",
+                    ["box.code"] =
+@"package demo.pkg;
+public object Box {
+  private integer amount;
+  package integer bonus;
+
+  public constructor(integer start) {
+    amount = start;
+    bonus = 5;
+  }
+
+  private function clamp() {
+    if amount < 0 then {
+      amount = 0;
+    }
+  }
+
+  package function add_bonus() {
+    amount += bonus;
+    clamp();
+  }
+
+  public function<integer> read() {
+    return amount;
+  }
+}",
+                },
+                "main.code",
+                "8\n5\n"
             ),
             (
                 "module-grouped-imports",
@@ -1815,6 +1906,36 @@ print(items.peek());", "RuntimeError"),
 }
 A a = new A(0);
 print(a.f(true));", "no matching method overload"),
+            ("object-member-private-field-external",
+@"object Box {
+  private integer amount;
+  public constructor() {
+    amount = 1;
+  }
+}
+Box box = new Box();
+print(box.amount);", "Field 'Box.amount' is not accessible"),
+            ("object-member-private-method-external",
+@"object Box {
+  public constructor() { }
+  private function<integer> hidden() {
+    return 1;
+  }
+}
+Box box = new Box();
+print(box.hidden());", "Method 'Box.hidden' is not accessible"),
+            ("object-member-private-constructor-external",
+@"object Secret {
+  private constructor() { }
+}
+Secret secret = new Secret();", "Constructor for 'Secret' is not accessible"),
+            ("object-member-package-requires-package",
+@"object Box {
+  package integer amount;
+  public constructor() {
+    amount = 1;
+  }
+}", "Package-visible members require a containing package declaration"),
             ("object-implicit-this-method-no-fallback",
 @"function<integer> move() {
   return 100;
@@ -2164,6 +2285,65 @@ package function<integer> helper(integer value) { return value + 1; }",
                 },
                 "main.code",
                 "require a preceding package declaration"
+            ),
+            (
+                "module-member-package-field-cross-package",
+                new Dictionary<string, string>
+                {
+                    ["main.code"] =
+@"package app.main;
+import Box from ""box.code"";
+Box box = new Box();
+print(box.amount);",
+                    ["box.code"] =
+@"package app.shared;
+public object Box {
+  package integer amount;
+  public constructor() {
+    amount = 1;
+  }
+}",
+                },
+                "main.code",
+                "Field 'Box.amount' is not accessible"
+            ),
+            (
+                "module-member-package-method-cross-package",
+                new Dictionary<string, string>
+                {
+                    ["main.code"] =
+@"package app.main;
+import Box from ""box.code"";
+Box box = new Box();
+print(box.read());",
+                    ["box.code"] =
+@"package app.shared;
+public object Box {
+  public constructor() { }
+  package function<integer> read() {
+    return 1;
+  }
+}",
+                },
+                "main.code",
+                "Method 'Box.read' is not accessible"
+            ),
+            (
+                "module-member-package-constructor-cross-package",
+                new Dictionary<string, string>
+                {
+                    ["main.code"] =
+@"package app.main;
+import Box from ""box.code"";
+Box box = new Box();",
+                    ["box.code"] =
+@"package app.shared;
+public object Box {
+  package constructor() { }
+}",
+                },
+                "main.code",
+                "Constructor for 'Box' is not accessible"
             ),
             (
                 "module-public-reexport-package-visible-rejected",
@@ -2871,6 +3051,7 @@ export object MainScene {
             ("example-modules-grouped-imports-runnable", @"ConsoleApp1/examples/modules/grouped-imports.code", Compiler.CompileTarget.VmNative),
             ("example-modules-re-exports-runnable", @"ConsoleApp1/examples/modules/re_exports_main.code", Compiler.CompileTarget.VmNative),
             ("example-modules-visibility-runnable", @"ConsoleApp1/examples/modules/visibility_main.code", Compiler.CompileTarget.VmNative),
+            ("example-modules-member-visibility-runnable", @"ConsoleApp1/examples/modules/member_visibility_main.code", Compiler.CompileTarget.VmNative),
         };
 
         foreach (var (name, relativePath, target) in runnableCompileExamples)
@@ -3000,6 +3181,7 @@ export object MainScene {
                 catalogText.Contains("| `runnable` | `ConsoleApp1/examples/math_random.code` | `run` |", StringComparison.Ordinal) &&
                 catalogText.Contains("| `runnable` | `ConsoleApp1/examples/collections.code` | `run` |", StringComparison.Ordinal) &&
                 catalogText.Contains("| `runnable` | `ConsoleApp1/examples/modules/visibility_main.code` | `run` |", StringComparison.Ordinal) &&
+                catalogText.Contains("| `runnable` | `ConsoleApp1/examples/modules/member_visibility_main.code` | `run` |", StringComparison.Ordinal) &&
                 catalogText.Contains("| `negative` | `ConsoleApp1/examples/constants.code` | `expected compile error` |", StringComparison.Ordinal) &&
                 catalogText.Contains("| `runnable` | `ConsoleApp1/examples/shape_dodge.code` | `build-web` |", StringComparison.Ordinal) &&
                 catalogText.Contains("| `runnable` | `ConsoleApp1/examples/web_scene.code` | `build-web` |", StringComparison.Ordinal);

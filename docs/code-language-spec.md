@@ -387,7 +387,7 @@ print(turns.dequeue());
 - Current implementation status:
   - Implemented: object declarations with fields/constructors/methods, record declarations with fields/constructors/methods, `new Type(...)`, field read/write (`obj.field`, `obj.field = value`), method calls (`obj.method(args)`), interface conformance checks via either inline interface methods or `implement Interface for Object/Record`, and interface-typed locals/parameters/returns/fields/arrays with runtime-dispatched interface method calls.
   - Implemented: top-level declaration visibility for modules (`public`, `package`, `private`) with package-aware import checks.
-  - Not yet implemented: member-level visibility for fields and methods.
+  - Implemented: member-level visibility for object/record fields, constructors, and methods.
 - No inheritance.
 - Contracts are declared as `interface`.
 - Concrete types are declared as `object`.
@@ -507,8 +507,12 @@ Person instance = new Person("Ada");
 
 ## 10. Member Access
 - Current visibility scope:
-  - Implemented for top-level module declarations only: `public`, `package`, `private`.
-  - Not implemented for object/record fields or methods.
+  - Implemented for top-level module declarations: `public`, `package`, `private`.
+  - Implemented for object/record fields, constructors, and methods: `public`, `package`, `private`.
+  - Unmarked members are `public` for compatibility with existing code.
+  - `private` members are accessible only from code inside the declaring object/record type, including accesses through another instance of the same type.
+  - `package` members are accessible only from modules with the same `package Name;`; package-visible members require the declaring type's module to have a package declaration.
+  - Interface dispatch is treated as access through the interface contract; mapping to a non-public method does not make that method directly callable by name from outside its visibility boundary.
 - `constant` fields are supported through `constant` declarations.
 - Field access allows both unqualified and `this.`-qualified forms.
 - If a local variable shadows a field, unqualified access resolves to the local variable.
@@ -517,15 +521,39 @@ Person instance = new Person("Ada");
 
 ```code
 object Person {
-  string name;
+  private string name;
 
-  constructor(string name) {
+  public constructor(string name) {
     this.name = name;
   }
 
-  function show(string name) {
+  public function show(string name) {
     print(name); // local variable
     print(this.name); // member field
+  }
+}
+```
+
+Package-visible member example:
+
+```code
+package Example.Package;
+
+public object Counter {
+  package integer seed;
+  private integer count;
+
+  public constructor() {
+    seed = 1;
+    count = 0;
+  }
+
+  package function add_seed() {
+    count += seed;
+  }
+
+  public function<integer> read() {
+    return count;
   }
 }
 ```
@@ -681,7 +709,6 @@ if x > 3 then panic("x too large");
 - Recoverable fallible values lower to dedicated VM opcodes (`FALLIBLE_SUCCESS`, `FALLIBLE_ERROR`, `FALLIBLE_IS_ERROR`, `FALLIBLE_VALUE`, `FALLIBLE_ERROR_CODE`, `FALLIBLE_ERROR_MESSAGE`); `panic(...)` still lowers to `THROW_ERROR`.
 
 ## 15. Planned But Not Implemented Yet
-- Member-level visibility/access modifiers for fields and methods.
 - Fallible-error propagation shorthand such as `try`.
 
 ## 16. Comments

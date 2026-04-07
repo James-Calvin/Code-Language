@@ -11,8 +11,7 @@ This roadmap is implementation-truthful: items marked below are gaps from the cu
 ## Near-Term Gap Groups
 
 ### Language Gaps
-1. Member-level visibility/access control follow-up
-2. Fallible-error propagation shorthand after the explicit `on error` model is exercised
+1. Fallible-error propagation shorthand after the explicit `on error` model is exercised
 
 ### Stdlib and Runtime Gaps
 1. Broader standard-library modules after the core container/math baseline lands
@@ -63,7 +62,7 @@ This roadmap is implementation-truthful: items marked below are gaps from the cu
 | `[x]` | Object model | Temporary method lowering (`method` -> static fn with implicit `this`) | Implemented with compile-time signature binding (no dynamic dispatch yet) |
 | `[x]` | Object model | `record` declaration + value semantics (copy on assignment/pass/return) | Implemented: constructors, methods, inline/external interface implementations, copy-on-assignment/pass/return/container insertion, copy-by-value method receivers, structural equality for hashable records, and hashable record support in `map` / `set` |
 | `[x]` | Object model | Top-level visibility/access control (`public/package/private`) | Implemented for module declarations; `public`/`package`/`private` gate imports, and legacy `export` remains as a compatibility alias for `public` |
-| `[~]` | Object model | Member-level visibility/access control | Fields and methods still use the current all-visible member model |
+| `[x]` | Object model | Member-level visibility/access control | Implemented for object/record fields, constructors, and methods; unmarked members default to `public`; `private` is type-local; `package` follows module package boundaries |
 | `[x]` | Object model | Interfaces + conformance checks | Compile-time interface declarations + explicit `implement Interface for Object { ... via Object.method; }` mapping with signature/return checks, plus inline object-body syntax `implement Interface.method(...) { ... }` |
 | `[~]` | Object model | Interface dispatch lowering/runtime model | Baseline runtime dispatch table opcode implemented for interface-typed locals/params/returns/fields/arrays; extend to broader container types and optimizer-grade fast paths |
 | `[_]` | Object model | Lifecycle/perf plan for heap instances (GC/ownership strategy) | Permanent runtime design decision; defer until objects are exercised |
@@ -118,7 +117,7 @@ This roadmap is implementation-truthful: items marked below are gaps from the cu
 
 ## Priority Rollup (benefit/effort)
 - High (`[!]`): keeping example/docs status aligned with implementation truth.
-- Medium (`[~]`): member-level visibility/access control, fallible propagation shorthand, constant pool, optimizer expansion, tooling polish, and engine core/adapters.
+- Medium (`[~]`): fallible propagation shorthand, constant pool, optimizer expansion, tooling polish, and engine core/adapters.
 - Low (`[_]`): REPL, future stdlib/versioning, long-term runtime lifecycle strategy, remote package registry, and longer-horizon GPU/backend work.
 
 See also: `docs/platform-roadmap.md` for ABI schema, package manifest schema, and phased execution plan.

@@ -305,14 +305,14 @@ sealed class Parser
         throw Error(Peek(), $"Expect {kind} body block.");
     }
 
-    private MethodDecl ParseMethodDeclaration()
+    private MethodDecl ParseMethodDeclaration(DeclarationVisibility visibility = DeclarationVisibility.Public)
     {
         var sig = ParseCallableSignature("method");
         Block body = ParseCallableBody("method");
-        return new MethodDecl(sig.Name, sig.ReturnType, sig.Parameters, body);
+        return new MethodDecl(sig.Name, sig.ReturnType, sig.Parameters, body, visibility);
     }
 
-    private ConstructorDecl ParseConstructor(Token ctorKeyword)
+    private ConstructorDecl ParseConstructor(Token ctorKeyword, DeclarationVisibility visibility = DeclarationVisibility.Public)
     {
         Consume(TokenType.LeftParen, "Expect '(' after constructor.");
         var parameters = new List<Parameter>();
@@ -327,7 +327,7 @@ sealed class Parser
         }
         Consume(TokenType.RightParen, "Expect ')' after constructor parameters.");
         Block body = ParseCallableBody("constructor");
-        return new ConstructorDecl(ctorKeyword, parameters, body);
+        return new ConstructorDecl(ctorKeyword, parameters, body, visibility);
     }
 
     private Stmt ObjectDeclaration(bool isRecord)
@@ -340,32 +340,41 @@ sealed class Parser
         var inlineInterfaceMethods = new List<InlineImplementMethodDecl>();
         while (!Check(TokenType.RightBrace) && !IsAtEnd())
         {
+            var visibility = ParseMemberVisibility();
             if (Match(TokenType.Constructor))
             {
-                constructors.Add(ParseConstructor(Previous()));
+                constructors.Add(ParseConstructor(Previous(), visibility));
                 continue;
             }
             if (Match(TokenType.Function))
             {
-                methods.Add(ParseMethodDeclaration());
+                methods.Add(ParseMethodDeclaration(visibility));
                 continue;
             }
             if (Match(TokenType.Implement))
             {
-                inlineInterfaceMethods.Add(ParseInlineImplementMethod());
+                inlineInterfaceMethods.Add(ParseInlineImplementMethod(visibility));
                 continue;
             }
 
             var fType = ParseTypeRef();
             Token fname = Consume(TokenType.Identifier, "Expect field name.");
             Consume(TokenType.Semicolon, "Expect ';' after field.");
-            fields.Add(new FieldDecl(fType, fname));
+            fields.Add(new FieldDecl(fType, fname, visibility));
         }
         Consume(TokenType.RightBrace, $"Expect '}}' after {(isRecord ? "record" : "object")} fields.");
         return new ObjectDecl(name, isRecord, fields, constructors, methods, inlineInterfaceMethods);
     }
 
-    private InlineImplementMethodDecl ParseInlineImplementMethod()
+    private DeclarationVisibility ParseMemberVisibility()
+    {
+        if (Match(TokenType.Public)) return DeclarationVisibility.Public;
+        if (Match(TokenType.Package)) return DeclarationVisibility.Package;
+        if (Match(TokenType.Private)) return DeclarationVisibility.Private;
+        return DeclarationVisibility.Public;
+    }
+
+    private InlineImplementMethodDecl ParseInlineImplementMethod(DeclarationVisibility visibility = DeclarationVisibility.Public)
     {
         Token interfaceName = Consume(TokenType.Identifier, "Expect interface name after 'implement'.");
         Consume(TokenType.Dot, "Expect '.' after interface name in inline implement method.");
@@ -383,7 +392,7 @@ sealed class Parser
         }
         Consume(TokenType.RightParen, "Expect ')' after inline implement parameters.");
         Block body = ParseCallableBody("inline implement method");
-        return new InlineImplementMethodDecl(interfaceName, methodName, parameters, body);
+        return new InlineImplementMethodDecl(interfaceName, methodName, parameters, body, visibility);
     }
 
     private Stmt InterfaceDeclaration()

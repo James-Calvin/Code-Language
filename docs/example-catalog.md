@@ -51,6 +51,7 @@ Use this document as the primary answer to "does this exist yet?"
 | `runnable` | `ConsoleApp1/examples/modules/grouped-imports.code` | `run` | Grouped/selective imports |
 | `runnable` | `ConsoleApp1/examples/modules/re_exports_main.code` | `run` | Re-export imports |
 | `runnable` | `ConsoleApp1/examples/modules/visibility_main.code` | `run` | Top-level `public` / `package` / `private` visibility with package-aware imports |
+| `runnable` | `ConsoleApp1/examples/modules/member_visibility_main.code` | `run` | Member-level visibility for object fields, constructors, and methods |
 | `runnable` | `ConsoleApp1/examples/package_manifest_host_requirements/ok/main.code` | `run (--target vm-web)` | Package manifest plus allowed host requirements |
 | `negative` | `ConsoleApp1/examples/package_manifest_host_requirements/web_blocked/main.code` | `expected compile error (--target vm-web)` | Manifest host requirement rejected for web target |
 | `runnable` | `ConsoleApp1/examples/package_library_artifact/main.code` | `compile-only artifact` | Library package emits `.codelib` and `code.lock.json` |
@@ -69,7 +70,7 @@ Current limitation:
 ## Planned But Not Implemented Yet
 
 No checked-in runnable examples exist yet for these planned features:
-- member-level visibility for fields and methods
+- fallible-error propagation shorthand
 
 Record notes:
 - Record methods are value-helper methods: `this` is cloned at method entry.

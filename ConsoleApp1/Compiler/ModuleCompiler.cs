@@ -237,6 +237,7 @@ static class ModuleCompiler
         var tokens = lexer.ScanTokens();
         var parser = new Parser(tokens);
         var ast = parser.Parse();
+        AnnotateModuleStatements(ast, InferPackageName(ast), "<source>");
         ast = LowerModuleSurfaceDeclarations(ast);
         ast = LowerInlineInterfaceImplementations(ast);
         var typeChecker = new TypeChecker();
@@ -408,7 +409,8 @@ static class ModuleCompiler
                     inline.MethodName,
                     interfaceMethod.ReturnType,
                     inline.Parameters,
-                    inline.Body));
+                    inline.Body,
+                    inline.Visibility));
 
                 string pairKey = $"{iface.Name.Lexeme}->{obj.Name.Lexeme}";
                 if (!generatedImplements.TryGetValue(pairKey, out var group))
@@ -424,7 +426,7 @@ static class ModuleCompiler
                     inline.MethodName));
             }
 
-            lowered.Add(new ObjectDecl(obj.Name, obj.IsRecord, obj.Fields, obj.Constructors, methods));
+            lowered.Add(CopyOrigin(obj, new ObjectDecl(obj.Name, obj.IsRecord, obj.Fields, obj.Constructors, methods)));
         }
 
         foreach (var key in generatedImplements.Keys.OrderBy(value => value, StringComparer.Ordinal))
@@ -503,6 +505,48 @@ static class ModuleCompiler
                 return false;
         }
         return true;
+    }
+
+    private static string? InferPackageName(IList<Stmt> statements)
+    {
+        for (int i = 0; i < statements.Count; i++)
+        {
+            if (statements[i] is PackageDecl packageDecl)
+                return packageDecl.Name;
+        }
+
+        return null;
+    }
+
+    private static void AnnotateModuleStatements(IList<Stmt> statements, string? packageName, string modulePath)
+    {
+        for (int i = 0; i < statements.Count; i++)
+            AnnotateStmt(statements[i], packageName, modulePath);
+    }
+
+    private static T CopyOrigin<T>(Stmt source, T target) where T : Stmt
+    {
+        target.OriginPackageName = source.OriginPackageName;
+        target.OriginModulePath = source.OriginModulePath;
+        return target;
+    }
+
+    private static void AnnotateStmt(Stmt stmt, string? packageName, string modulePath)
+    {
+        stmt.OriginPackageName = packageName;
+        stmt.OriginModulePath = modulePath;
+
+        switch (stmt)
+        {
+            case ExportDecl exportDecl:
+                AnnotateStmt(exportDecl.Declaration, packageName, modulePath);
+                break;
+            case VisibilityDecl visibilityDecl:
+                AnnotateStmt(visibilityDecl.Declaration, packageName, modulePath);
+                break;
+            default:
+                break;
+        }
     }
 
     private sealed record GeneratedImplementGroup(Token InterfaceName, Token ObjectName, List<ImplementMethodMap> Methods);
@@ -622,7 +666,9 @@ static class ModuleCompiler
                                     continue;
 
                                 string wrapperName = BuildNamespaceWrapperName(aliasName, exportedFunction.Name.Lexeme, binding.Alias ?? binding.Name);
-                                module.LinkedStatements.Add(BuildNamespaceWrapper(wrapperName, exportedFunction, binding.Alias ?? binding.Name));
+                                var wrapper = BuildNamespaceWrapper(wrapperName, exportedFunction, binding.Alias ?? binding.Name);
+                                AnnotateStmt(wrapper, module.PackageName, module.Path);
+                                module.LinkedStatements.Add(wrapper);
                                 namespaceMembers[importablePair.Key] = wrapperName;
                             }
 
@@ -658,7 +704,9 @@ static class ModuleCompiler
                             switch (exported)
                             {
                                 case FunctionDecl:
-                                    module.LinkedStatements.Add(BuildAliasWrapper(binding, exported));
+                                    var wrapper = BuildAliasWrapper(binding, exported);
+                                    AnnotateStmt(wrapper, module.PackageName, module.Path);
+                                    module.LinkedStatements.Add(wrapper);
                                     break;
                                 case ObjectDecl:
                                 case InterfaceDecl:
@@ -698,7 +746,9 @@ static class ModuleCompiler
                     }
                 }
 
-                module.LinkedStatements.AddRange(RewriteModuleStatements(module.LocalStatements, module.TypeAliases, module.NamespaceAliases));
+                var rewrittenLocals = RewriteModuleStatements(module.LocalStatements, module.TypeAliases, module.NamespaceAliases);
+                AnnotateModuleStatements(rewrittenLocals, module.PackageName, module.Path);
+                module.LinkedStatements.AddRange(rewrittenLocals);
                 _modules[modulePath] = module;
                 _order.Add(modulePath);
                 Trace($"Linked {FormatGraphPath(modulePath)}");
@@ -1620,21 +1670,24 @@ static class ModuleCompiler
             ObjectDecl obj => new ObjectDecl(
                 obj.Name,
                 obj.IsRecord,
-                obj.Fields.Select(f => new FieldDecl(RewriteTypeRef(f.Type, typeAliases), f.Name)).ToList(),
+                obj.Fields.Select(f => new FieldDecl(RewriteTypeRef(f.Type, typeAliases), f.Name, f.Visibility)).ToList(),
                 obj.Constructors.Select(c => new ConstructorDecl(
                     c.Keyword,
                     c.Parameters.Select(p => new Parameter(p.Type is null ? null : RewriteTypeRef(p.Type, typeAliases), p.Name)).ToList(),
-                    (Block)RewriteStmt(c.Body, typeAliases, namespaceAliases))).ToList(),
+                    (Block)RewriteStmt(c.Body, typeAliases, namespaceAliases),
+                    c.Visibility)).ToList(),
                 obj.Methods.Select(m => new MethodDecl(
                     m.Name,
                     m.ReturnType is null ? null : RewriteTypeRef(m.ReturnType, typeAliases),
                     m.Parameters.Select(p => new Parameter(p.Type is null ? null : RewriteTypeRef(p.Type, typeAliases), p.Name)).ToList(),
-                    (Block)RewriteStmt(m.Body, typeAliases, namespaceAliases))).ToList(),
+                    (Block)RewriteStmt(m.Body, typeAliases, namespaceAliases),
+                    m.Visibility)).ToList(),
                 obj.InlineInterfaceMethods.Select(m => new InlineImplementMethodDecl(
                     RewriteTypeToken(m.InterfaceName, typeAliases),
                     m.MethodName,
                     m.Parameters.Select(p => new Parameter(p.Type is null ? null : RewriteTypeRef(p.Type, typeAliases), p.Name)).ToList(),
-                    (Block)RewriteStmt(m.Body, typeAliases, namespaceAliases))).ToList()),
+                    (Block)RewriteStmt(m.Body, typeAliases, namespaceAliases),
+                    m.Visibility)).ToList()),
             InterfaceDecl iface => new InterfaceDecl(
                 iface.Name,
                 iface.Methods.Select(m => new InterfaceMethodDecl(

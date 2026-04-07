@@ -1,0 +1,8 @@
+package demo.visibility;
+
+import Meter from "member_visibility_support.code";
+
+Meter meter = new Meter(3);
+meter.add_bonus();
+print(meter.read());
+print(meter.bonus);

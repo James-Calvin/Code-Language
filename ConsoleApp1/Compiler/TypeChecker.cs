@@ -16,6 +16,7 @@ sealed class TypeChecker
     private TypeRef? _currentYieldTypeRef;
     private ObjectSymbol? _currentObjectSymbol;
     private TypeRef? _currentObjectTypeRef;
+    private string? _currentAccessPackageName;
     private static readonly Dictionary<string, FunctionSignature> IntrinsicFunctions = BuildIntrinsicFunctions();
 
     public void Check(IList<Stmt> statements)
@@ -52,7 +53,9 @@ sealed class TypeChecker
             _objects[obj.Name.Lexeme] = new ObjectSymbol(
                 obj.Name,
                 obj.IsRecord,
-                new Dictionary<string, TypeRef>(StringComparer.Ordinal),
+                obj.OriginPackageName,
+                obj.OriginModulePath,
+                new Dictionary<string, FieldSignature>(StringComparer.Ordinal),
                 new List<ConstructorSignature>(),
                 new Dictionary<string, MethodSignature>(StringComparer.Ordinal));
         }
@@ -148,9 +151,11 @@ sealed class TypeChecker
                     throw new CompilerException($"Field '{field.Name.Lexeme}' is already defined in {typeKind} '{obj.Name.Lexeme}'", field.Name.Line, field.Name.Column);
                 if (IsReservedPropertyName(field.Name.Lexeme))
                     throw new CompilerException($"Field name '{field.Name.Lexeme}' is reserved for built-in properties", field.Name.Line, field.Name.Column);
+                if (field.Visibility == DeclarationVisibility.Package && string.IsNullOrWhiteSpace(symbol.PackageName))
+                    throw new CompilerException("Package-visible members require a containing package declaration.", field.Name.Line, field.Name.Column);
                 ValidateTypeRef(field.Type);
                 EnsureNotVoidTypeRef(field.Type, $"{Capitalize(typeKind)} fields cannot be void", field.Name.Line, field.Name.Column);
-                symbol.Fields[field.Name.Lexeme] = field.Type;
+                symbol.Fields[field.Name.Lexeme] = new FieldSignature(field.Name, field.Type, field.Visibility);
             }
 
             var ctorSignatures = new HashSet<string>(StringComparer.Ordinal);
@@ -172,7 +177,9 @@ sealed class TypeChecker
                 {
                     throw new CompilerException($"Constructor overload '{dispatchKey}' is already defined in {typeKind} '{obj.Name.Lexeme}'", ctor.Keyword.Line, ctor.Keyword.Column);
                 }
-                symbol.Constructors.Add(new ConstructorSignature(ctor.Keyword, paramTypes, paramTypeRefs, dispatchKey, ctor.Body));
+                if (ctor.Visibility == DeclarationVisibility.Package && string.IsNullOrWhiteSpace(symbol.PackageName))
+                    throw new CompilerException("Package-visible members require a containing package declaration.", ctor.Keyword.Line, ctor.Keyword.Column);
+                symbol.Constructors.Add(new ConstructorSignature(ctor.Keyword, paramTypes, paramTypeRefs, dispatchKey, ctor.Body, ctor.Visibility));
             }
 
             var methodKeys = new HashSet<string>(StringComparer.Ordinal);
@@ -193,9 +200,11 @@ sealed class TypeChecker
                 if (!methodKeys.Add(methodKey))
                     throw new CompilerException($"Method overload '{method.Name.Lexeme}' with the same signature is already defined in {typeKind} '{obj.Name.Lexeme}'", method.Name.Line, method.Name.Column);
 
+                if (method.Visibility == DeclarationVisibility.Package && string.IsNullOrWhiteSpace(symbol.PackageName))
+                    throw new CompilerException("Package-visible members require a containing package declaration.", method.Name.Line, method.Name.Column);
                 var paramTypes = method.Parameters.Select(p => MapType(p.Type!)).ToList();
                 var returnType = MapType(returnTypeRef);
-                symbol.Methods[methodKey] = new MethodSignature(method.Name, returnTypeRef, returnType, paramTypes, paramTypeRefs, methodKey, method.Body, method.Parameters);
+                symbol.Methods[methodKey] = new MethodSignature(method.Name, returnTypeRef, returnType, paramTypes, paramTypeRefs, methodKey, method.Body, method.Parameters, method.Visibility);
             }
 
             if (symbol.Fields.Count > 0 && symbol.Constructors.Count == 0)
@@ -341,7 +350,10 @@ sealed class TypeChecker
             }
             else
             {
+                var previousAccessPackageName = _currentAccessPackageName;
+                _currentAccessPackageName = stmt.OriginPackageName;
                 CheckStmt(stmt, global, currentReturn: null);
+                _currentAccessPackageName = previousAccessPackageName;
             }
         }
     }
@@ -352,7 +364,9 @@ sealed class TypeChecker
         var returnTypeRef = fn.ReturnType ?? BuildImplicitVoidTypeRef(fn.Name);
         var retType = MapType(returnTypeRef);
         var previousReturnRef = _currentReturnTypeRef;
+        var previousAccessPackageName = _currentAccessPackageName;
         _currentReturnTypeRef = returnTypeRef;
+        _currentAccessPackageName = fn.OriginPackageName;
         // params occupy env
         for (int i = 0; i < fn.Parameters.Count; i++)
         {
@@ -362,6 +376,7 @@ sealed class TypeChecker
         }
         bool allPathsReturn = CheckStmt(fn.Body, env, retType);
         _currentReturnTypeRef = previousReturnRef;
+        _currentAccessPackageName = previousAccessPackageName;
         if (retType != TypeSymbol.Void && !allPathsReturn)
             throw new CompilerException($"Function '{fn.Name.Lexeme}' may not return a value on all paths", fn.Name.Line, fn.Name.Column);
     }
@@ -373,8 +388,10 @@ sealed class TypeChecker
 
         var previousObjectSymbol = _currentObjectSymbol;
         var previousObjectTypeRef = _currentObjectTypeRef;
+        var previousAccessPackageName = _currentAccessPackageName;
         _currentObjectSymbol = symbol;
         _currentObjectTypeRef = new TypeRef(obj.Name.Lexeme, null, obj.Name.Line, obj.Name.Column);
+        _currentAccessPackageName = obj.OriginPackageName;
 
         try
         {
@@ -403,6 +420,7 @@ sealed class TypeChecker
         {
             _currentObjectSymbol = previousObjectSymbol;
             _currentObjectTypeRef = previousObjectTypeRef;
+            _currentAccessPackageName = previousAccessPackageName;
         }
     }
 
@@ -413,8 +431,10 @@ sealed class TypeChecker
 
         var previousObjectSymbol = _currentObjectSymbol;
         var previousObjectTypeRef = _currentObjectTypeRef;
+        var previousAccessPackageName = _currentAccessPackageName;
         _currentObjectSymbol = symbol;
         _currentObjectTypeRef = new TypeRef(obj.Name.Lexeme, null, obj.Name.Line, obj.Name.Column);
+        _currentAccessPackageName = obj.OriginPackageName;
 
         try
         {
@@ -443,6 +463,7 @@ sealed class TypeChecker
         {
             _currentObjectSymbol = previousObjectSymbol;
             _currentObjectTypeRef = previousObjectTypeRef;
+            _currentAccessPackageName = previousAccessPackageName;
         }
     }
 
@@ -563,9 +584,9 @@ sealed class TypeChecker
         if (!visiting.Add(record.Name.Lexeme))
             throw new CompilerException($"Record '{record.Name.Lexeme}' cannot contain itself by value", record.Name.Line, record.Name.Column);
 
-        foreach (var fieldType in record.Fields.Values)
+        foreach (var field in record.Fields.Values)
         {
-            foreach (var nestedRecord in EnumerateEmbeddedRecordTypes(fieldType))
+            foreach (var nestedRecord in EnumerateEmbeddedRecordTypes(field.TypeRef))
             {
                 if (_objects.TryGetValue(nestedRecord, out var nestedSymbol) && nestedSymbol.IsRecord)
                     ValidateRecordLayout(nestedSymbol, visiting, visited);
@@ -602,9 +623,10 @@ sealed class TypeChecker
         if (env.Contains(name.Lexeme))
             return false;
 
-        if (!_currentObjectSymbol.Fields.TryGetValue(name.Lexeme, out typeRef))
+        if (!_currentObjectSymbol.Fields.TryGetValue(name.Lexeme, out var field))
             return false;
 
+        typeRef = field.TypeRef;
         type = MapType(typeRef);
         return true;
     }
@@ -843,12 +865,14 @@ sealed class TypeChecker
                     argTypes.Add((argType, argTypeRef));
                 }
 
-                if (!TryResolveBestConstructor(obj, argTypes, out var ctor, out bool ambiguous))
+                if (!TryResolveBestConstructor(obj, argTypes, requireAccessible: true, out var ctor, out bool ambiguous))
                 {
                     if (obj.Constructors.Count == 0 && no.Arguments.Count == 0)
                         return obj.IsRecord ? TypeSymbol.Record : TypeSymbol.Object;
                     if (ambiguous)
                         throw new CompilerException($"Ambiguous constructor call for '{no.TypeName.Lexeme}'", no.TypeName.Line, no.TypeName.Column);
+                    if (TryResolveBestConstructor(obj, argTypes, requireAccessible: false, out _, out _))
+                        throw new CompilerException($"Constructor for '{no.TypeName.Lexeme}' is not accessible", no.TypeName.Line, no.TypeName.Column);
                     throw new CompilerException($"No matching constructor overload for '{no.TypeName.Lexeme}'", no.TypeName.Line, no.TypeName.Column);
                 }
 
@@ -1046,10 +1070,12 @@ sealed class TypeChecker
                 if (!_objects.TryGetValue(targetTypeRef.Name, out var obj))
                     throw new CompilerException("Could not resolve method target type", mc.MethodName.Line, mc.MethodName.Column);
 
-                if (!TryResolveBestMethod(obj, mc.MethodName.Lexeme, argTypes, out var method, out bool ambiguous))
+                if (!TryResolveBestMethod(obj, mc.MethodName.Lexeme, argTypes, requireAccessible: true, out var method, out bool ambiguous))
                 {
                     if (ambiguous)
                         throw new CompilerException($"Ambiguous method call '{targetTypeRef.Name}.{mc.MethodName.Lexeme}'", mc.MethodName.Line, mc.MethodName.Column);
+                    if (TryResolveBestMethod(obj, mc.MethodName.Lexeme, argTypes, requireAccessible: false, out _, out _))
+                        throw new CompilerException($"Method '{targetTypeRef.Name}.{mc.MethodName.Lexeme}' is not accessible", mc.MethodName.Line, mc.MethodName.Column);
                     throw new CompilerException($"Object '{targetTypeRef.Name}' has no matching method overload '{mc.MethodName.Lexeme}'", mc.MethodName.Line, mc.MethodName.Column);
                 }
 
@@ -1129,7 +1155,7 @@ sealed class TypeChecker
 
                 if (_currentObjectSymbol is not null && _currentObjectTypeRef is not null && CurrentObjectHasMethodNamed(c.Callee.Lexeme))
                 {
-                    if (!TryResolveBestMethod(_currentObjectSymbol, c.Callee.Lexeme, argTypes, out var method, out bool ambiguousMethod))
+                    if (!TryResolveBestMethod(_currentObjectSymbol, c.Callee.Lexeme, argTypes, requireAccessible: true, out var method, out bool ambiguousMethod))
                     {
                         if (ambiguousMethod)
                             throw new CompilerException($"Ambiguous method call '{_currentObjectTypeRef.Name}.{c.Callee.Lexeme}'", c.Callee.Line, c.Callee.Column);
@@ -1618,6 +1644,7 @@ sealed class TypeChecker
     private bool TryResolveBestConstructor(
         ObjectSymbol obj,
         IReadOnlyList<(TypeSymbol Symbol, TypeRef? Ref)> args,
+        bool requireAccessible,
         out ConstructorSignature? best,
         out bool ambiguous)
     {
@@ -1627,6 +1654,8 @@ sealed class TypeChecker
 
         foreach (var ctor in obj.Constructors)
         {
+            if (requireAccessible && !IsMemberAccessible(obj, ctor.Visibility))
+                continue;
             if (!TryCandidateCost(ctor.Params, ctor.ParamTypeRefs, args, out int cost))
                 continue;
 
@@ -1649,6 +1678,7 @@ sealed class TypeChecker
         ObjectSymbol obj,
         string methodName,
         IReadOnlyList<(TypeSymbol Symbol, TypeRef? Ref)> args,
+        bool requireAccessible,
         out MethodSignature? best,
         out bool ambiguous)
     {
@@ -1658,6 +1688,8 @@ sealed class TypeChecker
 
         foreach (var method in obj.Methods.Values.Where(m => string.Equals(m.Name.Lexeme, methodName, StringComparison.Ordinal)))
         {
+            if (requireAccessible && !IsMemberAccessible(obj, method.Visibility))
+                continue;
             if (!TryCandidateCost(method.ParamTypes, method.ParamTypeRefs, args, out int cost))
                 continue;
 
@@ -1709,6 +1741,46 @@ sealed class TypeChecker
 
     private bool ImplementsInterface(string objectTypeName, string interfaceName) =>
         _interfaceObjectPairs.Contains($"{interfaceName}->{objectTypeName}");
+
+    private bool IsMemberAccessible(ObjectSymbol declaringType, DeclarationVisibility visibility)
+    {
+        if (visibility == DeclarationVisibility.Public)
+            return true;
+
+        if (_currentObjectSymbol is not null &&
+            string.Equals(_currentObjectSymbol.Name.Lexeme, declaringType.Name.Lexeme, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        if (visibility == DeclarationVisibility.Package)
+            return ArePackagesEqual(_currentAccessPackageName, declaringType.PackageName);
+
+        return false;
+    }
+
+    private static bool ArePackagesEqual(string? left, string? right)
+    {
+        if (string.IsNullOrWhiteSpace(left) || string.IsNullOrWhiteSpace(right))
+            return false;
+        return string.Equals(left, right, StringComparison.Ordinal);
+    }
+
+    private void RequireMemberAccessible(
+        ObjectSymbol declaringType,
+        DeclarationVisibility visibility,
+        Token token,
+        string memberKind,
+        string memberName)
+    {
+        if (IsMemberAccessible(declaringType, visibility))
+            return;
+
+        throw new CompilerException(
+            $"{Capitalize(memberKind)} '{declaringType.Name.Lexeme}.{memberName}' is not accessible",
+            token.Line,
+            token.Column);
+    }
 
     private bool TryCandidateCost(
         IList<TypeSymbol> expectedSymbols,
@@ -1919,10 +1991,11 @@ sealed class TypeChecker
         if (!_objects.TryGetValue(targetType.Name, out var objSymbol))
             return null;
 
-        if (!objSymbol.Fields.TryGetValue(fieldAccess.Name.Lexeme, out var fieldType))
+        if (!objSymbol.Fields.TryGetValue(fieldAccess.Name.Lexeme, out var field))
             throw new CompilerException($"Object '{targetType.Name}' has no field '{fieldAccess.Name.Lexeme}'", fieldAccess.Name.Line, fieldAccess.Name.Column);
 
-        return MapType(fieldType);
+        RequireMemberAccessible(objSymbol, field.Visibility, fieldAccess.Name, "field", field.Name.Lexeme);
+        return MapType(field.TypeRef);
     }
 
     private TypeRef? ResolveFieldTypeRef(FieldAccessExpr fieldAccess, TypeEnvironment env)
@@ -1938,9 +2011,10 @@ sealed class TypeChecker
             return null;
         if (!_objects.TryGetValue(targetType.Name, out var objSymbol))
             return null;
-        if (!objSymbol.Fields.TryGetValue(fieldAccess.Name.Lexeme, out var fieldType))
+        if (!objSymbol.Fields.TryGetValue(fieldAccess.Name.Lexeme, out var field))
             throw new CompilerException($"Object '{targetType.Name}' has no field '{fieldAccess.Name.Lexeme}'", fieldAccess.Name.Line, fieldAccess.Name.Column);
-        return fieldType;
+        RequireMemberAccessible(objSymbol, field.Visibility, fieldAccess.Name, "field", field.Name.Lexeme);
+        return field.TypeRef;
     }
 
     private TypeRef? ResolveExprTypeRef(Expr expr, TypeEnvironment env)
@@ -1976,9 +2050,10 @@ sealed class TypeChecker
                 var owner = ResolveExprTypeRef(fa.Target, env);
                 if (owner is null) return null;
                 if (!_objects.TryGetValue(owner.Name, out var objSymbol)) return null;
-                if (!objSymbol.Fields.TryGetValue(fa.Name.Lexeme, out var fieldType))
+                if (!objSymbol.Fields.TryGetValue(fa.Name.Lexeme, out var field))
                     throw new CompilerException($"Object '{owner.Name}' has no field '{fa.Name.Lexeme}'", fa.Name.Line, fa.Name.Column);
-                return fieldType;
+                RequireMemberAccessible(objSymbol, field.Visibility, fa.Name, "field", field.Name.Lexeme);
+                return field.TypeRef;
             }
             case MethodCallExpr mc:
                 return mc.ResolvedReturnTypeRef;
@@ -2213,9 +2288,9 @@ sealed class TypeChecker
 
         try
         {
-            foreach (var fieldType in objectSymbol.Fields.Values)
+            foreach (var field in objectSymbol.Fields.Values)
             {
-                if (!IsHashableTypeRef(fieldType, visitingRecords))
+                if (!IsHashableTypeRef(field.TypeRef, visitingRecords))
                     return false;
             }
 
@@ -2424,12 +2499,17 @@ sealed class TypeChecker
         TypeRef ReturnTypeRef,
         IList<TypeSymbol> Params,
         IReadOnlyList<TypeRef> ParamTypeRefs);
+    private sealed record FieldSignature(
+        Token Name,
+        TypeRef TypeRef,
+        DeclarationVisibility Visibility);
     private sealed record ConstructorSignature(
         Token Keyword,
         IList<TypeSymbol> Params,
         IReadOnlyList<TypeRef> ParamTypeRefs,
         string DispatchKey,
-        Block Body);
+        Block Body,
+        DeclarationVisibility Visibility);
     private sealed record MethodSignature(
         Token Name,
         TypeRef ReturnTypeRef,
@@ -2438,7 +2518,8 @@ sealed class TypeChecker
         IReadOnlyList<TypeRef> ParamTypeRefs,
         string DispatchKey,
         Block Body,
-        IReadOnlyList<Parameter> Parameters);
+        IReadOnlyList<Parameter> Parameters,
+        DeclarationVisibility Visibility);
     private sealed record InterfaceMethodSignature(
         Token Name,
         TypeRef ReturnTypeRef,
@@ -2455,7 +2536,9 @@ sealed class TypeChecker
     private sealed record ObjectSymbol(
         Token Name,
         bool IsRecord,
-        Dictionary<string, TypeRef> Fields,
+        string? PackageName,
+        string? ModulePath,
+        Dictionary<string, FieldSignature> Fields,
         List<ConstructorSignature> Constructors,
         Dictionary<string, MethodSignature> Methods);
 

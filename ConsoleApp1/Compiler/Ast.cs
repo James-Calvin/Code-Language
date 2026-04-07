@@ -260,11 +260,15 @@ sealed class PackageDecl : Stmt
 
 sealed record Parameter(TypeRef? Type, Token Name);
 
-sealed record FieldDecl(TypeRef Type, Token Name);
+sealed record FieldDecl(TypeRef Type, Token Name, DeclarationVisibility Visibility = DeclarationVisibility.Public);
 
 sealed record EnumMemberDecl(Token Name, int? ExplicitValue);
 
-abstract class Stmt { }
+abstract class Stmt
+{
+    public string? OriginPackageName { get; set; }
+    public string? OriginModulePath { get; set; }
+}
 
 enum DeclarationVisibility
 {
@@ -473,9 +477,10 @@ sealed class ConstructorDecl
     public Token Keyword { get; }
     public IReadOnlyList<Parameter> Parameters { get; }
     public Block Body { get; }
-    public ConstructorDecl(Token keyword, IReadOnlyList<Parameter> parameters, Block body)
+    public DeclarationVisibility Visibility { get; }
+    public ConstructorDecl(Token keyword, IReadOnlyList<Parameter> parameters, Block body, DeclarationVisibility visibility = DeclarationVisibility.Public)
     {
-        Keyword = keyword; Parameters = parameters; Body = body;
+        Keyword = keyword; Parameters = parameters; Body = body; Visibility = visibility;
     }
 }
 
@@ -485,9 +490,10 @@ sealed class MethodDecl
     public TypeRef? ReturnType { get; }
     public IReadOnlyList<Parameter> Parameters { get; }
     public Block Body { get; }
-    public MethodDecl(Token name, TypeRef? returnType, IReadOnlyList<Parameter> parameters, Block body)
+    public DeclarationVisibility Visibility { get; }
+    public MethodDecl(Token name, TypeRef? returnType, IReadOnlyList<Parameter> parameters, Block body, DeclarationVisibility visibility = DeclarationVisibility.Public)
     {
-        Name = name; ReturnType = returnType; Parameters = parameters; Body = body;
+        Name = name; ReturnType = returnType; Parameters = parameters; Body = body; Visibility = visibility;
     }
 }
 
@@ -497,12 +503,14 @@ sealed class InlineImplementMethodDecl
     public Token MethodName { get; }
     public IReadOnlyList<Parameter> Parameters { get; }
     public Block Body { get; }
-    public InlineImplementMethodDecl(Token interfaceName, Token methodName, IReadOnlyList<Parameter> parameters, Block body)
+    public DeclarationVisibility Visibility { get; }
+    public InlineImplementMethodDecl(Token interfaceName, Token methodName, IReadOnlyList<Parameter> parameters, Block body, DeclarationVisibility visibility = DeclarationVisibility.Public)
     {
         InterfaceName = interfaceName;
         MethodName = methodName;
         Parameters = parameters;
         Body = body;
+        Visibility = visibility;
     }
 }
 

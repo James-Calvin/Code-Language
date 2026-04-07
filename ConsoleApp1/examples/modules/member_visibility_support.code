@@ -1,0 +1,26 @@
+package demo.visibility;
+
+public object Meter {
+  private integer amount;
+  package integer bonus;
+
+  public constructor(integer start) {
+    amount = start;
+    bonus = 5;
+  }
+
+  private function clamp() {
+    if amount < 0 then {
+      amount = 0;
+    }
+  }
+
+  package function add_bonus() {
+    amount += bonus;
+    clamp();
+  }
+
+  public function<integer> read() {
+    return amount;
+  }
+}

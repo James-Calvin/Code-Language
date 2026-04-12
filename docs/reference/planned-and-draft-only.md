@@ -12,13 +12,10 @@ Use [Example Catalog](../example-catalog.md) and the current compiler as the tru
 | `fallible<void, E>` | Deferred. Fallible success type cannot be `void` today. |
 | Semicolon injection | Draft-only. Write semicolons today. |
 | Sized numeric types such as `integer8`, `whole32`, `real64` | Draft-only in current docs. |
-| Numeric base prefixes such as `0b`, `0o`, `0x` | Draft-only. Use decimal integer literals today. |
 | Numeric literal suffixes such as `i32`, `w64`, `r32` | Draft-only. |
 | Decimal point real literals such as `1.5` | Not implemented in the lexer today. Use operations or functions that produce `real`. |
 | User-written casts such as `value as Type` | Draft-only. There is no parser support today. |
-| `break` and `continue` | Mentioned in some docs, but not accepted by the current parser. Use conditional control flow today. |
 | `foreach` over `map`, `set`, `queue`, and `stack` | Deferred. `foreach` supports numeric counts and arrays today. |
-| Escaped literal braces in interpolated strings | Draft-only. Use concatenation for literal braces today. |
 
 ## Package and Module Features
 
@@ -61,6 +58,20 @@ integer count = load_count() on error {
 };
 ```
 
+For quick prototypes, `fallible<Value>` defaults the error-code type to `integer`, and message-only errors use code `0`:
+
+```code
+function<fallible<integer>> load_quick_count() {
+  return error("missing count");
+}
+
+integer quickCount = load_quick_count() on error {
+  print(error.code);
+  print(error.message);
+  yield 0;
+};
+```
+
 Do not write planned shorthand yet:
 
 ```code
@@ -68,17 +79,19 @@ Do not write planned shorthand yet:
 integer count = try load_count();
 ```
 
-Use conditional loops instead of `break` or `continue`:
+`break` and `continue` are implemented for loops:
 
 ```code
 integer i = 0;
-boolean running = true;
-while i < 10 and running then {
+while i < 10 then {
   if i == 5 then {
-    running = false;
-  } else {
-    print(i);
+    break;
   }
+  if i == 2 then {
+    i += 1;
+    continue;
+  }
+  print(i);
   i += 1;
 }
 ```
@@ -88,7 +101,15 @@ Output:
 ```text
 0
 1
-2
 3
 4
+```
+
+Numeric base prefixes and escaped literal braces in interpolation are also implemented:
+
+```code
+print(0b1010);
+print(0o17);
+print(0x1f);
+print("literal \{braces\}");
 ```

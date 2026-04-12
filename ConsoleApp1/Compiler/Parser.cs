@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Text;
 
 namespace ConsoleApp1.Compiler;
 
@@ -497,6 +498,8 @@ sealed class Parser
         if (Match(TokenType.Print)) return PrintStatement();
         if (Match(TokenType.Panic)) return PanicStatement();
         if (Match(TokenType.Yield)) return YieldStatement();
+        if (Match(TokenType.Break)) return BreakStatement();
+        if (Match(TokenType.Continue)) return ContinueStatement();
         if (Match(TokenType.Object)) return ObjectDeclaration(isRecord: false);
         if (Match(TokenType.Record)) return ObjectDeclaration(isRecord: true);
 
@@ -670,6 +673,20 @@ sealed class Parser
         Expr value = Expression();
         Consume(TokenType.Semicolon, "Expect ';' after yield value.");
         return new YieldStmt(yieldToken, value);
+    }
+
+    private Stmt BreakStatement()
+    {
+        Token breakToken = Previous();
+        Consume(TokenType.Semicolon, "Expect ';' after 'break'.");
+        return new BreakStmt(breakToken);
+    }
+
+    private Stmt ContinueStatement()
+    {
+        Token continueToken = Previous();
+        Consume(TokenType.Semicolon, "Expect ';' after 'continue'.");
+        return new ContinueStmt(continueToken);
     }
 
     private Expr Expression() => Assignment();
@@ -940,34 +957,67 @@ sealed class Parser
 
     private Expr ParseStringLiteral(Token stringToken, string raw)
     {
-        if (!raw.Contains("{"))
-            return new Literal(raw, stringToken.Line, stringToken.Column);
-
         var parts = new List<object>();
+        var current = new StringBuilder();
+        bool hasInterpolation = false;
         int i = 0;
         while (i < raw.Length)
         {
-            int brace = raw.IndexOf('{', i);
-            if (brace == -1)
+            char ch = raw[i];
+            if (ch == '\\' && i + 1 < raw.Length && raw[i + 1] is '{' or '}')
             {
-                parts.Add(raw[i..]);
-                break;
+                current.Append(raw[i + 1]);
+                i += 2;
+                continue;
             }
-            if (brace > i)
+
+            if (ch != '{')
             {
-                parts.Add(raw[i..brace]);
+                current.Append(ch);
+                i++;
+                continue;
             }
-            int close = raw.IndexOf('}', brace + 1);
+
+            hasInterpolation = true;
+            if (current.Length > 0)
+            {
+                parts.Add(current.ToString());
+                current.Clear();
+            }
+
+            int close = FindInterpolationClose(raw, i + 1);
             if (close == -1)
                 throw new CompilerException("Unterminated interpolation in string literal", stringToken.Line, stringToken.Column);
-            string exprText = raw.Substring(brace + 1, close - brace - 1).Trim();
+            string exprText = raw.Substring(i + 1, close - i - 1).Trim();
             if (string.IsNullOrEmpty(exprText))
                 throw new CompilerException("Empty interpolation expression", stringToken.Line, stringToken.Column);
-            // For MVP, allow identifier or numeric literal as interpolation expression.
             parts.Add(ParseInlineExpression(exprText, stringToken.Line, stringToken.Column));
             i = close + 1;
         }
+
+        if (!hasInterpolation)
+            return new Literal(current.ToString(), stringToken.Line, stringToken.Column);
+
+        if (current.Length > 0)
+            parts.Add(current.ToString());
+
         return new InterpString(parts, stringToken.Line, stringToken.Column);
+    }
+
+    private static int FindInterpolationClose(string raw, int start)
+    {
+        for (int i = start; i < raw.Length; i++)
+        {
+            if (raw[i] == '\\' && i + 1 < raw.Length && raw[i + 1] == '}')
+            {
+                i++;
+                continue;
+            }
+            if (raw[i] == '}')
+                return i;
+        }
+
+        return -1;
     }
 
     private Expr ParseArrayLiteral(Token start)

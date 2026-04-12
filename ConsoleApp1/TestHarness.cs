@@ -178,6 +178,44 @@ foreach i in n then print(i);",
 @"integer x = 3;
 print(""x={x}"");", "x=3\n")
             ,
+            ("interp-escaped-braces",
+@"integer x = 7;
+print(""literal \{braces\} and x={x}"");", "literal {braces} and x=7\n")
+            ,
+            ("integer-base-prefixes",
+@"print(0b1010);
+print(0o17);
+print(0x1f);", "10\n15\n31\n")
+            ,
+            ("while-break-continue",
+@"integer i = 0;
+integer sum = 0;
+while i < 6 then {
+  i += 1;
+  if i == 2 then continue;
+  if i == 5 then break;
+  sum += i;
+}
+print(sum);", "8\n")
+            ,
+            ("for-break-continue",
+@"integer sum = 0;
+for integer i = 0; i < 6; i += 1 then {
+  if i == 1 then continue;
+  if i == 4 then break;
+  sum += i;
+}
+print(sum);", "5\n")
+            ,
+            ("foreach-break-continue",
+@"integer sum = 0;
+foreach value in {1, 2, 3, 4, 5} then {
+  if value == 2 then continue;
+  if value == 5 then break;
+  sum += value;
+}
+print(sum);", "8\n")
+            ,
             ("switch-basic",
 @"integer value = 2;
 switch value then {
@@ -499,6 +537,32 @@ integer value = load_count(false) on error {
   yield 9;
 };
 print(value);", "404\n1\n9\n")
+            ,
+            ("fallible-shorthand-message-only-error",
+@"function<fallible<integer>> load_count(boolean ok) {
+  if ok then return 4;
+  return error(""missing count"");
+}
+integer value = load_count(false) on error {
+  print(error.code);
+  print(error.message);
+  yield 9;
+};
+print(value);", "0\nmissing count\n9\n")
+            ,
+            ("fallible-shorthand-and-explicit-integer-interoperate",
+@"function<fallible<integer>> load_short() {
+  return error(5, ""short"");
+}
+function<fallible<integer, integer>> load_full() {
+  return load_short();
+}
+integer value = load_full() on error {
+  print(error.code);
+  print(error.message);
+  yield 3;
+};
+print(value);", "5\nshort\n3\n")
             ,
             ("fallible-return-existing-fallible",
 @"enum LoadError {
@@ -1966,9 +2030,9 @@ PI = 4;", "Cannot assign to constant 'PI'"),
             ("time-intrinsic-arity", @"print(unix_ms(1));", "expects 0 args"),
             ("math-intrinsic-arity", @"print(minimum(1));", "expects 2 args"),
             ("fallible-type-argument-arity",
-@"function<fallible<integer>> parse() {
+@"function<fallible<integer, integer, integer>> parse() {
   return 1;
-}", "expects exactly two type arguments"),
+}", "expects one or two type arguments"),
             ("fallible-error-code-type",
 @"function<fallible<integer, string>> parse() {
   return 1;
@@ -1986,7 +2050,7 @@ function<fallible<void, LoadError>> load() {
 }
 function<fallible<integer, LoadError>> load() {
   return error(""missing"");
-}", "error(message) is not supported"),
+}", "error(message) is only valid for fallible<Value> or fallible<Value, integer>"),
             ("fallible-error-outside-fallible-function",
 @"integer value = error(1);", "error(...)' is only valid"),
             ("fallible-on-error-non-fallible",
@@ -2016,6 +2080,14 @@ integer value = load() on error {
 };", "Use error.code or error.message"),
             ("fallible-yield-outside-handler",
 @"yield 1;", "yield' is only valid"),
+            ("break-outside-loop",
+@"break;", "break' is only valid"),
+            ("continue-outside-loop",
+@"continue;", "continue' is only valid"),
+            ("binary-prefix-invalid-digit",
+@"print(0b102);", "Invalid digit"),
+            ("hex-prefix-missing-digits",
+@"print(0x);", "Invalid hexadecimal integer literal"),
             ("void-return-value",
 @"function<void> nope() {
   return 1;
@@ -3040,6 +3112,11 @@ export object MainScene {
             ("example-record-runnable", @"ConsoleApp1/examples/record.code", Compiler.CompileTarget.VmNative),
             ("example-switch-runnable", @"ConsoleApp1/examples/switch.code", Compiler.CompileTarget.VmNative),
             ("example-fallible-runnable", @"ConsoleApp1/examples/fallible.code", Compiler.CompileTarget.VmNative),
+            ("example-strings-runnable", @"ConsoleApp1/examples/strings.code", Compiler.CompileTarget.VmNative),
+            ("example-forloop-runnable", @"ConsoleApp1/examples/forloop.code", Compiler.CompileTarget.VmNative),
+            ("example-foreach-runnable", @"ConsoleApp1/examples/foreach.code", Compiler.CompileTarget.VmNative),
+            ("example-arrayloop-runnable", @"ConsoleApp1/examples/arrayloop.code", Compiler.CompileTarget.VmNative),
+            ("example-optional-runnable", @"ConsoleApp1/examples/optional.code", Compiler.CompileTarget.VmNative),
             ("example-time-runnable", @"ConsoleApp1/examples/time.code", Compiler.CompileTarget.VmNative),
             ("example-math-random-runnable", @"ConsoleApp1/examples/math_random.code", Compiler.CompileTarget.VmNative),
             ("example-collections-runnable", @"ConsoleApp1/examples/collections.code", Compiler.CompileTarget.VmNative),
@@ -3177,6 +3254,7 @@ export object MainScene {
                 catalogText.Contains("| `runnable` | `ConsoleApp1/examples/record.code` | `run` |", StringComparison.Ordinal) &&
                 catalogText.Contains("| `runnable` | `ConsoleApp1/examples/switch.code` | `run` |", StringComparison.Ordinal) &&
                 catalogText.Contains("| `runnable` | `ConsoleApp1/examples/fallible.code` | `run` |", StringComparison.Ordinal) &&
+                catalogText.Contains("| `runnable` | `ConsoleApp1/examples/strings.code` | `run` |", StringComparison.Ordinal) &&
                 catalogText.Contains("| `runnable` | `ConsoleApp1/examples/time.code` | `run` |", StringComparison.Ordinal) &&
                 catalogText.Contains("| `runnable` | `ConsoleApp1/examples/math_random.code` | `run` |", StringComparison.Ordinal) &&
                 catalogText.Contains("| `runnable` | `ConsoleApp1/examples/collections.code` | `run` |", StringComparison.Ordinal) &&
@@ -3370,6 +3448,10 @@ function<fallible<integer, LoadError>> read(boolean ok) {
   if ok then return 4;
   return error(LoadError.Invalid, ""bad data"");
 }
+function<fallible<integer>> read_quick(boolean ok) {
+  if ok then return 2;
+  return error(""quick miss"");
+}
 print(read(true) on error {
   yield 0;
 });
@@ -3381,11 +3463,20 @@ integer value = read(false) on error {
     default then yield 0;
   }
 };
-print(value);";
+print(value);
+print(read_quick(true) on error {
+  yield 0;
+});
+integer quick = read_quick(false) on error {
+  print(error.code);
+  print(error.message);
+  yield 7;
+};
+print(quick);";
 
         try
         {
-            const string expected = "4\nbad data\n9\n";
+            const string expected = "4\nbad data\n9\n2\n0\nquick miss\n7\n";
             string nativeOutput = Normalize(CompileAndRun(fallibleSource, Compiler.CompileTarget.VmNative, VmHostTarget.Native));
             string webOutput = Normalize(CompileAndRun(fallibleSource, Compiler.CompileTarget.VmWeb, VmHostTarget.Web));
             if (!string.Equals(nativeOutput, expected, StringComparison.Ordinal))

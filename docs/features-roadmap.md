@@ -12,6 +12,9 @@ This roadmap is implementation-truthful: items marked below are gaps from the cu
 
 ### Language Gaps
 1. Fallible-error propagation shorthand after the explicit `on error` model is exercised
+2. `fallible<void, ErrorCode>` statement-level ergonomics
+3. Decimal-point real literals, sized numeric types, numeric literal suffixes, and user-written casts
+4. `foreach` over `map`, `set`, `queue`, and `stack`
 
 ### Stdlib and Runtime Gaps
 1. Broader standard-library modules after the core container/math baseline lands
@@ -33,9 +36,9 @@ This roadmap is implementation-truthful: items marked below are gaps from the cu
 | `[x]` | Core language | Modulo operator (`%`) | Implemented in lexer/parser/type-checker/codegen/VM |
 | `[x]` | Core language | Logical `and`/`or`/`not` (short-circuit) | Implemented |
 | `[x]` | Core language | Boolean literals `true` / `false` | Implemented |
-| `[x]` | Core language | String literals + interpolation; `+` concat | Implemented |
+| `[x]` | Core language | String literals + interpolation; `+` concat | Implemented, including escaped literal interpolation braces with `\{` and `\}` |
 | `[x]` | Core language | Interpolation expression parity | Interpolation now parses full expressions (member/index/call/ops) inside `{...}` |
-| `[x]` | Core language | Control flow: `if/while/for` with mandatory `then` | Semicolons enforced |
+| `[x]` | Core language | Control flow: `if/while/for` with mandatory `then` | Semicolons enforced; loop `break` / `continue` implemented |
 | `[x]` | Core language | `foreach` over numeric bounds | Lowered to 0..N-1 loop |
 | `[x]` | Core language | Function decls/calls, typed params/returns | CALL/RET |
 | `[x]` | Core language | Void functions | `void` return type + implicit-void `function name(...)` supported |
@@ -45,12 +48,13 @@ This roadmap is implementation-truthful: items marked below are gaps from the cu
 | `[x]` | Core language | Enumerations | Implemented: `enum Name { Member; Other = 5; }`, strongly typed equality/assignment, and module export/import/re-export support |
 | `[x]` | Core language | `switch` | Implemented: `switch value then { case expr then statement ... default then statement }`, no fallthrough, single evaluation of the switch value |
 | `[x]` | Core language | Structs/records (user types) | Baseline `record` support implemented with copy-on-assignment/pass/return semantics |
-| `[~]` | Type system | Sized numerics & literal suffixes (`i8/w8/r32` etc.) | Lexer/parser/type support pending |
+| `[x]` | Core language | Integer base prefixes | `0b`, `0o`, and `0x` integer literals implemented |
+| `[~]` | Type system | Sized numerics, decimal real literals & literal suffixes (`i8/w8/r32` etc.) | Lexer/parser/type support pending beyond integer base prefixes |
 | `[~]` | Type system | Optional/`optional<T>` semantics | Baseline works; flow narrowing and stricter typing rules pending |
 | `[_]` | Type system | Overload resolution rules (spec’d) | Engine not implemented |
 | `[x]` | Error model | Runtime IP + call stack + snippets | Debug-map backed |
 | `[x]` | Error model | Typed errors / exception objects in VM | VmError objects, THROW opcode, panic statement, tests |
-| `[x]` | Error model | User-facing `fallible<Value, ErrorCode>` / `on error` syntax | Implemented: typed recoverable errors with enum/integer error codes, `return error(code[, message])`, implicit handler `error.code` / `error.message`, and handler `yield` fallback |
+| `[x]` | Error model | User-facing `fallible<Value, ErrorCode>` / `on error` syntax | Implemented: typed recoverable errors with enum/integer error codes, shorthand `fallible<Value>` as integer-coded fallible, `return error(code[, message])`, `return error(message)` for integer-coded fallibles, implicit handler `error.code` / `error.message`, and handler `yield` fallback |
 | `[~]` | Error model | Fallible propagation shorthand | Deferred; v1 requires explicit `on error` handlers and does not include `try`/automatic propagation |
 | `[x]` | Object model | Type references in AST/type checker (`TypeRef`) for named/generic user types | Implemented; parser/type-checker now use `TypeRef` instead of token-only types |
 | `[x]` | Object model | Object symbol table pass (object names + fields + forward refs) | Implemented; duplicate checks + field type validation in place |

@@ -77,6 +77,8 @@ sealed class CodeGenerator
     private TypeRef? _currentCallableReturnTypeRef;
     private readonly Stack<(int CodeSlot, int MessageSlot)> _fallibleErrorSlots = new();
     private readonly Stack<string> _yieldTargetLabels = new();
+    private readonly Stack<string> _breakTargetLabels = new();
+    private readonly Stack<string> _continueTargetLabels = new();
     private int _labelCounter;
 
     public byte[] Generate(IList<Stmt> statements) => GenerateWithMetadata(statements).Bytecode;
@@ -404,7 +406,11 @@ sealed class CodeGenerator
                 _builder.Label(loopStart);
                 Emit(w.Condition);
                 _builder.JumpIfZero(loopEnd);
+                _breakTargetLabels.Push(loopEnd);
+                _continueTargetLabels.Push(loopStart);
                 Emit(w.Body);
+                _continueTargetLabels.Pop();
+                _breakTargetLabels.Pop();
                 _builder.Jump(loopStart);
                 _builder.Label(loopEnd);
                 break;
@@ -438,14 +444,32 @@ sealed class CodeGenerator
                 _builder.Jump(_yieldTargetLabels.Peek());
                 break;
 
+            case BreakStmt:
+                if (_breakTargetLabels.Count == 0)
+                    throw new InvalidOperationException("'break' emitted outside a loop.");
+                _builder.Jump(_breakTargetLabels.Peek());
+                break;
+
+            case ContinueStmt:
+                if (_continueTargetLabels.Count == 0)
+                    throw new InvalidOperationException("'continue' emitted outside a loop.");
+                _builder.Jump(_continueTargetLabels.Peek());
+                break;
+
             case ForStmt f:
                 if (f.Initializer is not null) Emit(f.Initializer);
                 string forStart = NewLabel("for_start");
+                string forIncrement = NewLabel("for_increment");
                 string forEnd = NewLabel("for_end");
                 _builder.Label(forStart);
                 Emit(f.Condition);
                 _builder.JumpIfZero(forEnd);
+                _breakTargetLabels.Push(forEnd);
+                _continueTargetLabels.Push(forIncrement);
                 Emit(f.Body);
+                _continueTargetLabels.Pop();
+                _breakTargetLabels.Pop();
+                _builder.Label(forIncrement);
                 if (f.Increment is not null)
                 {
                     Emit(f.Increment);
@@ -778,8 +802,7 @@ sealed class CodeGenerator
     private void EmitReturnValue(Expr value)
     {
         if (_currentCallableReturnTypeRef is not null &&
-            _currentCallableReturnTypeRef.IsFallible &&
-            _currentCallableReturnTypeRef.TypeArguments.Count == 2)
+            _currentCallableReturnTypeRef.TryGetFallibleTypeArguments(out _, out _))
         {
             var sourceTypeRef = TryResolveTypeRef(value);
             if (sourceTypeRef is not null && sourceTypeRef.IsFallible)
@@ -802,11 +825,19 @@ sealed class CodeGenerator
         if (expr.Arguments.Count is < 1 or > 2)
             throw new InvalidOperationException("error(...) expects one or two arguments after type checking.");
 
-        Emit(expr.Arguments[0]);
-        if (expr.Arguments.Count == 2)
-            Emit(expr.Arguments[1]);
+        if (expr.ResolvedUsesDefaultIntegerCode)
+        {
+            _builder.PushInt(0);
+            Emit(expr.Arguments[0]);
+        }
         else
-            _builder.PushString(string.Empty);
+        {
+            Emit(expr.Arguments[0]);
+            if (expr.Arguments.Count == 2)
+                Emit(expr.Arguments[1]);
+            else
+                _builder.PushString(string.Empty);
+        }
 
         _builder.FallibleError();
     }
@@ -910,10 +941,13 @@ sealed class CodeGenerator
         return slot;
     }
 
-    private static string TypeRefKey(TypeRef t) =>
-        t.TypeArguments.Count == 0
+    private static string TypeRefKey(TypeRef t)
+    {
+        t = t.NormalizeBuiltInShorthands();
+        return t.TypeArguments.Count == 0
             ? t.Name
             : $"{t.Name}<{string.Join(",", GetTypeArgKeys(t.TypeArguments))}>";
+    }
 
     private static IEnumerable<string> GetTypeArgKeys(IReadOnlyList<TypeRef> args)
     {
@@ -1299,6 +1333,7 @@ sealed class CodeGenerator
     {
         if (typeRef is null)
             return false;
+        typeRef = typeRef.NormalizeBuiltInShorthands();
         if (IsRecordType(typeRef))
             return true;
         if (string.Equals(typeRef.Name, "optional", StringComparison.Ordinal) &&
@@ -1318,6 +1353,7 @@ sealed class CodeGenerator
     {
         if (!RequiresCopyOnAssignment(typeRef) || typeRef is null)
             return;
+        typeRef = typeRef.NormalizeBuiltInShorthands();
 
         if (IsRecordType(typeRef))
         {
@@ -1538,6 +1574,7 @@ sealed class CodeGenerator
         _builder.Store(idxSlot);
 
         string feStart = NewLabel("fe_start");
+        string feContinue = NewLabel("fe_continue");
         string feEnd = NewLabel("fe_end");
         _builder.Label(feStart);
         _builder.Load(idxSlot);
@@ -1551,8 +1588,13 @@ sealed class CodeGenerator
         EmitCloneIfNeeded(fe.IteratorTypeRef);
         _builder.Store(iterSlot);
 
+        _breakTargetLabels.Push(feEnd);
+        _continueTargetLabels.Push(feContinue);
         Emit(fe.Body);
+        _continueTargetLabels.Pop();
+        _breakTargetLabels.Pop();
 
+        _builder.Label(feContinue);
         _builder.Load(idxSlot);
         _builder.PushInt(1);
         _builder.Add();
@@ -1579,6 +1621,7 @@ sealed class CodeGenerator
         _builder.Store(idxSlot);
 
         string feStart = NewLabel("fe_start");
+        string feContinue = NewLabel("fe_continue");
         string feEnd = NewLabel("fe_end");
         _builder.Label(feStart);
         _builder.Load(idxSlot);
@@ -1589,8 +1632,13 @@ sealed class CodeGenerator
         _builder.Load(idxSlot);
         _builder.Store(iterSlot);
 
+        _breakTargetLabels.Push(feEnd);
+        _continueTargetLabels.Push(feContinue);
         Emit(fe.Body);
+        _continueTargetLabels.Pop();
+        _breakTargetLabels.Pop();
 
+        _builder.Label(feContinue);
         _builder.Load(idxSlot);
         _builder.PushInt(1);
         _builder.Add();

@@ -24,7 +24,7 @@ enum TokenType
     Constant,
     If, Then, Else,
     Switch, Case, Default,
-    While,
+    While, Break, Continue,
     Return,
     Print,
     Function,

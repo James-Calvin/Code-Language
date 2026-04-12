@@ -1115,6 +1115,10 @@ static class ModuleCompiler
                     ScanExprForCapabilities(y.Value, modulePath);
                     break;
 
+                case BreakStmt:
+                case ContinueStmt:
+                    break;
+
                 case ForStmt f:
                     if (f.Initializer is not null)
                         ScanStmtForCapabilities(f.Initializer, modulePath);
@@ -1655,6 +1659,8 @@ static class ModuleCompiler
             PrintStmt p => new PrintStmt(RewriteExpr(p.Value, typeAliases, namespaceAliases)),
             PanicStmt p => new PanicStmt(RewriteExpr(p.Value, typeAliases, namespaceAliases)),
             YieldStmt y => new YieldStmt(y.Keyword, RewriteExpr(y.Value, typeAliases, namespaceAliases)),
+            BreakStmt b => b,
+            ContinueStmt c => c,
             ForStmt f => new ForStmt(
                 f.Initializer is null ? null : RewriteStmt(f.Initializer, typeAliases, namespaceAliases),
                 RewriteExpr(f.Condition, typeAliases, namespaceAliases),
@@ -1730,7 +1736,8 @@ static class ModuleCompiler
             OptionalValueExpr o => new OptionalValueExpr(RewriteExpr(o.Target, typeAliases, namespaceAliases)),
             FallibleErrorExpr e => new FallibleErrorExpr(e.ErrorToken, e.Arguments.Select(a => RewriteExpr(a, typeAliases, namespaceAliases)).ToList())
             {
-                ResolvedFallibleTypeRef = e.ResolvedFallibleTypeRef is null ? null : RewriteTypeRef(e.ResolvedFallibleTypeRef, typeAliases)
+                ResolvedFallibleTypeRef = e.ResolvedFallibleTypeRef is null ? null : RewriteTypeRef(e.ResolvedFallibleTypeRef, typeAliases),
+                ResolvedUsesDefaultIntegerCode = e.ResolvedUsesDefaultIntegerCode
             },
             OnErrorExpr o => new OnErrorExpr(
                 RewriteExpr(o.Fallible, typeAliases, namespaceAliases),

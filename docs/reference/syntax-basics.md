@@ -51,7 +51,7 @@ Do not use language keywords as names. Current keywords include:
 
 ```text
 integer whole real boolean void optional fallible array object record interface enum
-constant if then else switch case default while return print function constructor
+constant if then else switch case default while break continue return print function constructor
 implement via import export from as package public private and or not for foreach in
 new panic error on yield none true false
 ```
@@ -87,17 +87,17 @@ Implemented literal forms:
 
 | Form | Example | Type |
 | --- | --- | --- |
-| Integer number | `42` | `integer` |
+| Integer number | `42`, `0b1010`, `0o17`, `0x1f` | `integer` |
 | Boolean | `true`, `false` | `boolean` |
 | String | `"hello"` | `string` |
 | None | `none` | `optional<T>` value |
 | Array literal | `{1, 2, 3}` | `array<T>` |
 
-Numeric literals are currently decimal integer literals. Real-valued results come from numeric operations and functions, for example division and math intrinsics.
+Numeric literals are currently integer literals. Decimal, binary (`0b`), octal (`0o`), and hexadecimal (`0x`) forms are supported. Real-valued results come from numeric operations and functions, for example division and math intrinsics.
 
 Common mistakes:
 
-- Decimal point literals such as `1.5`, numeric suffixes, and `0x` style base prefixes are draft-only today.
+- Decimal point literals such as `1.5` and numeric suffixes such as `i32` are draft-only today.
 - Assigning an integer literal directly to `whole` is not the current recommended pattern because there is no unsigned literal syntax yet.
 
 ## Expressions and Operators
@@ -222,5 +222,5 @@ score: 10
 
 Common mistakes:
 
-- Literal brace escaping inside interpolated strings is not implemented as a stable feature. Use concatenation for literal braces.
+- Escape literal interpolation braces as `\{` and `\}`.
 - Interpolation is parsed as an expression, so unmatched braces cause a compile error.

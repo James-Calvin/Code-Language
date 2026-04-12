@@ -109,6 +109,7 @@ sealed class FallibleErrorExpr : Expr
     public Token ErrorToken { get; }
     public IReadOnlyList<Expr> Arguments { get; }
     public TypeRef? ResolvedFallibleTypeRef { get; set; }
+    public bool ResolvedUsesDefaultIntegerCode { get; set; }
     public FallibleErrorExpr(Token errorToken, IReadOnlyList<Expr> arguments)
     {
         ErrorToken = errorToken;
@@ -396,6 +397,18 @@ sealed class YieldStmt : Stmt
         Keyword = keyword;
         Value = value;
     }
+}
+
+sealed class BreakStmt : Stmt
+{
+    public Token Keyword { get; }
+    public BreakStmt(Token keyword) { Keyword = keyword; }
+}
+
+sealed class ContinueStmt : Stmt
+{
+    public Token Keyword { get; }
+    public ContinueStmt(Token keyword) { Keyword = keyword; }
 }
 
 sealed class ForStmt : Stmt

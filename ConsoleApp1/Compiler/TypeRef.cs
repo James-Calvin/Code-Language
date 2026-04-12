@@ -29,6 +29,41 @@ sealed class TypeRef
     public bool IsBuiltInCollection => IsArray || IsMap || IsSet || IsQueue || IsStack;
     public bool IsIndexableCollection => IsArray || IsMap;
 
+    public TypeRef NormalizeBuiltInShorthands()
+    {
+        if (IsFallible && TypeArguments.Count == 1)
+        {
+            return new TypeRef(
+                "fallible",
+                [
+                    TypeArguments[0].NormalizeBuiltInShorthands(),
+                    new TypeRef("integer", null, Line, Column)
+                ],
+                Line,
+                Column);
+        }
+
+        if (TypeArguments.Count == 0)
+            return this;
+
+        return new TypeRef(Name, TypeArguments.Select(t => t.NormalizeBuiltInShorthands()).ToList(), Line, Column);
+    }
+
+    public bool TryGetFallibleTypeArguments(out TypeRef successTypeRef, out TypeRef errorCodeTypeRef)
+    {
+        var normalized = NormalizeBuiltInShorthands();
+        if (normalized.IsFallible && normalized.TypeArguments.Count == 2)
+        {
+            successTypeRef = normalized.TypeArguments[0];
+            errorCodeTypeRef = normalized.TypeArguments[1];
+            return true;
+        }
+
+        successTypeRef = null!;
+        errorCodeTypeRef = null!;
+        return false;
+    }
+
     public override string ToString()
     {
         if (TypeArguments.Count == 0) return Name;

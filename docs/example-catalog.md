@@ -1,6 +1,6 @@
 # Example Catalog
 
-Last updated: 2026-04-07
+Last updated: 2026-04-12
 
 This catalog is implementation-truthful.
 
@@ -19,7 +19,8 @@ Use this document as the primary answer to "does this exist yet?"
 | `runnable` | `ConsoleApp1/examples/enum.code` | `run` | Strongly typed enumerations with `Enum.Member` access |
 | `runnable` | `ConsoleApp1/examples/record.code` | `run` | Copy-by-value records with methods, interface conformance, and return-and-reassign value updates |
 | `runnable` | `ConsoleApp1/examples/switch.code` | `run` | `switch` statements with enum and integer cases |
-| `runnable` | `ConsoleApp1/examples/fallible.code` | `run` | Typed recoverable errors with `fallible<Value, ErrorCode>`, `on error`, and handler `yield` |
+| `runnable` | `ConsoleApp1/examples/fallible.code` | `run` | Recoverable errors with enum-coded `fallible<Value, ErrorCode>`, shorthand `fallible<Value>`, `on error`, and handler `yield` |
+| `runnable` | `ConsoleApp1/examples/strings.code` | `run` | String interpolation, expression interpolation, and escaped literal braces |
 | `runnable` | `ConsoleApp1/examples/forloop.code` | `run` | Counted `for` loop |
 | `runnable` | `ConsoleApp1/examples/foreach.code` | `run` | Numeric `foreach` |
 | `runnable` | `ConsoleApp1/examples/arrayloop.code` | `run` | Array literals and array iteration |

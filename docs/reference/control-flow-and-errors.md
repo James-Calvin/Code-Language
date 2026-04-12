@@ -100,9 +100,24 @@ Output:
 1
 ```
 
-Common mistakes:
+`break` exits the nearest enclosing loop, and `continue` jumps to the next loop iteration:
 
-- `break` and `continue` are draft-only today. Use conditions and state variables instead.
+```code
+integer count = 0;
+while count < 5 then {
+  count += 1;
+  if count == 2 then continue;
+  if count == 4 then break;
+  print(count);
+}
+```
+
+Output:
+
+```text
+1
+3
+```
 
 ## For
 
@@ -250,6 +265,21 @@ missing count
 0
 ```
 
+For quick prototypes, `fallible<Value>` defaults the error-code type to `integer`, and `error("message")` creates an error with code `0`:
+
+```code
+function<fallible<integer>> quick_count(boolean ok) {
+  if ok then return 5;
+  return error("missing count");
+}
+
+integer count = quick_count(false) on error {
+  print(error.code);
+  print(error.message);
+  yield 0;
+};
+```
+
 Inside the handler:
 
 | Name | Type | Use |
@@ -265,3 +295,4 @@ Common mistakes:
 - The handler must `yield`, `return`, or `panic`.
 - `yield` only works inside an `on error` handler.
 - The yielded value must match the fallible success type.
+- `error("message")` is only available for `fallible<Value>` or `fallible<Value, integer>`; enum-coded fallible functions must return `error(EnumName.Member)` or `error(EnumName.Member, message)`.

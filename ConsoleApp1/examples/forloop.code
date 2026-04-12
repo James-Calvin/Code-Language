@@ -1,3 +1,7 @@
 integer count = 0;
-for integer i = 0; i < 10; i = i + 1 then count = count + i;
+for integer i = 0; i < 10; i = i + 1 then {
+  if i == 2 then continue;
+  if i == 5 then break;
+  count = count + i;
+}
 print(count);

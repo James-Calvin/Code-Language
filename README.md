@@ -15,12 +15,12 @@ The repo contains:
 - Enumerations with strongly typed members accessed as `EnumName.Member`
 - Records with copy-on-assignment/pass/return semantics for data fields and constructors
 - Constants: `constant Type name = value;` (immutable after init)
-- Control flow: `if/then/else`, `switch`, `while`, `for`, `foreach` (numeric bounds and arrays)
+- Control flow: `if/then/else`, `switch`, `while`, `for`, `foreach` (numeric bounds and arrays), `break`, and `continue`
 - Expressions: arithmetic (including `%`), comparisons, logical `and/or/not`, enhanced assignments (`+=`, `-=`, `*=`, `/=`, `%=` and postfix `++/--`) across variables, object fields, array elements, and map entries, plus string interpolation and concatenation
 - Time intrinsics: `unix_ms()`, `unix_us()`, `mono_ns()`, `mono_ticks()`, `mono_ticks_per_second()`, `sleep_ms(ms)`
 - Math and randomness intrinsics: `minimum()`, `maximum()`, `absolute()`, `sign()`, `lerp()`, `sine()`, `cosine()`, `random()`
 - Built-in collections: arrays plus `map<Key, Value>`, `set<Value>`, `queue<Value>`, and `stack<Value>` with shared `.length`
-- Typed recoverable errors: `fallible<Value, ErrorCode>`, `return error(code[, message]);`, `expression on error { ... yield fallback; }`
+- Typed recoverable errors: `fallible<Value, ErrorCode>` plus prototype-friendly `fallible<Value>`, `return error(code[, message]);`, `return error(message);` for integer-coded fallibles, and `expression on error { ... yield fallback; }`
 - Native-only IO intrinsic: `read_line()`
 - Functions with CALL/RET, locals, return (implicit 0)
 - File modules: top-level declaration visibility (`public`, `package`, `private`) plus member-level visibility for object/record fields, constructors, and methods; legacy `export`; imports (`import Name [as Alias] from "path";`, `import { A, B as C } from "path";`, `import everything as Namespace from "path";`, `export import ...`); package-aware import checks; recursive linking; and `lib/` search
@@ -35,7 +35,7 @@ The repo contains:
 See [the language spec](docs/code-language-spec.md), [the feature roadmap](docs/features-roadmap.md), and [the web app/runtime V1 contract](docs/web-app-v1.md) for the current scope and the target developer workflow.
 
 ## Implemented Today vs Planned
-- Implemented today: enumerations, records, `switch`, objects, interfaces, arrays, built-in collections, optionals, typed recoverable `fallible<Value, ErrorCode>` errors, time/math intrinsics, grouped/selective/namespace/re-export imports, package manifests/lockfiles/library artifacts, target capability checks, `panic`, and the current web build/runtime slice.
+- Implemented today: enumerations, records, `switch`, `break`/`continue`, numeric base prefixes, escaped interpolation braces, objects, interfaces, arrays, built-in collections, optionals, typed recoverable `fallible<Value, ErrorCode>` errors plus `fallible<Value>` shorthand, time/math intrinsics, grouped/selective/namespace/re-export imports, package manifests/lockfiles/library artifacts, target capability checks, `panic`, and the current web build/runtime slice.
 - Implemented today: top-level module visibility modifiers (`public`, `package`, `private`) with legacy `export` compatibility, plus member-level visibility for object/record fields, constructors, and methods.
 - Planned, not implemented today: propagation shorthand for fallible errors.
 - Example status and usage live in [the example catalog](docs/example-catalog.md).
@@ -135,7 +135,7 @@ Test harness covers VM ops, compiler integration (print, arithmetic, functions, 
 - Enumerations: `enum Name { Member; Other = 5; }` with strongly typed values accessed as `Name.Member`
 - Records: `record Name { ... }` with constructors, methods, inline/external interface implementations, structural equality for hashable records, and value semantics across assignment, parameter passing, returns, and container insertion. Record methods receive a copied `this`, so persistent changes use a return-and-reassign pattern.
 - Optionals: `optional<T>` with `none`, `.hasValue`, `.value`, `.or(fallback)`
-- Fallible recoverable errors: `fallible<Value, ErrorCode>` where `ErrorCode` is an enum or `integer`; functions may `return` a plain success value or `return error(code);` / `return error(code, message);`; callers unwrap with `expr on error { ... yield fallback; }`; handler code can read `error.code` and `error.message`; `fallible<void, E>` and propagation shorthand are deferred
+- Fallible recoverable errors: `fallible<Value, ErrorCode>` where `ErrorCode` is an enum or `integer`; `fallible<Value>` is shorthand for `fallible<Value, integer>`; functions may `return` a plain success value, `return error(code);`, `return error(code, message);`, or `return error(message);` for integer-coded fallibles (code `0`); callers unwrap with `expr on error { ... yield fallback; }`; handler code can read `error.code` and `error.message`; `fallible<void, E>` and propagation shorthand are deferred
 - Objects: `object` declarations with constructors/methods, `new Type(...)`, field access/assignment (`obj.field`, `obj.field = ...`), method calls (`obj.method(...)`), member-level `public` / `package` / `private` visibility, and implicit `this` lookup inside object bodies for unshadowed fields and bare method calls
 - Interfaces: `interface` declarations + inline interface methods (`implement Interface.method(...) { ... }`) or explicit `implement Interface for Object { ... via Object.method; }` conformance checks
 - Interface-typed locals/params/returns/fields/arrays and runtime-dispatched interface method calls

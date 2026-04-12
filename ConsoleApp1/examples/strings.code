@@ -2,4 +2,5 @@ integer a = 2;
 integer b = 3;
 print "sum={a + b}";
 print "hi {b}";
+print "literal \{a\} still interpolates here: {a}";
 

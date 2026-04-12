@@ -25,7 +25,7 @@ print(half);
 
 Common mistakes:
 
-- Current numeric literals are `integer` literals. Use `real` through widening or expressions; decimal point literal syntax is not implemented yet.
+- Numeric literals are `integer` literals and may use decimal, binary (`0b`), octal (`0o`), or hexadecimal (`0x`) notation. Use `real` through widening or expressions; decimal point literal syntax such as `1.5` is not implemented yet.
 - There are no user-written casts today.
 
 ## Arrays
@@ -213,7 +213,7 @@ Common mistakes:
 
 ## Fallible Values
 
-`fallible<Value, ErrorCode>` represents expected recoverable failure. `ErrorCode` must be an enum type or `integer`.
+`fallible<Value, ErrorCode>` represents expected recoverable failure. `ErrorCode` must be an enum type or `integer`. `fallible<Value>` is shorthand for `fallible<Value, integer>` for rapid prototyping.
 
 ```code
 enum ParseError {
@@ -242,9 +242,24 @@ empty
 0
 ```
 
+Prototype-friendly integer-coded errors:
+
+```code
+function<fallible<integer>> quick_count() {
+  return error("empty");
+}
+
+integer quick = quick_count() on error {
+  print(error.code);
+  print(error.message);
+  yield 0;
+};
+```
+
 Common mistakes:
 
-- `error(message)` is rejected. Use `error(code)` or `error(code, message)`.
+- `error(message)` is only valid for `fallible<Value>` or `fallible<Value, integer>` and uses error code `0`.
+- Enum-coded fallible functions must use `error(code)` or `error(code, message)`.
 - `fallible<void, E>` is draft-only today.
 - There is no propagation shorthand yet; handle errors with `on error`.
 

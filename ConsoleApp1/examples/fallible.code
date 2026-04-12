@@ -1,4 +1,5 @@
 // Runnable example: typed recoverable errors use fallible<Value, ErrorCode>.
+// For rapid prototypes, fallible<Value> defaults the error code type to integer.
 // Use panic for unrecoverable bugs; use fallible when the caller should choose a fallback.
 
 enum ParseError {
@@ -35,6 +36,18 @@ integer third = parse_count("many") on error {
   }
 };
 
+function<fallible<integer>> quick_load(boolean ok) {
+  if ok then return 7;
+  return error("quick load failed");
+}
+
+integer quick = quick_load(false) on error {
+  print(error.code);
+  print(error.message);
+  yield 0;
+};
+
 print(first);
 print(second);
 print(third);
+print(quick);

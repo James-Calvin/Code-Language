@@ -17,6 +17,7 @@ sealed class TypeChecker
     private ObjectSymbol? _currentObjectSymbol;
     private TypeRef? _currentObjectTypeRef;
     private string? _currentAccessPackageName;
+    private int _loopDepth;
     private static readonly Dictionary<string, FunctionSignature> IntrinsicFunctions = BuildIntrinsicFunctions();
 
     public void Check(IList<Stmt> statements)
@@ -707,7 +708,15 @@ sealed class TypeChecker
             case WhileStmt w:
                 var cType = CheckExpr(w.Condition, env, currentReturn);
                 Require(cType == TypeSymbol.Boolean, w.Condition, "Condition must be boolean");
-                CheckStmt(w.Body, env.CreateChild(), currentReturn);
+                _loopDepth++;
+                try
+                {
+                    CheckStmt(w.Body, env.CreateChild(), currentReturn);
+                }
+                finally
+                {
+                    _loopDepth--;
+                }
                 return false; // conservatively assume loop may not run
 
             case ForStmt f:
@@ -716,7 +725,15 @@ sealed class TypeChecker
                 var condType = CheckExpr(f.Condition, forEnv, currentReturn);
                 Require(condType == TypeSymbol.Boolean || IsNumeric(condType), f.Condition, "For condition must be boolean or numeric comparison");
                 if (f.Increment is not null) CheckExpr(f.Increment, forEnv, currentReturn);
-                CheckStmt(f.Body, forEnv.CreateChild(), currentReturn);
+                _loopDepth++;
+                try
+                {
+                    CheckStmt(f.Body, forEnv.CreateChild(), currentReturn);
+                }
+                finally
+                {
+                    _loopDepth--;
+                }
                 return false;
 
             case ForeachStmt fe:
@@ -738,7 +755,15 @@ sealed class TypeChecker
                     fe.IteratorTypeRef = null;
                     feEnv.Define(fe.Iterator.Lexeme, TypeSymbol.Integer, null, fe.Iterator.Line, fe.Iterator.Column, assigned: true);
                 }
-                CheckStmt(fe.Body, feEnv, currentReturn);
+                _loopDepth++;
+                try
+                {
+                    CheckStmt(fe.Body, feEnv, currentReturn);
+                }
+                finally
+                {
+                    _loopDepth--;
+                }
                 return false;
 
             case ReturnStmt r:
@@ -752,7 +777,7 @@ sealed class TypeChecker
                 }
                 var rval = r.Value is null ? TypeSymbol.Integer : CheckExpr(r.Value, env, currentReturn);
                 var retRef = r.Value is null ? null : ResolveExprTypeRef(r.Value, env);
-                if (_currentReturnTypeRef is not null && _currentReturnTypeRef.IsFallible && _currentReturnTypeRef.TypeArguments.Count == 2)
+                if (_currentReturnTypeRef is not null && _currentReturnTypeRef.TryGetFallibleTypeArguments(out var successTypeRef, out _))
                 {
                     if (rval == TypeSymbol.Fallible)
                     {
@@ -760,7 +785,6 @@ sealed class TypeChecker
                     }
                     else
                     {
-                        var successTypeRef = _currentReturnTypeRef.TypeArguments[0];
                         RequireAssignable(MapType(successTypeRef), successTypeRef, rval, retRef, GetStmtLine(r), GetStmtCol(r), "Return type mismatch");
                     }
                 }
@@ -795,6 +819,16 @@ sealed class TypeChecker
                     "Yield value type mismatch");
                 return true;
             }
+
+            case BreakStmt b:
+                if (_loopDepth == 0)
+                    throw new CompilerException("'break' is only valid inside a loop", b.Keyword.Line, b.Keyword.Column);
+                return false;
+
+            case ContinueStmt c:
+                if (_loopDepth == 0)
+                    throw new CompilerException("'continue' is only valid inside a loop", c.Keyword.Line, c.Keyword.Column);
+                return false;
 
             case FunctionDecl:
                 // handled earlier
@@ -1238,8 +1272,7 @@ sealed class TypeChecker
     private TypeSymbol CheckFallibleErrorExpr(FallibleErrorExpr expr, TypeEnvironment env, TypeSymbol? currentReturn)
     {
         if (_currentReturnTypeRef is null ||
-            !_currentReturnTypeRef.IsFallible ||
-            _currentReturnTypeRef.TypeArguments.Count != 2 ||
+            !_currentReturnTypeRef.TryGetFallibleTypeArguments(out _, out var errorCodeTypeRef) ||
             currentReturn != TypeSymbol.Fallible)
         {
             throw new CompilerException("'error(...)' is only valid inside a function or method returning fallible<Value, ErrorCode>", expr.ErrorToken.Line, expr.ErrorToken.Column);
@@ -1248,20 +1281,26 @@ sealed class TypeChecker
         if (expr.Arguments.Count is < 1 or > 2)
             throw new CompilerException("error(...) expects an error code and optional message", expr.ErrorToken.Line, expr.ErrorToken.Column);
 
-        var errorCodeTypeRef = _currentReturnTypeRef.TypeArguments[1];
         var codeType = CheckExpr(expr.Arguments[0], env, currentReturn);
         var codeTypeRef = ResolveExprTypeRef(expr.Arguments[0], env);
         if (expr.Arguments.Count == 1 && codeType == TypeSymbol.String)
-            throw new CompilerException("error(message) is not supported; use error(code) or error(code, message)", GetLine(expr.Arguments[0]), GetCol(expr.Arguments[0]));
-
-        RequireAssignable(
-            MapType(errorCodeTypeRef),
-            errorCodeTypeRef,
-            codeType,
-            codeTypeRef,
-            GetLine(expr.Arguments[0]),
-            GetCol(expr.Arguments[0]),
-            "Error code type mismatch");
+        {
+            if (MapType(errorCodeTypeRef) != TypeSymbol.Integer)
+                throw new CompilerException("error(message) is only valid for fallible<Value> or fallible<Value, integer>", GetLine(expr.Arguments[0]), GetCol(expr.Arguments[0]));
+            expr.ResolvedUsesDefaultIntegerCode = true;
+        }
+        else
+        {
+            expr.ResolvedUsesDefaultIntegerCode = false;
+            RequireAssignable(
+                MapType(errorCodeTypeRef),
+                errorCodeTypeRef,
+                codeType,
+                codeTypeRef,
+                GetLine(expr.Arguments[0]),
+                GetCol(expr.Arguments[0]),
+                "Error code type mismatch");
+        }
 
         if (expr.Arguments.Count == 2)
         {
@@ -1269,7 +1308,7 @@ sealed class TypeChecker
             Require(messageType == TypeSymbol.String, expr.Arguments[1], "Error message must be a string");
         }
 
-        expr.ResolvedFallibleTypeRef = _currentReturnTypeRef;
+        expr.ResolvedFallibleTypeRef = _currentReturnTypeRef.NormalizeBuiltInShorthands();
         return TypeSymbol.Fallible;
     }
 
@@ -1279,11 +1318,9 @@ sealed class TypeChecker
         Require(fallibleType == TypeSymbol.Fallible, expr.Fallible, "'on error' requires a fallible value");
 
         var fallibleTypeRef = ResolveExprTypeRef(expr.Fallible, env);
-        if (fallibleTypeRef is null || !fallibleTypeRef.IsFallible || fallibleTypeRef.TypeArguments.Count != 2)
+        if (fallibleTypeRef is null || !fallibleTypeRef.TryGetFallibleTypeArguments(out var successTypeRef, out var errorCodeTypeRef))
             throw new CompilerException("Could not resolve fallible value type", GetLine(expr.Fallible), GetCol(expr.Fallible));
 
-        var successTypeRef = fallibleTypeRef.TypeArguments[0];
-        var errorCodeTypeRef = fallibleTypeRef.TypeArguments[1];
         expr.ResolvedSuccessTypeRef = successTypeRef;
         expr.ResolvedErrorCodeTypeRef = errorCodeTypeRef;
 
@@ -2203,14 +2240,16 @@ sealed class TypeChecker
                 return;
 
             case "fallible":
-                if (typeRef.TypeArguments.Count != 2)
-                    throw new CompilerException("Type 'fallible' expects exactly two type arguments", typeRef.Line, typeRef.Column);
-                ValidateTypeRef(typeRef.TypeArguments[0]);
-                ValidateTypeRef(typeRef.TypeArguments[1]);
-                EnsureNotVoidTypeRef(typeRef.TypeArguments[0], "fallible success type cannot be void", typeRef.TypeArguments[0].Line, typeRef.TypeArguments[0].Column);
-                var errorType = MapType(typeRef.TypeArguments[1]);
+                if (typeRef.TypeArguments.Count is not (1 or 2))
+                    throw new CompilerException("Type 'fallible' expects one or two type arguments", typeRef.Line, typeRef.Column);
+                if (!typeRef.TryGetFallibleTypeArguments(out var successTypeRef, out var errorCodeTypeRef))
+                    throw new CompilerException("Type 'fallible' expects one or two type arguments", typeRef.Line, typeRef.Column);
+                ValidateTypeRef(successTypeRef);
+                ValidateTypeRef(errorCodeTypeRef);
+                EnsureNotVoidTypeRef(successTypeRef, "fallible success type cannot be void", successTypeRef.Line, successTypeRef.Column);
+                var errorType = MapType(errorCodeTypeRef);
                 if (errorType is not TypeSymbol.Enum and not TypeSymbol.Integer)
-                    throw new CompilerException("fallible error code type must be an enum or integer", typeRef.TypeArguments[1].Line, typeRef.TypeArguments[1].Column);
+                    throw new CompilerException("fallible error code type must be an enum or integer", errorCodeTypeRef.Line, errorCodeTypeRef.Column);
                 return;
 
             case "set":
@@ -2409,10 +2448,13 @@ sealed class TypeChecker
     private static bool IsReservedPropertyName(string name) =>
         name is "length" or "hasValue" or "value" or "or";
 
-    private static string TypeRefKey(TypeRef t) =>
-        t.TypeArguments.Count == 0
+    private static string TypeRefKey(TypeRef t)
+    {
+        t = t.NormalizeBuiltInShorthands();
+        return t.TypeArguments.Count == 0
             ? t.Name
             : $"{t.Name}<{string.Join(",", t.TypeArguments.Select(TypeRefKey))}>";
+    }
     private static string InterfaceMethodKey(string methodName, IReadOnlyList<TypeRef> paramTypes) =>
         $"{methodName}({string.Join(",", paramTypes.Select(TypeRefKey))})";
     private static string InterfaceDispatchKey(string interfaceName, string interfaceMethodKey) =>
@@ -2434,6 +2476,8 @@ sealed class TypeChecker
 
     private static bool SameTypeRef(TypeRef a, TypeRef b)
     {
+        a = a.NormalizeBuiltInShorthands();
+        b = b.NormalizeBuiltInShorthands();
         if (!string.Equals(a.Name, b.Name, StringComparison.Ordinal))
             return false;
         if (a.TypeArguments.Count != b.TypeArguments.Count)
@@ -2481,6 +2525,8 @@ sealed class TypeChecker
         ReturnStmt r when r.Value is Expr e => GetLine(e),
         SwitchStmt s => s.Keyword.Line,
         YieldStmt y => y.Keyword.Line,
+        BreakStmt b => b.Keyword.Line,
+        ContinueStmt c => c.Keyword.Line,
         ReturnStmt => 0,
         _ => 0
     };
@@ -2490,6 +2536,8 @@ sealed class TypeChecker
         ReturnStmt r when r.Value is Expr e => GetCol(e),
         SwitchStmt s => s.Keyword.Column,
         YieldStmt y => y.Keyword.Column,
+        BreakStmt b => b.Keyword.Column,
+        ContinueStmt c => c.Keyword.Column,
         ReturnStmt => 0,
         _ => 0
     };

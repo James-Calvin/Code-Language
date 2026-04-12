@@ -1,7 +1,7 @@
 # Code Language Specification (Living Draft)
 
 Version: 1.0
-Last updated: 2026-04-07
+Last updated: 2026-04-12
 
 ## 1. Goals and Design
 - `Code` is a code-first language for building 2D interactive applications that target the web first.
@@ -60,20 +60,17 @@ function main(string[] arguments) {
   - `real`: IEEE-754 floating point
 - Boolean type: `boolean`
 - String type: `string`
-- Sized numeric variants:
-  - `integer`: `integer8`, `integer16`, `integer32`, `integer64`
-  - `whole`: `whole8`, `whole16`, `whole32`, `whole64`
-  - `real`: `real16`, `real32`, `real64`
-- Unsized `integer`, `whole`, and `real` default bit width is runtime-chosen (typically 64-bit).
+- Sized numeric variants such as `integer8`, `whole32`, and `real64` are planned, not implemented.
+- Unsized `integer`, `whole`, and `real` are the implemented numeric type names.
 - Numeric literals:
-  - Decimal by default; `_` digit separators allowed between digits.
+  - Decimal by default.
   - Base prefixes: `0b` (binary), `0o` (octal), `0x` (hex).
-  - Sized suffixes: `i8/i16/i32/i64` for signed, `w8/w16/w32/w64` for unsigned, `r16/r32/r64` for reals.
-  - Unsuffixed literals map to unsized `integer/whole/real`; no implicit narrowing from larger/suffixed forms.
+  - Numeric suffixes such as `i32`, `w64`, and `r32` are planned, not implemented.
+  - Decimal-point real literals such as `1.5` are planned, not implemented.
+  - Unsuffixed integer literals map to `integer`.
 - Conversions and promotions:
-  - Explicit casts use `as Type`.
-  - Implicit promotions only for lossless widening within a numeric family and from `integer` to `real`.
-  - No implicit sign changes (`whole` to `integer` requires `as integer`); no implicit downcasts.
+  - User-written casts such as `value as Type` are planned, not implemented.
+  - Current implicit promotions are limited to the compiler's existing numeric widening rules.
 
 Examples:
 
@@ -82,7 +79,6 @@ integer value = 0;
 value += 1;
 whole count = 0;
 constant integer maxRetries = 3;
-whole8 red = 255;
 boolean flag = false;
 ```
 
@@ -137,11 +133,13 @@ if maybeCount.hasValue then {
 ## 5.1 Recoverable Errors
 - `panic(...)` is for unrecoverable failures and raises a `UserError`.
 - Expected recoverable failures use `fallible<Value, ErrorCode>`.
-- `ErrorCode` must be an `enum` or `integer`; examples should prefer enums.
+- `fallible<Value>` is shorthand for `fallible<Value, integer>`.
+- `ErrorCode` must be an `enum` or `integer`; examples should prefer enums for non-prototype code.
 - `fallible<void, ErrorCode>` is not implemented in v1.
-- Functions returning `fallible<Value, ErrorCode>` may return a plain `Value` as success.
+- Functions returning `fallible<Value, ErrorCode>` or `fallible<Value>` may return a plain `Value` as success.
 - The same functions may return recoverable errors with `return error(code);` or `return error(code, message);`.
-- `error(message)` is intentionally unsupported to avoid message-string branching.
+- For `fallible<Value>` and `fallible<Value, integer>`, `return error(message);` is accepted and uses error code `0`.
+- For enum-coded fallibles, message-only `error(message)` is rejected because no enum code can be inferred.
 - Callers unwrap with `expression on error { ... }`.
 - Inside the handler, `error.code` has type `ErrorCode` and `error.message` has type `string`.
 - `yield value;` returns a fallback value from the handler.

@@ -34,6 +34,8 @@ sealed class Lexer
         { "case", TokenType.Case },
         { "default", TokenType.Default },
         { "while", TokenType.While },
+        { "break", TokenType.Break },
+        { "continue", TokenType.Continue },
         { "return", TokenType.Return },
         { "print", TokenType.Print },
         { "function", TokenType.Function },
@@ -185,6 +187,43 @@ sealed class Lexer
 
     private void Number()
     {
+        if (_source[_start] == '0')
+        {
+            char prefix = Peek();
+            if (prefix is 'b' or 'B' or 'o' or 'O' or 'x' or 'X')
+            {
+                Advance();
+                int numberBase = prefix is 'b' or 'B'
+                    ? 2
+                    : prefix is 'o' or 'O'
+                        ? 8
+                        : 16;
+                string baseName = numberBase == 2
+                    ? "binary"
+                    : numberBase == 8
+                        ? "octal"
+                        : "hexadecimal";
+                int digitsStart = _current;
+                while (IsDigitForBase(Peek(), numberBase)) Advance();
+
+                if (_current == digitsStart)
+                    throw Error($"Invalid {baseName} integer literal '{_source[_start.._current]}'");
+                if (IsAlphaNumeric(Peek()))
+                    throw Error($"Invalid digit '{Peek()}' in {baseName} integer literal");
+
+                string digits = _source[digitsStart.._current];
+                try
+                {
+                    AddToken(TokenType.Number, Convert.ToInt32(digits, numberBase));
+                    return;
+                }
+                catch (Exception ex) when (ex is FormatException or OverflowException)
+                {
+                    throw Error($"Invalid integer literal '{_source[_start.._current]}'");
+                }
+            }
+        }
+
         while (IsDigit(Peek())) Advance();
         string text = _source[_start.._current];
         if (!int.TryParse(text, out int value))
@@ -220,6 +259,13 @@ sealed class Lexer
     private bool IsAlpha(char c) => char.IsLetter(c) || c == '_';
     private bool IsDigit(char c) => c is >= '0' and <= '9';
     private bool IsAlphaNumeric(char c) => IsAlpha(c) || IsDigit(c);
+    private static bool IsDigitForBase(char c, int numberBase) => numberBase switch
+    {
+        2 => c is '0' or '1',
+        8 => c is >= '0' and <= '7',
+        16 => c is (>= '0' and <= '9') or (>= 'a' and <= 'f') or (>= 'A' and <= 'F'),
+        _ => false
+    };
 
     private char Advance()
     {

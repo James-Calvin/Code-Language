@@ -866,7 +866,8 @@ sealed class TypeChecker
                     bool => TypeSymbol.Boolean,
                     string => TypeSymbol.String,
                     IList<Expr> => TypeSymbol.Array,
-                    _ => TypeSymbol.Integer // numeric literals as integer for now
+                    double => TypeSymbol.Real,
+                    _ => TypeSymbol.Integer
                 };
             case InterpString istr:
                 foreach (var part in istr.Parts)
@@ -1222,6 +1223,8 @@ sealed class TypeChecker
                 else
                     Require(IsNumeric(ut), u.Right, "Unary +/− require numeric");
                 return u.Operator.Type == TokenType.Not ? TypeSymbol.Boolean : ut;
+            case CastExpr cast:
+                return CheckCastExpr(cast, env, currentReturn);
             case Binary b:
                 var lt = CheckExpr(b.Left, env, currentReturn);
                 var rt = CheckExpr(b.Right, env, currentReturn);
@@ -1267,6 +1270,60 @@ sealed class TypeChecker
         if (_functions.TryGetValue(name, out signature!))
             return true;
         return IntrinsicFunctions.TryGetValue(name, out signature!);
+    }
+
+    private TypeSymbol CheckCastExpr(CastExpr expr, TypeEnvironment env, TypeSymbol? currentReturn)
+    {
+        var sourceType = CheckExpr(expr.Value, env, currentReturn);
+        var sourceTypeRef = ResolveExprTypeRef(expr.Value, env);
+        ValidateTypeRef(expr.TargetType);
+        var targetType = MapType(expr.TargetType);
+
+        expr.ResolvedIsEnumCast = false;
+        expr.ResolvedRuntimeKind = CastRuntimeKind.None;
+
+        if (IsNumeric(sourceType) && IsNumeric(targetType))
+        {
+            expr.ResolvedRuntimeKind = targetType switch
+            {
+                TypeSymbol.Integer => CastRuntimeKind.ToInteger,
+                TypeSymbol.Whole => CastRuntimeKind.ToWhole,
+                TypeSymbol.Real => CastRuntimeKind.ToReal,
+                _ => CastRuntimeKind.None
+            };
+            return targetType;
+        }
+
+        if (sourceType == TypeSymbol.Enum && targetType == TypeSymbol.Integer)
+        {
+            if (sourceTypeRef is null)
+                throw new CompilerException("Could not resolve enum cast source type", expr.AsToken.Line, expr.AsToken.Column);
+            expr.ResolvedIsEnumCast = true;
+            return TypeSymbol.Integer;
+        }
+
+        if (sourceType == TypeSymbol.Integer && targetType == TypeSymbol.Enum)
+        {
+            if (!_enums.TryGetValue(expr.TargetType.Name, out var enumSymbol))
+                throw new CompilerException($"Unknown enum type '{expr.TargetType.Name}'", expr.TargetType.Line, expr.TargetType.Column);
+
+            if (TryGetIntegerLiteralValue(expr.Value, out int literalValue) &&
+                !enumSymbol.Members.Values.Contains(literalValue))
+            {
+                throw new CompilerException(
+                    $"Integer literal '{literalValue}' is not a declared value of enum '{expr.TargetType.Name}'",
+                    GetLine(expr.Value),
+                    GetCol(expr.Value));
+            }
+
+            expr.ResolvedIsEnumCast = true;
+            return TypeSymbol.Enum;
+        }
+
+        if (sourceType == TypeSymbol.Enum || targetType == TypeSymbol.Enum)
+            throw new CompilerException("Enum casts are only supported between enum values and integer", expr.AsToken.Line, expr.AsToken.Column);
+
+        throw new CompilerException("Cast target must be whole, integer, real, or an enum type", expr.AsToken.Line, expr.AsToken.Column);
     }
 
     private TypeSymbol CheckFallibleErrorExpr(FallibleErrorExpr expr, TypeEnvironment env, TypeSymbol? currentReturn)
@@ -2111,6 +2168,8 @@ sealed class TypeChecker
                 return ferr.ResolvedFallibleTypeRef;
             case OnErrorExpr onError:
                 return onError.ResolvedSuccessTypeRef;
+            case CastExpr cast:
+                return cast.TargetType;
             default:
                 return null;
         }
@@ -2361,6 +2420,25 @@ sealed class TypeChecker
     private static bool IsBuiltInCollection(TypeSymbol t) => t is TypeSymbol.Array or TypeSymbol.Map or TypeSymbol.Set or TypeSymbol.Queue or TypeSymbol.Stack;
     private static bool IsReservedBuiltInTypeName(string name) => name is "map" or "set" or "queue" or "stack" or "fallible";
 
+    private static bool TryGetIntegerLiteralValue(Expr expr, out int value)
+    {
+        switch (expr)
+        {
+            case Literal { Value: int i }:
+                value = i;
+                return true;
+            case Unary { Operator: { Type: TokenType.Plus }, Right: Literal { Value: int i } }:
+                value = i;
+                return true;
+            case Unary { Operator: { Type: TokenType.Minus }, Right: Literal { Value: int i } }:
+                value = -i;
+                return true;
+            default:
+                value = 0;
+                return false;
+        }
+    }
+
     private static TypeSymbol Promote(TypeSymbol a, TypeSymbol b)
     {
         if (!IsNumeric(a) || !IsNumeric(b)) return TypeSymbol.Unknown;
@@ -2492,7 +2570,7 @@ sealed class TypeChecker
 
     private static int GetLine(Expr expr) => expr switch
     {
-        Literal => 0,
+        Literal l => l.Line,
         Variable v => v.Name.Line,
         Assign a => a.Name.Line,
         CompoundAssignExpr c => GetLine(c.Target),
@@ -2501,13 +2579,14 @@ sealed class TypeChecker
         FallibleErrorExpr e => e.ErrorToken.Line,
         OnErrorExpr e => GetLine(e.Fallible),
         Unary u => GetLine(u.Right),
+        CastExpr c => GetLine(c.Value),
         Binary b => GetLine(b.Left),
         _ => 0
     };
 
     private static int GetCol(Expr expr) => expr switch
     {
-        Literal => 0,
+        Literal l => l.Column,
         Variable v => v.Name.Column,
         Assign a => a.Name.Column,
         CompoundAssignExpr c => GetCol(c.Target),
@@ -2516,6 +2595,7 @@ sealed class TypeChecker
         FallibleErrorExpr e => e.ErrorToken.Column,
         OnErrorExpr e => GetCol(e.Fallible),
         Unary u => GetCol(u.Right),
+        CastExpr c => GetCol(c.Value),
         Binary b => GetCol(b.Left),
         _ => 0
     };

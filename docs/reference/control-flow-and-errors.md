@@ -185,7 +185,7 @@ Output:
 
 Common mistakes:
 
-- `foreach` does not currently iterate `map`, `set`, `queue`, or `stack`.
+- `foreach` does not currently iterate `map`, `set`, `queue`, or `stack`; the planned map form should yield entry values rather than keys or values alone.
 - The loop variable is created by the loop; do not declare its type in the loop header.
 
 ## Return

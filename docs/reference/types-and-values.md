@@ -4,9 +4,9 @@
 
 | Type | Use |
 | --- | --- |
-| `integer` | Signed whole-number values. Numeric literals currently start here. |
+| `integer` | Signed whole-number values. Decimal and base-prefixed integer literals start here. |
 | `whole` | Unsigned whole-number values. Used by some host APIs, such as window handles. |
-| `real` | Real-number values. Integer values can widen to `real` for functions and assignments. |
+| `real` | Real-number values. Decimal-point literals and integer values can assign to `real`. |
 | `boolean` | `true` or `false`. Prints as `1` or `0`. |
 | `string` | Text values. Supports interpolation and concatenation. |
 | `void` | No returned value. Used in function and interface signatures. |
@@ -25,8 +25,10 @@ print(half);
 
 Common mistakes:
 
-- Numeric literals are `integer` literals and may use decimal, binary (`0b`), octal (`0o`), or hexadecimal (`0x`) notation. Use `real` through widening or expressions; decimal point literal syntax such as `1.5` is not implemented yet.
-- There are no user-written casts today.
+- Integer literals may use decimal, binary (`0b`), octal (`0o`), or hexadecimal (`0x`) notation. Real literals use decimal dot forms such as `1.5`, `1.`, or `.5`.
+- Exponent notation and numeric literal suffixes are not implemented yet.
+- Explicit casts are limited to numeric types and enum/integer conversions: `value as integer`, `value as whole`, `value as real`, `EnumName.Member as integer`, and `integer_value as EnumName`.
+- `real as integer` and `real as whole` truncate toward zero; `as whole` rejects negative runtime values.
 
 ## Arrays
 
@@ -161,7 +163,7 @@ All built-in collections expose `.length`.
 
 Common mistakes:
 
-- `foreach` currently supports numeric counts and arrays, not `map`, `set`, `queue`, or `stack`.
+- `foreach` currently supports numeric counts and arrays, not `map`, `set`, `queue`, or `stack`; planned map iteration should yield entry values.
 - Reading a missing map key raises a runtime error.
 - `dequeue`, `pop`, and `peek` on an empty queue or stack raise runtime errors.
 
@@ -291,12 +293,15 @@ Behavior:
 - Enum members are accessed as `EnumName.Member`.
 - Enum values are strongly typed.
 - Explicit member values must be integer literals.
+- `EnumName.Member as integer` returns the backing integer value.
+- `integer_value as EnumName` casts an integer to an enum; literal integer casts must match a declared member value.
 - Members after an explicit value continue from that value.
 
 Common mistakes:
 
 - Enum values are not plain integers for assignment or equality.
 - `Difficulty.Easy = Difficulty.Hard;` is invalid because enum members are constants.
+- Enum casts to `whole` or `real` require an explicit intermediate integer cast.
 
 ## Object, Record, and Interface Types
 

@@ -93,7 +93,15 @@ internal static class TestHarness
                 .Dup().FallibleErrorCode().Print()
                 .FallibleErrorMessage().Print()
                 .Halt().ToArray(),
-                "1" + nl + "2" + nl + "bad" + nl)
+                "1" + nl + "2" + nl + "bad" + nl),
+
+            ("real-bytecode-and-casts", BytecodeBuilder.New()
+                .PushReal(1.5).Print()
+                .PushReal(3.8).CastInteger().Print()
+                .PushReal(-3.8).CastInteger().Print()
+                .PushInt(4).CastReal().Print()
+                .Halt().ToArray(),
+                "1.5" + nl + "3" + nl + "-3" + nl + "4" + nl)
         };
 
         int failures = 0;
@@ -186,6 +194,35 @@ print(""literal \{braces\} and x={x}"");", "literal {braces} and x=7\n")
 @"print(0b1010);
 print(0o17);
 print(0x1f);", "10\n15\n31\n")
+            ,
+            ("real-literal-dot-forms",
+@"print(1.5);
+print(1.);
+print(.5);", "1.5\n1\n0.5\n")
+            ,
+            ("real-literal-arithmetic-and-widening",
+@"real value = 1.5 + 2;
+print(value);
+print(3 as real);
+print(1 + 2 as real);", "3.5\n3\n3\n")
+            ,
+            ("numeric-casts",
+@"print(3.8 as integer);
+print(-3.8 as integer);
+print(3 as whole);
+print((3 as whole) as real);", "3\n-3\n3\n3\n")
+            ,
+            ("enum-casts",
+@"enum Direction {
+  Left = 1;
+  Right = 2;
+}
+Direction direction = 2 as Direction;
+print(direction == Direction.Right);
+print(Direction.Left as integer);
+integer dynamic = 1 + 1;
+Direction other = dynamic as Direction;
+print(other == Direction.Right);", "1\n1\n1\n")
             ,
             ("while-break-continue",
 @"integer i = 0;
@@ -1949,6 +1986,10 @@ print(items.dequeue());", "RuntimeError"),
             ("stack-empty-runtime",
 @"stack<integer> items = new stack<integer>();
 print(items.peek());", "RuntimeError"),
+            ("cast-negative-whole-runtime",
+@"print(-1 as whole);", "RuntimeError"),
+            ("cast-integer-out-of-range-runtime",
+@"print(2147483648. as integer);", "RuntimeError"),
         };
         var compileErrorCases = new List<(string Name, string Source, string ErrorContains)>
         {
@@ -2088,6 +2129,22 @@ integer value = load() on error {
 @"print(0b102);", "Invalid digit"),
             ("hex-prefix-missing-digits",
 @"print(0x);", "Invalid hexadecimal integer literal"),
+            ("real-exponent-deferred",
+@"print(1e3);", "Invalid integer literal suffix"),
+            ("real-suffix-deferred",
+@"print(1.5r32);", "Invalid real literal suffix"),
+            ("cast-unsupported-target",
+@"print(1 as string);", "Cast target must be whole, integer, real, or an enum type"),
+            ("cast-invalid-enum-literal",
+@"enum Direction {
+  Left = 1;
+}
+Direction direction = 2 as Direction;", "not a declared value"),
+            ("cast-enum-to-real-requires-integer",
+@"enum Direction {
+  Left;
+}
+print(Direction.Left as real);", "Enum casts are only supported between enum values and integer"),
             ("void-return-value",
 @"function<void> nope() {
   return 1;
@@ -3350,6 +3407,44 @@ print(value >= 0 and value < 1);";
         {
             failures++;
             Console.WriteLine($"[FAIL] target-parity-math-print: threw {ex.GetType().Name} - {ex.Message}");
+        }
+
+        string numericPolishSource =
+@"enum Direction {
+  Left = 1;
+  Right = 2;
+}
+print(1.5 + .5);
+print(3.8 as integer);
+print(-3.8 as integer);
+print(Direction.Right as integer);
+Direction direction = (1 + 1) as Direction;
+print(direction == Direction.Right);";
+
+        try
+        {
+            string nativeOutput = Normalize(CompileAndRun(numericPolishSource, Compiler.CompileTarget.VmNative, VmHostTarget.Native));
+            string webOutput = Normalize(CompileAndRun(numericPolishSource, Compiler.CompileTarget.VmWeb, VmHostTarget.Web));
+            const string expected = "2\n3\n-3\n2\n1\n";
+            if (!string.Equals(nativeOutput, expected, StringComparison.Ordinal))
+            {
+                failures++;
+                Console.WriteLine($"[FAIL] target-parity-numeric-polish: native expected '{Escape(expected)}' got '{Escape(nativeOutput)}'");
+            }
+            else if (!string.Equals(webOutput, expected, StringComparison.Ordinal))
+            {
+                failures++;
+                Console.WriteLine($"[FAIL] target-parity-numeric-polish: web expected '{Escape(expected)}' got '{Escape(webOutput)}'");
+            }
+            else
+            {
+                Console.WriteLine("[PASS] target-parity-numeric-polish");
+            }
+        }
+        catch (Exception ex)
+        {
+            failures++;
+            Console.WriteLine($"[FAIL] target-parity-numeric-polish: threw {ex.GetType().Name} - {ex.Message}");
         }
 
         string engineSource =

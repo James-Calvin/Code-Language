@@ -88,16 +88,17 @@ Implemented literal forms:
 | Form | Example | Type |
 | --- | --- | --- |
 | Integer number | `42`, `0b1010`, `0o17`, `0x1f` | `integer` |
+| Real number | `1.5`, `1.`, `.5` | `real` |
 | Boolean | `true`, `false` | `boolean` |
 | String | `"hello"` | `string` |
 | None | `none` | `optional<T>` value |
 | Array literal | `{1, 2, 3}` | `array<T>` |
 
-Numeric literals are currently integer literals. Decimal, binary (`0b`), octal (`0o`), and hexadecimal (`0x`) forms are supported. Real-valued results come from numeric operations and functions, for example division and math intrinsics.
+Numeric literals support decimal integers, binary (`0b`), octal (`0o`), hexadecimal (`0x`), and decimal real forms with a dot. Exponent notation and numeric suffixes are not implemented yet.
 
 Common mistakes:
 
-- Decimal point literals such as `1.5` and numeric suffixes such as `i32` are draft-only today.
+- Exponent literals such as `1e3` and numeric suffixes such as `i32` are draft-only today.
 - Assigning an integer literal directly to `whole` is not the current recommended pattern because there is no unsigned literal syntax yet.
 
 ## Expressions and Operators
@@ -150,11 +151,26 @@ Operator precedence, high to low:
 | Prefix | `+x`, `-x`, `not x` |
 | Multiplicative | `*`, `/`, `%` |
 | Additive | `+`, `-` |
+| Cast | `value as Type` |
 | Relational | `<`, `<=`, `>`, `>=` |
 | Equality | `==`, `!=` |
 | Logical and | `and` |
 | Logical or | `or` |
 | Assignment | `=`, `+=`, `-=`, `*=`, `/=`, `%=` |
+
+Cast examples:
+
+```code
+print(3.8 as integer);
+print(3 as real);
+```
+
+Output:
+
+```text
+3
+3
+```
 
 Postfix increment/decrement:
 
@@ -178,6 +194,7 @@ Common mistakes:
 - `!condition` is not supported; use `not condition`.
 - `&&` and `||` are not supported; use `and` and `or`.
 - Bitwise operators are not part of the current language.
+- Casts are intentionally limited to numeric types and enum/integer conversions today.
 
 ## Strings and Interpolation
 

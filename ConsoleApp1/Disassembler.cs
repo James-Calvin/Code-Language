@@ -40,6 +40,12 @@ static class Disassembler
                         sb.AppendFormat(" argc={0} locals={1}", argc, locals);
                     }
                     break;
+                case OpCode.PushReal:
+                    if (ip + 8 > codeEnd) throw new InvalidOperationException("Truncated real operand");
+                    double realOperand = BitConverter.Int64BitsToDouble(BitConverter.ToInt64(bytes, ip));
+                    ip += 8;
+                    sb.AppendFormat(" {0}", realOperand);
+                    break;
                 case OpCode.InterfaceCall:
                     if (ip + 8 > codeEnd) throw new InvalidOperationException("Truncated interface call header");
                     int explicitArgCount = BitConverter.ToInt32(bytes, ip); ip += 4;
@@ -103,6 +109,9 @@ static class Disassembler
                 case OpCode.FallibleValue:
                 case OpCode.FallibleErrorCode:
                 case OpCode.FallibleErrorMessage:
+                case OpCode.CastInteger:
+                case OpCode.CastWhole:
+                case OpCode.CastReal:
                 case OpCode.ThrowError:
                 case OpCode.GetTypeName:
                 case OpCode.TimeUnixMs:

@@ -4,6 +4,14 @@ namespace ConsoleApp1.Compiler;
 
 abstract class Expr { }
 
+enum CastRuntimeKind
+{
+    None,
+    ToInteger,
+    ToWhole,
+    ToReal
+}
+
 sealed class Binary : Expr
 {
     public Expr Left { get; }
@@ -17,6 +25,21 @@ sealed class Unary : Expr
     public Token Operator { get; }
     public Expr Right { get; }
     public Unary(Token op, Expr right) { Operator = op; Right = right; }
+}
+
+sealed class CastExpr : Expr
+{
+    public Expr Value { get; }
+    public Token AsToken { get; }
+    public TypeRef TargetType { get; }
+    public bool ResolvedIsEnumCast { get; set; }
+    public CastRuntimeKind ResolvedRuntimeKind { get; set; }
+    public CastExpr(Expr value, Token asToken, TypeRef targetType)
+    {
+        Value = value;
+        AsToken = asToken;
+        TargetType = targetType;
+    }
 }
 
 sealed class Literal : Expr

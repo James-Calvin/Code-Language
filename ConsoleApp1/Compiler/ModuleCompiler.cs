@@ -1205,6 +1205,9 @@ static class ModuleCompiler
                     ScanExprForCapabilities(o.Fallible, modulePath);
                     ScanStmtForCapabilities(o.Handler, modulePath);
                     break;
+                case CastExpr c:
+                    ScanExprForCapabilities(c.Value, modulePath);
+                    break;
                 case FieldAccessExpr f:
                     ScanExprForCapabilities(f.Target, modulePath);
                     break;
@@ -1275,6 +1278,7 @@ static class ModuleCompiler
             OptionalValueExpr o => GetExprLine(o.Target),
             FallibleErrorExpr e => e.ErrorToken.Line,
             OnErrorExpr o => GetExprLine(o.Fallible),
+            CastExpr c => GetExprLine(c.Value),
             ArrayLengthExpr a => GetExprLine(a.Target),
             _ => 1
         };
@@ -1303,6 +1307,7 @@ static class ModuleCompiler
             OptionalValueExpr o => GetExprColumn(o.Target),
             FallibleErrorExpr e => e.ErrorToken.Column,
             OnErrorExpr o => GetExprColumn(o.Fallible),
+            CastExpr c => GetExprColumn(c.Value),
             ArrayLengthExpr a => GetExprColumn(a.Target),
             _ => 1
         };
@@ -1718,6 +1723,11 @@ static class ModuleCompiler
         {
             Binary b => new Binary(RewriteExpr(b.Left, typeAliases, namespaceAliases), b.Operator, RewriteExpr(b.Right, typeAliases, namespaceAliases)),
             Unary u => new Unary(u.Operator, RewriteExpr(u.Right, typeAliases, namespaceAliases)),
+            CastExpr c => new CastExpr(RewriteExpr(c.Value, typeAliases, namespaceAliases), c.AsToken, RewriteTypeRef(c.TargetType, typeAliases))
+            {
+                ResolvedIsEnumCast = c.ResolvedIsEnumCast,
+                ResolvedRuntimeKind = c.ResolvedRuntimeKind
+            },
             Literal l => l,
             InterpString s => new InterpString(s.Parts.Select(p => p is Expr e ? (object)RewriteExpr(e, typeAliases, namespaceAliases) : p).ToList(), s.Line, s.Column),
             ArrayLiteral a => new ArrayLiteral(a.Elements.Select(e => RewriteExpr(e, typeAliases, namespaceAliases)).ToList(), a.Line, a.Column)

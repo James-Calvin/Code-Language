@@ -532,6 +532,10 @@ sealed class CodeGenerator
                 {
                     _builder.PushNone();
                 }
+                else if (lit.Value is double d)
+                {
+                    _builder.PushReal(d);
+                }
                 else
                 {
                     _builder.PushInt(Convert.ToInt32(lit.Value ?? 0));
@@ -740,7 +744,10 @@ sealed class CodeGenerator
                     }
                     else
                     {
-                        _builder.PushInt(Convert.ToInt32(folded));
+                        if (folded is double dFold)
+                            _builder.PushReal(dFold);
+                        else
+                            _builder.PushInt(Convert.ToInt32(folded));
                     }
                     break;
                 }
@@ -794,8 +801,34 @@ sealed class CodeGenerator
                 }
                 break;
 
+            case CastExpr cast:
+                EmitCast(cast);
+                break;
+
             default:
                 throw new NotSupportedException($"Unhandled expression type {expr.GetType().Name}");
+        }
+    }
+
+    private void EmitCast(CastExpr expr)
+    {
+        SetLoc(expr.AsToken);
+        Emit(expr.Value);
+        switch (expr.ResolvedRuntimeKind)
+        {
+            case CastRuntimeKind.None:
+                break;
+            case CastRuntimeKind.ToInteger:
+                _builder.CastInteger();
+                break;
+            case CastRuntimeKind.ToWhole:
+                _builder.CastWhole();
+                break;
+            case CastRuntimeKind.ToReal:
+                _builder.CastReal();
+                break;
+            default:
+                throw new NotSupportedException($"Unsupported cast runtime kind {expr.ResolvedRuntimeKind}");
         }
     }
 
@@ -1070,6 +1103,8 @@ sealed class CodeGenerator
                 return ferr.ResolvedFallibleTypeRef;
             case OnErrorExpr onError:
                 return onError.ResolvedSuccessTypeRef;
+            case CastExpr cast:
+                return cast.TargetType;
             default:
                 return null;
         }

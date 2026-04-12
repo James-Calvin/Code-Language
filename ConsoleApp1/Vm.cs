@@ -78,6 +78,10 @@ enum OpCode : byte
     FallibleValue = 0x42,
     FallibleErrorCode = 0x43,
     FallibleErrorMessage = 0x44,
+    PushReal = 0x45,
+    CastInteger = 0x46,
+    CastWhole = 0x47,
+    CastReal = 0x48,
     Halt = 0xFF
 }
 
@@ -147,6 +151,9 @@ sealed class Vm
             {
                 case OpCode.PushConst:
                     _stack.Push(ReadIntOperand());
+                    break;
+                case OpCode.PushReal:
+                    _stack.Push(ReadDoubleOperand());
                     break;
                 case OpCode.PushString:
                 {
@@ -819,6 +826,18 @@ sealed class Vm
                     break;
                 }
 
+                case OpCode.CastInteger:
+                    _stack.Push(CoerceNumericCastToInt(allowNegative: true, "integer"));
+                    break;
+
+                case OpCode.CastWhole:
+                    _stack.Push(CoerceNumericCastToInt(allowNegative: false, "whole"));
+                    break;
+
+                case OpCode.CastReal:
+                    _stack.Push(PopNumber());
+                    break;
+
                 case OpCode.ThrowError:
                 {
                     EnsureStack(1);
@@ -1120,6 +1139,21 @@ sealed class Vm
         return PopAsNumber(v);
     }
 
+    private int CoerceNumericCastToInt(bool allowNegative, string targetType)
+    {
+        double value = PopNumber();
+        if (double.IsNaN(value) || double.IsInfinity(value))
+            ThrowRuntime($"Cannot cast non-finite value to {targetType}");
+
+        double truncated = Math.Truncate(value);
+        if (!allowNegative && truncated < 0)
+            ThrowRuntime("Cannot cast negative value to whole");
+        if (truncated < int.MinValue || truncated > int.MaxValue)
+            ThrowRuntime($"Cannot cast value outside integer range to {targetType}");
+
+        return checked((int)truncated);
+    }
+
     private VmFallible PopFallible(OpCode op)
     {
         var value = _stack.Pop();
@@ -1142,6 +1176,14 @@ sealed class Vm
         int value = BinaryPrimitives.ReadInt32LittleEndian(_code.AsSpan(_ip, 4));
         _ip += 4;
         return value;
+    }
+
+    private double ReadDoubleOperand()
+    {
+        EnsureBytes(8);
+        long bits = BinaryPrimitives.ReadInt64LittleEndian(_code.AsSpan(_ip, 8));
+        _ip += 8;
+        return BitConverter.Int64BitsToDouble(bits);
     }
 
     private string ReadStringOperand()

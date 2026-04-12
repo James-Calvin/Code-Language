@@ -15,7 +15,7 @@ Use this document as the primary answer to "does this exist yet?"
 
 | Status | Path | Use | Notes |
 | --- | --- | --- | --- |
-| `runnable` | `ConsoleApp1/examples/arithmetic.code` | `run` | Basic arithmetic and typed locals |
+| `runnable` | `ConsoleApp1/examples/arithmetic.code` | `run` | Basic arithmetic, typed locals, numeric prefixes, real literals, and numeric casts |
 | `runnable` | `ConsoleApp1/examples/enum.code` | `run` | Strongly typed enumerations with `Enum.Member` access |
 | `runnable` | `ConsoleApp1/examples/record.code` | `run` | Copy-by-value records with methods, interface conformance, and return-and-reassign value updates |
 | `runnable` | `ConsoleApp1/examples/switch.code` | `run` | `switch` statements with enum and integer cases |

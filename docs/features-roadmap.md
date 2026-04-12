@@ -13,8 +13,8 @@ This roadmap is implementation-truthful: items marked below are gaps from the cu
 ### Language Gaps
 1. Fallible-error propagation shorthand after the explicit `on error` model is exercised
 2. `fallible<void, ErrorCode>` statement-level ergonomics
-3. Decimal-point real literals, sized numeric types, numeric literal suffixes, and user-written casts
-4. `foreach` over `map`, `set`, `queue`, and `stack`
+3. Sized numeric types, numeric literal suffixes, and exponent real literals
+4. `foreach` over `map`, `set`, `queue`, and `stack`; planned map iteration should yield entry values
 
 ### Stdlib and Runtime Gaps
 1. Broader standard-library modules after the core container/math baseline lands
@@ -49,7 +49,8 @@ This roadmap is implementation-truthful: items marked below are gaps from the cu
 | `[x]` | Core language | `switch` | Implemented: `switch value then { case expr then statement ... default then statement }`, no fallthrough, single evaluation of the switch value |
 | `[x]` | Core language | Structs/records (user types) | Baseline `record` support implemented with copy-on-assignment/pass/return semantics |
 | `[x]` | Core language | Integer base prefixes | `0b`, `0o`, and `0x` integer literals implemented |
-| `[~]` | Type system | Sized numerics, decimal real literals & literal suffixes (`i8/w8/r32` etc.) | Lexer/parser/type support pending beyond integer base prefixes |
+| `[x]` | Type system | Decimal real literals and explicit casts | Implemented: `1.5`, `1.`, `.5`, numeric casts among `whole`/`integer`/`real`, enum-to-integer casts, and integer-to-enum casts with literal validation |
+| `[~]` | Type system | Sized numerics, exponent real literals & literal suffixes (`i8/w8/r32` etc.) | Deferred beyond current unsized numeric support |
 | `[~]` | Type system | Optional/`optional<T>` semantics | Baseline works; flow narrowing and stricter typing rules pending |
 | `[_]` | Type system | Overload resolution rules (spec’d) | Engine not implemented |
 | `[x]` | Error model | Runtime IP + call stack + snippets | Debug-map backed |
@@ -81,7 +82,7 @@ This roadmap is implementation-truthful: items marked below are gaps from the cu
 | `[x]` | Modules/imports | Import-chain diagnostics | Circular/missing-export/import resolution errors include module chain (`a -> b -> c`) |
 | `[~]` | Modules/imports | Import ergonomics expansion | Alias support for object/interface/enum exports, grouped/selective import forms, namespace imports for function-only module surfaces, and re-export imports |
 | `[x]` | Modules/imports | Module graph tooling | `--dump-module-graph [outputPath]` emits module graph (entry/modules/import edges) in text/json/dot; `--trace-linker` emits linker step trace |
-| `[x]` | Bytecode/VM | Header v0x05 + debug table | Implemented |
+| `[x]` | Bytecode/VM | Header v0x06 + debug table | Implemented |
 | `[x]` | Bytecode/VM | Core opcodes (arith/stack/jump/load/store/PRINT/CALL/RET/PUSH_STRING) | Implemented; includes object/array/optional/error primitives and `GET_TYPE_NAME` for interface dispatch lowering |
 | `[~]` | Bytecode/VM | Constant pool for literals | To reduce code size |
 | `[x]` | Bytecode/VM | Recoverable fallible values | Implemented with VM-managed success/error variants and native/web opcode parity |

@@ -1,10 +1,10 @@
 # Bytecode Specification (draft)
 
-Version: 0.10 (2026-04-07)
+Version: 0.11 (2026-04-12)
 
 ## File format
-- Header: `CODE` ASCII (4 bytes) + version byte (`0x05`) + int32 `codeSize` + int32 `debugCount`.
-- Encoding: little-endian integers.
+- Header: `CODE` ASCII (4 bytes) + version byte (`0x06`) + int32 `codeSize` + int32 `debugCount`.
+- Encoding: little-endian integers and IEEE-754 `real` operands.
 - Layout: header, then `codeSize` bytes of opcodes/operands, followed by `debugCount` debug entries (`ip`, `line`, `column`; each int32).
 - Produced files should use the `.bytecode` extension.
 
@@ -32,7 +32,7 @@ Version: 0.10 (2026-04-07)
 ## Opcodes
 | Byte | Name | Operands | Stack effect | Notes |
 | ---- | ---- | -------- | ------------ | ----- |
-| 0x01 | `PUSH_CONST` | int32 | +1 | Push 32-bit signed int as double |
+| 0x01 | `PUSH_CONST` | int32 | +1 | Push 32-bit signed integer |
 | 0x02 | `ADD` | - | -1 | Pop `a`, `b`; push `a + b` or string concat if either is string |
 | 0x03 | `SUB` | - | -1 | Pop `a`, `b`; push `a - b` |
 | 0x04 | `MUL` | - | -1 | Pop `a`, `b`; push `a * b` |
@@ -100,6 +100,10 @@ Version: 0.10 (2026-04-07)
 | 0x42 | `FALLIBLE_VALUE` | - | 0 | Pop fallible success, push success value; throws if error |
 | 0x43 | `FALLIBLE_ERROR_CODE` | - | 0 | Pop fallible error, push error code; throws if success |
 | 0x44 | `FALLIBLE_ERROR_MESSAGE` | - | 0 | Pop fallible error, push error message string; throws if success |
+| 0x45 | `PUSH_REAL` | float64 | +1 | Push IEEE-754 64-bit real literal |
+| 0x46 | `CAST_INTEGER` | - | 0 | Pop numeric value, truncate toward zero, reject non-finite or out-of-range, push integer |
+| 0x47 | `CAST_WHOLE` | - | 0 | Pop numeric value, truncate toward zero, reject non-finite, negative, or out-of-range, push whole-compatible integer |
+| 0x48 | `CAST_REAL` | - | 0 | Pop numeric value, push it as a real value |
 | 0xFF | `HALT` | - | 0 | Stop execution |
 
 ## Planned additions
@@ -108,7 +112,7 @@ Version: 0.10 (2026-04-07)
 - Magic header evolution and validation rules
 
 ## Notes
-- All operands are 4-byte little-endian offsets or indices.
+- Integer operands are 4-byte little-endian offsets or indices; `PUSH_REAL` uses one 8-byte little-endian IEEE-754 operand.
 - Comparisons return `1.0` for true and `0.0` for false; logical `and` / `or` short-circuit in codegen.
 - Locals grow dynamically when `STORE` / `LOAD` targets exceed current length; functions track max locals for `CALL` frame sizing.
 - Debug entries map instruction-pointer offsets back to source line/column for runtime stack traces.
@@ -117,6 +121,7 @@ Version: 0.10 (2026-04-07)
 - Maps and sets use VM-managed keyed containers. `MAP_GET` throws on missing keys. `MAP_CONTAINS` / `SET_CONTAINS` return `1` or `0`. Remove operations are no-ops when the entry is absent.
 - Queues and stacks use VM-managed containers with empty-checking on `QUEUE_DEQUEUE` / `QUEUE_PEEK` / `STACK_POP` / `STACK_PEEK`.
 - Fallible values are VM-managed success/error wrappers used by user-facing `fallible<Value, ErrorCode>` recoverable errors. The one-argument source shorthand `fallible<Value>` normalizes to integer-coded fallible values before bytecode emission, and message-only source errors lower as code `0` plus message. `panic(...)` remains separate and lowers to `THROW_ERROR`.
+- Decimal-point source literals lower to `PUSH_REAL`; explicit numeric casts lower to `CAST_INTEGER`, `CAST_WHOLE`, or `CAST_REAL`. Enum-to-integer and integer-to-enum casts remain integer-backed and do not require separate bytecode.
 - Objects and records are stored as VM-managed instances with a type name and field dictionary; field access is name-based via `GET_FIELD` / `SET_FIELD`. `NEW_OBJECT` creates reference-identity objects; `NEW_RECORD` creates value-semantic record instances used by record construction and record cloning.
 - Object methods currently lower to regular `CALL` sites with implicit `this` prepended to explicit arguments; overload choice is resolved at compile time.
 - Interface declarations and `implement` mappings remain compile-time metadata; interface-typed calls lower to `INTERFACE_CALL` dispatch tables that map runtime type names to method targets.

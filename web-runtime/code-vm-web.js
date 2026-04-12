@@ -1,5 +1,5 @@
 const BYTECODE_MAGIC = "CODE";
-const BYTECODE_VERSION = 5;
+const BYTECODE_VERSION = 6;
 const HEADER_SIZE = 13;
 const DEBUG_ENTRY_SIZE = 12;
 
@@ -74,6 +74,10 @@ const OpCode = {
   FallibleValue: 0x42,
   FallibleErrorCode: 0x43,
   FallibleErrorMessage: 0x44,
+  PushReal: 0x45,
+  CastInteger: 0x46,
+  CastWhole: 0x47,
+  CastReal: 0x48,
   Halt: 0xff
 };
 
@@ -1485,6 +1489,10 @@ export class WebVm {
           this.stack.push(this.readIntOperand());
           break;
 
+        case OpCode.PushReal:
+          this.stack.push(this.readDoubleOperand());
+          break;
+
         case OpCode.PushString: {
           const length = this.readIntOperand();
           this.ensureBytes(length);
@@ -1999,6 +2007,18 @@ export class WebVm {
           break;
         }
 
+        case OpCode.CastInteger:
+          this.stack.push(this.coerceNumericCastToInteger(true, "integer"));
+          break;
+
+        case OpCode.CastWhole:
+          this.stack.push(this.coerceNumericCastToInteger(false, "whole"));
+          break;
+
+        case OpCode.CastReal:
+          this.stack.push(this.popNumber());
+          break;
+
         case OpCode.NewObject: {
           const typeName = this.readStringOperand();
           this.stack.push(createVmObject(typeName, false));
@@ -2160,6 +2180,22 @@ export class WebVm {
     return toNumber(value, message => this.throwRuntime(message));
   }
 
+  coerceNumericCastToInteger(allowNegative, targetType) {
+    const value = this.popNumber();
+    if (!Number.isFinite(value)) {
+      this.throwRuntime(`Cannot cast non-finite value to ${targetType}`);
+    }
+
+    const truncated = Math.trunc(value);
+    if (!allowNegative && truncated < 0) {
+      this.throwRuntime("Cannot cast negative value to whole");
+    }
+    if (truncated < -2147483648 || truncated > 2147483647) {
+      this.throwRuntime(`Cannot cast value outside integer range to ${targetType}`);
+    }
+    return truncated;
+  }
+
   popAny2() {
     this.ensureStack(2);
     const b = this.stack.pop();
@@ -2192,6 +2228,13 @@ export class WebVm {
     this.ensureBytes(4);
     const value = this.view.getInt32(this.ip, true);
     this.ip += 4;
+    return value;
+  }
+
+  readDoubleOperand() {
+    this.ensureBytes(8);
+    const value = this.view.getFloat64(this.ip, true);
+    this.ip += 8;
     return value;
   }
 

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 
 namespace ConsoleApp1.Compiler;
 
@@ -94,7 +95,12 @@ sealed class Lexer
             case '[': AddToken(TokenType.LeftBracket); break;
             case ']': AddToken(TokenType.RightBracket); break;
             case ',': AddToken(TokenType.Comma); break;
-            case '.': AddToken(TokenType.Dot); break;
+            case '.':
+                if (IsDigit(Peek()))
+                    Number();
+                else
+                    AddToken(TokenType.Dot);
+                break;
             case ';': AddToken(TokenType.Semicolon); break;
             case '+':
                 if (Match('+')) AddToken(TokenType.PlusPlus);
@@ -187,6 +193,13 @@ sealed class Lexer
 
     private void Number()
     {
+        if (_source[_start] == '.')
+        {
+            while (IsDigit(Peek())) Advance();
+            AddRealToken();
+            return;
+        }
+
         if (_source[_start] == '0')
         {
             char prefix = Peek();
@@ -225,9 +238,30 @@ sealed class Lexer
         }
 
         while (IsDigit(Peek())) Advance();
+        if (Peek() == '.')
+        {
+            Advance();
+            while (IsDigit(Peek())) Advance();
+            AddRealToken();
+            return;
+        }
+        if (IsAlpha(Peek()))
+            throw Error($"Invalid integer literal suffix '{Peek()}'");
+
         string text = _source[_start.._current];
         if (!int.TryParse(text, out int value))
             throw Error($"Invalid integer literal '{text}'");
+        AddToken(TokenType.Number, value);
+    }
+
+    private void AddRealToken()
+    {
+        if (IsAlpha(Peek()))
+            throw Error($"Invalid real literal suffix '{Peek()}'");
+
+        string text = _source[_start.._current];
+        if (!double.TryParse(text, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out double value))
+            throw Error($"Invalid real literal '{text}'");
         AddToken(TokenType.Number, value);
     }
 

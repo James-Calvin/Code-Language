@@ -65,11 +65,13 @@ function main(string[] arguments) {
 - Numeric literals:
   - Decimal by default.
   - Base prefixes: `0b` (binary), `0o` (octal), `0x` (hex).
+  - Decimal-point real literals: `1.5`, `1.`, `.5`.
   - Numeric suffixes such as `i32`, `w64`, and `r32` are planned, not implemented.
-  - Decimal-point real literals such as `1.5` are planned, not implemented.
   - Unsuffixed integer literals map to `integer`.
 - Conversions and promotions:
-  - User-written casts such as `value as Type` are planned, not implemented.
+  - User-written casts are supported as `value as Type` for `whole`, `integer`, `real`, and enum types.
+  - Numeric casts between `whole`, `integer`, and `real` are explicit conversions; `real as integer` and `real as whole` truncate toward zero at runtime, reject non-finite or out-of-range values, and `as whole` also rejects negative values.
+  - Enum casts are limited to `EnumValue as integer` and `integerValue as EnumName`; literal integer-to-enum casts must match a declared enum member value.
   - Current implicit promotions are limited to the compiler's existing numeric widening rules.
 
 Examples:
@@ -273,7 +275,7 @@ while value != someValue then {
   - `set<Value>` uses `new set<Value>()`, supports `.length`, `add(value)`, `contains(value)`, and `remove(value)`.
   - `queue<Value>` uses `new queue<Value>()`, supports `.length`, `enqueue(value)`, `dequeue()`, and `peek()`.
   - `stack<Value>` uses `new stack<Value>()`, supports `.length`, `push(value)`, `pop()`, and `peek()`.
-  - `foreach` support for these newer built-in collections is not implemented yet.
+  - `foreach` support for these newer built-in collections is not implemented yet; planned map iteration should yield entry values.
 - Optionals (current impl): `optional<T>` types store `none` or a value; `none` literal; `opt.hasValue` returns boolean; `opt.value` returns contained value or panics if empty; `opt.or(fallback)` returns value or fallback without panicking.
 
 ```code
@@ -702,12 +704,17 @@ if x > 3 then panic("x too large");
   - The current repo ships a wrapper layer in `lib/engine/` over those scene/runtime intrinsics: canonical modules `engine.colors`, `engine.drawing`, `engine.input`, `engine.viewport`, and `engine.scene`, with compatibility re-export modules `engine.view` and `engine.loop`.
   - Note: high-range timing values may eventually need dedicated 64-bit numeric/value support for full precision guarantees.
 - Object and record construction and field access lower to dedicated VM opcodes (`NEW_OBJECT`, `NEW_RECORD`, `GET_FIELD`, `SET_FIELD`).
+- Real literals and numeric casts lower to dedicated VM opcodes (`PUSH_REAL`, `CAST_INTEGER`, `CAST_WHOLE`, `CAST_REAL`); enum casts remain integer-backed.
 - Arrays: literals `{...}` create arrays; typed declarations `array<integer> xs = {1,2,3};`; dynamic `new array<integer>(n)` requires a size; `xs.length` yields length; `xs.append(value)` and `xs.remove_at(index)` grow/shrink arrays; `foreach` iterates arrays by element.
 - Built-in collections: `map`, `set`, `queue`, and `stack` lower to dedicated VM opcodes; `.length` also covers those collection types.
 - Recoverable fallible values lower to dedicated VM opcodes (`FALLIBLE_SUCCESS`, `FALLIBLE_ERROR`, `FALLIBLE_IS_ERROR`, `FALLIBLE_VALUE`, `FALLIBLE_ERROR_CODE`, `FALLIBLE_ERROR_MESSAGE`); `panic(...)` still lowers to `THROW_ERROR`.
 
 ## 15. Planned But Not Implemented Yet
 - Fallible-error propagation shorthand such as `try`.
+- `fallible<void, ErrorCode>` statement-level ergonomics.
+- Semicolon injection.
+- Sized numeric types, numeric literal suffixes, and exponent numeric literals.
+- `foreach` over `map`, `set`, `queue`, and `stack`; planned map iteration should yield entry values.
 
 ## 16. Comments
 - Single-line comments:

@@ -13,9 +13,8 @@ Use [Example Catalog](../example-catalog.md) and the current compiler as the tru
 | Semicolon injection | Draft-only. Write semicolons today. |
 | Sized numeric types such as `integer8`, `whole32`, `real64` | Draft-only in current docs. |
 | Numeric literal suffixes such as `i32`, `w64`, `r32` | Draft-only. |
-| Decimal point real literals such as `1.5` | Not implemented in the lexer today. Use operations or functions that produce `real`. |
-| User-written casts such as `value as Type` | Draft-only. There is no parser support today. |
-| `foreach` over `map`, `set`, `queue`, and `stack` | Deferred. `foreach` supports numeric counts and arrays today. |
+| Exponent numeric literals such as `1e3` or `1.5e-2` | Draft-only. |
+| `foreach` over `map`, `set`, `queue`, and `stack` | Deferred. `foreach` supports numeric counts and arrays today; planned map iteration should yield entry values. |
 
 ## Package and Module Features
 
@@ -112,4 +111,14 @@ print(0b1010);
 print(0o17);
 print(0x1f);
 print("literal \{braces\}");
+```
+
+Decimal real literals and limited explicit casts are implemented:
+
+```code
+print(1.5);
+print(1.);
+print(.5);
+print(3.8 as integer);
+print(3 as real);
 ```

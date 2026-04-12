@@ -6,4 +6,7 @@ integer c = (a + b) * 2;
 print c;
 integer base_prefix_sum = 0b1010 + 0o17 + 0x1f;
 print(base_prefix_sum);
-
+real mixed_total = 1.5 + .5;
+print(mixed_total);
+print(3.8 as integer);
+print(3 as real);

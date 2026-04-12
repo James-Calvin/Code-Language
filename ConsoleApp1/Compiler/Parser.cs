@@ -225,7 +225,9 @@ sealed class Parser
             Match(TokenType.Plus);
 
         Token number = Consume(TokenType.Number, "Expect integer literal for enum member value.");
-        int value = Convert.ToInt32(number.Literal ?? 0);
+        if (number.Literal is not int intLiteral)
+            throw Error(number, "Expect integer literal for enum member value.");
+        int value = intLiteral;
         return negative ? -value : value;
     }
 
@@ -778,12 +780,24 @@ sealed class Parser
 
     private Expr Comparison()
     {
-        Expr expr = Term();
+        Expr expr = Cast();
         while (Match(TokenType.Less, TokenType.LessEqual, TokenType.Greater, TokenType.GreaterEqual))
         {
             Token op = Previous();
-            Expr right = Term();
+            Expr right = Cast();
             expr = new Binary(expr, op, right);
+        }
+        return expr;
+    }
+
+    private Expr Cast()
+    {
+        Expr expr = Term();
+        while (Match(TokenType.As))
+        {
+            Token asToken = Previous();
+            TypeRef targetType = ParseTypeRef();
+            expr = new CastExpr(expr, asToken, targetType);
         }
         return expr;
     }

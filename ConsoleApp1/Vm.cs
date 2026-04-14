@@ -15,6 +15,7 @@ enum OpCode : byte
     Sub = 0x03,
     Mul = 0x04,
     Div = 0x05,
+    IntDiv = 0x49,
     Mod = 0x24,
     Print = 0x06,
     Dup = 0x07,
@@ -194,6 +195,10 @@ sealed class Vm
                         ThrowRuntime("Division by zero in bytecode.");
                         return a / b;
                     });
+                    break;
+
+                case OpCode.IntDiv:
+                    IntegerDiv();
                     break;
 
                 case OpCode.Mod:
@@ -920,6 +925,42 @@ sealed class Vm
         double b = PopNumber();
         double a = PopNumber();
         _stack.Push(op(a, b));
+    }
+
+    private void IntegerDiv()
+    {
+        long b = PopIntegralOperand();
+        long a = PopIntegralOperand();
+        if (b == 0)
+            ThrowRuntime("Division by zero in bytecode.");
+        _stack.Push(a / b);
+    }
+
+    private long PopIntegralOperand()
+    {
+        if (_stack.Count == 0)
+            ThrowRuntime("Stack underflow");
+
+        object value = _stack.Pop();
+        switch (value)
+        {
+            case int i:
+                return i;
+            case long l:
+                return l;
+            case double d:
+            {
+                if (!double.IsFinite(d))
+                    ThrowRuntime("Integer division requires finite numeric operands.");
+                double truncated = Math.Truncate(d);
+                if (truncated < long.MinValue || truncated > long.MaxValue)
+                    ThrowRuntime("Integer division operand is out of range.");
+                return checked((long)truncated);
+            }
+            default:
+                ThrowRuntime("Integer division requires numeric operands.");
+                return 0;
+        }
     }
 
     private static bool IsNumber(object? v) => v is int or long or double;

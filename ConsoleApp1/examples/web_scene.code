@@ -10,10 +10,10 @@ object BackgroundLayer {
 
   implement WorldDrawable.draw() {
     Draw.clear_screen(rgb(0, 0, 0));
-    Draw.line(Viewport.safe_left(), Viewport.safe_top(), Viewport.safe_right(), Viewport.safe_bottom(), rgba(1, 1, 1, 1 / 3));
-    Draw.polygon({300, 80, 340, 92, 352, 120, 304, 124, 284, 100}, rgba(0, 1 / 2, 1, 1 / 3));
+    Draw.line(Viewport.safe_left(), Viewport.safe_top(), Viewport.safe_right(), Viewport.safe_bottom(), rgba(1, 1, 1, 1. / 3));
+    Draw.polygon({300, 80, 340, 92, 352, 120, 304, 124, 284, 100}, rgba(0, 1. / 2, 1, 1. / 3));
     Draw.polygon_outline({300, 80, 340, 92, 352, 120, 304, 124, 284, 100}, 2, rgb(1, 1, 1));
-    Draw.circle(124, 84, 16, rgba(1, 1 / 2, 1 / 4, 1 / 2));
+    Draw.circle(124, 84, 16, rgba(1, 1. / 2, 1. / 4, 1. / 2));
     Draw.circle_outline(124, 84, 24, 2, rgb(1, 1, 1));
     Draw.image("assets/code-sheet.svg", 24, 220, 64, 32, 1);
     Draw.sprite("assets/code-sheet.svg", 32, 0, 32, 32, 104, 210, 64, 64, 1);
@@ -41,7 +41,7 @@ object Player {
   implement WorldDrawable.draw() {
     if x > Viewport.view_left() - 24 and x < Viewport.view_right() then {
       Draw.rectangle(x, y, 24, 24, rgb(1, 1, 1));
-      Draw.rectangle_outline(x - 4, y - 4, 32, 32, 2, rgba(1 / 4, 1 / 2, 1, 2 / 3));
+      Draw.rectangle_outline(x - 4, y - 4, 32, 32, 2, rgba(1. / 4, 1. / 2, 1, 2. / 3));
     }
   }
 }

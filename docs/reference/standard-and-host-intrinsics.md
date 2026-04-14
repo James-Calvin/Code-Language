@@ -72,7 +72,7 @@ print(minimum(4, 9));
 print(maximum(4, 9));
 print(absolute(-3));
 print(sign(-3));
-print(lerp(10, 20, 1 / 4));
+print(lerp(10, 20, 1. / 4));
 print(cosine(0));
 ```
 
@@ -91,6 +91,7 @@ Common mistakes:
 
 - Angles for `sine` and `cosine` use the runtime math convention, not degrees.
 - `random()` returns a real value from 0 inclusive to 1 exclusive.
+- Integral `/` is truncating integer division. Use a `real` operand for real division, for example `1. / 4`.
 
 ## Native Input
 

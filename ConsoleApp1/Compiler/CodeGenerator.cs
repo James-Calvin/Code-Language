@@ -771,7 +771,7 @@ sealed class CodeGenerator
                     case TokenType.Plus: _builder.Add(); break;
                     case TokenType.Minus: _builder.Sub(); break;
                     case TokenType.Star: _builder.Mul(); break;
-                    case TokenType.Slash: _builder.Div(); break;
+                    case TokenType.Slash: EmitBinaryOperator(b.Operator, b.Left, b.Right); break;
                     case TokenType.Percent: _builder.Mod(); break;
                     case TokenType.EqualEqual: _builder.Eq(); break;
                     case TokenType.BangEqual:
@@ -1053,6 +1053,22 @@ sealed class CodeGenerator
     {
         switch (expr)
         {
+            case Literal lit:
+                return lit.Value switch
+                {
+                    bool => new TypeRef("boolean", null, lit.Line, lit.Column),
+                    string => new TypeRef("string", null, lit.Line, lit.Column),
+                    double => new TypeRef("real", null, lit.Line, lit.Column),
+                    int => new TypeRef("integer", null, lit.Line, lit.Column),
+                    long => new TypeRef("integer", null, lit.Line, lit.Column),
+                    _ => null
+                };
+            case Unary unary:
+                return unary.Operator.Type == TokenType.Not
+                    ? new TypeRef("boolean", null, unary.Operator.Line, unary.Operator.Column)
+                    : TryResolveTypeRef(unary.Right);
+            case Binary binary:
+                return TryResolveBinaryTypeRef(binary);
             case ArrayLiteral al:
                 return al.ResolvedTypeRef;
             case NewArrayExpr na:
@@ -1065,6 +1081,10 @@ sealed class CodeGenerator
                 return _localDeclaredTypes.TryGetValue(v.Name.Lexeme, out var t) ? t : null;
             case NewObjectExpr no:
                 return new TypeRef(no.TypeName.Lexeme, null, no.TypeName.Line, no.TypeName.Column);
+            case ArrayLengthExpr alen:
+                return new TypeRef("integer", null, alen.DotToken.Line, alen.DotToken.Column);
+            case OptionalHasValueExpr:
+                return new TypeRef("boolean", null, 0, 0);
             case Call c:
                 if (c.ResolvedImplicitMethodReturnTypeRef is not null)
                     return c.ResolvedImplicitMethodReturnTypeRef;
@@ -1110,6 +1130,35 @@ sealed class CodeGenerator
         }
     }
 
+    private TypeRef? TryResolveBinaryTypeRef(Binary binary)
+    {
+        var left = TryResolveTypeRef(binary.Left);
+        var right = TryResolveTypeRef(binary.Right);
+        switch (binary.Operator.Type)
+        {
+            case TokenType.And:
+            case TokenType.Or:
+            case TokenType.EqualEqual:
+            case TokenType.BangEqual:
+            case TokenType.Less:
+            case TokenType.Greater:
+            case TokenType.LessEqual:
+            case TokenType.GreaterEqual:
+                return new TypeRef("boolean", null, binary.Operator.Line, binary.Operator.Column);
+            case TokenType.Plus:
+                if (IsTypeRefNamed(left, "string") || IsTypeRefNamed(right, "string"))
+                    return new TypeRef("string", null, binary.Operator.Line, binary.Operator.Column);
+                return PromoteNumericTypeRef(left, right);
+            case TokenType.Minus:
+            case TokenType.Star:
+            case TokenType.Slash:
+            case TokenType.Percent:
+                return PromoteNumericTypeRef(left, right);
+            default:
+                return null;
+        }
+    }
+
     private static bool ExpressionLeavesValue(Expr expr)
         => expr is not Assign;
 
@@ -1129,7 +1178,7 @@ sealed class CodeGenerator
                     _builder.Load(objectSlot);
                     _builder.GetField(variable.Name.Lexeme);
                     Emit(expr.Value);
-                    EmitBinaryOperator(expr.Operator);
+                    EmitBinaryOperator(expr.Operator, variable, expr.Value);
                     _builder.Store(valueSlot);
                     _builder.Load(objectSlot);
                     _builder.Load(valueSlot);
@@ -1141,7 +1190,7 @@ sealed class CodeGenerator
                 {
                     _builder.Load(GetSlot(variable.Name));
                     Emit(expr.Value);
-                    EmitBinaryOperator(expr.Operator);
+                    EmitBinaryOperator(expr.Operator, variable, expr.Value);
                     _builder.Dup();
                     _builder.Store(GetSlot(variable.Name));
                 }
@@ -1156,7 +1205,7 @@ sealed class CodeGenerator
                 _builder.Load(objectSlot);
                 _builder.GetField(fieldAccess.Name.Lexeme);
                 Emit(expr.Value);
-                EmitBinaryOperator(expr.Operator);
+                EmitBinaryOperator(expr.Operator, fieldAccess, expr.Value);
                 _builder.Store(valueSlot);
                 _builder.Load(objectSlot);
                 _builder.Load(valueSlot);
@@ -1178,7 +1227,7 @@ sealed class CodeGenerator
                 _builder.Load(indexSlot);
                 EmitIndexGet(arrayIndex.Array);
                 Emit(expr.Value);
-                EmitBinaryOperator(expr.Operator);
+                EmitBinaryOperator(expr.Operator, arrayIndex, expr.Value);
                 _builder.Store(valueSlot);
                 _builder.Load(arraySlot);
                 _builder.Load(indexSlot);
@@ -1194,7 +1243,7 @@ sealed class CodeGenerator
         }
     }
 
-    private void EmitBinaryOperator(Token op)
+    private void EmitBinaryOperator(Token op, Expr? left = null, Expr? right = null)
     {
         switch (op.Type)
         {
@@ -1208,7 +1257,10 @@ sealed class CodeGenerator
                 _builder.Mul();
                 break;
             case TokenType.Slash:
-                _builder.Div();
+                if (left is not null && right is not null && ShouldUseIntegerDivision(left, right))
+                    _builder.IntDiv();
+                else
+                    _builder.Div();
                 break;
             case TokenType.Percent:
                 _builder.Mod();
@@ -1217,6 +1269,44 @@ sealed class CodeGenerator
                 throw new InvalidOperationException($"Unsupported compound assignment operator '{op.Lexeme}'");
         }
     }
+
+    private bool ShouldUseIntegerDivision(Expr left, Expr right)
+        => IsIntegralNumericTypeRef(TryResolveTypeRef(left)) &&
+           IsIntegralNumericTypeRef(TryResolveTypeRef(right));
+
+    private static TypeRef? PromoteNumericTypeRef(TypeRef? left, TypeRef? right)
+    {
+        if (!IsNumericTypeRef(left) || !IsNumericTypeRef(right))
+            return null;
+
+        int Rank(TypeRef typeRef) => typeRef.NormalizeBuiltInShorthands().Name switch
+        {
+            "whole" => 1,
+            "integer" => 2,
+            "real" => 3,
+            _ => 0
+        };
+
+        return Rank(left!) >= Rank(right!) ? left : right;
+    }
+
+    private static bool IsNumericTypeRef(TypeRef? typeRef)
+    {
+        if (typeRef is null)
+            return false;
+        return typeRef.NormalizeBuiltInShorthands().Name is "whole" or "integer" or "real";
+    }
+
+    private static bool IsIntegralNumericTypeRef(TypeRef? typeRef)
+    {
+        if (typeRef is null)
+            return false;
+        return typeRef.NormalizeBuiltInShorthands().Name is "whole" or "integer";
+    }
+
+    private static bool IsTypeRefNamed(TypeRef? typeRef, string name)
+        => typeRef is not null &&
+           string.Equals(typeRef.NormalizeBuiltInShorthands().Name, name, StringComparison.Ordinal);
 
     private void EmitBuiltInCollectionMethodCall(MethodCallExpr mc, TypeRef targetType)
     {

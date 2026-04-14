@@ -60,3 +60,6 @@ publish/
 # Syntax highlighting wip
 syntax/
 .fake
+
+# private folders
+private/

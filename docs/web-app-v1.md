@@ -47,6 +47,9 @@ Planned V1 behavior:
 - Keep the current scene-object/browser contract stable while expanding the wrapper layer on top of it.
 - Expand beyond the current primitive/image-sprite/keyboard slice without forcing raw browser/bootstrap concerns into user code.
 - Reduce reliance on the lower-level upload harness in day-to-day development.
+- Add a target-agnostic graphical app profile that can synthesize the entry shell from top-level lifecycle authoring and an implicit engine prelude for `--build-web` first, without removing explicit `MainScene`.
+- Prevent generated-page scroll/panning, including arrow/space key browser defaults, so game input does not move the page.
+- Route normal web-app `print` output to the browser console by default; reserve on-screen output for fatal/runtime diagnostics or explicit debug mode.
 
 ## Scene Object Contract
 
@@ -85,6 +88,11 @@ Scene composition:
 - Registration changes are staged and applied at the start of the next `update()` phase.
 - `SceneLoop` is now part of the canonical `engine.scene` public surface; `engine.loop` remains as a temporary compatibility re-export.
 
+Planned app-profile direction:
+- Explicit `MainScene` remains valid.
+- A future graphical app profile should allow top-level `start()`, `update()`, `draw()`, and optional `draw_hud()` authoring with an implicit engine prelude.
+- The profile should be target-agnostic so future native graphical targets can run the same Code source as the web target.
+
 Important implementation note:
 - Object methods now support the same implicit-void authoring style as top-level functions.
 - Object constructors and methods also support implicit `this` lookup for unshadowed fields and bare method calls.
@@ -122,7 +130,7 @@ object Player {
   implement WorldDrawable.draw() {
     if x > Viewport.view_left() - 24 and x < Viewport.view_right() then {
       Draw.rectangle(x, y, 24, 24, rgb(1, 1, 1));
-      Draw.rectangle_outline(x - 4, y - 4, 32, 32, 2, rgba(1 / 4, 1 / 2, 1, 2 / 3));
+      Draw.rectangle_outline(x - 4, y - 4, 32, 32, 2, rgba(1. / 4, 1. / 2, 1, 2. / 3));
     }
   }
 }
@@ -133,10 +141,10 @@ object BackgroundLayer {
 
   implement WorldDrawable.draw() {
     Draw.clear_screen(rgb(0, 0, 0));
-    Draw.line(Viewport.safe_left(), Viewport.safe_top(), Viewport.safe_right(), Viewport.safe_bottom(), rgba(1, 1, 1, 1 / 3));
-    Draw.polygon({300, 80, 340, 92, 352, 120, 304, 124, 284, 100}, rgba(0, 1 / 2, 1, 1 / 3));
+    Draw.line(Viewport.safe_left(), Viewport.safe_top(), Viewport.safe_right(), Viewport.safe_bottom(), rgba(1, 1, 1, 1. / 3));
+    Draw.polygon({300, 80, 340, 92, 352, 120, 304, 124, 284, 100}, rgba(0, 1. / 2, 1, 1. / 3));
     Draw.polygon_outline({300, 80, 340, 92, 352, 120, 304, 124, 284, 100}, 2, rgb(1, 1, 1));
-    Draw.circle(124, 84, 16, rgba(1, 1 / 2, 1 / 4, 1 / 2));
+    Draw.circle(124, 84, 16, rgba(1, 1. / 2, 1. / 4, 1. / 2));
     Draw.circle_outline(124, 84, 24, 2, rgb(1, 1, 1));
     Draw.image("assets/code-sheet.svg", 24, 220, 64, 32, 1);
     Draw.sprite("assets/code-sheet.svg", 32, 0, 32, 32, 104, 210, 64, 64, 1);
@@ -306,6 +314,8 @@ Behavior rules:
 - `draw_text(...)` uses alignment strings: horizontal `"left"`, `"center"`, `"right"` and vertical `"top"`, `"middle"`, `"bottom"`.
 - `draw_polygon(...)` / `draw_polygon_outline(...)` take a flat numeric array of alternating `x, y` points.
 - `draw_image(...)` and `draw_sprite(...)` load from static asset paths in the built site folder.
+- Future byte-channel `rgb(byte, byte, byte)` and `rgba(byte, byte, byte, byte)` overloads should wait until sized numerics add `byte` as the readable alias for `whole8`; current color wrappers use real channels commonly from `0` to `1`.
+- Integral `/` is truncating integer division. Use a `real` operand for ratio values, for example `1. / 4` or `1 as real / 4`.
 - Legacy `draw_rect(...)` remains accepted as a temporary compatibility alias, but docs and examples use `draw_rectangle(...)`.
 - Peek limiting, culling, and gameplay-specific visibility rules remain developer-authored in user code; the runtime only exposes the bounds needed to implement them.
 
@@ -330,7 +340,12 @@ Current implementation output:
 - `app.bytecode`
 - copied `assets/` directory when present beside the entry file or in the package root
 - The runtime loader is currently inlined into `index.html`.
+- The compiled bytecode is also embedded in `index.html` today so direct opening does not require a fetch of `app.bytecode`.
 - The browser VM/runtime is currently JavaScript. Wasm is deferred until measured performance or parity work justifies the extra build/tooling complexity.
+
+Planned output polish:
+- Default to embed-only bytecode so `index.html` remains directly openable without also writing a duplicate `app.bytecode`.
+- Add or use a debug/inspection flag to emit `app.bytecode` when separate artifact inspection is useful.
 
 Required behavior:
 - Opening `dist/index.html` runs the app directly.

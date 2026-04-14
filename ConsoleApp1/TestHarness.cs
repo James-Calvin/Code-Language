@@ -43,6 +43,14 @@ internal static class TestHarness
                 .PushInt(10).PushInt(2).Div().Print().Halt().ToArray(),
                 "5" + nl),
 
+            ("integer-division-bytecode", BytecodeBuilder.New()
+                .PushInt(5).PushInt(2).IntDiv().Print()
+                .PushInt(-5).PushInt(2).IntDiv().Print()
+                .PushInt(5).PushInt(-2).IntDiv().Print()
+                .PushInt(-5).PushInt(-2).IntDiv().Print()
+                .Halt().ToArray(),
+                "2" + nl + "-2" + nl + "-2" + nl + "2" + nl),
+
             ("store/load", BytecodeBuilder.New()
                 .PushInt(42).Store(0)
                 .PushInt(1).Store(1)
@@ -211,6 +219,14 @@ print(1 + 2 as real);", "3.5\n3\n3\n")
 print(-3.8 as integer);
 print(3 as whole);
 print((3 as whole) as real);", "3\n-3\n3\n3\n")
+            ,
+            ("integer-division",
+@"print(5 / 2);
+print(-5 / 2);
+print(5 / -2);
+print(-5 / -2);
+print(5. / 2);
+print(5 / 2.);", "2\n-2\n-2\n2\n2.5\n2.5\n")
             ,
             ("enum-casts",
 @"enum Direction {
@@ -478,7 +494,7 @@ print(value);
 value--;
 print(value);
 value %= 4;
-print(value);", "5\n15\n7.5\n6.5\n2.5\n"),
+print(value);", "5\n15\n7\n6\n2\n"),
             ("enhanced-assignments-field-and-array-targets",
 @"object Box {
   integer count;
@@ -531,7 +547,7 @@ print(absolute(-3));
 print(sign(-3));
 print(sign(0));
 print(sign(3));
-print(lerp(10, 20, 1 / 4));
+print(lerp(10, 20, 1. / 4));
 print(sine(0));
 print(cosine(0));
 real value = random();
@@ -3377,7 +3393,7 @@ print(absolute(-3));
 print(sign(-3));
 print(sign(0));
 print(sign(3));
-print(lerp(10, 20, 1 / 4));
+print(lerp(10, 20, 1. / 4));
 print(sine(0));
 print(cosine(0));
 real value = random();

@@ -1,5 +1,5 @@
 const BYTECODE_MAGIC = "CODE";
-const BYTECODE_VERSION = 6;
+const BYTECODE_VERSION = 7;
 const HEADER_SIZE = 13;
 const DEBUG_ENTRY_SIZE = 12;
 
@@ -11,6 +11,7 @@ const OpCode = {
   Sub: 0x03,
   Mul: 0x04,
   Div: 0x05,
+  IntDiv: 0x49,
   Print: 0x06,
   Dup: 0x07,
   Swap: 0x08,
@@ -1529,6 +1530,15 @@ export class WebVm {
           });
           break;
 
+        case OpCode.IntDiv:
+          this.integralBinary((a, b) => {
+            if (b === 0) {
+              this.throwRuntime("Division by zero in bytecode.");
+            }
+            return Math.trunc(a / b);
+          });
+          break;
+
         case OpCode.Mod:
           this.numericBinary((a, b) => {
             if (b === 0) {
@@ -2171,6 +2181,12 @@ export class WebVm {
   numericBinary(operation) {
     const b = this.popNumber();
     const a = this.popNumber();
+    this.stack.push(operation(a, b));
+  }
+
+  integralBinary(operation) {
+    const b = Math.trunc(this.popNumber());
+    const a = Math.trunc(this.popNumber());
     this.stack.push(operation(a, b));
   }
 

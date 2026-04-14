@@ -16,7 +16,7 @@ The repo contains:
 - Records with copy-on-assignment/pass/return semantics for data fields and constructors
 - Constants: `constant Type name = value;` (immutable after init)
 - Control flow: `if/then/else`, `switch`, `while`, `for`, `foreach` (numeric bounds and arrays), `break`, and `continue`
-- Expressions: arithmetic (including `%`), comparisons, logical `and/or/not`, enhanced assignments (`+=`, `-=`, `*=`, `/=`, `%=` and postfix `++/--`) across variables, object fields, array elements, and map entries, plus string interpolation and concatenation
+- Expressions: arithmetic (including `%` and truncating integral `/`), comparisons, logical `and/or/not`, enhanced assignments (`+=`, `-=`, `*=`, `/=`, `%=` and postfix `++/--`) across variables, object fields, array elements, and map entries, plus string interpolation and concatenation
 - Time intrinsics: `unix_ms()`, `unix_us()`, `mono_ns()`, `mono_ticks()`, `mono_ticks_per_second()`, `sleep_ms(ms)`
 - Math and randomness intrinsics: `minimum()`, `maximum()`, `absolute()`, `sign()`, `lerp()`, `sine()`, `cosine()`, `random()`
 - Built-in collections: arrays plus `map<Key, Value>`, `set<Value>`, `queue<Value>`, and `stack<Value>` with shared `.length`
@@ -35,9 +35,11 @@ The repo contains:
 See [the language spec](docs/code-language-spec.md), [the feature roadmap](docs/features-roadmap.md), and [the web app/runtime V1 contract](docs/web-app-v1.md) for the current scope and the target developer workflow.
 
 ## Implemented Today vs Planned
-- Implemented today: enumerations, records, `switch`, `break`/`continue`, numeric base prefixes, decimal real literals, explicit numeric/enum casts, escaped interpolation braces, objects, interfaces, arrays, built-in collections, optionals, typed recoverable `fallible<Value, ErrorCode>` errors plus `fallible<Value>` shorthand, time/math intrinsics, grouped/selective/namespace/re-export imports, package manifests/lockfiles/library artifacts, target capability checks, `panic`, and the current web build/runtime slice.
+- Implemented today: enumerations, records, `switch`, `break`/`continue`, numeric base prefixes, decimal real literals, truncating integral `/`, explicit numeric/enum casts, escaped interpolation braces, objects, interfaces, arrays, built-in collections, optionals, typed recoverable `fallible<Value, ErrorCode>` errors plus `fallible<Value>` shorthand, time/math intrinsics, grouped/selective/namespace/re-export imports, package manifests/lockfiles/library artifacts, target capability checks, `panic`, and the current web build/runtime slice.
 - Implemented today: top-level module visibility modifiers (`public`, `package`, `private`) with legacy `export` compatibility, plus member-level visibility for object/record fields, constructors, and methods.
-- Planned, not implemented today: propagation shorthand for fallible errors, `fallible<void, E>`, semicolon injection, sized numerics, numeric suffixes, exponent numeric literals, and `foreach` over non-array collections.
+- Planned, not implemented today: propagation shorthand for fallible errors, `fallible<void, E>`, semicolon injection, sized numerics, numeric suffixes, exponent numeric literals, field defaults, and `foreach` over non-array collections.
+- Planned notes-derived language changes: sized numerics should include `byte` as the readable alias for `whole8`, and byte-channel `rgb` / `rgba` overloads should wait until `byte` exists.
+- Planned notes-derived app/runtime changes: add a target-agnostic graphical app profile with top-level lifecycle authoring and an implicit engine prelude, keep explicit `MainScene` valid, prevent generated-page scroll/panning, route normal web-app `print` output to the browser console by default, and move web build to embed-only bytecode by default with a debug/inspection flag for writing `app.bytecode`.
 - Example status and usage live in [the example catalog](docs/example-catalog.md).
 
 ## Current State vs Target Workflow
@@ -103,6 +105,7 @@ dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- --build-web --out path/to
 Current web build behavior:
 - Copies an `assets/` directory from the package root when a manifest exists, otherwise from the entry file directory.
 - Preserves relative asset paths such as `assets/code-sheet.svg` for `draw_image()` / `draw_sprite()`.
+- Currently writes `app.bytecode` and also embeds bytecode in `index.html` so the app can be opened directly; planned polish is embed-only by default plus a debug/inspection flag for emitting `app.bytecode`.
 
 Current limitation: `--build-web` does not yet combine with `--dump-module-graph`.
 
@@ -131,6 +134,8 @@ Test harness covers VM ops, compiler integration (print, arithmetic, functions, 
 - Function returns: explicit `function<T> name(...)` or implicit-void `function name(...)`
 - Naming rule: user-facing APIs prefer fully spelled-out words; accepted domain terms like `hud` remain allowed
 - Numeric literals: decimal integers, `0b` / `0o` / `0x` integer prefixes, and decimal real forms `1.5`, `1.`, `.5`; numeric suffixes and exponent notation remain deferred
+- Division: integral `/` truncates toward zero; use a `real` operand for real division, for example `1. / 2` or `1 as real / 2`
+- Planned numeric changes: sized numerics should include `byte` as the readable alias for `whole8`
 - Explicit casts: `value as whole`, `value as integer`, `value as real`, plus enum-to-integer and integer-to-enum casts; real-to-integer/whole casts truncate toward zero, and enum literal casts validate declared values
 - Arrays: literals `{...}`, typed declarations `array<integer> xs = {1,2,3};`, dynamic `new array<integer>(n);`, `.length`, indexing `xs[i]`, mutation `xs[i] = value`, and growable methods `xs.append(value)` / `xs.remove_at(index)`
 - Built-in collections: `map<Key, Value>` with `items[key]`, `items[key] = value`, `contains(key)`, `remove(key)`; `set<Value>` with `add`, `contains`, `remove`; `queue<Value>` with `enqueue`, `dequeue`, `peek`; `stack<Value>` with `push`, `pop`, `peek`; all expose `.length`
@@ -165,7 +170,7 @@ Test harness covers VM ops, compiler integration (print, arithmetic, functions, 
 - Interface-typed arrays now participate in type checking, indexing, `foreach`, and runtime dispatch; `foreach` support for the newer built-in collections is still deferred
 
 ## Roadmap (high level)
-Active priorities: grow the current `lib/engine/` wrapper layer beyond scene composition into a fuller engine-facing API, continue replacing raw engine stubs with real browser-backed implementations, and expand the browser runtime beyond the current primitives/keyboard/image-sprite slice into richer rendering, input, and audio. The web runtime remains JavaScript for now; a Wasm path is deferred until performance or parity data justifies the extra toolchain cost. Full detail is in [docs/features-roadmap.md](docs/features-roadmap.md) and [docs/platform-roadmap.md](docs/platform-roadmap.md).
+Active priorities: capture notes-derived polish in the gap plan, grow the current `lib/engine/` wrapper layer beyond scene composition into a fuller engine-facing API, add a target-agnostic graphical app profile to reduce `MainScene`/import boilerplate, continue replacing raw engine stubs with real browser-backed implementations, and expand the browser runtime beyond the current primitives/keyboard/image-sprite slice into richer rendering, input, and audio. The web runtime remains JavaScript for now; a Wasm path is deferred until performance or parity data justifies the extra toolchain cost. Full detail is in [docs/features-roadmap.md](docs/features-roadmap.md) and [docs/platform-roadmap.md](docs/platform-roadmap.md).
 
 ## Examples
 See [docs/example-catalog.md](docs/example-catalog.md) for the implementation-truth catalog of runnable, negative, and planned examples.

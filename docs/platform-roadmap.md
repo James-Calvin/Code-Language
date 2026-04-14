@@ -1,6 +1,6 @@
 # Platform, Libraries, and Targets Roadmap
 
-Last updated: 2026-04-05
+Last updated: 2026-04-13
 
 This roadmap is specifically for:
 1) library/package system,
@@ -47,8 +47,10 @@ CLI direction:
 Near-term web build goal:
 - A dedicated web build mode now emits a deployable static site folder via `--build-web`.
 - Default output directory: `dist/` in the package root when a manifest exists, otherwise `dist/` beside the entry `.code` file.
-- Current output: `index.html` + `app.bytecode`, with the runtime loader inlined into `index.html`.
+- Current output: `index.html` + `app.bytecode`, with the runtime loader and bytecode currently inlined into `index.html` so the page opens directly.
+- Planned output polish: default to embed-only bytecode and add/use a debug or inspection flag when a separate `app.bytecode` artifact is desired.
 - Current recommended authoring model: keep `MainScene` thin and compose child objects through `engine.scene.Scene` and `engine.scene.SceneLoop` (with `engine.loop` retained as a compatibility re-export during migration).
+- Planned authoring model: add a target-agnostic graphical app profile that supports top-level lifecycle authoring and an implicit engine prelude, synthesizes the web entry shell first, and leaves explicit `MainScene` valid.
 - The current `web-runtime/index.html` upload flow remains preview-only bootstrap tooling for raw bytecode bring-up and is no longer the primary workflow.
 
 ## 2) Host ABI v1 (concrete draft)
@@ -205,7 +207,7 @@ Library artifact:
 
 Application artifact:
 - `vm-native`: `.bytecode` + optional runner metadata
-- `vm-web`: static site output; current implementation emits `index.html` + `app.bytecode` with an inlined JS loader/runtime
+- `vm-web`: static site output; current implementation emits `index.html` + `app.bytecode` with an inlined JS loader/runtime and embedded bytecode. Planned default is embed-only bytecode, with a debug/inspection flag for emitting `app.bytecode`.
 
 ## 5) Streamlined execution roadmap
 
@@ -225,11 +227,13 @@ Legend:
 | `[x]` | Phase 3 | Web app/runtime V1 contract | Documented in `docs/web-app-v1.md`: scene-object authoring, `start/update/draw` plus optional `draw_hud`, full-window browser runtime, centered `640x360` safe area, hybrid-expanded framing, and static-site output target |
 | `[~]` | Phase 3 | Stdlib as packages | `std.core`, `std.math`, `std.time`, `standard.input_output` packaged and importable |
 | `[x]` | Phase 4 | Web bundle workflow | Implemented first slice: `--build-web` emits a runnable static site folder (`index.html` + `app.bytecode`) instead of relying on the preview harness |
-| `[~]` | Phase 4 | Browser-backed web app runtime | Implemented current slice: generated full-window canvas runtime, `MainScene` lifecycle (`start/update/draw` plus optional `draw_hud`), fixed-step loop, centered `640x360` safe area, hybrid-expanded world framing, copied `assets/` output, and browser-backed rectangles/outlines/lines/circles/polygons/text/images/sprites; expand richer input/audio/content handling |
+| `[!]` | Phase 4 | Web build artifact polish | Default to embedded bytecode in `index.html` without writing duplicate `app.bytecode`; add/use a debug or inspection flag for the separate bytecode artifact |
+| `[~]` | Phase 4 | Browser-backed web app runtime | Implemented current slice: generated full-window canvas runtime, `MainScene` lifecycle (`start/update/draw` plus optional `draw_hud`), fixed-step loop, centered `640x360` safe area, hybrid-expanded world framing, copied `assets` output, and browser-backed rectangles/outlines/lines/circles/polygons/text/images/sprites; expand richer input/audio/content handling and prevent page scroll/panning from app keys |
 | `[~]` | Phase 4 | Web engine host bindings (real impl) | Implemented current scene-runtime bindings for `key_down`, `clear`, `draw_rectangle`, `draw_rectangle_outline`, `draw_line`, `draw_circle`, `draw_circle_outline`, `draw_polygon`, `draw_polygon_outline`, `draw_text`, `draw_image`, `draw_sprite`, `camera_view_*`, `camera_safe_*`, and `screen_width` / `screen_height`; legacy window-handle web stubs still need real implementations or package-level wrappers |
 | `[!]` | Phase 4 | Backend-agnostic API contract | Freeze capability-query and fallback semantics so one Code source can target multiple backends predictably |
+| `[!]` | Phase 5 | Target-agnostic graphical app profile | Allow top-level `start`/`update`/`draw`/`draw_hud` authoring with an implicit engine prelude; synthesize the web entry shell first while preserving explicit `MainScene`, and keep the design portable to future native graphical targets |
 | `[~]` | Phase 5 | Engine core package set | Canonical `engine.scene` now exports `Scene`, `SceneLoop`, and lifecycle interfaces for explicit child-object composition; broader engine packages such as `engine.math` and `engine.ecs` are still pending |
-| `[~]` | Phase 5 | Engine platform adapters | Wrapper layer now includes canonical `engine.colors`, `engine.drawing`, `engine.input`, `engine.viewport`, and `engine.scene` plus compatibility re-export modules `engine.view` / `engine.loop`; still need fuller host-backed package taxonomy for native+web, plus audio |
+| `[~]` | Phase 5 | Engine platform adapters | Wrapper layer now includes canonical `engine.colors`, `engine.drawing`, `engine.input`, `engine.viewport`, and `engine.scene` plus compatibility re-export modules `engine.view` / `engine.loop`; still need fuller host-backed package taxonomy for native+web, byte-channel color overloads after `byte` / `whole8`, plus audio |
 | `[~]` | Phase 5 | `engine.gpu` ABI v1 | Add GPU resource/pipeline/dispatch ABI for compute-heavy and graphics-heavy workloads |
 | `[~]` | Phase 5 | WebGPU backend | Implement `engine.gpu` on `vm-web` with explicit fallback policy when WebGPU is unavailable |
 | `[~]` | Phase 5 | Native GPU backend parity | Implement the same `engine.gpu` ABI on `vm-native` backend(s) for parity and performance |
@@ -259,10 +263,14 @@ This order gets library system + target model stable before engine work starts.
 
 3. **Browser-backed app runtime**
    - Implemented current slice: generated app page and browser runtime fill the window, preserve aspect ratio with a centered `640x360` safe area, expand the visible world when needed, support optional `draw_hud`, own the main loop for a `MainScene`, and expose rectangles/outlines/lines/circles/polygons/text/images/sprites.
-   - Next step: expand richer input/audio/content handling while keeping the higher-level engine-facing API off raw window handles.
+   - Next step: prevent browser scroll/panning from app keys, route normal web-app `print` output to the browser console by default, and expand richer input/audio/content handling while keeping the higher-level engine-facing API off raw window handles.
 
 4. **Engine packages + loop contract**
    - Implemented current slice: importable wrapper modules now exist for colors, drawing, input, viewport queries, scene composition, and scene-loop execution under `lib/engine/`.
    - Next step: grow that wrapper layer into broader `engine.window`, `engine.input`, `engine.gfx`, audio, and higher-level content helpers without collapsing back to raw host symbols.
    - Exit criteria: the runtime contract is reflected in engine-facing modules rather than only raw host ABI symbols.
+
+5. **Graphical app profile**
+   - Planned notes-derived direction: reduce `MainScene` and import boilerplate with a target-agnostic app profile, top-level lifecycle authoring, and an implicit engine prelude.
+   - First implementation target should be `--build-web`; explicit `MainScene` remains supported as the compatibility and advanced path.
 

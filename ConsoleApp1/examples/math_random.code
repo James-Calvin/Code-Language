@@ -4,7 +4,7 @@ print(absolute(-3));
 print(sign(-3));
 print(sign(0));
 print(sign(3));
-print(lerp(10, 20, 1 / 4));
+print(lerp(10, 20, 1. / 4));
 print(sine(0));
 print(cosine(0));
 

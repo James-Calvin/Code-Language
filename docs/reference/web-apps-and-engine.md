@@ -12,6 +12,10 @@ Output folder:
 - `app.bytecode`
 - copied `assets/` folder when present
 
+Current note:
+
+- The generated `index.html` currently embeds the bytecode for direct opening and also writes `app.bytecode` as a separate artifact. Planned polish is embed-only by default plus a debug/inspection flag for emitting `app.bytecode`.
+
 Default output:
 
 - package root `dist/` when a nearest `code.package.json` exists
@@ -66,6 +70,7 @@ Common mistakes:
 
 - Missing `MainScene` or required lifecycle methods fails the web build.
 - Keep `MainScene` thin for larger apps and compose child objects through `engine.scene`.
+- A target-agnostic graphical app profile is planned to reduce `MainScene` and import boilerplate with top-level lifecycle authoring and an implicit engine prelude, but explicit `MainScene` is still the implemented entry contract today.
 
 ## Coordinates
 
@@ -135,6 +140,7 @@ Draw.rectangle(100, 80, 32, 32, rgb(1, 1, 1));
 Common mistakes:
 
 - Color channels are real values, commonly from `0` to `1`.
+- Byte-channel color overloads such as `rgb(byte, byte, byte)` are planned after sized numerics add `byte` as the readable alias for `whole8`; do not write those overloads today.
 - `polygon` points are a flat numeric array: `{x1, y1, x2, y2, ...}`.
 - `text` alignment strings are `"left"`, `"center"`, `"right"` and `"top"`, `"middle"`, `"bottom"`.
 

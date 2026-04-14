@@ -71,6 +71,7 @@ function main(string[] arguments) {
 - Conversions and promotions:
   - User-written casts are supported as `value as Type` for `whole`, `integer`, `real`, and enum types.
   - Numeric casts between `whole`, `integer`, and `real` are explicit conversions; `real as integer` and `real as whole` truncate toward zero at runtime, reject non-finite or out-of-range values, and `as whole` also rejects negative values.
+  - Integral `/` truncates toward zero; use a `real` operand such as `1. / 2` or `1 as real / 2` for real division.
   - Enum casts are limited to `EnumValue as integer` and `integerValue as EnumName`; literal integer-to-enum casts must match a declared enum member value.
   - Current implicit promotions are limited to the compiler's existing numeric widening rules.
 
@@ -713,8 +714,10 @@ if x > 3 then panic("x too large");
 - Fallible-error propagation shorthand such as `try`.
 - `fallible<void, ErrorCode>` statement-level ergonomics.
 - Semicolon injection.
-- Sized numeric types, numeric literal suffixes, and exponent numeric literals.
+- Field defaults in object/record bodies, for example `integer radius = 7;`.
+- Sized numeric types, including `byte` as the readable alias for `whole8`; numeric literal suffixes and exponent numeric literals.
 - `foreach` over `map`, `set`, `queue`, and `stack`; planned map iteration should yield entry values.
+- Byte-channel color overloads such as `rgb(byte, byte, byte)` and `rgba(byte, byte, byte, byte)` after `byte` exists; current color helpers use real channels.
 
 ## 16. Comments
 - Single-line comments:

@@ -1,9 +1,9 @@
 # Bytecode Specification (draft)
 
-Version: 0.11 (2026-04-12)
+Version: 0.12 (2026-04-13)
 
 ## File format
-- Header: `CODE` ASCII (4 bytes) + version byte (`0x06`) + int32 `codeSize` + int32 `debugCount`.
+- Header: `CODE` ASCII (4 bytes) + version byte (`0x07`) + int32 `codeSize` + int32 `debugCount`.
 - Encoding: little-endian integers and IEEE-754 `real` operands.
 - Layout: header, then `codeSize` bytes of opcodes/operands, followed by `debugCount` debug entries (`ip`, `line`, `column`; each int32).
 - Produced files should use the `.bytecode` extension.
@@ -25,7 +25,7 @@ Version: 0.11 (2026-04-12)
 - VM execution/disassembly tools may consume `.codelib` by decoding embedded `bytecode`.
 
 ## Stack conventions
-- Operand stack stores numeric values as `int`, `long`, or `double` (numeric ops coerce to double math); strings, runtime object/record values, and fallible success/error values are boxed.
+- Operand stack stores numeric values as `int`, `long`, or `double`; most numeric ops coerce to double math, while `INT_DIV` truncates integral division toward zero. Strings, runtime object/record values, and fallible success/error values are boxed.
 - Locals are indexed slots separate from the operand stack; they auto-grow on demand. Functions record a high-water mark for frame size.
 - Call frames: `CALL` creates a new locals array sized by the callee; `RET` restores previous locals and IP, leaving the return value on the operand stack.
 
@@ -104,6 +104,7 @@ Version: 0.11 (2026-04-12)
 | 0x46 | `CAST_INTEGER` | - | 0 | Pop numeric value, truncate toward zero, reject non-finite or out-of-range, push integer |
 | 0x47 | `CAST_WHOLE` | - | 0 | Pop numeric value, truncate toward zero, reject non-finite, negative, or out-of-range, push whole-compatible integer |
 | 0x48 | `CAST_REAL` | - | 0 | Pop numeric value, push it as a real value |
+| 0x49 | `INT_DIV` | - | -1 | Pop integral `a`, `b`; push `a / b` truncated toward zero; throws on divide-by-zero |
 | 0xFF | `HALT` | - | 0 | Stop execution |
 
 ## Planned additions
@@ -121,7 +122,7 @@ Version: 0.11 (2026-04-12)
 - Maps and sets use VM-managed keyed containers. `MAP_GET` throws on missing keys. `MAP_CONTAINS` / `SET_CONTAINS` return `1` or `0`. Remove operations are no-ops when the entry is absent.
 - Queues and stacks use VM-managed containers with empty-checking on `QUEUE_DEQUEUE` / `QUEUE_PEEK` / `STACK_POP` / `STACK_PEEK`.
 - Fallible values are VM-managed success/error wrappers used by user-facing `fallible<Value, ErrorCode>` recoverable errors. The one-argument source shorthand `fallible<Value>` normalizes to integer-coded fallible values before bytecode emission, and message-only source errors lower as code `0` plus message. `panic(...)` remains separate and lowers to `THROW_ERROR`.
-- Decimal-point source literals lower to `PUSH_REAL`; explicit numeric casts lower to `CAST_INTEGER`, `CAST_WHOLE`, or `CAST_REAL`. Enum-to-integer and integer-to-enum casts remain integer-backed and do not require separate bytecode.
+- Decimal-point source literals lower to `PUSH_REAL`; integral `/` lowers to `INT_DIV`, while real division lowers to `DIV`; explicit numeric casts lower to `CAST_INTEGER`, `CAST_WHOLE`, or `CAST_REAL`. Enum-to-integer and integer-to-enum casts remain integer-backed and do not require separate bytecode.
 - Objects and records are stored as VM-managed instances with a type name and field dictionary; field access is name-based via `GET_FIELD` / `SET_FIELD`. `NEW_OBJECT` creates reference-identity objects; `NEW_RECORD` creates value-semantic record instances used by record construction and record cloning.
 - Object methods currently lower to regular `CALL` sites with implicit `this` prepended to explicit arguments; overload choice is resolved at compile time.
 - Interface declarations and `implement` mappings remain compile-time metadata; interface-typed calls lower to `INTERFACE_CALL` dispatch tables that map runtime type names to method targets.

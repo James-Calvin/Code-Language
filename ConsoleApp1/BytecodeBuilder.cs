@@ -51,6 +51,7 @@ sealed class BytecodeBuilder
     public BytecodeBuilder Sub() { RecordDebug(); _bytes.Add((byte)OpCode.Sub); return this; }
     public BytecodeBuilder Mul() { RecordDebug(); _bytes.Add((byte)OpCode.Mul); return this; }
     public BytecodeBuilder Div() { RecordDebug(); _bytes.Add((byte)OpCode.Div); return this; }
+    public BytecodeBuilder IntDiv() { RecordDebug(); _bytes.Add((byte)OpCode.IntDiv); return this; }
     public BytecodeBuilder Mod() { RecordDebug(); _bytes.Add((byte)OpCode.Mod); return this; }
     public BytecodeBuilder Print() { RecordDebug(); _bytes.Add((byte)OpCode.Print); return this; }
     public BytecodeBuilder Dup() { RecordDebug(); _bytes.Add((byte)OpCode.Dup); return this; }

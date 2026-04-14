@@ -12,8 +12,10 @@ Use [Example Catalog](../example-catalog.md) and the current compiler as the tru
 | `fallible<void, E>` | Deferred. Fallible success type cannot be `void` today. |
 | Semicolon injection | Draft-only. Write semicolons today. |
 | Sized numeric types such as `integer8`, `whole32`, `real64` | Draft-only in current docs. |
+| `byte` as a readable alias for `whole8` | Planned as part of sized numerics; `byte` is accepted as a readable domain term. |
 | Numeric literal suffixes such as `i32`, `w64`, `r32` | Draft-only. |
 | Exponent numeric literals such as `1e3` or `1.5e-2` | Draft-only. |
+| Field defaults such as `integer radius = 7;` inside object or record bodies | Planned. Fields still require constructor initialization today. |
 | `foreach` over `map`, `set`, `queue`, and `stack` | Deferred. `foreach` supports numeric counts and arrays today; planned map iteration should yield entry values. |
 
 ## Package and Module Features
@@ -30,10 +32,15 @@ Use [Example Catalog](../example-catalog.md) and the current compiler as the tru
 | Feature | Status |
 | --- | --- |
 | Broader standard library beyond current containers, math, time, IO baseline | Planned. |
+| Byte-channel color overloads such as `rgb(byte, byte, byte)` and `rgba(byte, byte, byte, byte)` | Planned after `byte` / `whole8` exists. Current `rgb` / `rgba` use real channels commonly from `0` to `1`. |
 | Mouse/touch input | Out of current V1 web slice. |
 | Audio APIs | Out of current V1 web slice. |
 | Physics APIs | Out of current V1 web slice. |
 | Richer content handling and asset pipeline | Planned. Current web build copies `assets/`. |
+| Target-agnostic graphical app profile | Planned. The desired shape is top-level lifecycle authoring with an implicit engine prelude and a synthesized entry shell for `--build-web` first, while keeping explicit `MainScene` valid. |
+| Generated web app scroll/panning prevention | Planned polish. Generated pages should prevent browser scrolling from arrow/space keys and related page defaults. |
+| Browser app `print` to console by default | Planned polish. The on-screen overlay should be fatal/runtime diagnostics or explicit debug output, not normal `print` output. |
+| Embed-only web bytecode default with optional debug artifact | Planned polish. Current web builds write `app.bytecode` and also embed the bytecode in `index.html` so the page can open directly; the planned default is embedded bytecode only, with a flag for writing `app.bytecode` when needed. |
 | Real browser-backed implementations for remaining raw window-handle engine stubs | Planned or wrapper-directed. Scene-runtime drawing/input are the current default. |
 | Capability query and fallback APIs | Planned design requirement. |
 | `engine.gpu`, WebGPU backend, native GPU parity | Roadmap item. |

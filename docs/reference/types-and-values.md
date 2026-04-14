@@ -15,7 +15,7 @@ Example:
 
 ```code
 integer lives = 3;
-real half = 1 / 2;
+real half = 1. / 2;
 boolean alive = lives > 0;
 string label = "lives={lives}";
 print(label);
@@ -29,6 +29,7 @@ Common mistakes:
 - Exponent notation and numeric literal suffixes are not implemented yet.
 - Explicit casts are limited to numeric types and enum/integer conversions: `value as integer`, `value as whole`, `value as real`, `EnumName.Member as integer`, and `integer_value as EnumName`.
 - `real as integer` and `real as whole` truncate toward zero; `as whole` rejects negative runtime values.
+- Integral `/` is truncating integer division. Use a `real` operand for real division, for example `1. / 2` or `1 as real / 2`.
 
 ## Arrays
 

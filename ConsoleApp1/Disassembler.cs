@@ -67,6 +67,7 @@ static class Disassembler
                 case OpCode.Sub:
                 case OpCode.Mul:
                 case OpCode.Div:
+                case OpCode.IntDiv:
                 case OpCode.Mod:
                 case OpCode.Print:
                 case OpCode.Dup:

@@ -3184,14 +3184,19 @@ export object MainScene {
             bool matched =
                 string.Equals(Path.GetFileName(outputs.OutputDirectory), "dist", StringComparison.OrdinalIgnoreCase) &&
                 outputs.IndexHtmlExists &&
-                outputs.BytecodeExists &&
-                outputs.BytecodeLength > 0 &&
+                !outputs.BytecodeExists &&
+                outputs.BytecodeLength == 0 &&
                 outputs.OutputFiles.Any(path => string.Equals(
                     path.Replace('\\', '/'),
                     "assets/code-sheet.svg",
                     StringComparison.OrdinalIgnoreCase)) &&
                 outputs.IndexHtml.Contains("CanvasSceneRuntime", StringComparison.Ordinal) &&
                 outputs.IndexHtml.Contains("APP_METADATA", StringComparison.Ordinal) &&
+                outputs.IndexHtml.Contains("APP_BYTECODE_BASE64", StringComparison.Ordinal) &&
+                outputs.IndexHtml.Contains("output: line => console.log(line)", StringComparison.Ordinal) &&
+                !outputs.IndexHtml.Contains("output: line => runtime.appendOutput(line)", StringComparison.Ordinal) &&
+                outputs.IndexHtml.Contains("this.appControlKeyCodes = new Set([32, 33, 34, 35, 36, 37, 38, 39, 40])", StringComparison.Ordinal) &&
+                outputs.IndexHtml.Contains("event.preventDefault()", StringComparison.Ordinal) &&
                 outputs.IndexHtml.Contains("\"typeName\": \"MainScene\"", StringComparison.Ordinal) &&
                 outputs.IndexHtml.Contains("\"virtualWidth\": 640", StringComparison.Ordinal) &&
                 outputs.IndexHtml.Contains("\"virtualHeight\": 360", StringComparison.Ordinal) &&
@@ -3213,6 +3218,53 @@ export object MainScene {
         {
             failures++;
             Console.WriteLine($"[FAIL] web-build-scene-runtime: threw {ex.GetType().Name} - {ex.Message}");
+        }
+
+        try
+        {
+            var outputs = BuildWebApp(
+                new Dictionary<string, string>
+                {
+                    ["main.code"] =
+@"export object MainScene {
+  constructor() {
+  }
+
+  function start() {
+  }
+
+  function update() {
+  }
+
+  function draw() {
+    print(""hello web"");
+  }
+}"
+                },
+                "main.code",
+                emitWebBytecode: true);
+
+            bool matched =
+                outputs.IndexHtmlExists &&
+                outputs.BytecodeExists &&
+                outputs.BytecodeLength > 0 &&
+                outputs.IndexHtml.Contains("APP_BYTECODE_BASE64", StringComparison.Ordinal) &&
+                outputs.IndexHtml.Contains("output: line => console.log(line)", StringComparison.Ordinal);
+
+            if (!matched)
+            {
+                failures++;
+                Console.WriteLine("[FAIL] web-build-emit-bytecode: generated web app did not emit expected app.bytecode artifact");
+            }
+            else
+            {
+                Console.WriteLine("[PASS] web-build-emit-bytecode");
+            }
+        }
+        catch (Exception ex)
+        {
+            failures++;
+            Console.WriteLine($"[FAIL] web-build-emit-bytecode: threw {ex.GetType().Name} - {ex.Message}");
         }
 
         try
@@ -4296,7 +4348,8 @@ print(sum);";
     private static WebBuildOutputs BuildWebApp(
         IReadOnlyDictionary<string, string> files,
         string entryRelativePath,
-        string? outputDirectory = null)
+        string? outputDirectory = null,
+        bool emitWebBytecode = false)
     {
         string tempRoot = Path.Combine(Path.GetTempPath(), "code-web-build-tests-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tempRoot);
@@ -4309,11 +4362,15 @@ print(sum);";
                 ? null
                 : Path.GetFullPath(Path.Combine(tempRoot, outputDirectory));
 
-            var result = WebBuildPipeline.Build(entryPath, resolvedOutputDirectory);
+            var result = WebBuildPipeline.Build(
+                entryPath,
+                resolvedOutputDirectory,
+                emitWebBytecode: emitWebBytecode);
             bool indexHtmlExists = File.Exists(result.IndexHtmlPath);
-            bool bytecodeExists = File.Exists(result.BytecodePath);
+            string bytecodePath = result.BytecodePath ?? Path.Combine(result.OutputDirectory, "app.bytecode");
+            bool bytecodeExists = File.Exists(bytecodePath);
             string indexHtml = indexHtmlExists ? File.ReadAllText(result.IndexHtmlPath) : string.Empty;
-            int bytecodeLength = bytecodeExists ? File.ReadAllBytes(result.BytecodePath).Length : 0;
+            int bytecodeLength = bytecodeExists ? File.ReadAllBytes(bytecodePath).Length : 0;
             var outputFiles = Directory.GetFiles(result.OutputDirectory, "*", SearchOption.AllDirectories)
                 .Select(path => Path.GetRelativePath(result.OutputDirectory, path))
                 .ToList();
@@ -4321,7 +4378,7 @@ print(sum);";
             return new WebBuildOutputs(
                 result.OutputDirectory,
                 result.IndexHtmlPath,
-                result.BytecodePath,
+                bytecodePath,
                 indexHtmlExists,
                 bytecodeExists,
                 bytecodeLength,
@@ -4396,11 +4453,12 @@ print(sum);";
             Directory.CreateDirectory(outputDirectory);
             string examplePath = GetRepoPath(relativePath);
             var result = WebBuildPipeline.Build(examplePath, outputDirectory);
+            string bytecodePath = result.BytecodePath ?? Path.Combine(result.OutputDirectory, "app.bytecode");
 
             bool matched =
                 File.Exists(result.IndexHtmlPath) &&
-                File.Exists(result.BytecodePath) &&
-                File.ReadAllBytes(result.BytecodePath).Length > 0 &&
+                result.BytecodePath is null &&
+                !File.Exists(bytecodePath) &&
                 File.ReadAllText(result.IndexHtmlPath).Contains("MainScene", StringComparison.Ordinal);
 
             if (!matched)

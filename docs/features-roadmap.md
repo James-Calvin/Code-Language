@@ -21,9 +21,8 @@ This roadmap is implementation-truthful: items marked below are gaps from the cu
 1. Broader standard-library modules after the core container/math baseline lands
 
 ### Web Runtime and Tooling Gaps
-1. Generated web apps should prevent browser scroll/panning, including arrow and space key default browser behavior
-2. Web-app `print` should write to the browser console by default; on-screen output should be fatal/runtime diagnostics or an explicit debug mode
-3. Web build should move to embed-only bytecode by default and provide a debug/inspection flag for emitting `app.bytecode`
+1. Richer browser input/audio/content handling beyond keyboard and copied assets
+2. Optional explicit debug-output mode if normal `print` output ever needs to appear in-page again
 
 ### Engine and App Ergonomics Gaps
 1. Target-agnostic graphical app profile with top-level lifecycle authoring, implicit engine prelude, and synthesized entry shell for `--build-web` first
@@ -109,9 +108,9 @@ This roadmap is implementation-truthful: items marked below are gaps from the cu
 | `[x]` | Platform/targets | Target capability validation | Implemented baseline: inferred capability groups (`std.*`, `engine.*`) from package/imports with compile-time matrix checks (`vm-web` rejects `std.fs`) |
 | `[x]` | Platform/targets | Web app/runtime V1 contract | Documented in `docs/web-app-v1.md`: scene object convention, `start/update/draw` plus optional `draw_hud`, full-window browser runtime, centered `640x360` safe area, hybrid-expanded framing, current primitive/image-sprite/keyboard scope, wrapper-layer guidance, and static site folder target |
 | `[~]` | Platform/targets | Host ABI baseline | Implemented baseline `HOST_CALL` opcode + host binding tables for native/web modes (`standard.input_output.print`, `std.time.*`, native-only `standard.input_output.read_line`/`std.time.sleep_ms` with diagnostics) and engine stubs (`engine.window/input/gfx`); compile-time capability inference includes host-lowered intrinsics |
-| `[x]` | Platform/targets | Static-site web build workflow | Implemented first slice: `--build-web` emits a runnable `dist/` folder (or custom `--out`) with `index.html` + `app.bytecode` |
-| `[!]` | Platform/targets | Web build artifact polish | Planned notes-derived change: embed bytecode in `index.html` by default for direct opening, and emit `app.bytecode` only through a debug/inspection flag |
-| `[~]` | Platform/targets | Browser-backed web app runtime | Implemented current slice: generated full-window canvas runtime owns resize, timing, `MainScene` lifecycle, optional `draw_hud`, centered `640x360` safe area, hybrid-expanded framing, copied `assets/` output, and rectangles/outlines/lines/circles/polygons/text/images/sprites; expand richer input/audio/content handling, including scroll/panning prevention and console-oriented web `print` behavior |
+| `[x]` | Platform/targets | Static-site web build workflow | Implemented: `--build-web` emits a runnable `dist/` folder (or custom `--out`) with `index.html`, embedded bytecode, copied `assets/` when present, and optional `app.bytecode` via `--emit-web-bytecode` |
+| `[x]` | Platform/targets | Web build artifact polish | Implemented notes-derived change: bytecode is embedded in `index.html` by default for direct opening, and `app.bytecode` is emitted only with `--emit-web-bytecode` |
+| `[~]` | Platform/targets | Browser-backed web app runtime | Implemented current slice: generated full-window canvas runtime owns resize, timing, `MainScene` lifecycle, optional `draw_hud`, centered `640x360` safe area, hybrid-expanded framing, copied `assets/` output, rectangles/outlines/lines/circles/polygons/text/images/sprites, app-key scroll prevention, and console-routed web `print`; expand richer input/audio/content handling |
 | `[!]` | Platform/targets | Graphical app profile | Planned notes-derived direction: add a target-agnostic app profile with top-level lifecycle authoring and implicit engine prelude, synthesize the web entry shell first, and keep explicit `MainScene` supported |
 | `[~]` | Platform/targets | Web engine host bindings | Implemented current scene-runtime bindings for `key_down`, `clear`, `draw_rectangle`, `draw_rectangle_outline`, `draw_line`, `draw_circle`, `draw_circle_outline`, `draw_polygon`, `draw_polygon_outline`, `draw_text`, `draw_image`, `draw_sprite`, `camera_view_*`, `camera_safe_*`, and `screen_width` / `screen_height`; legacy window/input/gfx handle-based stubs still need real browser-backed behavior or wrappers |
 | `[!]` | Platform/targets | Backend-agnostic engine API contract | Lock capability-query + fallback semantics so Code source remains portable across web/native backends |
@@ -133,8 +132,8 @@ This roadmap is implementation-truthful: items marked below are gaps from the cu
 | `[~]` | Testing | Object-model fuzz/property domains | Constructor/field mutation/member access invariants |
 
 ## Priority Rollup (benefit/effort)
-- High (`[!]`): keeping example/docs status aligned with implementation truth; notes-derived polish for field defaults, web build output, and the graphical app profile.
-- Medium (`[~]`): fallible propagation shorthand, exact wide numerics/suffixes/exponent literals, constant pool, optimizer expansion, tooling polish, and engine core/adapters.
+- High (`[!]`): keeping example/docs status aligned with implementation truth; notes-derived polish for field defaults and the graphical app profile.
+- Medium (`[~]`): fallible propagation shorthand, exact wide numerics/suffixes/exponent literals, richer browser input/audio/content handling, constant pool, optimizer expansion, tooling polish, and engine core/adapters.
 - Low (`[_]`): REPL, future stdlib/versioning, long-term runtime lifecycle strategy, remote package registry, and longer-horizon GPU/backend work.
 
 See also: `docs/platform-roadmap.md` for ABI schema, package manifest schema, and phased execution plan.

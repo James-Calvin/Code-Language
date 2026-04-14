@@ -22,6 +22,7 @@ internal static class Program
         string? moduleGraphFormat = null;
         bool traceLinker = false;
         bool buildWeb = false;
+        bool emitWebBytecode = false;
         bool targetSpecified = false;
         CompileTarget compileTarget = CompileTarget.VmNative;
 
@@ -43,6 +44,9 @@ internal static class Program
                     break;
                 case "--build-web":
                     buildWeb = true;
+                    break;
+                case "--emit-web-bytecode":
+                    emitWebBytecode = true;
                     break;
                 case "--skip-tests":
                     skipTests = true;
@@ -99,6 +103,9 @@ internal static class Program
         if (moduleGraphFormat is not null && !dumpModuleGraph)
             Fail("--module-graph-format requires --dump-module-graph.");
 
+        if (emitWebBytecode && !buildWeb)
+            Fail("--emit-web-bytecode requires --build-web.");
+
         if (buildWeb)
         {
             if (targetSpecified && compileTarget != CompileTarget.VmWeb)
@@ -129,7 +136,7 @@ internal static class Program
                 if (dumpModuleGraph || moduleGraphOutputPath is not null || moduleGraphFormat is not null)
                     Fail("Module graph options are not supported with --build-web yet.");
 
-                BuildWebApp(codePath, outPath, traceLinker);
+                BuildWebApp(codePath, outPath, traceLinker, emitWebBytecode);
                 return;
             }
 
@@ -229,7 +236,8 @@ internal static class Program
     private static void BuildWebApp(
         string sourcePath,
         string? outputDirectory,
-        bool traceLinker)
+        bool traceLinker,
+        bool emitWebBytecode)
     {
         var source = File.ReadAllText(sourcePath);
         try
@@ -238,10 +246,13 @@ internal static class Program
                 sourcePath,
                 outputDirectory,
                 traceLinker,
-                traceLinker ? message => Console.Error.WriteLine($"[linker] {message}") : null);
+                traceLinker ? message => Console.Error.WriteLine($"[linker] {message}") : null,
+                emitWebBytecode);
 
             Console.WriteLine($"Built web app {sourcePath} -> {result.OutputDirectory}");
             Console.WriteLine($"Entry page: {result.IndexHtmlPath}");
+            if (result.BytecodePath is not null)
+                Console.WriteLine($"Bytecode: {result.BytecodePath}");
         }
         catch (CompilerException ce)
         {

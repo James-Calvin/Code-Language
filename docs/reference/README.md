@@ -43,7 +43,7 @@ dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- ConsoleApp1/examples/arit
 dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- --build-web ConsoleApp1/examples/shape_dodge.code
 ```
 
-The web build emits a static site folder containing `index.html` and `app.bytecode`. If an `assets/` folder exists beside the entry file or package root, it is copied into the output.
+The web build emits a static site folder containing `index.html` with embedded bytecode. If an `assets/` folder exists beside the entry file or package root, it is copied into the output. Use `--emit-web-bytecode` with `--build-web` to also write `app.bytecode` for debugging or inspection.
 
 ## Reference Format
 

@@ -94,8 +94,9 @@ dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- --build-web --out .tmp/we
 Behavior:
 
 - Forces target `vm-web`.
-- Emits `index.html` and `app.bytecode`.
+- Emits `index.html` with embedded bytecode.
 - Copies `assets/` when present.
+- Use `--emit-web-bytecode` with `--build-web` to also write `app.bytecode` for debugging or inspection.
 
 Common mistakes:
 

@@ -1,6 +1,6 @@
 # Web App Runtime V1 Contract
 
-Last updated: 2026-04-05
+Last updated: 2026-04-14
 Status: implemented in a first working slice; broader engine/runtime expansion is still in progress
 
 ## Purpose
@@ -40,6 +40,9 @@ Current state:
 - The current browser-backed V1 slice supports `MainScene`, `start()`, `update()`, `draw()`, optional `draw_hud()`, full-window presentation, hybrid-expanded framing around a fixed `640x360` safe area, `key_down()`, `clear()`, `draw_rectangle()`, `draw_rectangle_outline()`, `draw_line()`, `draw_circle()`, `draw_circle_outline()`, `draw_polygon()`, `draw_polygon_outline()`, `draw_text()`, `draw_image()`, `draw_sprite()`, `camera_view_*()`, `camera_safe_*()`, `screen_width()`, and `screen_height()`.
 - A higher-level wrapper layer now exists under `lib/engine/`: canonical modules `engine.colors`, `engine.drawing`, `engine.input`, `engine.viewport`, and `engine.scene`, with compatibility re-export modules `engine.view` and `engine.loop`.
 - Scene composition is now supported through explicit child-object registration against `Scene`.
+- Generated apps prevent browser scroll/panning for app-control keys: arrows, Space, Page Up, Page Down, Home, and End.
+- Normal generated-app `print` output goes to the browser console by default; the on-screen overlay is reserved for fatal/runtime diagnostics.
+- Web builds embed bytecode in `index.html` by default and only emit `app.bytecode` when `--emit-web-bytecode` is used.
 - `web-runtime/index.html` still exists as a lower-level harness for loading raw `.bytecode` / `.codelib` files during debugging and bring-up.
 - Legacy window-handle engine host bindings still exist, but they are not the default scene-object workflow.
 
@@ -48,8 +51,6 @@ Planned V1 behavior:
 - Expand beyond the current primitive/image-sprite/keyboard slice without forcing raw browser/bootstrap concerns into user code.
 - Reduce reliance on the lower-level upload harness in day-to-day development.
 - Add a target-agnostic graphical app profile that can synthesize the entry shell from top-level lifecycle authoring and an implicit engine prelude for `--build-web` first, without removing explicit `MainScene`.
-- Prevent generated-page scroll/panning, including arrow/space key browser defaults, so game input does not move the page.
-- Route normal web-app `print` output to the browser console by default; reserve on-screen output for fatal/runtime diagnostics or explicit debug mode.
 
 ## Scene Object Contract
 
@@ -332,20 +333,15 @@ Out of scope for V1:
 The web build flow must produce a deployable static site folder.
 
 Required output:
-- `index.html`
-- compiled program artifact(s)
+- `index.html` containing embedded compiled bytecode
 
 Current implementation output:
 - `index.html`
-- `app.bytecode`
 - copied `assets/` directory when present beside the entry file or in the package root
 - The runtime loader is currently inlined into `index.html`.
-- The compiled bytecode is also embedded in `index.html` today so direct opening does not require a fetch of `app.bytecode`.
+- The compiled bytecode is embedded in `index.html` so direct opening does not require a fetch of `app.bytecode`.
+- `app.bytecode` is emitted only when `--emit-web-bytecode` is passed to `--build-web`.
 - The browser VM/runtime is currently JavaScript. Wasm is deferred until measured performance or parity work justifies the extra build/tooling complexity.
-
-Planned output polish:
-- Default to embed-only bytecode so `index.html` remains directly openable without also writing a duplicate `app.bytecode`.
-- Add or use a debug/inspection flag to emit `app.bytecode` when separate artifact inspection is useful.
 
 Required behavior:
 - Opening `dist/index.html` runs the app directly.

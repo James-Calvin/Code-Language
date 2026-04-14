@@ -26,7 +26,7 @@ The repo contains:
 - File modules: top-level declaration visibility (`public`, `package`, `private`) plus member-level visibility for object/record fields, constructors, and methods; legacy `export`; imports (`import Name [as Alias] from "path";`, `import { A, B as C } from "path";`, `import everything as Namespace from "path";`, `export import ...`); package-aware import checks; recursive linking; and `lib/` search
 - Package manifest + lockfile baseline: nearest `code.package.json` is parsed/validated during module compile; local dependency graph resolves and `code.lock.json` is generated
 - Host ABI baseline: compiler emits `HOST_CALL` for `print`, time/math intrinsics, native-only APIs (`standard.input_output.read_line`, `std.time.sleep_ms`), and engine stubs (`engine.window/*`, `engine.input/*`, `engine.gfx/*`)
-- Web app build/runtime V1 slice: `--build-web` emits a runnable static site folder with `index.html`, `app.bytecode`, copied `assets/` content when present, a full-bleed canvas runtime, `MainScene` scene-object lifecycle (`start/update/draw` plus optional `draw_hud()`), guaranteed `640x360` safe area, hybrid-expand world framing, HUD screen-space, and browser-backed `key_down()`/`clear()`/`draw_rectangle()`/`draw_rectangle_outline()`/`draw_line()`/`draw_circle()`/`draw_circle_outline()`/`draw_polygon()`/`draw_polygon_outline()`/`draw_text()`/`draw_image()`/`draw_sprite()`
+- Web app build/runtime V1 slice: `--build-web` emits a runnable static site folder with `index.html`, copied `assets/` content when present, embedded bytecode by default, optional `app.bytecode` emission via `--emit-web-bytecode`, a full-bleed canvas runtime, `MainScene` scene-object lifecycle (`start/update/draw` plus optional `draw_hud()`), guaranteed `640x360` safe area, hybrid-expand world framing, HUD screen-space, browser-backed `key_down()`/`clear()`/`draw_rectangle()`/`draw_rectangle_outline()`/`draw_line()`/`draw_circle()`/`draw_circle_outline()`/`draw_polygon()`/`draw_polygon_outline()`/`draw_text()`/`draw_image()`/`draw_sprite()`, app-key scroll prevention, and normal web-app `print` output routed to the browser console
 - Higher-level engine wrapper layer: root `lib/engine/` modules now provide `engine.colors`, `engine.drawing`, `engine.input`, `engine.viewport`, and `engine.scene`, with compatibility modules `engine.view` and `engine.loop`, including explicit child-object scene composition over split lifecycle interfaces
 - Browser runtime harness (`web-runtime/`): lower-level JavaScript VM harness for loading raw `.bytecode` / `.codelib` files during bring-up and debugging
 - Runtime diagnostics: bytecode debug map -> line/column stack traces
@@ -39,7 +39,7 @@ See [the language spec](docs/code-language-spec.md), [the feature roadmap](docs/
 - Implemented today: top-level module visibility modifiers (`public`, `package`, `private`) with legacy `export` compatibility, plus member-level visibility for object/record fields, constructors, and methods.
 - Planned, not implemented today: propagation shorthand for fallible errors, `fallible<void, E>`, semicolon injection, `integer64` / `whole64`, numeric suffixes, exponent numeric literals, field defaults, and `foreach` over non-array collections.
 - Planned notes-derived language changes: byte-channel `rgb` / `rgba` overloads should build on the implemented `byte` / `whole8` type surface.
-- Planned notes-derived app/runtime changes: add a target-agnostic graphical app profile with top-level lifecycle authoring and an implicit engine prelude, keep explicit `MainScene` valid, prevent generated-page scroll/panning, route normal web-app `print` output to the browser console by default, and move web build to embed-only bytecode by default with a debug/inspection flag for writing `app.bytecode`.
+- Planned notes-derived app/runtime changes: add a target-agnostic graphical app profile with top-level lifecycle authoring and an implicit engine prelude, keep explicit `MainScene` valid, and expand richer browser input/audio/content handling.
 - Example status and usage live in [the example catalog](docs/example-catalog.md).
 
 ## Current State vs Target Workflow
@@ -105,7 +105,9 @@ dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- --build-web --out path/to
 Current web build behavior:
 - Copies an `assets/` directory from the package root when a manifest exists, otherwise from the entry file directory.
 - Preserves relative asset paths such as `assets/code-sheet.svg` for `draw_image()` / `draw_sprite()`.
-- Currently writes `app.bytecode` and also embeds bytecode in `index.html` so the app can be opened directly; planned polish is embed-only by default plus a debug/inspection flag for emitting `app.bytecode`.
+- Embeds bytecode in `index.html` by default so the app can be opened directly without fetching a separate artifact.
+- Use `--emit-web-bytecode` with `--build-web` to also write `app.bytecode` for debugging or inspection.
+- Generated web apps prevent browser scroll/panning for app-control keys and route normal `print` output to the browser console; the on-screen overlay is reserved for fatal/runtime diagnostics.
 
 Current limitation: `--build-web` does not yet combine with `--dump-module-graph`.
 

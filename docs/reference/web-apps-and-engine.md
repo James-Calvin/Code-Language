@@ -9,12 +9,13 @@ dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- --build-web ConsoleApp1/e
 Output folder:
 
 - `index.html`
-- `app.bytecode`
 - copied `assets/` folder when present
 
 Current note:
 
-- The generated `index.html` currently embeds the bytecode for direct opening and also writes `app.bytecode` as a separate artifact. Planned polish is embed-only by default plus a debug/inspection flag for emitting `app.bytecode`.
+- The generated `index.html` embeds the bytecode for direct opening. Use `--emit-web-bytecode` with `--build-web` to also write `app.bytecode` for debugging or inspection.
+- Generated apps route normal `print` output to the browser console. The on-screen overlay is reserved for fatal/runtime diagnostics.
+- Generated apps prevent browser scroll/panning for app-control keys such as arrows, Space, Page Up, Page Down, Home, and End.
 
 Default output:
 

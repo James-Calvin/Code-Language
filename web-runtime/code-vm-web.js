@@ -567,15 +567,22 @@ export class CanvasSceneRuntime {
     this.sceneObject = null;
     this.sceneInfo = null;
     this.vm = null;
+    this.appControlKeyCodes = new Set([32, 33, 34, 35, 36, 37, 38, 39, 40]);
     this.canvas = null;
     this.ctx = null;
     this.outputElement = null;
     this.imageCache = new Map();
     this.handleResize = () => this.resize();
     this.handleKeyDown = event => {
+      if (this.shouldPreventBrowserKeyDefault(event)) {
+        event.preventDefault();
+      }
       this.keysDown.add(event.keyCode);
     };
     this.handleKeyUp = event => {
+      if (this.shouldPreventBrowserKeyDefault(event)) {
+        event.preventDefault();
+      }
       this.keysDown.delete(event.keyCode);
     };
     this.handleBlur = () => {
@@ -640,8 +647,8 @@ export class CanvasSceneRuntime {
     }
 
     window.addEventListener("resize", this.handleResize);
-    window.addEventListener("keydown", this.handleKeyDown);
-    window.addEventListener("keyup", this.handleKeyUp);
+    window.addEventListener("keydown", this.handleKeyDown, { passive: false });
+    window.addEventListener("keyup", this.handleKeyUp, { passive: false });
     window.addEventListener("blur", this.handleBlur);
     this.resize();
   }
@@ -696,6 +703,10 @@ export class CanvasSceneRuntime {
     this.outputElement.style.display = "block";
     this.outputElement.textContent += `${line}\n`;
     this.outputElement.scrollTop = this.outputElement.scrollHeight;
+  }
+
+  shouldPreventBrowserKeyDefault(event) {
+    return this.appControlKeyCodes.has(event.keyCode);
   }
 
   showFatal(error) {

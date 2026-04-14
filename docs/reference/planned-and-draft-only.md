@@ -37,9 +37,6 @@ Use [Example Catalog](../example-catalog.md) and the current compiler as the tru
 | Physics APIs | Out of current V1 web slice. |
 | Richer content handling and asset pipeline | Planned. Current web build copies `assets/`. |
 | Target-agnostic graphical app profile | Planned. The desired shape is top-level lifecycle authoring with an implicit engine prelude and a synthesized entry shell for `--build-web` first, while keeping explicit `MainScene` valid. |
-| Generated web app scroll/panning prevention | Planned polish. Generated pages should prevent browser scrolling from arrow/space keys and related page defaults. |
-| Browser app `print` to console by default | Planned polish. The on-screen overlay should be fatal/runtime diagnostics or explicit debug output, not normal `print` output. |
-| Embed-only web bytecode default with optional debug artifact | Planned polish. Current web builds write `app.bytecode` and also embed the bytecode in `index.html` so the page can open directly; the planned default is embedded bytecode only, with a flag for writing `app.bytecode` when needed. |
 | Real browser-backed implementations for remaining raw window-handle engine stubs | Planned or wrapper-directed. Scene-runtime drawing/input are the current default. |
 | Capability query and fallback APIs | Planned design requirement. |
 | `engine.gpu`, WebGPU backend, native GPU parity | Roadmap item. |

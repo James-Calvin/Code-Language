@@ -13,9 +13,9 @@ sealed class WebBuildResult
 {
     public string OutputDirectory { get; }
     public string IndexHtmlPath { get; }
-    public string BytecodePath { get; }
+    public string? BytecodePath { get; }
 
-    public WebBuildResult(string outputDirectory, string indexHtmlPath, string bytecodePath)
+    public WebBuildResult(string outputDirectory, string indexHtmlPath, string? bytecodePath)
     {
         OutputDirectory = outputDirectory;
         IndexHtmlPath = indexHtmlPath;
@@ -32,7 +32,8 @@ internal static class WebBuildPipeline
         string sourcePath,
         string? outputDirectory,
         bool traceLinker = false,
-        Action<string>? traceWriter = null)
+        Action<string>? traceWriter = null,
+        bool emitWebBytecode = false)
     {
         string fullSourcePath = Path.GetFullPath(sourcePath);
         var options = new ModuleCompileOptions
@@ -56,7 +57,10 @@ internal static class WebBuildPipeline
         Directory.CreateDirectory(resolvedOutputDirectory);
 
         string bytecodePath = Path.Combine(resolvedOutputDirectory, "app.bytecode");
-        File.WriteAllBytes(bytecodePath, result.Bytecode);
+        if (emitWebBytecode)
+            File.WriteAllBytes(bytecodePath, result.Bytecode);
+        else if (File.Exists(bytecodePath))
+            File.Delete(bytecodePath);
 
         CopyAssets(fullSourcePath, resolvedOutputDirectory, manifest);
 
@@ -70,7 +74,10 @@ internal static class WebBuildPipeline
         string indexHtmlPath = Path.Combine(resolvedOutputDirectory, "index.html");
         WriteUtf8(indexHtmlPath, html);
 
-        return new WebBuildResult(resolvedOutputDirectory, indexHtmlPath, bytecodePath);
+        return new WebBuildResult(
+            resolvedOutputDirectory,
+            indexHtmlPath,
+            emitWebBytecode ? bytecodePath : null);
     }
 
     private static string ResolveOutputDirectory(string sourcePath, string? outputDirectory, PackageManifest? manifest)
@@ -209,7 +216,7 @@ runtime.attach(document.body);
 try {
   const bytecode = decodeBase64Bytes(APP_BYTECODE_BASE64);
   const vm = new WebVm(bytecode, {
-    output: line => runtime.appendOutput(line),
+    output: line => console.log(line),
     sceneHost: runtime
   });
   runtime.runScene(vm, APP_METADATA.scene);

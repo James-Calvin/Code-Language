@@ -63,7 +63,7 @@ Host calls are explicit, capability-scoped bindings provided by the runtime host
 
 ### 2.2 Value model
 - ABI uses existing VM value domain:
-  - numbers (`integer`/`whole`/`real` at type-check level, numeric value at VM level)
+  - numbers (`integer`/`whole`/`real` plus sized numeric boundary types at type-check level, numeric value at VM level)
   - `boolean`
   - `string`
   - arrays/objects/handles (boxed runtime values)
@@ -233,7 +233,7 @@ Legend:
 | `[!]` | Phase 4 | Backend-agnostic API contract | Freeze capability-query and fallback semantics so one Code source can target multiple backends predictably |
 | `[!]` | Phase 5 | Target-agnostic graphical app profile | Allow top-level `start`/`update`/`draw`/`draw_hud` authoring with an implicit engine prelude; synthesize the web entry shell first while preserving explicit `MainScene`, and keep the design portable to future native graphical targets |
 | `[~]` | Phase 5 | Engine core package set | Canonical `engine.scene` now exports `Scene`, `SceneLoop`, and lifecycle interfaces for explicit child-object composition; broader engine packages such as `engine.math` and `engine.ecs` are still pending |
-| `[~]` | Phase 5 | Engine platform adapters | Wrapper layer now includes canonical `engine.colors`, `engine.drawing`, `engine.input`, `engine.viewport`, and `engine.scene` plus compatibility re-export modules `engine.view` / `engine.loop`; still need fuller host-backed package taxonomy for native+web, byte-channel color overloads after `byte` / `whole8`, plus audio |
+| `[~]` | Phase 5 | Engine platform adapters | Wrapper layer now includes canonical `engine.colors`, `engine.drawing`, `engine.input`, `engine.viewport`, and `engine.scene` plus compatibility re-export modules `engine.view` / `engine.loop`; still need fuller host-backed package taxonomy for native+web, byte-channel color overloads on top of the implemented `byte` / `whole8` surface, plus audio |
 | `[~]` | Phase 5 | `engine.gpu` ABI v1 | Add GPU resource/pipeline/dispatch ABI for compute-heavy and graphics-heavy workloads |
 | `[~]` | Phase 5 | WebGPU backend | Implement `engine.gpu` on `vm-web` with explicit fallback policy when WebGPU is unavailable |
 | `[~]` | Phase 5 | Native GPU backend parity | Implement the same `engine.gpu` ABI on `vm-native` backend(s) for parity and performance |

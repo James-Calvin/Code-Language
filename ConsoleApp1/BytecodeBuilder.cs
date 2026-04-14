@@ -46,6 +46,13 @@ sealed class BytecodeBuilder
         _bytes.AddRange(BitConverter.GetBytes(value));
         return this;
     }
+    public BytecodeBuilder PushWideInteger(long value)
+    {
+        RecordDebug();
+        _bytes.Add((byte)OpCode.PushWideInteger);
+        _bytes.AddRange(BitConverter.GetBytes(value));
+        return this;
+    }
 
     public BytecodeBuilder Add() { RecordDebug(); _bytes.Add((byte)OpCode.Add); return this; }
     public BytecodeBuilder Sub() { RecordDebug(); _bytes.Add((byte)OpCode.Sub); return this; }
@@ -188,6 +195,13 @@ sealed class BytecodeBuilder
     public BytecodeBuilder CastInteger() { RecordDebug(); _bytes.Add((byte)OpCode.CastInteger); return this; }
     public BytecodeBuilder CastWhole() { RecordDebug(); _bytes.Add((byte)OpCode.CastWhole); return this; }
     public BytecodeBuilder CastReal() { RecordDebug(); _bytes.Add((byte)OpCode.CastReal); return this; }
+    public BytecodeBuilder CheckedSizedNumericCast(SizedNumericKind kind)
+    {
+        RecordDebug();
+        _bytes.Add((byte)OpCode.CheckedSizedNumericCast);
+        _bytes.Add((byte)kind);
+        return this;
+    }
     public BytecodeBuilder GetField(string fieldName) => AddStringOperand(OpCode.GetField, fieldName);
     public BytecodeBuilder SetField(string fieldName) => AddStringOperand(OpCode.SetField, fieldName);
     public BytecodeBuilder HostCall(string symbol, int argCount)

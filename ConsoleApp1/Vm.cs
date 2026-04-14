@@ -83,6 +83,8 @@ enum OpCode : byte
     CastInteger = 0x46,
     CastWhole = 0x47,
     CastReal = 0x48,
+    PushWideInteger = 0x4A,
+    CheckedSizedNumericCast = 0x4B,
     Halt = 0xFF
 }
 
@@ -155,6 +157,9 @@ sealed class Vm
                     break;
                 case OpCode.PushReal:
                     _stack.Push(ReadDoubleOperand());
+                    break;
+                case OpCode.PushWideInteger:
+                    _stack.Push(ReadLongOperand());
                     break;
                 case OpCode.PushString:
                 {
@@ -843,6 +848,10 @@ sealed class Vm
                     _stack.Push(PopNumber());
                     break;
 
+                case OpCode.CheckedSizedNumericCast:
+                    _stack.Push(CoerceCheckedSizedNumeric((SizedNumericKind)ReadByteOperand()));
+                    break;
+
                 case OpCode.ThrowError:
                 {
                     EnsureStack(1);
@@ -1195,6 +1204,52 @@ sealed class Vm
         return checked((int)truncated);
     }
 
+    private object CoerceCheckedSizedNumeric(SizedNumericKind kind)
+    {
+        double value = PopNumber();
+        if (!double.IsFinite(value))
+            ThrowRuntime($"Cannot cast non-finite value to {SizedNumericName(kind)}");
+
+        if (kind == SizedNumericKind.Real32)
+        {
+            float rounded = (float)value;
+            if (float.IsInfinity(rounded))
+                ThrowRuntime("Cannot cast value outside real32 range to real32");
+            return (double)rounded;
+        }
+
+        double truncated = Math.Truncate(value);
+        var (minimum, maximum) = SizedNumericIntegralRange(kind);
+        if (truncated < minimum || truncated > maximum)
+            ThrowRuntime($"Cannot cast value outside {SizedNumericName(kind)} range");
+
+        long result = checked((long)truncated);
+        return result is >= int.MinValue and <= int.MaxValue ? (int)result : result;
+    }
+
+    private static string SizedNumericName(SizedNumericKind kind) => kind switch
+    {
+        SizedNumericKind.Integer8 => "integer8",
+        SizedNumericKind.Integer16 => "integer16",
+        SizedNumericKind.Integer32 => "integer32",
+        SizedNumericKind.Whole8 => "whole8",
+        SizedNumericKind.Whole16 => "whole16",
+        SizedNumericKind.Whole32 => "whole32",
+        SizedNumericKind.Real32 => "real32",
+        _ => $"unknown sized numeric kind {(byte)kind}"
+    };
+
+    private static (long Minimum, long Maximum) SizedNumericIntegralRange(SizedNumericKind kind) => kind switch
+    {
+        SizedNumericKind.Integer8 => (sbyte.MinValue, sbyte.MaxValue),
+        SizedNumericKind.Integer16 => (short.MinValue, short.MaxValue),
+        SizedNumericKind.Integer32 => (int.MinValue, int.MaxValue),
+        SizedNumericKind.Whole8 => (byte.MinValue, byte.MaxValue),
+        SizedNumericKind.Whole16 => (ushort.MinValue, ushort.MaxValue),
+        SizedNumericKind.Whole32 => (0L, uint.MaxValue),
+        _ => throw new InvalidOperationException($"Sized numeric kind '{kind}' is not integral.")
+    };
+
     private VmFallible PopFallible(OpCode op)
     {
         var value = _stack.Pop();
@@ -1216,6 +1271,20 @@ sealed class Vm
         EnsureBytes(4);
         int value = BinaryPrimitives.ReadInt32LittleEndian(_code.AsSpan(_ip, 4));
         _ip += 4;
+        return value;
+    }
+
+    private byte ReadByteOperand()
+    {
+        EnsureBytes(1);
+        return _code[_ip++];
+    }
+
+    private long ReadLongOperand()
+    {
+        EnsureBytes(8);
+        long value = BinaryPrimitives.ReadInt64LittleEndian(_code.AsSpan(_ip, 8));
+        _ip += 8;
         return value;
     }
 

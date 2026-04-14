@@ -109,7 +109,15 @@ internal static class TestHarness
                 .PushReal(-3.8).CastInteger().Print()
                 .PushInt(4).CastReal().Print()
                 .Halt().ToArray(),
-                "1.5" + nl + "3" + nl + "-3" + nl + "4" + nl)
+                "1.5" + nl + "3" + nl + "-3" + nl + "4" + nl),
+
+            ("sized-numeric-bytecode", BytecodeBuilder.New()
+                .PushWideInteger(4294967295L).CheckedSizedNumericCast(SizedNumericKind.Whole32).Print()
+                .PushInt(255).CheckedSizedNumericCast(SizedNumericKind.Whole8).Print()
+                .PushReal(3.8).CheckedSizedNumericCast(SizedNumericKind.Integer8).Print()
+                .PushReal(1.25).CheckedSizedNumericCast(SizedNumericKind.Real32).Print()
+                .Halt().ToArray(),
+                "4294967295" + nl + "255" + nl + "3" + nl + "1.25" + nl)
         };
 
         int failures = 0;
@@ -219,6 +227,42 @@ print(1 + 2 as real);", "3.5\n3\n3\n")
 print(-3.8 as integer);
 print(3 as whole);
 print((3 as whole) as real);", "3\n-3\n3\n3\n")
+            ,
+            ("sized-numerics",
+@"byte channel = 255;
+whole8 same = channel;
+whole16 wider_whole = channel;
+integer16 wider_signed = channel;
+integer8 small = -128;
+integer16 wider_signed_from_small = small;
+integer32 signed_min = -2147483648;
+integer32 signed_max = 2147483647;
+whole32 whole_max = 4294967295;
+whole32 hex_max = 0xffffffff;
+real32 rough = 1.25 as real32;
+real64 exact = rough;
+real from_integer32 = signed_max;
+byte value = 250;
+value += 5;
+whole16 cast_wide = 300 as whole16;
+integer8 truncated = 3.8 as integer8;
+array<whole8> bytes = new array<whole8>(0);
+bytes.append(channel);
+print(same);
+print(wider_whole);
+print(wider_signed);
+print(wider_signed_from_small);
+print(signed_min);
+print(signed_max);
+print(whole_max);
+print(hex_max);
+print(exact);
+print(from_integer32);
+print(value);
+print(cast_wide);
+print(truncated);
+print(bytes.length);
+print(bytes[0]);", "255\n255\n255\n-128\n-2147483648\n2147483647\n4294967295\n4294967295\n1.25\n2147483647\n255\n300\n3\n1\n255\n")
             ,
             ("integer-division",
 @"print(5 / 2);
@@ -2006,6 +2050,16 @@ print(items.peek());", "RuntimeError"),
 @"print(-1 as whole);", "RuntimeError"),
             ("cast-integer-out-of-range-runtime",
 @"print(2147483648. as integer);", "RuntimeError"),
+            ("cast-byte-out-of-range-runtime",
+@"print(300 as byte);", "RuntimeError"),
+            ("cast-whole16-negative-runtime",
+@"print(-1 as whole16);", "RuntimeError"),
+            ("cast-integer16-out-of-range-runtime",
+@"print(32768 as integer16);", "RuntimeError"),
+            ("sized-compound-assignment-out-of-range-runtime",
+@"byte value = 250;
+value += 6;
+print(value);", "RuntimeError"),
         };
         var compileErrorCases = new List<(string Name, string Source, string ErrorContains)>
         {
@@ -2149,8 +2203,27 @@ integer value = load() on error {
 @"print(1e3);", "Invalid integer literal suffix"),
             ("real-suffix-deferred",
 @"print(1.5r32);", "Invalid real literal suffix"),
+            ("integer-suffix-deferred",
+@"print(1i32);", "Invalid integer literal suffix"),
             ("cast-unsupported-target",
-@"print(1 as string);", "Cast target must be whole, integer, real, or an enum type"),
+@"print(1 as string);", "Cast target must be a numeric type or an enum type"),
+            ("byte-literal-out-of-range-high",
+@"byte bad = 256;", "Initializer type mismatch"),
+            ("byte-literal-out-of-range-negative",
+@"byte bad = -1;", "Initializer type mismatch"),
+            ("integer8-literal-out-of-range-high",
+@"integer8 bad = 128;", "Initializer type mismatch"),
+            ("integer8-literal-out-of-range-low",
+@"integer8 bad = -129;", "Initializer type mismatch"),
+            ("sized-numeric-dynamic-narrowing-requires-cast",
+@"integer value = 5;
+byte narrowed = value;", "Initializer type mismatch"),
+            ("integer64-deferred",
+@"integer64 value = 0;", "Unknown type"),
+            ("whole64-deferred",
+@"whole64 value = 0;", "Unknown type"),
+            ("integer-literal-beyond-v1-range",
+@"whole32 value = 4294967296;", "Invalid integer literal"),
             ("cast-invalid-enum-literal",
 @"enum Direction {
   Left = 1;
@@ -3192,6 +3265,7 @@ export object MainScene {
             ("example-optional-runnable", @"ConsoleApp1/examples/optional.code", Compiler.CompileTarget.VmNative),
             ("example-time-runnable", @"ConsoleApp1/examples/time.code", Compiler.CompileTarget.VmNative),
             ("example-math-random-runnable", @"ConsoleApp1/examples/math_random.code", Compiler.CompileTarget.VmNative),
+            ("example-sized-numerics-runnable", @"ConsoleApp1/examples/sized_numerics.code", Compiler.CompileTarget.VmNative),
             ("example-collections-runnable", @"ConsoleApp1/examples/collections.code", Compiler.CompileTarget.VmNative),
             ("example-object-runnable", @"ConsoleApp1/examples/object.code", Compiler.CompileTarget.VmNative),
             ("example-implicit-this-runnable", @"ConsoleApp1/examples/implicit_this.code", Compiler.CompileTarget.VmNative),
@@ -3330,6 +3404,7 @@ export object MainScene {
                 catalogText.Contains("| `runnable` | `ConsoleApp1/examples/strings.code` | `run` |", StringComparison.Ordinal) &&
                 catalogText.Contains("| `runnable` | `ConsoleApp1/examples/time.code` | `run` |", StringComparison.Ordinal) &&
                 catalogText.Contains("| `runnable` | `ConsoleApp1/examples/math_random.code` | `run` |", StringComparison.Ordinal) &&
+                catalogText.Contains("| `runnable` | `ConsoleApp1/examples/sized_numerics.code` | `run` |", StringComparison.Ordinal) &&
                 catalogText.Contains("| `runnable` | `ConsoleApp1/examples/collections.code` | `run` |", StringComparison.Ordinal) &&
                 catalogText.Contains("| `runnable` | `ConsoleApp1/examples/modules/visibility_main.code` | `run` |", StringComparison.Ordinal) &&
                 catalogText.Contains("| `runnable` | `ConsoleApp1/examples/modules/member_visibility_main.code` | `run` |", StringComparison.Ordinal) &&
@@ -3435,13 +3510,21 @@ print(3.8 as integer);
 print(-3.8 as integer);
 print(Direction.Right as integer);
 Direction direction = (1 + 1) as Direction;
-print(direction == Direction.Right);";
+print(direction == Direction.Right);
+whole32 whole_max = 4294967295;
+byte channel = 250;
+channel += 5;
+print(whole_max);
+print(channel);
+print(3.8 as integer8);
+real32 rounded = 1.25 as real32;
+print(rounded);";
 
         try
         {
             string nativeOutput = Normalize(CompileAndRun(numericPolishSource, Compiler.CompileTarget.VmNative, VmHostTarget.Native));
             string webOutput = Normalize(CompileAndRun(numericPolishSource, Compiler.CompileTarget.VmWeb, VmHostTarget.Web));
-            const string expected = "2\n3\n-3\n2\n1\n";
+            const string expected = "2\n3\n-3\n2\n1\n4294967295\n255\n3\n1.25\n";
             if (!string.Equals(nativeOutput, expected, StringComparison.Ordinal))
             {
                 failures++;

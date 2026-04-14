@@ -1,6 +1,6 @@
 # Example Catalog
 
-Last updated: 2026-04-12
+Last updated: 2026-04-14
 
 This catalog is implementation-truthful.
 
@@ -33,6 +33,7 @@ Use this document as the primary answer to "does this exist yet?"
 | --- | --- | --- | --- |
 | `runnable` | `ConsoleApp1/examples/time.code` | `run` | Time intrinsics |
 | `runnable` | `ConsoleApp1/examples/math_random.code` | `run` | Math and randomness helpers |
+| `runnable` | `ConsoleApp1/examples/sized_numerics.code` | `run` | Sized numeric boundary types, `byte` / `whole8` aliasing, explicit narrowing casts, and range-checked storage |
 | `runnable` | `ConsoleApp1/examples/collections.code` | `run` | Built-in `map`, `set`, `queue`, `stack`, shared `.length`, and map indexing |
 
 ## Objects and Interfaces

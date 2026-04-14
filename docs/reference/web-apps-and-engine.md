@@ -140,7 +140,7 @@ Draw.rectangle(100, 80, 32, 32, rgb(1, 1, 1));
 Common mistakes:
 
 - Color channels are real values, commonly from `0` to `1`.
-- Byte-channel color overloads such as `rgb(byte, byte, byte)` are planned after sized numerics add `byte` as the readable alias for `whole8`; do not write those overloads today.
+- Byte-channel color overloads such as `rgb(byte, byte, byte)` are planned on top of the implemented `byte` / `whole8` numeric type surface; do not write those overloads today.
 - `polygon` points are a flat numeric array: `{x1, y1, x2, y2, ...}`.
 - `text` alignment strings are `"left"`, `"center"`, `"right"` and `"top"`, `"middle"`, `"bottom"`.
 

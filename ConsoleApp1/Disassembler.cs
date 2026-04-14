@@ -46,6 +46,17 @@ static class Disassembler
                     ip += 8;
                     sb.AppendFormat(" {0}", realOperand);
                     break;
+                case OpCode.PushWideInteger:
+                    if (ip + 8 > codeEnd) throw new InvalidOperationException("Truncated wide integer operand");
+                    long wideIntegerOperand = BitConverter.ToInt64(bytes, ip);
+                    ip += 8;
+                    sb.AppendFormat(" {0}", wideIntegerOperand);
+                    break;
+                case OpCode.CheckedSizedNumericCast:
+                    if (ip + 1 > codeEnd) throw new InvalidOperationException("Truncated sized numeric cast operand");
+                    var sizedKind = (SizedNumericKind)bytes[ip++];
+                    sb.AppendFormat(" {0}", sizedKind);
+                    break;
                 case OpCode.InterfaceCall:
                     if (ip + 8 > codeEnd) throw new InvalidOperationException("Truncated interface call header");
                     int explicitArgCount = BitConverter.ToInt32(bytes, ip); ip += 4;

@@ -18,6 +18,15 @@ sealed class Lexer
         { "integer", TokenType.Integer },
         { "whole", TokenType.Whole },
         { "real", TokenType.Real },
+        { "byte", TokenType.Byte },
+        { "integer8", TokenType.Integer8 },
+        { "integer16", TokenType.Integer16 },
+        { "integer32", TokenType.Integer32 },
+        { "whole8", TokenType.Whole8 },
+        { "whole16", TokenType.Whole16 },
+        { "whole32", TokenType.Whole32 },
+        { "real32", TokenType.Real32 },
+        { "real64", TokenType.Real64 },
         { "boolean", TokenType.Boolean },
         { "void", TokenType.Void },
         { "optional", TokenType.Optional },
@@ -227,7 +236,10 @@ sealed class Lexer
                 string digits = _source[digitsStart.._current];
                 try
                 {
-                    AddToken(TokenType.Number, Convert.ToInt32(digits, numberBase));
+                    long parsedValue = Convert.ToInt64(digits, numberBase);
+                    if (parsedValue > uint.MaxValue)
+                        throw new OverflowException();
+                    AddToken(TokenType.Number, parsedValue <= int.MaxValue ? (object)(int)parsedValue : parsedValue);
                     return;
                 }
                 catch (Exception ex) when (ex is FormatException or OverflowException)
@@ -249,9 +261,9 @@ sealed class Lexer
             throw Error($"Invalid integer literal suffix '{Peek()}'");
 
         string text = _source[_start.._current];
-        if (!int.TryParse(text, out int value))
+        if (!long.TryParse(text, out long value) || value > uint.MaxValue)
             throw Error($"Invalid integer literal '{text}'");
-        AddToken(TokenType.Number, value);
+        AddToken(TokenType.Number, value <= int.MaxValue ? (object)(int)value : value);
     }
 
     private void AddRealToken()

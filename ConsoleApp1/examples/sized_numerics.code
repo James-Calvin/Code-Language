@@ -1,0 +1,64 @@
+// Sized numeric storage boundaries and explicit narrowing.
+
+function<whole8> echo_channel(byte value) {
+  return value;
+}
+
+object Pixel {
+  byte red;
+  byte green;
+  byte blue;
+
+  constructor(byte red, byte green, byte blue) {
+    this.red = red;
+    this.green = green;
+    this.blue = blue;
+  }
+
+  function<whole16> total() {
+    whole16 result = red;
+    result += green;
+    result += blue;
+    return result;
+  }
+}
+
+byte channel = 250;
+channel += 5;
+print(channel);
+
+whole8 same_channel = channel;
+whole16 wider_whole = channel;
+integer16 wider_signed = channel;
+print(same_channel);
+print(wider_whole);
+print(wider_signed);
+
+integer8 small_signed = -12;
+integer16 wider_signed_from_small = small_signed;
+integer32 signed_min = -2147483648;
+integer32 signed_max = 2147483647;
+whole32 whole_max = 4294967295;
+whole32 hex_max = 0xffffffff;
+print(wider_signed_from_small);
+print(signed_min);
+print(signed_max);
+print(whole_max);
+print(hex_max);
+
+whole16 cast_wide = 300 as whole16;
+integer8 truncated = 3.8 as integer8;
+real32 stored_real32 = 1.25 as real32;
+real64 stored_real64 = stored_real32;
+print(cast_wide);
+print(truncated);
+print(stored_real64);
+
+array<whole8> channels = new array<whole8>(0);
+channels.append(channel);
+print(channels.length);
+print(channels[0]);
+print(echo_channel(channel));
+
+Pixel pixel = new Pixel(10 as byte, 20 as byte, 30 as byte);
+print(pixel.total());

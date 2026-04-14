@@ -4,31 +4,51 @@
 
 | Type | Use |
 | --- | --- |
-| `integer` | Signed whole-number values. Decimal and base-prefixed integer literals start here. |
+| `integer` | Signed whole-number values. Decimal and base-prefixed integer literals use this when they fit signed 32-bit range. |
 | `whole` | Unsigned whole-number values. Used by some host APIs, such as window handles. |
 | `real` | Real-number values. Decimal-point literals and integer values can assign to `real`. |
 | `boolean` | `true` or `false`. Prints as `1` or `0`. |
 | `string` | Text values. Supports interpolation and concatenation. |
 | `void` | No returned value. Used in function and interface signatures. |
 
+Sized numeric boundary types:
+
+| Type | Range or behavior |
+| --- | --- |
+| `integer8` | `-128..127` |
+| `integer16` | `-32768..32767` |
+| `integer32` | `-2147483648..2147483647` |
+| `whole8` | `0..255` |
+| `byte` | Exact alias for `whole8` |
+| `whole16` | `0..65535` |
+| `whole32` | `0..4294967295` |
+| `real32` | Finite single-precision boundary, stored after `float32` rounding |
+| `real64` | Exact alias for `real` |
+
 Example:
 
 ```code
 integer lives = 3;
+byte channel = 255;
 real half = 1. / 2;
 boolean alive = lives > 0;
 string label = "lives={lives}";
 print(label);
 print(alive);
 print(half);
+print(channel);
 ```
 
 Common mistakes:
 
 - Integer literals may use decimal, binary (`0b`), octal (`0o`), or hexadecimal (`0x`) notation. Real literals use decimal dot forms such as `1.5`, `1.`, or `.5`.
+- Unsuffixed integer literals can represent the implemented `integer32` / `whole32` range. Larger integer literals are rejected until exact `integer64` / `whole64` support is designed.
 - Exponent notation and numeric literal suffixes are not implemented yet.
-- Explicit casts are limited to numeric types and enum/integer conversions: `value as integer`, `value as whole`, `value as real`, `EnumName.Member as integer`, and `integer_value as EnumName`.
-- `real as integer` and `real as whole` truncate toward zero; `as whole` rejects negative runtime values.
+- Explicit casts are limited to numeric types and enum/integer conversions: `value as integer`, `value as whole`, `value as real`, `value as byte`, `value as real32`, `EnumName.Member as integer`, and `integer_value as EnumName`.
+- `real as integer`, `real as whole`, and sized integral casts truncate toward zero; unsigned targets reject negative runtime values.
+- Sized numeric types are storage/boundary types. Arithmetic promotes through the existing numeric path, and storing back into a sized target is range-checked.
+- Dynamic narrowing requires an explicit cast. `integer value = 5; byte b = value;` is rejected; write `byte b = value as byte;`.
+- Compound assignment to sized targets is allowed with a runtime range check, so `byte value = 250; value += 5;` succeeds and `value += 6;` fails at runtime.
 - Integral `/` is truncating integer division. Use a `real` operand for real division, for example `1. / 2` or `1 as real / 2`.
 
 ## Arrays

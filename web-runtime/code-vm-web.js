@@ -1,5 +1,5 @@
 const BYTECODE_MAGIC = "CODE";
-const BYTECODE_VERSION = 7;
+const BYTECODE_VERSION = 8;
 const HEADER_SIZE = 13;
 const DEBUG_ENTRY_SIZE = 12;
 
@@ -79,8 +79,45 @@ const OpCode = {
   CastInteger: 0x46,
   CastWhole: 0x47,
   CastReal: 0x48,
+  PushWideInteger: 0x4a,
+  CheckedSizedNumericCast: 0x4b,
   Halt: 0xff
 };
+
+const SizedNumericKind = {
+  Integer8: 1,
+  Integer16: 2,
+  Integer32: 3,
+  Whole8: 4,
+  Whole16: 5,
+  Whole32: 6,
+  Real32: 7
+};
+
+function sizedNumericName(kind) {
+  switch (kind) {
+    case SizedNumericKind.Integer8: return "integer8";
+    case SizedNumericKind.Integer16: return "integer16";
+    case SizedNumericKind.Integer32: return "integer32";
+    case SizedNumericKind.Whole8: return "whole8";
+    case SizedNumericKind.Whole16: return "whole16";
+    case SizedNumericKind.Whole32: return "whole32";
+    case SizedNumericKind.Real32: return "real32";
+    default: return `unknown sized numeric kind ${kind}`;
+  }
+}
+
+function sizedNumericIntegralRange(kind) {
+  switch (kind) {
+    case SizedNumericKind.Integer8: return [-128, 127];
+    case SizedNumericKind.Integer16: return [-32768, 32767];
+    case SizedNumericKind.Integer32: return [-2147483648, 2147483647];
+    case SizedNumericKind.Whole8: return [0, 255];
+    case SizedNumericKind.Whole16: return [0, 65535];
+    case SizedNumericKind.Whole32: return [0, 4294967295];
+    default: throw new Error(`Sized numeric kind '${kind}' is not integral.`);
+  }
+}
 
 const Utf8Decoder = new TextDecoder("utf-8");
 
@@ -1494,6 +1531,10 @@ export class WebVm {
           this.stack.push(this.readDoubleOperand());
           break;
 
+        case OpCode.PushWideInteger:
+          this.stack.push(this.readLongOperand());
+          break;
+
         case OpCode.PushString: {
           const length = this.readIntOperand();
           this.ensureBytes(length);
@@ -2029,6 +2070,10 @@ export class WebVm {
           this.stack.push(this.popNumber());
           break;
 
+        case OpCode.CheckedSizedNumericCast:
+          this.stack.push(this.coerceCheckedSizedNumeric(this.readByteOperand()));
+          break;
+
         case OpCode.NewObject: {
           const typeName = this.readStringOperand();
           this.stack.push(createVmObject(typeName, false));
@@ -2212,6 +2257,29 @@ export class WebVm {
     return truncated;
   }
 
+  coerceCheckedSizedNumeric(kind) {
+    const value = this.popNumber();
+    const name = sizedNumericName(kind);
+    if (!Number.isFinite(value)) {
+      this.throwRuntime(`Cannot cast non-finite value to ${name}`);
+    }
+
+    if (kind === SizedNumericKind.Real32) {
+      const rounded = Math.fround(value);
+      if (!Number.isFinite(rounded)) {
+        this.throwRuntime("Cannot cast value outside real32 range to real32");
+      }
+      return rounded;
+    }
+
+    const truncated = Math.trunc(value);
+    const [minimum, maximum] = sizedNumericIntegralRange(kind);
+    if (truncated < minimum || truncated > maximum) {
+      this.throwRuntime(`Cannot cast value outside ${name} range`);
+    }
+    return truncated;
+  }
+
   popAny2() {
     this.ensureStack(2);
     const b = this.stack.pop();
@@ -2245,6 +2313,21 @@ export class WebVm {
     const value = this.view.getInt32(this.ip, true);
     this.ip += 4;
     return value;
+  }
+
+  readByteOperand() {
+    this.ensureBytes(1);
+    const value = this.bytes[this.ip];
+    this.ip += 1;
+    return value;
+  }
+
+  readLongOperand() {
+    this.ensureBytes(8);
+    const low = this.view.getUint32(this.ip, true);
+    const high = this.view.getInt32(this.ip + 4, true);
+    this.ip += 8;
+    return (high * 4294967296) + low;
   }
 
   readDoubleOperand() {

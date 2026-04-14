@@ -1,7 +1,7 @@
 # Code Language Specification (Living Draft)
 
 Version: 1.0
-Last updated: 2026-04-12
+Last updated: 2026-04-14
 
 ## 1. Goals and Design
 - `Code` is a code-first language for building 2D interactive applications that target the web first.
@@ -58,19 +58,33 @@ function main(string[] arguments) {
   - `integer`: signed integer
   - `whole`: unsigned integer
   - `real`: IEEE-754 floating point
+- Sized numeric boundary types:
+  - `integer8`: signed `-128..127`
+  - `integer16`: signed `-32768..32767`
+  - `integer32`: signed `-2147483648..2147483647`
+  - `whole8`: unsigned `0..255`
+  - `byte`: exact alias for `whole8`
+  - `whole16`: unsigned `0..65535`
+  - `whole32`: unsigned `0..4294967295`
+  - `real32`: finite IEEE-754 single-precision boundary, stored in the VM's numeric value domain after `float32` rounding
+  - `real64`: exact alias for `real`
 - Boolean type: `boolean`
 - String type: `string`
-- Sized numeric variants such as `integer8`, `whole32`, and `real64` are planned, not implemented.
-- Unsized `integer`, `whole`, and `real` are the implemented numeric type names.
+- `integer64` and `whole64` are deferred until the runtime has a cross-target exact wide-integer representation.
 - Numeric literals:
   - Decimal by default.
   - Base prefixes: `0b` (binary), `0o` (octal), `0x` (hex).
   - Decimal-point real literals: `1.5`, `1.`, `.5`.
   - Numeric suffixes such as `i32`, `w64`, and `r32` are planned, not implemented.
-  - Unsuffixed integer literals map to `integer`.
+  - Unsuffixed integer literals map to `integer` when they fit signed 32-bit range, and can represent larger `whole32` boundary values up to `4294967295`.
 - Conversions and promotions:
-  - User-written casts are supported as `value as Type` for `whole`, `integer`, `real`, and enum types.
-  - Numeric casts between `whole`, `integer`, and `real` are explicit conversions; `real as integer` and `real as whole` truncate toward zero at runtime, reject non-finite or out-of-range values, and `as whole` also rejects negative values.
+  - User-written casts are supported as `value as Type` for numeric types and enum types.
+  - Numeric casts among `whole`, `integer`, `real`, and sized numeric types are explicit conversions; real-to-integral casts truncate toward zero at runtime, reject non-finite or out-of-range values, and unsigned targets also reject negative values.
+  - Dynamic narrowing to a sized numeric type requires an explicit cast, for example `value as byte`.
+  - In-range integer literals may initialize or assign to sized integral targets directly.
+  - Widening is implicit when the destination can represent the source type's full range, for example `byte` to `whole16`, `byte` to `integer16`, `integer8` to `integer16`, `integer32` to `real`, and `real32` to `real`.
+  - Sized numeric types are storage/boundary types, not arithmetic-preserving types. Arithmetic involving sized values computes through the existing promoted numeric path; storing back into a sized target is range-checked.
+  - Compound assignment to sized numeric storage, such as `value += 1`, is allowed and range-checked before storing.
   - Integral `/` truncates toward zero; use a `real` operand such as `1. / 2` or `1 as real / 2` for real division.
   - Enum casts are limited to `EnumValue as integer` and `integerValue as EnumName`; literal integer-to-enum casts must match a declared enum member value.
   - Current implicit promotions are limited to the compiler's existing numeric widening rules.
@@ -81,6 +95,7 @@ Examples:
 integer value = 0;
 value += 1;
 whole count = 0;
+byte colorChannel = 255;
 constant integer maxRetries = 3;
 boolean flag = false;
 ```
@@ -705,7 +720,7 @@ if x > 3 then panic("x too large");
   - The current repo ships a wrapper layer in `lib/engine/` over those scene/runtime intrinsics: canonical modules `engine.colors`, `engine.drawing`, `engine.input`, `engine.viewport`, and `engine.scene`, with compatibility re-export modules `engine.view` and `engine.loop`.
   - Note: high-range timing values may eventually need dedicated 64-bit numeric/value support for full precision guarantees.
 - Object and record construction and field access lower to dedicated VM opcodes (`NEW_OBJECT`, `NEW_RECORD`, `GET_FIELD`, `SET_FIELD`).
-- Real literals and numeric casts lower to dedicated VM opcodes (`PUSH_REAL`, `CAST_INTEGER`, `CAST_WHOLE`, `CAST_REAL`); enum casts remain integer-backed.
+- Real literals, wide integer literals, and numeric casts lower to dedicated VM opcodes (`PUSH_REAL`, `PUSH_WIDE_INTEGER`, `CAST_INTEGER`, `CAST_WHOLE`, `CAST_REAL`, `CHECKED_SIZED_NUMERIC_CAST`); enum casts remain integer-backed.
 - Arrays: literals `{...}` create arrays; typed declarations `array<integer> xs = {1,2,3};`; dynamic `new array<integer>(n)` requires a size; `xs.length` yields length; `xs.append(value)` and `xs.remove_at(index)` grow/shrink arrays; `foreach` iterates arrays by element.
 - Built-in collections: `map`, `set`, `queue`, and `stack` lower to dedicated VM opcodes; `.length` also covers those collection types.
 - Recoverable fallible values lower to dedicated VM opcodes (`FALLIBLE_SUCCESS`, `FALLIBLE_ERROR`, `FALLIBLE_IS_ERROR`, `FALLIBLE_VALUE`, `FALLIBLE_ERROR_CODE`, `FALLIBLE_ERROR_MESSAGE`); `panic(...)` still lowers to `THROW_ERROR`.
@@ -715,9 +730,9 @@ if x > 3 then panic("x too large");
 - `fallible<void, ErrorCode>` statement-level ergonomics.
 - Semicolon injection.
 - Field defaults in object/record bodies, for example `integer radius = 7;`.
-- Sized numeric types, including `byte` as the readable alias for `whole8`; numeric literal suffixes and exponent numeric literals.
+- `integer64` / `whole64`, numeric literal suffixes, and exponent numeric literals.
 - `foreach` over `map`, `set`, `queue`, and `stack`; planned map iteration should yield entry values.
-- Byte-channel color overloads such as `rgb(byte, byte, byte)` and `rgba(byte, byte, byte, byte)` after `byte` exists; current color helpers use real channels.
+- Byte-channel color overloads such as `rgb(byte, byte, byte)` and `rgba(byte, byte, byte, byte)` on top of the implemented `byte` / `whole8` type surface; current color helpers use real channels.
 
 ## 16. Comments
 - Single-line comments:

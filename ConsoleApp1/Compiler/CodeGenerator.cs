@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace ConsoleApp1.Compiler;
 
@@ -67,13 +68,17 @@ sealed class CodeGenerator
     private readonly HashSet<int> _freeTempSet = new();
     private readonly Dictionary<string, (string Label, int ParamCount, int LocalCount)> _functions = new(StringComparer.Ordinal);
     private readonly Dictionary<string, TypeRef> _functionReturnTypes = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, IReadOnlyList<TypeRef>> _functionParamTypes = new(StringComparer.Ordinal);
     private readonly Dictionary<string, (string Label, int ParamCount, int LocalCount)> _constructors = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, IReadOnlyList<TypeRef>> _constructorParamTypes = new(StringComparer.Ordinal);
     private readonly Dictionary<string, (string Label, int ParamCount, int LocalCount)> _methods = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, IReadOnlyList<TypeRef>> _methodParamTypes = new(StringComparer.Ordinal);
     private readonly HashSet<string> _objectNames = new(StringComparer.Ordinal);
     private readonly HashSet<string> _recordNames = new(StringComparer.Ordinal);
     private readonly HashSet<string> _interfaceNames = new(StringComparer.Ordinal);
     private readonly Dictionary<string, Dictionary<string, TypeRef>> _objectFieldTypes = new(StringComparer.Ordinal);
     private readonly Dictionary<string, List<InterfaceDispatchTarget>> _interfaceDispatch = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, IReadOnlyList<TypeRef>> _interfaceMethodParamTypes = new(StringComparer.Ordinal);
     private TypeRef? _currentCallableReturnTypeRef;
     private readonly Stack<(int CodeSlot, int MessageSlot)> _fallibleErrorSlots = new();
     private readonly Stack<string> _yieldTargetLabels = new();
@@ -108,6 +113,7 @@ sealed class CodeGenerator
             string label = $"fn_{fn.Name.Lexeme}";
             _functions[fn.Name.Lexeme] = (label, fn.Parameters.Count, 0);
             _functionReturnTypes[fn.Name.Lexeme] = fn.ReturnType ?? BuildImplicitVoidTypeRef(fn.Name);
+            _functionParamTypes[fn.Name.Lexeme] = fn.Parameters.Select(p => p.Type!).ToList();
         }
 
         // Pre-register object names and constructor labels for forward constructor calls.
@@ -127,17 +133,24 @@ sealed class CodeGenerator
                 string key = ConstructorKey(obj.Name.Lexeme, ctor.Parameters);
                 string label = $"ctor_{obj.Name.Lexeme}_{_constructors.Count}";
                 _constructors[key] = (label, ctor.Parameters.Count + 1, 0); // +1 for implicit this
+                _constructorParamTypes[key] = ctor.Parameters.Select(p => p.Type!).ToList();
             }
             foreach (var method in obj.Methods)
             {
                 string key = MethodKey(obj.Name.Lexeme, method.Name.Lexeme, method.Parameters);
                 string label = $"m_{obj.Name.Lexeme}_{method.Name.Lexeme}_{_methods.Count}";
                 _methods[key] = (label, method.Parameters.Count + 1, 0); // +1 for implicit this
+                _methodParamTypes[key] = method.Parameters.Select(p => p.Type!).ToList();
             }
         }
         foreach (var iface in interfaceDecls)
         {
             _interfaceNames.Add(iface.Name.Lexeme);
+            foreach (var method in iface.Methods)
+            {
+                string ifaceMethodKey = InterfaceMethodKey(method.Name.Lexeme, method.Parameters);
+                _interfaceMethodParamTypes[InterfaceDispatchKey(iface.Name.Lexeme, ifaceMethodKey)] = method.Parameters.Select(p => p.Type!).ToList();
+            }
         }
         BuildInterfaceDispatch(implementDecls);
 
@@ -337,6 +350,7 @@ sealed class CodeGenerator
                 {
                     Emit(v.Initializer);
                     EmitCloneForSourceExprIfNeeded(v.Initializer);
+                    EmitStorageBoundaryCheck(v.Type);
                 }
                 else
                 {
@@ -344,6 +358,7 @@ sealed class CodeGenerator
                         _builder.PushNone();
                     else
                         _builder.PushInt(0); // default
+                    EmitStorageBoundaryCheck(v.Type);
                 }
                 SetLoc(v.Name);
                 _builder.Store(slot);
@@ -536,6 +551,10 @@ sealed class CodeGenerator
                 {
                     _builder.PushReal(d);
                 }
+                else if (lit.Value is long l)
+                {
+                    _builder.PushWideInteger(l);
+                }
                 else
                 {
                     _builder.PushInt(Convert.ToInt32(lit.Value ?? 0));
@@ -572,10 +591,14 @@ sealed class CodeGenerator
                 if (_constructors.TryGetValue(ctorKey, out var ctor))
                 {
                     _builder.Dup(); // keep object on stack after constructor call
-                    foreach (var arg in no.Arguments)
+                    _constructorParamTypes.TryGetValue(ctorKey, out var constructorParamTypes);
+                    for (int i = 0; i < no.Arguments.Count; i++)
                     {
+                        var arg = no.Arguments[i];
                         Emit(arg);
                         EmitCloneForSourceExprIfNeeded(arg);
+                        if (constructorParamTypes is not null && i < constructorParamTypes.Count)
+                            EmitStorageBoundaryCheck(constructorParamTypes[i]);
                     }
                     int frameSize = Math.Max(ctor.LocalCount, ctor.ParamCount);
                     _builder.Call(ctor.Label, ctor.ParamCount, frameSize);
@@ -594,6 +617,7 @@ sealed class CodeGenerator
             case ArrayIndexExpr aidx:
                 Emit(aidx.Array);
                 Emit(aidx.Index);
+                EmitIndexKeyBoundaryCheck(aidx.Array);
                 EmitIndexGet(aidx.Array);
                 break;
             case OptionalHasValueExpr ohv:
@@ -650,6 +674,7 @@ sealed class CodeGenerator
                     EmitCurrentObject();
                     Emit(a.Value);
                     EmitCloneForSourceExprIfNeeded(a.Value);
+                    EmitStorageBoundaryCheck(a.ResolvedImplicitFieldTypeRef);
                     _builder.SetField(a.Name.Lexeme);
                     _builder.Pop();
                 }
@@ -657,6 +682,8 @@ sealed class CodeGenerator
                 {
                     Emit(a.Value);
                     EmitCloneForSourceExprIfNeeded(a.Value);
+                    if (_localDeclaredTypes.TryGetValue(a.Name.Lexeme, out var targetType))
+                        EmitStorageBoundaryCheck(targetType);
                     _builder.Store(GetSlot(a.Name));
                 }
                 break;
@@ -670,15 +697,20 @@ sealed class CodeGenerator
                     string.Equals(arraySetTargetType.Name, "map", StringComparison.Ordinal))
                 {
                     EmitCloneForSourceExprIfNeeded(aset.Target.Index);
+                    if (arraySetTargetType.TypeArguments.Count == 2)
+                        EmitStorageBoundaryCheck(arraySetTargetType.TypeArguments[0]);
                 }
                 Emit(aset.Value);
                 EmitCloneForSourceExprIfNeeded(aset.Value);
+                EmitStorageBoundaryCheck(aset.Target.ResolvedElementTypeRef);
                 EmitIndexSet(aset.Target.Array);
                 break;
             case FieldSetExpr fset:
                 Emit(fset.Target.Target);
                 Emit(fset.Value);
                 EmitCloneForSourceExprIfNeeded(fset.Value);
+                if (TryResolveTypeRef(fset.Target) is TypeRef fieldTargetType)
+                    EmitStorageBoundaryCheck(fieldTargetType);
                 _builder.SetField(fset.Target.Name.Lexeme);
                 break;
             case MethodCallExpr mc:
@@ -827,6 +859,11 @@ sealed class CodeGenerator
             case CastRuntimeKind.ToReal:
                 _builder.CastReal();
                 break;
+            case CastRuntimeKind.ToSizedNumeric:
+                if (expr.ResolvedSizedNumericKind is null)
+                    throw new NotSupportedException("Sized numeric cast is missing its resolved target kind.");
+                _builder.CheckedSizedNumericCast(expr.ResolvedSizedNumericKind.Value);
+                break;
             default:
                 throw new NotSupportedException($"Unsupported cast runtime kind {expr.ResolvedRuntimeKind}");
         }
@@ -845,12 +882,15 @@ sealed class CodeGenerator
             else
             {
                 EmitCloneForSourceExprIfNeeded(value);
+                _currentCallableReturnTypeRef.TryGetFallibleTypeArguments(out var successTypeRef, out _);
+                EmitStorageBoundaryCheck(successTypeRef);
                 _builder.FallibleSuccess();
             }
             return;
         }
 
         EmitCloneForSourceExprIfNeeded(value);
+        EmitStorageBoundaryCheck(_currentCallableReturnTypeRef);
     }
 
     private void EmitFallibleError(FallibleErrorExpr expr)
@@ -1060,7 +1100,7 @@ sealed class CodeGenerator
                     string => new TypeRef("string", null, lit.Line, lit.Column),
                     double => new TypeRef("real", null, lit.Line, lit.Column),
                     int => new TypeRef("integer", null, lit.Line, lit.Column),
-                    long => new TypeRef("integer", null, lit.Line, lit.Column),
+                    long => new TypeRef("whole32", null, lit.Line, lit.Column),
                     _ => null
                 };
             case Unary unary:
@@ -1179,6 +1219,7 @@ sealed class CodeGenerator
                     _builder.GetField(variable.Name.Lexeme);
                     Emit(expr.Value);
                     EmitBinaryOperator(expr.Operator, variable, expr.Value);
+                    EmitStorageBoundaryCheck(variable.ResolvedImplicitFieldTypeRef);
                     _builder.Store(valueSlot);
                     _builder.Load(objectSlot);
                     _builder.Load(valueSlot);
@@ -1191,6 +1232,8 @@ sealed class CodeGenerator
                     _builder.Load(GetSlot(variable.Name));
                     Emit(expr.Value);
                     EmitBinaryOperator(expr.Operator, variable, expr.Value);
+                    if (_localDeclaredTypes.TryGetValue(variable.Name.Lexeme, out var variableType))
+                        EmitStorageBoundaryCheck(variableType);
                     _builder.Dup();
                     _builder.Store(GetSlot(variable.Name));
                 }
@@ -1206,6 +1249,8 @@ sealed class CodeGenerator
                 _builder.GetField(fieldAccess.Name.Lexeme);
                 Emit(expr.Value);
                 EmitBinaryOperator(expr.Operator, fieldAccess, expr.Value);
+                if (TryResolveTypeRef(fieldAccess) is TypeRef fieldType)
+                    EmitStorageBoundaryCheck(fieldType);
                 _builder.Store(valueSlot);
                 _builder.Load(objectSlot);
                 _builder.Load(valueSlot);
@@ -1222,12 +1267,14 @@ sealed class CodeGenerator
                 Emit(arrayIndex.Array);
                 _builder.Store(arraySlot);
                 Emit(arrayIndex.Index);
+                EmitIndexKeyBoundaryCheck(arrayIndex.Array);
                 _builder.Store(indexSlot);
                 _builder.Load(arraySlot);
                 _builder.Load(indexSlot);
                 EmitIndexGet(arrayIndex.Array);
                 Emit(expr.Value);
                 EmitBinaryOperator(expr.Operator, arrayIndex, expr.Value);
+                EmitStorageBoundaryCheck(arrayIndex.ResolvedElementTypeRef);
                 _builder.Store(valueSlot);
                 _builder.Load(arraySlot);
                 _builder.Load(indexSlot);
@@ -1281,32 +1328,87 @@ sealed class CodeGenerator
 
         int Rank(TypeRef typeRef) => typeRef.NormalizeBuiltInShorthands().Name switch
         {
-            "whole" => 1,
-            "integer" => 2,
-            "real" => 3,
+            "whole" or "whole8" or "whole16" or "whole32" => 1,
+            "integer" or "integer8" or "integer16" or "integer32" => 2,
+            "real" or "real32" => 3,
             _ => 0
         };
 
-        return Rank(left!) >= Rank(right!) ? left : right;
+        int leftRank = Rank(left!);
+        int rightRank = Rank(right!);
+        int rank = Math.Max(leftRank, rightRank);
+        return rank switch
+        {
+            1 => new TypeRef("whole", null, left!.Line, left!.Column),
+            2 => new TypeRef("integer", null, left!.Line, left!.Column),
+            3 => new TypeRef("real", null, left!.Line, left!.Column),
+            _ => null
+        };
     }
 
     private static bool IsNumericTypeRef(TypeRef? typeRef)
     {
         if (typeRef is null)
             return false;
-        return typeRef.NormalizeBuiltInShorthands().Name is "whole" or "integer" or "real";
+        return typeRef.NormalizeBuiltInShorthands().Name is "whole" or "integer" or "real"
+            or "integer8" or "integer16" or "integer32"
+            or "whole8" or "whole16" or "whole32"
+            or "real32";
     }
 
     private static bool IsIntegralNumericTypeRef(TypeRef? typeRef)
     {
         if (typeRef is null)
             return false;
-        return typeRef.NormalizeBuiltInShorthands().Name is "whole" or "integer";
+        return typeRef.NormalizeBuiltInShorthands().Name is "whole" or "integer"
+            or "integer8" or "integer16" or "integer32"
+            or "whole8" or "whole16" or "whole32";
     }
 
     private static bool IsTypeRefNamed(TypeRef? typeRef, string name)
         => typeRef is not null &&
            string.Equals(typeRef.NormalizeBuiltInShorthands().Name, name, StringComparison.Ordinal);
+
+    private void EmitStorageBoundaryCheck(TypeRef? targetTypeRef)
+    {
+        if (TryGetSizedNumericKind(targetTypeRef, out var kind))
+            _builder.CheckedSizedNumericCast(kind);
+    }
+
+    private static bool TryGetSizedNumericKind(TypeRef? typeRef, out ConsoleApp1.SizedNumericKind kind)
+    {
+        kind = default;
+        if (typeRef is null)
+            return false;
+
+        typeRef = typeRef.NormalizeBuiltInShorthands();
+        switch (typeRef.Name)
+        {
+            case "integer8":
+                kind = ConsoleApp1.SizedNumericKind.Integer8;
+                return true;
+            case "integer16":
+                kind = ConsoleApp1.SizedNumericKind.Integer16;
+                return true;
+            case "integer32":
+                kind = ConsoleApp1.SizedNumericKind.Integer32;
+                return true;
+            case "whole8":
+                kind = ConsoleApp1.SizedNumericKind.Whole8;
+                return true;
+            case "whole16":
+                kind = ConsoleApp1.SizedNumericKind.Whole16;
+                return true;
+            case "whole32":
+                kind = ConsoleApp1.SizedNumericKind.Whole32;
+                return true;
+            case "real32":
+                kind = ConsoleApp1.SizedNumericKind.Real32;
+                return true;
+            default:
+                return false;
+        }
+    }
 
     private void EmitBuiltInCollectionMethodCall(MethodCallExpr mc, TypeRef targetType)
     {
@@ -1318,8 +1420,15 @@ sealed class CodeGenerator
         {
             var arg = mc.Arguments[i];
             Emit(arg);
-            if (i == 0 && TryGetCollectionInsertedValueType(targetType, mc.ResolvedBuiltInCollectionMethodName, out _))
+            if (i == 0 && TryGetCollectionInsertedValueType(targetType, mc.ResolvedBuiltInCollectionMethodName, out var insertedType))
+            {
                 EmitCloneForSourceExprIfNeeded(arg);
+                EmitStorageBoundaryCheck(insertedType);
+            }
+            else if (i == 0 && TryGetCollectionLookupValueType(targetType, mc.ResolvedBuiltInCollectionMethodName, out var lookupType))
+            {
+                EmitStorageBoundaryCheck(lookupType);
+            }
         }
 
         switch (targetType.Name, mc.ResolvedBuiltInCollectionMethodName)
@@ -1407,6 +1516,18 @@ sealed class CodeGenerator
         }
     }
 
+    private void EmitIndexKeyBoundaryCheck(Expr collectionExpr)
+    {
+        var collectionType = TryResolveTypeRef(collectionExpr);
+        collectionType = collectionType?.NormalizeBuiltInShorthands();
+        if (collectionType is not null &&
+            string.Equals(collectionType.Name, "map", StringComparison.Ordinal) &&
+            collectionType.TypeArguments.Count == 2)
+        {
+            EmitStorageBoundaryCheck(collectionType.TypeArguments[0]);
+        }
+    }
+
     private void EmitIndexSet(Expr collectionExpr)
     {
         var collectionType = TryResolveTypeRef(collectionExpr)
@@ -1443,6 +1564,35 @@ sealed class CodeGenerator
                 }
                 return false;
             case ("set", "add"):
+                if (collectionType.TypeArguments.Count == 1)
+                {
+                    valueType = collectionType.TypeArguments[0];
+                    return true;
+                }
+                return false;
+            default:
+                return false;
+        }
+    }
+
+    private bool TryGetCollectionLookupValueType(TypeRef collectionType, string? methodName, out TypeRef? valueType)
+    {
+        valueType = null;
+        if (methodName is null)
+            return false;
+
+        switch (collectionType.Name, methodName)
+        {
+            case ("map", "contains"):
+            case ("map", "remove"):
+                if (collectionType.TypeArguments.Count == 2)
+                {
+                    valueType = collectionType.TypeArguments[0];
+                    return true;
+                }
+                return false;
+            case ("set", "contains"):
+            case ("set", "remove"):
                 if (collectionType.TypeArguments.Count == 1)
                 {
                     valueType = collectionType.TypeArguments[0];
@@ -1566,13 +1716,17 @@ sealed class CodeGenerator
     private void EmitObjectMethodCall(MethodCallExpr mc, TypeRef targetType)
     {
         Emit(mc.Target);
-        foreach (var arg in mc.Arguments)
+        string key = mc.ResolvedMethodKey ?? MethodKey(targetType.Name, mc.MethodName.Lexeme, mc.Arguments.Count);
+        _methodParamTypes.TryGetValue(key, out var methodParamTypes);
+        for (int i = 0; i < mc.Arguments.Count; i++)
         {
+            var arg = mc.Arguments[i];
             Emit(arg);
             EmitCloneForSourceExprIfNeeded(arg);
+            if (methodParamTypes is not null && i < methodParamTypes.Count)
+                EmitStorageBoundaryCheck(methodParamTypes[i]);
         }
 
-        string key = mc.ResolvedMethodKey ?? MethodKey(targetType.Name, mc.MethodName.Lexeme, mc.Arguments.Count);
         if (!_methods.TryGetValue(key, out var info))
             throw new InvalidOperationException($"Undefined method '{targetType.Name}.{mc.MethodName.Lexeme}' with {mc.Arguments.Count} args");
 
@@ -1586,10 +1740,14 @@ sealed class CodeGenerator
             throw new InvalidOperationException($"Missing implicit method resolution for '{call.Callee.Lexeme}'");
 
         EmitCurrentObject();
-        foreach (var arg in call.Arguments)
+        _methodParamTypes.TryGetValue(call.ResolvedImplicitMethodKey, out var methodParamTypes);
+        for (int i = 0; i < call.Arguments.Count; i++)
         {
+            var arg = call.Arguments[i];
             Emit(arg);
             EmitCloneForSourceExprIfNeeded(arg);
+            if (methodParamTypes is not null && i < methodParamTypes.Count)
+                EmitStorageBoundaryCheck(methodParamTypes[i]);
         }
 
         if (!_methods.TryGetValue(call.ResolvedImplicitMethodKey, out var info))
@@ -1609,10 +1767,14 @@ sealed class CodeGenerator
             targets = [];
 
         Emit(mc.Target);
-        foreach (var arg in mc.Arguments)
+        _interfaceMethodParamTypes.TryGetValue(dispatchKey, out var interfaceParamTypes);
+        for (int i = 0; i < mc.Arguments.Count; i++)
         {
+            var arg = mc.Arguments[i];
             Emit(arg);
             EmitCloneForSourceExprIfNeeded(arg);
+            if (interfaceParamTypes is not null && i < interfaceParamTypes.Count)
+                EmitStorageBoundaryCheck(interfaceParamTypes[i]);
         }
 
         var entries = new List<BytecodeBuilder.InterfaceDispatchEntry>(targets.Count);
@@ -1827,10 +1989,14 @@ sealed class CodeGenerator
 
         if (!_functions.TryGetValue(call.Callee.Lexeme, out var info))
             throw new InvalidOperationException($"Call to undefined function '{call.Callee.Lexeme}' at line {call.Callee.Line}, col {call.Callee.Column}");
-        foreach (var arg in call.Arguments)
+        _functionParamTypes.TryGetValue(call.Callee.Lexeme, out var functionParamTypes);
+        for (int i = 0; i < call.Arguments.Count; i++)
         {
+            var arg = call.Arguments[i];
             Emit(arg);
             EmitCloneForSourceExprIfNeeded(arg);
+            if (functionParamTypes is not null && i < functionParamTypes.Count)
+                EmitStorageBoundaryCheck(functionParamTypes[i]);
         }
         int frameSize = Math.Max(info.LocalCount, info.ParamCount); // include params in frame size
         _builder.Call(info.Label, call.Arguments.Count, frameSize);

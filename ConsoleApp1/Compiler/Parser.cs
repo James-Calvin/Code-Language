@@ -239,6 +239,15 @@ sealed class Parser
             TokenType.Integer => "integer",
             TokenType.Whole => "whole",
             TokenType.Real => "real",
+            TokenType.Byte => "byte",
+            TokenType.Integer8 => "integer8",
+            TokenType.Integer16 => "integer16",
+            TokenType.Integer32 => "integer32",
+            TokenType.Whole8 => "whole8",
+            TokenType.Whole16 => "whole16",
+            TokenType.Whole32 => "whole32",
+            TokenType.Real32 => "real32",
+            TokenType.Real64 => "real64",
             TokenType.Boolean => "boolean",
             TokenType.Void => "void",
             TokenType.Array => "array",
@@ -923,7 +932,12 @@ sealed class Parser
     private Token Previous() => _tokens[_current - 1];
 
     private bool IsTypeStart(Token token) =>
-        token.Type is TokenType.Integer or TokenType.Whole or TokenType.Real or TokenType.Boolean or TokenType.Void or TokenType.Array or TokenType.Optional or TokenType.Fallible or TokenType.Identifier;
+        token.Type is TokenType.Integer or TokenType.Whole or TokenType.Real
+            or TokenType.Byte or TokenType.Integer8 or TokenType.Integer16 or TokenType.Integer32
+            or TokenType.Whole8 or TokenType.Whole16 or TokenType.Whole32
+            or TokenType.Real32 or TokenType.Real64
+            or TokenType.Boolean or TokenType.Void or TokenType.Array or TokenType.Optional
+            or TokenType.Fallible or TokenType.Identifier;
 
     private Token ConsumeTypeStart(string message)
     {

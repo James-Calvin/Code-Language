@@ -9,7 +9,8 @@ enum CastRuntimeKind
     None,
     ToInteger,
     ToWhole,
-    ToReal
+    ToReal,
+    ToSizedNumeric
 }
 
 sealed class Binary : Expr
@@ -34,6 +35,7 @@ sealed class CastExpr : Expr
     public TypeRef TargetType { get; }
     public bool ResolvedIsEnumCast { get; set; }
     public CastRuntimeKind ResolvedRuntimeKind { get; set; }
+    public ConsoleApp1.SizedNumericKind? ResolvedSizedNumericKind { get; set; }
     public CastExpr(Expr value, Token asToken, TypeRef targetType)
     {
         Value = value;

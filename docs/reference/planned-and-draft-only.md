@@ -11,8 +11,7 @@ Use [Example Catalog](../example-catalog.md) and the current compiler as the tru
 | Fallible propagation shorthand, such as `try` | Planned. Use explicit `on error` handlers today. |
 | `fallible<void, E>` | Deferred. Fallible success type cannot be `void` today. |
 | Semicolon injection | Draft-only. Write semicolons today. |
-| Sized numeric types such as `integer8`, `whole32`, `real64` | Draft-only in current docs. |
-| `byte` as a readable alias for `whole8` | Planned as part of sized numerics; `byte` is accepted as a readable domain term. |
+| `integer64` and `whole64` | Deferred until the runtime has a cross-target exact wide-integer representation. |
 | Numeric literal suffixes such as `i32`, `w64`, `r32` | Draft-only. |
 | Exponent numeric literals such as `1e3` or `1.5e-2` | Draft-only. |
 | Field defaults such as `integer radius = 7;` inside object or record bodies | Planned. Fields still require constructor initialization today. |
@@ -32,7 +31,7 @@ Use [Example Catalog](../example-catalog.md) and the current compiler as the tru
 | Feature | Status |
 | --- | --- |
 | Broader standard library beyond current containers, math, time, IO baseline | Planned. |
-| Byte-channel color overloads such as `rgb(byte, byte, byte)` and `rgba(byte, byte, byte, byte)` | Planned after `byte` / `whole8` exists. Current `rgb` / `rgba` use real channels commonly from `0` to `1`. |
+| Byte-channel color overloads such as `rgb(byte, byte, byte)` and `rgba(byte, byte, byte, byte)` | Planned on top of the implemented `byte` / `whole8` type surface. Current `rgb` / `rgba` use real channels commonly from `0` to `1`. |
 | Mouse/touch input | Out of current V1 web slice. |
 | Audio APIs | Out of current V1 web slice. |
 | Physics APIs | Out of current V1 web slice. |
@@ -128,4 +127,25 @@ print(1.);
 print(.5);
 print(3.8 as integer);
 print(3 as real);
+```
+
+Sized numeric boundary types are implemented:
+
+```code
+byte channel = 255;
+whole16 wider = channel;
+integer8 small = -12;
+whole32 max = 4294967295;
+byte narrowed = 255 as byte;
+```
+
+`300 as byte` is implemented, but it raises a runtime range error because `byte` / `whole8` is limited to `0..255`.
+
+Still do not write deferred numeric forms:
+
+```code
+// Planned only. Do not use today.
+integer64 exact = 9223372036854775807;
+integer withSuffix = 12i32;
+real exponent = 1.5e-2;
 ```

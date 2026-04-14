@@ -653,7 +653,7 @@ sealed class TypeChecker
                 {
                     var init = CheckExpr(v.Initializer, env, currentReturn);
                     var initRef = ResolveExprTypeRef(v.Initializer, env);
-                    RequireAssignable(t, v.Type, init, initRef, v.Type.Line, v.Type.Column, "Initializer type mismatch");
+                    RequireAssignable(t, v.Type, init, initRef, v.Type.Line, v.Type.Column, "Initializer type mismatch", v.Initializer);
                 }
                 bool assignedFlag = hasInit || t == TypeSymbol.Optional;
                 env.Define(v.Name.Lexeme, t, v.Type, v.Name.Line, v.Name.Column, assignedFlag, isConstant: v.IsConstant);
@@ -781,16 +781,16 @@ sealed class TypeChecker
                 {
                     if (rval == TypeSymbol.Fallible)
                     {
-                        RequireAssignable(currentReturn.Value, _currentReturnTypeRef, rval, retRef, GetStmtLine(r), GetStmtCol(r), "Return type mismatch");
+                        RequireAssignable(currentReturn.Value, _currentReturnTypeRef, rval, retRef, GetStmtLine(r), GetStmtCol(r), "Return type mismatch", r.Value);
                     }
                     else
                     {
-                        RequireAssignable(MapType(successTypeRef), successTypeRef, rval, retRef, GetStmtLine(r), GetStmtCol(r), "Return type mismatch");
+                        RequireAssignable(MapType(successTypeRef), successTypeRef, rval, retRef, GetStmtLine(r), GetStmtCol(r), "Return type mismatch", r.Value);
                     }
                 }
                 else
                 {
-                    RequireAssignable(currentReturn.Value, _currentReturnTypeRef, rval, retRef, GetStmtLine(r), GetStmtCol(r), "Return type mismatch");
+                    RequireAssignable(currentReturn.Value, _currentReturnTypeRef, rval, retRef, GetStmtLine(r), GetStmtCol(r), "Return type mismatch", r.Value);
                 }
                 return true;
 
@@ -816,7 +816,8 @@ sealed class TypeChecker
                     valueTypeRef,
                     y.Keyword.Line,
                     y.Keyword.Column,
-                    "Yield value type mismatch");
+                    "Yield value type mismatch",
+                    y.Value);
                 return true;
             }
 
@@ -867,6 +868,7 @@ sealed class TypeChecker
                     string => TypeSymbol.String,
                     IList<Expr> => TypeSymbol.Array,
                     double => TypeSymbol.Real,
+                    long => TypeSymbol.Whole32,
                     _ => TypeSymbol.Integer
                 };
             case InterpString istr:
@@ -943,7 +945,8 @@ sealed class TypeChecker
                         ResolveExprTypeRef(aidx.Index, env),
                         GetLine(aidx.Index),
                         GetCol(aidx.Index),
-                        "Map key type mismatch");
+                        "Map key type mismatch",
+                        aidx.Index);
                     aidx.ResolvedElementTypeRef = arrayTypeRef.TypeArguments[1];
                 }
                 else
@@ -1032,7 +1035,8 @@ sealed class TypeChecker
                         ResolveExprTypeRef(aset.Target.Index, env),
                         GetLine(aset.Target.Index),
                         GetCol(aset.Target.Index),
-                        "Map key type mismatch");
+                        "Map key type mismatch",
+                        aset.Target.Index);
                 }
                 else
                 {
@@ -1044,7 +1048,7 @@ sealed class TypeChecker
                 if (targetElementTypeRef is null)
                     throw new CompilerException("Could not resolve indexed value type", GetLine(aset.Target.Array), GetCol(aset.Target.Array));
                 var valueTypeRef = ResolveExprTypeRef(aset.Value, env);
-                RequireAssignable(targetElementType, targetElementTypeRef, valT, valueTypeRef, GetLine(aset.Target), GetCol(aset.Target), "Indexed assignment type mismatch");
+                RequireAssignable(targetElementType, targetElementTypeRef, valT, valueTypeRef, GetLine(aset.Target), GetCol(aset.Target), "Indexed assignment type mismatch", aset.Value);
                 return targetElementType;
             case FieldSetExpr fset:
             {
@@ -1059,7 +1063,7 @@ sealed class TypeChecker
                 {
                     var expectedTypeRef = ResolveFieldTypeRef(fset.Target, env);
                     var fieldValueTypeRef = ResolveExprTypeRef(fset.Value, env);
-                    RequireAssignable(expected, expectedTypeRef, rhsType, fieldValueTypeRef, fset.Target.Name.Line, fset.Target.Name.Column, "Field assignment type mismatch");
+                    RequireAssignable(expected, expectedTypeRef, rhsType, fieldValueTypeRef, fset.Target.Name.Line, fset.Target.Name.Column, "Field assignment type mismatch", fset.Value);
                 }
                 return rhsType;
             }
@@ -1142,7 +1146,7 @@ sealed class TypeChecker
                     a.ResolvedImplicitFieldTypeRef = null;
                     env.EnsureCanAssign(a.Name);
                     var lhsTypeRef = env.TryGetDeclaredType(a.Name);
-                    RequireAssignable(lhsType, lhsTypeRef, rhs, rhsTypeRef, a.Name.Line, a.Name.Column, "Assignment type mismatch");
+                    RequireAssignable(lhsType, lhsTypeRef, rhs, rhsTypeRef, a.Name.Line, a.Name.Column, "Assignment type mismatch", a.Value);
                     env.MarkAssigned(a.Name);
                     return lhsType;
                 }
@@ -1150,7 +1154,7 @@ sealed class TypeChecker
                 if (TryResolveImplicitField(a.Name, env, out var implicitFieldType, out var implicitFieldTypeRef))
                 {
                     a.ResolvedImplicitFieldTypeRef = implicitFieldTypeRef;
-                    RequireAssignable(implicitFieldType, implicitFieldTypeRef, rhs, rhsTypeRef, a.Name.Line, a.Name.Column, "Assignment type mismatch");
+                    RequireAssignable(implicitFieldType, implicitFieldTypeRef, rhs, rhsTypeRef, a.Name.Line, a.Name.Column, "Assignment type mismatch", a.Value);
                     return implicitFieldType;
                 }
 
@@ -1166,6 +1170,8 @@ sealed class TypeChecker
                     valueType,
                     GetLine(c.Target),
                     GetCol(c.Target));
+                if (IsSizedNumeric(targetType) && IsNumeric(resultType))
+                    return targetType;
                 RequireAssignable(
                     targetType,
                     targetTypeRef,
@@ -1209,7 +1215,7 @@ sealed class TypeChecker
                     throw new CompilerException($"Function '{c.Callee.Lexeme}' expects {sig.Params.Count} args, got {c.Arguments.Count}", c.Callee.Line, c.Callee.Column);
                 for (int i = 0; i < c.Arguments.Count; i++)
                 {
-                    RequireAssignable(sig.Params[i], sig.ParamTypeRefs[i], argTypes[i].Symbol, argTypes[i].Ref, c.Callee.Line, c.Callee.Column, $"Argument {i} type mismatch for '{c.Callee.Lexeme}'");
+                    RequireAssignable(sig.Params[i], sig.ParamTypeRefs[i], argTypes[i].Symbol, argTypes[i].Ref, c.Callee.Line, c.Callee.Column, $"Argument {i} type mismatch for '{c.Callee.Lexeme}'", c.Arguments[i]);
                 }
                 c.ResolvedImplicitMethodOwnerTypeName = null;
                 c.ResolvedImplicitMethodKey = null;
@@ -1222,6 +1228,13 @@ sealed class TypeChecker
                     Require(ut == TypeSymbol.Boolean, u.Right, "'not' requires boolean");
                 else
                     Require(IsNumeric(ut), u.Right, "Unary +/− require numeric");
+                if (u.Operator.Type == TokenType.Minus &&
+                    TryGetIntegralLiteralValue(u, out long unaryLiteral) &&
+                    unaryLiteral >= int.MinValue &&
+                    unaryLiteral <= int.MaxValue)
+                {
+                    return TypeSymbol.Integer;
+                }
                 return u.Operator.Type == TokenType.Not ? TypeSymbol.Boolean : ut;
             case CastExpr cast:
                 return CheckCastExpr(cast, env, currentReturn);
@@ -1281,6 +1294,7 @@ sealed class TypeChecker
 
         expr.ResolvedIsEnumCast = false;
         expr.ResolvedRuntimeKind = CastRuntimeKind.None;
+        expr.ResolvedSizedNumericKind = null;
 
         if (IsNumeric(sourceType) && IsNumeric(targetType))
         {
@@ -1289,8 +1303,13 @@ sealed class TypeChecker
                 TypeSymbol.Integer => CastRuntimeKind.ToInteger,
                 TypeSymbol.Whole => CastRuntimeKind.ToWhole,
                 TypeSymbol.Real => CastRuntimeKind.ToReal,
+                TypeSymbol.Integer8 or TypeSymbol.Integer16 or TypeSymbol.Integer32
+                    or TypeSymbol.Whole8 or TypeSymbol.Whole16 or TypeSymbol.Whole32
+                    or TypeSymbol.Real32 => CastRuntimeKind.ToSizedNumeric,
                 _ => CastRuntimeKind.None
             };
+            if (expr.ResolvedRuntimeKind == CastRuntimeKind.ToSizedNumeric)
+                expr.ResolvedSizedNumericKind = ToSizedNumericKind(targetType);
             return targetType;
         }
 
@@ -1323,7 +1342,7 @@ sealed class TypeChecker
         if (sourceType == TypeSymbol.Enum || targetType == TypeSymbol.Enum)
             throw new CompilerException("Enum casts are only supported between enum values and integer", expr.AsToken.Line, expr.AsToken.Column);
 
-        throw new CompilerException("Cast target must be whole, integer, real, or an enum type", expr.AsToken.Line, expr.AsToken.Column);
+        throw new CompilerException("Cast target must be a numeric type or an enum type", expr.AsToken.Line, expr.AsToken.Column);
     }
 
     private TypeSymbol CheckFallibleErrorExpr(FallibleErrorExpr expr, TypeEnvironment env, TypeSymbol? currentReturn)
@@ -1356,7 +1375,8 @@ sealed class TypeChecker
                 codeTypeRef,
                 GetLine(expr.Arguments[0]),
                 GetCol(expr.Arguments[0]),
-                "Error code type mismatch");
+                "Error code type mismatch",
+                expr.Arguments[0]);
         }
 
         if (expr.Arguments.Count == 2)
@@ -1438,7 +1458,8 @@ sealed class TypeChecker
                     arguments[0].Ref,
                     methodCall.MethodName.Line,
                     methodCall.MethodName.Column,
-                    "Array append element type mismatch");
+                    "Array append element type mismatch",
+                    methodCall.Arguments[0]);
                 methodCall.ResolvedBuiltInCollectionMethodName = "append";
                 methodCall.ResolvedReturnTypeRef = BuildImplicitVoidTypeRef(methodCall.MethodName);
                 return TypeSymbol.Void;
@@ -1470,7 +1491,7 @@ sealed class TypeChecker
             {
                 if (arguments.Count != 1)
                     throw new CompilerException("Map method 'contains' expects 1 argument", methodCall.MethodName.Line, methodCall.MethodName.Column);
-                RequireAssignable(keyType, keyTypeRef, arguments[0].Symbol, arguments[0].Ref, methodCall.MethodName.Line, methodCall.MethodName.Column, "Map key type mismatch");
+                RequireAssignable(keyType, keyTypeRef, arguments[0].Symbol, arguments[0].Ref, methodCall.MethodName.Line, methodCall.MethodName.Column, "Map key type mismatch", methodCall.Arguments[0]);
                 methodCall.ResolvedBuiltInCollectionMethodName = "contains";
                 methodCall.ResolvedReturnTypeRef = new TypeRef("boolean", null, methodCall.MethodName.Line, methodCall.MethodName.Column);
                 return TypeSymbol.Boolean;
@@ -1480,7 +1501,7 @@ sealed class TypeChecker
             {
                 if (arguments.Count != 1)
                     throw new CompilerException("Map method 'remove' expects 1 argument", methodCall.MethodName.Line, methodCall.MethodName.Column);
-                RequireAssignable(keyType, keyTypeRef, arguments[0].Symbol, arguments[0].Ref, methodCall.MethodName.Line, methodCall.MethodName.Column, "Map key type mismatch");
+                RequireAssignable(keyType, keyTypeRef, arguments[0].Symbol, arguments[0].Ref, methodCall.MethodName.Line, methodCall.MethodName.Column, "Map key type mismatch", methodCall.Arguments[0]);
                 methodCall.ResolvedBuiltInCollectionMethodName = "remove";
                 methodCall.ResolvedReturnTypeRef = BuildImplicitVoidTypeRef(methodCall.MethodName);
                 return TypeSymbol.Void;
@@ -1501,7 +1522,7 @@ sealed class TypeChecker
             {
                 if (arguments.Count != 1)
                     throw new CompilerException("Set method 'add' expects 1 argument", methodCall.MethodName.Line, methodCall.MethodName.Column);
-                RequireAssignable(elementType, elementTypeRef, arguments[0].Symbol, arguments[0].Ref, methodCall.MethodName.Line, methodCall.MethodName.Column, "Set element type mismatch");
+                RequireAssignable(elementType, elementTypeRef, arguments[0].Symbol, arguments[0].Ref, methodCall.MethodName.Line, methodCall.MethodName.Column, "Set element type mismatch", methodCall.Arguments[0]);
                 methodCall.ResolvedBuiltInCollectionMethodName = "add";
                 methodCall.ResolvedReturnTypeRef = BuildImplicitVoidTypeRef(methodCall.MethodName);
                 return TypeSymbol.Void;
@@ -1511,7 +1532,7 @@ sealed class TypeChecker
             {
                 if (arguments.Count != 1)
                     throw new CompilerException("Set method 'contains' expects 1 argument", methodCall.MethodName.Line, methodCall.MethodName.Column);
-                RequireAssignable(elementType, elementTypeRef, arguments[0].Symbol, arguments[0].Ref, methodCall.MethodName.Line, methodCall.MethodName.Column, "Set element type mismatch");
+                RequireAssignable(elementType, elementTypeRef, arguments[0].Symbol, arguments[0].Ref, methodCall.MethodName.Line, methodCall.MethodName.Column, "Set element type mismatch", methodCall.Arguments[0]);
                 methodCall.ResolvedBuiltInCollectionMethodName = "contains";
                 methodCall.ResolvedReturnTypeRef = new TypeRef("boolean", null, methodCall.MethodName.Line, methodCall.MethodName.Column);
                 return TypeSymbol.Boolean;
@@ -1521,7 +1542,7 @@ sealed class TypeChecker
             {
                 if (arguments.Count != 1)
                     throw new CompilerException("Set method 'remove' expects 1 argument", methodCall.MethodName.Line, methodCall.MethodName.Column);
-                RequireAssignable(elementType, elementTypeRef, arguments[0].Symbol, arguments[0].Ref, methodCall.MethodName.Line, methodCall.MethodName.Column, "Set element type mismatch");
+                RequireAssignable(elementType, elementTypeRef, arguments[0].Symbol, arguments[0].Ref, methodCall.MethodName.Line, methodCall.MethodName.Column, "Set element type mismatch", methodCall.Arguments[0]);
                 methodCall.ResolvedBuiltInCollectionMethodName = "remove";
                 methodCall.ResolvedReturnTypeRef = BuildImplicitVoidTypeRef(methodCall.MethodName);
                 return TypeSymbol.Void;
@@ -1542,7 +1563,7 @@ sealed class TypeChecker
             {
                 if (arguments.Count != 1)
                     throw new CompilerException("Queue method 'enqueue' expects 1 argument", methodCall.MethodName.Line, methodCall.MethodName.Column);
-                RequireAssignable(elementType, elementTypeRef, arguments[0].Symbol, arguments[0].Ref, methodCall.MethodName.Line, methodCall.MethodName.Column, "Queue element type mismatch");
+                RequireAssignable(elementType, elementTypeRef, arguments[0].Symbol, arguments[0].Ref, methodCall.MethodName.Line, methodCall.MethodName.Column, "Queue element type mismatch", methodCall.Arguments[0]);
                 methodCall.ResolvedBuiltInCollectionMethodName = "enqueue";
                 methodCall.ResolvedReturnTypeRef = BuildImplicitVoidTypeRef(methodCall.MethodName);
                 return TypeSymbol.Void;
@@ -1573,7 +1594,7 @@ sealed class TypeChecker
             {
                 if (arguments.Count != 1)
                     throw new CompilerException("Stack method 'push' expects 1 argument", methodCall.MethodName.Line, methodCall.MethodName.Column);
-                RequireAssignable(elementType, elementTypeRef, arguments[0].Symbol, arguments[0].Ref, methodCall.MethodName.Line, methodCall.MethodName.Column, "Stack element type mismatch");
+                RequireAssignable(elementType, elementTypeRef, arguments[0].Symbol, arguments[0].Ref, methodCall.MethodName.Line, methodCall.MethodName.Column, "Stack element type mismatch", methodCall.Arguments[0]);
                 methodCall.ResolvedBuiltInCollectionMethodName = "push";
                 methodCall.ResolvedReturnTypeRef = BuildImplicitVoidTypeRef(methodCall.MethodName);
                 return TypeSymbol.Void;
@@ -1633,6 +1654,13 @@ sealed class TypeChecker
             TypeSymbol.Integer => "integer",
             TypeSymbol.Whole => "whole",
             TypeSymbol.Real => "real",
+            TypeSymbol.Integer8 => "integer8",
+            TypeSymbol.Integer16 => "integer16",
+            TypeSymbol.Integer32 => "integer32",
+            TypeSymbol.Whole8 => "whole8",
+            TypeSymbol.Whole16 => "whole16",
+            TypeSymbol.Whole32 => "whole32",
+            TypeSymbol.Real32 => "real32",
             TypeSymbol.Boolean => "boolean",
             TypeSymbol.String => "string",
             TypeSymbol.Map => "map",
@@ -1711,12 +1739,20 @@ sealed class TypeChecker
     private TypeSymbol MapType(TypeRef typeRef)
     {
         ValidateTypeRef(typeRef);
+        typeRef = typeRef.NormalizeBuiltInShorthands();
 
         return typeRef.Name switch
         {
             "integer" => TypeSymbol.Integer,
             "whole" => TypeSymbol.Whole,
             "real" => TypeSymbol.Real,
+            "integer8" => TypeSymbol.Integer8,
+            "integer16" => TypeSymbol.Integer16,
+            "integer32" => TypeSymbol.Integer32,
+            "whole8" => TypeSymbol.Whole8,
+            "whole16" => TypeSymbol.Whole16,
+            "whole32" => TypeSymbol.Whole32,
+            "real32" => TypeSymbol.Real32,
             "boolean" => TypeSymbol.Boolean,
             "string" => TypeSymbol.String,
             "array" => TypeSymbol.Array,
@@ -1957,11 +1993,9 @@ sealed class TypeChecker
 
         if (IsNumeric(expected) && IsNumeric(actual))
         {
-            int eRank = NumericRank(expected);
-            int aRank = NumericRank(actual);
-            if (aRank <= eRank)
+            if (CanWiden(actual, expected))
             {
-                cost = eRank - aRank + 1; // exact handled above
+                cost = NumericConversionCost(actual, expected);
                 return true;
             }
             return false;
@@ -2062,11 +2096,22 @@ sealed class TypeChecker
         return false;
     }
 
-    private static int NumericRank(TypeSymbol t) => t switch
+    private static int NumericConversionCost(TypeSymbol from, TypeSymbol to)
     {
-        TypeSymbol.Whole => 1,
-        TypeSymbol.Integer => 2,
-        TypeSymbol.Real => 3,
+        if (from == to)
+            return 0;
+        if (IsIntegralNumeric(from) && IsIntegralNumeric(to))
+            return 1 + Math.Max(0, IntegralBitWidth(to) - IntegralBitWidth(from));
+        if (to == TypeSymbol.Real)
+            return from == TypeSymbol.Real32 ? 1 : 3;
+        return 10;
+    }
+
+    private static int IntegralBitWidth(TypeSymbol type) => type switch
+    {
+        TypeSymbol.Integer8 or TypeSymbol.Whole8 => 8,
+        TypeSymbol.Integer16 or TypeSymbol.Whole16 => 16,
+        TypeSymbol.Integer or TypeSymbol.Integer32 or TypeSymbol.Whole or TypeSymbol.Whole32 => 32,
         _ => 0
     };
 
@@ -2273,11 +2318,19 @@ sealed class TypeChecker
 
     private void ValidateTypeRef(TypeRef typeRef)
     {
+        typeRef = typeRef.NormalizeBuiltInShorthands();
         switch (typeRef.Name)
         {
             case "integer":
             case "whole":
             case "real":
+            case "integer8":
+            case "integer16":
+            case "integer32":
+            case "whole8":
+            case "whole16":
+            case "whole32":
+            case "real32":
             case "boolean":
             case "string":
             case "void":
@@ -2363,11 +2416,19 @@ sealed class TypeChecker
 
     private bool IsHashableTypeRef(TypeRef typeRef, HashSet<string> visitingRecords)
     {
+        typeRef = typeRef.NormalizeBuiltInShorthands();
         switch (typeRef.Name)
         {
             case "whole":
             case "integer":
             case "real":
+            case "integer8":
+            case "integer16":
+            case "integer32":
+            case "whole8":
+            case "whole16":
+            case "whole32":
+            case "real32":
             case "boolean":
             case "string":
                 return true;
@@ -2416,23 +2477,89 @@ sealed class TypeChecker
             throw new CompilerException(message, line, col);
     }
 
-    private static bool IsNumeric(TypeSymbol t) => t is TypeSymbol.Integer or TypeSymbol.Whole or TypeSymbol.Real;
+    private static bool IsNumeric(TypeSymbol t) =>
+        t is TypeSymbol.Integer or TypeSymbol.Whole or TypeSymbol.Real
+            or TypeSymbol.Integer8 or TypeSymbol.Integer16 or TypeSymbol.Integer32
+            or TypeSymbol.Whole8 or TypeSymbol.Whole16 or TypeSymbol.Whole32
+            or TypeSymbol.Real32;
+
+    private static bool IsSizedNumeric(TypeSymbol t) =>
+        t is TypeSymbol.Integer8 or TypeSymbol.Integer16 or TypeSymbol.Integer32
+            or TypeSymbol.Whole8 or TypeSymbol.Whole16 or TypeSymbol.Whole32
+            or TypeSymbol.Real32;
+
+    private static bool IsIntegralNumeric(TypeSymbol t) =>
+        t is TypeSymbol.Integer or TypeSymbol.Whole
+            or TypeSymbol.Integer8 or TypeSymbol.Integer16 or TypeSymbol.Integer32
+            or TypeSymbol.Whole8 or TypeSymbol.Whole16 or TypeSymbol.Whole32;
     private static bool IsBuiltInCollection(TypeSymbol t) => t is TypeSymbol.Array or TypeSymbol.Map or TypeSymbol.Set or TypeSymbol.Queue or TypeSymbol.Stack;
     private static bool IsReservedBuiltInTypeName(string name) => name is "map" or "set" or "queue" or "stack" or "fallible";
 
     private static bool TryGetIntegerLiteralValue(Expr expr, out int value)
+    {
+        if (TryGetIntegralLiteralValue(expr, out long longValue) &&
+            longValue >= int.MinValue &&
+            longValue <= int.MaxValue)
+        {
+            value = (int)longValue;
+            return true;
+        }
+
+        value = 0;
+        return false;
+    }
+
+    private static bool TryGetIntegralLiteralValue(Expr expr, out long value)
     {
         switch (expr)
         {
             case Literal { Value: int i }:
                 value = i;
                 return true;
+            case Literal { Value: long l }:
+                value = l;
+                return true;
             case Unary { Operator: { Type: TokenType.Plus }, Right: Literal { Value: int i } }:
                 value = i;
+                return true;
+            case Unary { Operator: { Type: TokenType.Plus }, Right: Literal { Value: long l } }:
+                value = l;
                 return true;
             case Unary { Operator: { Type: TokenType.Minus }, Right: Literal { Value: int i } }:
                 value = -i;
                 return true;
+            case Unary { Operator: { Type: TokenType.Minus }, Right: Literal { Value: long l } }:
+                value = -l;
+                return true;
+            default:
+                value = 0;
+                return false;
+        }
+    }
+
+    private static bool TryGetRealLiteralValue(Expr expr, out double value)
+    {
+        switch (expr)
+        {
+            case Literal { Value: double d }:
+                value = d;
+                return true;
+            case Literal { Value: int i }:
+                value = i;
+                return true;
+            case Literal { Value: long l }:
+                value = l;
+                return true;
+            case Unary { Operator: { Type: TokenType.Plus }, Right: var right }:
+                return TryGetRealLiteralValue(right, out value);
+            case Unary { Operator: { Type: TokenType.Minus }, Right: var right }:
+                if (TryGetRealLiteralValue(right, out value))
+                {
+                    value = -value;
+                    return true;
+                }
+                value = 0;
+                return false;
             default:
                 value = 0;
                 return false;
@@ -2442,14 +2569,11 @@ sealed class TypeChecker
     private static TypeSymbol Promote(TypeSymbol a, TypeSymbol b)
     {
         if (!IsNumeric(a) || !IsNumeric(b)) return TypeSymbol.Unknown;
-        int Rank(TypeSymbol t) => t switch
-        {
-            TypeSymbol.Whole => 1,
-            TypeSymbol.Integer => 2,
-            TypeSymbol.Real => 3,
-            _ => 0
-        };
-        return Rank(a) >= Rank(b) ? a : b;
+        if (IsRealNumeric(a) || IsRealNumeric(b))
+            return TypeSymbol.Real;
+        if (IsSignedIntegralNumeric(a) || IsSignedIntegralNumeric(b))
+            return TypeSymbol.Integer;
+        return TypeSymbol.Whole;
     }
 
     private static void Require(bool condition, Expr expr, string message)
@@ -2464,7 +2588,8 @@ sealed class TypeChecker
         TypeRef? valueRef,
         int line,
         int col,
-        string message)
+        string message,
+        Expr? valueExpr = null)
     {
         if (target is TypeSymbol.Object or TypeSymbol.Interface)
         {
@@ -2507,21 +2632,105 @@ sealed class TypeChecker
 
         if (target == value) return;
         if (target == TypeSymbol.Optional) return; // allow any value into optional
+        if (IsNumeric(target) && IsNumeric(value) && IsLiteralAssignableToNumeric(target, valueExpr)) return;
         if (IsNumeric(target) && IsNumeric(value) && CanWiden(value, target)) return;
         throw new CompilerException(message, line, col);
     }
 
     private static bool CanWiden(TypeSymbol from, TypeSymbol to)
     {
-        int Rank(TypeSymbol t) => t switch
+        if (!IsNumeric(from) || !IsNumeric(to))
+            return false;
+        if (from == to)
+            return true;
+        if (from == TypeSymbol.Real32 && to == TypeSymbol.Real)
+            return true;
+        if (IsIntegralNumeric(from) && to == TypeSymbol.Real)
+            return true;
+        if (IsIntegralNumeric(from) && IsIntegralNumeric(to) &&
+            TryGetIntegralRange(from, out var fromMin, out var fromMax) &&
+            TryGetIntegralRange(to, out var toMin, out var toMax))
         {
-            TypeSymbol.Whole => 1,
-            TypeSymbol.Integer => 2,
-            TypeSymbol.Real => 3,
-            _ => 0
-        };
-        return Rank(from) <= Rank(to) && Rank(to) > 0;
+            return fromMin >= toMin && fromMax <= toMax;
+        }
+        return false;
     }
+
+    private static bool IsLiteralAssignableToNumeric(TypeSymbol target, Expr? valueExpr)
+    {
+        if (valueExpr is null)
+            return false;
+        if (IsIntegralNumeric(target) &&
+            TryGetIntegralLiteralValue(valueExpr, out long integralValue) &&
+            TryGetIntegralRange(target, out long minimum, out long maximum))
+        {
+            return integralValue >= minimum && integralValue <= maximum;
+        }
+        if (target == TypeSymbol.Real32 &&
+            TryGetRealLiteralValue(valueExpr, out double realValue))
+        {
+            float rounded = (float)realValue;
+            return double.IsFinite(realValue) && !float.IsInfinity(rounded);
+        }
+        return false;
+    }
+
+    private static bool IsRealNumeric(TypeSymbol t) => t is TypeSymbol.Real or TypeSymbol.Real32;
+
+    private static bool IsSignedIntegralNumeric(TypeSymbol t) =>
+        t is TypeSymbol.Integer or TypeSymbol.Integer8 or TypeSymbol.Integer16 or TypeSymbol.Integer32;
+
+    private static bool TryGetIntegralRange(TypeSymbol type, out long minimum, out long maximum)
+    {
+        switch (type)
+        {
+            case TypeSymbol.Integer:
+            case TypeSymbol.Integer32:
+                minimum = int.MinValue;
+                maximum = int.MaxValue;
+                return true;
+            case TypeSymbol.Whole:
+                minimum = 0;
+                maximum = int.MaxValue;
+                return true;
+            case TypeSymbol.Integer8:
+                minimum = sbyte.MinValue;
+                maximum = sbyte.MaxValue;
+                return true;
+            case TypeSymbol.Integer16:
+                minimum = short.MinValue;
+                maximum = short.MaxValue;
+                return true;
+            case TypeSymbol.Whole8:
+                minimum = byte.MinValue;
+                maximum = byte.MaxValue;
+                return true;
+            case TypeSymbol.Whole16:
+                minimum = ushort.MinValue;
+                maximum = ushort.MaxValue;
+                return true;
+            case TypeSymbol.Whole32:
+                minimum = 0;
+                maximum = uint.MaxValue;
+                return true;
+            default:
+                minimum = 0;
+                maximum = 0;
+                return false;
+        }
+    }
+
+    private static ConsoleApp1.SizedNumericKind ToSizedNumericKind(TypeSymbol type) => type switch
+    {
+        TypeSymbol.Integer8 => ConsoleApp1.SizedNumericKind.Integer8,
+        TypeSymbol.Integer16 => ConsoleApp1.SizedNumericKind.Integer16,
+        TypeSymbol.Integer32 => ConsoleApp1.SizedNumericKind.Integer32,
+        TypeSymbol.Whole8 => ConsoleApp1.SizedNumericKind.Whole8,
+        TypeSymbol.Whole16 => ConsoleApp1.SizedNumericKind.Whole16,
+        TypeSymbol.Whole32 => ConsoleApp1.SizedNumericKind.Whole32,
+        TypeSymbol.Real32 => ConsoleApp1.SizedNumericKind.Real32,
+        _ => throw new InvalidOperationException($"Type '{type}' is not a sized numeric type.")
+    };
 
     private static bool IsReservedPropertyName(string name) =>
         name is "length" or "hasValue" or "value" or "or";

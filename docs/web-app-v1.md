@@ -314,7 +314,7 @@ Behavior rules:
 - `draw_text(...)` uses alignment strings: horizontal `"left"`, `"center"`, `"right"` and vertical `"top"`, `"middle"`, `"bottom"`.
 - `draw_polygon(...)` / `draw_polygon_outline(...)` take a flat numeric array of alternating `x, y` points.
 - `draw_image(...)` and `draw_sprite(...)` load from static asset paths in the built site folder.
-- Future byte-channel `rgb(byte, byte, byte)` and `rgba(byte, byte, byte, byte)` overloads should wait until sized numerics add `byte` as the readable alias for `whole8`; current color wrappers use real channels commonly from `0` to `1`.
+- Future byte-channel `rgb(byte, byte, byte)` and `rgba(byte, byte, byte, byte)` overloads should build on the implemented `byte` / `whole8` numeric type surface; current color wrappers use real channels commonly from `0` to `1`.
 - Integral `/` is truncating integer division. Use a `real` operand for ratio values, for example `1. / 4` or `1 as real / 4`.
 - Legacy `draw_rect(...)` remains accepted as a temporary compatibility alias, but docs and examples use `draw_rectangle(...)`.
 - Peek limiting, culling, and gameplay-specific visibility rules remain developer-authored in user code; the runtime only exposes the bounds needed to implement them.

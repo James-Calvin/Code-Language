@@ -1726,7 +1726,8 @@ static class ModuleCompiler
             CastExpr c => new CastExpr(RewriteExpr(c.Value, typeAliases, namespaceAliases), c.AsToken, RewriteTypeRef(c.TargetType, typeAliases))
             {
                 ResolvedIsEnumCast = c.ResolvedIsEnumCast,
-                ResolvedRuntimeKind = c.ResolvedRuntimeKind
+                ResolvedRuntimeKind = c.ResolvedRuntimeKind,
+                ResolvedSizedNumericKind = c.ResolvedSizedNumericKind
             },
             Literal l => l,
             InterpString s => new InterpString(s.Parts.Select(p => p is Expr e ? (object)RewriteExpr(e, typeAliases, namespaceAliases) : p).ToList(), s.Line, s.Column),

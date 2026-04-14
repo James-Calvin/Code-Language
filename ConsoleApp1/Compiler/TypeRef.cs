@@ -31,6 +31,11 @@ sealed class TypeRef
 
     public TypeRef NormalizeBuiltInShorthands()
     {
+        if (Name == "byte")
+            return new TypeRef("whole8", null, Line, Column);
+        if (Name == "real64")
+            return new TypeRef("real", null, Line, Column);
+
         if (IsFallible && TypeArguments.Count == 1)
         {
             return new TypeRef(

@@ -14,7 +14,7 @@ This roadmap is implementation-truthful: items marked below are gaps from the cu
 1. Field defaults for object/record fields, for example `integer radius = 7;`
 2. Fallible-error propagation shorthand after the explicit `on error` model is exercised
 3. `fallible<void, ErrorCode>` statement-level ergonomics
-4. Sized numeric types, including `byte` as the readable public alias for `whole8`; numeric literal suffixes and exponent real literals remain part of the same numeric polish track
+4. Numeric polish follow-ups: `integer64` / `whole64`, numeric literal suffixes, and exponent real literals
 5. `foreach` over `map`, `set`, `queue`, and `stack`; planned map iteration should yield entry values
 
 ### Stdlib and Runtime Gaps
@@ -27,7 +27,7 @@ This roadmap is implementation-truthful: items marked below are gaps from the cu
 
 ### Engine and App Ergonomics Gaps
 1. Target-agnostic graphical app profile with top-level lifecycle authoring, implicit engine prelude, and synthesized entry shell for `--build-web` first
-2. Broader engine wrapper packages; byte-style `rgb(byte, byte, byte)` / `rgba(byte, byte, byte, byte)` should wait until `byte` / `whole8` exists
+2. Broader engine wrapper packages; byte-style `rgb(byte, byte, byte)` / `rgba(byte, byte, byte, byte)` should build on the implemented `byte` / `whole8` surface
 3. Richer browser input/audio/content handling
 4. Longer-term GPU/backend work
 
@@ -58,7 +58,8 @@ This roadmap is implementation-truthful: items marked below are gaps from the cu
 | `[x]` | Core language | Integer base prefixes | `0b`, `0o`, and `0x` integer literals implemented |
 | `[x]` | Type system | Decimal real literals and explicit casts | Implemented: `1.5`, `1.`, `.5`, numeric casts among `whole`/`integer`/`real`, enum-to-integer casts, and integer-to-enum casts with literal validation |
 | `[x]` | Type system | Integer division semantics | Implemented: integral `/` truncates toward zero; use a `real` operand such as `1. / 2` or `1 as real / 2` for real division |
-| `[~]` | Type system | Sized numerics, exponent real literals & literal suffixes (`i8/w8/r32` etc.) | Deferred beyond current unsized numeric support; include `byte` as the readable public alias for `whole8` |
+| `[x]` | Type system | Sized numeric boundary types | Implemented source-level types `integer8`, `integer16`, `integer32`, `whole8`, `whole16`, `whole32`, `real32`, `real64`; `byte` aliases `whole8`, `real64` aliases `real`, dynamic narrowing and sized stores are range-checked |
+| `[~]` | Type system | Exact wide numerics, exponent real literals & literal suffixes (`i8/w8/r32` etc.) | `integer64` / `whole64`, exponent forms, and suffix literals remain deferred |
 | `[~]` | Type system | Optional/`optional<T>` semantics | Baseline works; flow narrowing and stricter typing rules pending |
 | `[_]` | Type system | Overload resolution rules (spec’d) | Engine not implemented |
 | `[x]` | Error model | Runtime IP + call stack + snippets | Debug-map backed |
@@ -91,7 +92,7 @@ This roadmap is implementation-truthful: items marked below are gaps from the cu
 | `[x]` | Modules/imports | Import-chain diagnostics | Circular/missing-export/import resolution errors include module chain (`a -> b -> c`) |
 | `[~]` | Modules/imports | Import ergonomics expansion | Alias support for object/interface/enum exports, grouped/selective import forms, namespace imports for function-only module surfaces, and re-export imports |
 | `[x]` | Modules/imports | Module graph tooling | `--dump-module-graph [outputPath]` emits module graph (entry/modules/import edges) in text/json/dot; `--trace-linker` emits linker step trace |
-| `[x]` | Bytecode/VM | Header v0x07 + debug table | Implemented |
+| `[x]` | Bytecode/VM | Header v0x08 + debug table | Implemented |
 | `[x]` | Bytecode/VM | Core opcodes (arith/stack/jump/load/store/PRINT/CALL/RET/PUSH_STRING) | Implemented; includes object/array/optional/error primitives and `GET_TYPE_NAME` for interface dispatch lowering |
 | `[~]` | Bytecode/VM | Constant pool for literals | To reduce code size |
 | `[x]` | Bytecode/VM | Recoverable fallible values | Implemented with VM-managed success/error variants and native/web opcode parity |
@@ -116,7 +117,7 @@ This roadmap is implementation-truthful: items marked below are gaps from the cu
 | `[!]` | Platform/targets | Backend-agnostic engine API contract | Lock capability-query + fallback semantics so Code source remains portable across web/native backends |
 | `[~]` | Platform/targets | Native/web parity validation | Single-source app/game runs across both targets with explicit capability fallback behavior |
 | `[~]` | Game engine | Engine core packages | Canonical `engine.scene` now exports `Scene`, `SceneLoop`, and lifecycle interfaces for explicit child-object composition; `engine.math` / broader engine packages still pending |
-| `[~]` | Game engine | Engine platform adapters | Wrapper layer now includes canonical `engine.colors`, `engine.drawing`, `engine.input`, `engine.viewport`, and `engine.scene` with compatibility `engine.view` / `engine.loop`; still need fuller host-backed packages including audio and future byte-channel color overloads after sized numerics land |
+| `[~]` | Game engine | Engine platform adapters | Wrapper layer now includes canonical `engine.colors`, `engine.drawing`, `engine.input`, `engine.viewport`, and `engine.scene` with compatibility `engine.view` / `engine.loop`; still need fuller host-backed packages including audio and future byte-channel color overloads on top of the implemented `byte` / `whole8` surface |
 | `[~]` | Game engine | `engine.gpu` ABI v1 | GPU resource/pipeline/dispatch API for simulation/ML/graphics workloads |
 | `[~]` | Game engine | WebGPU backend | Implement `engine.gpu` via WebGPU on `vm-web` with fallback policy |
 | `[~]` | Game engine | Native GPU backend parity | Implement same `engine.gpu` ABI on `vm-native` backend(s) |
@@ -133,7 +134,7 @@ This roadmap is implementation-truthful: items marked below are gaps from the cu
 
 ## Priority Rollup (benefit/effort)
 - High (`[!]`): keeping example/docs status aligned with implementation truth; notes-derived polish for field defaults, web build output, and the graphical app profile.
-- Medium (`[~]`): fallible propagation shorthand, constant pool, optimizer expansion, tooling polish, sized numerics with `byte`, and engine core/adapters.
+- Medium (`[~]`): fallible propagation shorthand, exact wide numerics/suffixes/exponent literals, constant pool, optimizer expansion, tooling polish, and engine core/adapters.
 - Low (`[_]`): REPL, future stdlib/versioning, long-term runtime lifecycle strategy, remote package registry, and longer-horizon GPU/backend work.
 
 See also: `docs/platform-roadmap.md` for ABI schema, package manifest schema, and phased execution plan.

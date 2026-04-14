@@ -19,7 +19,9 @@ enum TokenType
     Identifier, Number, String,
     True, False,
 
-    Integer, Whole, Real, Boolean, Void, Optional, Fallible,
+    Integer, Whole, Real,
+    Byte, Integer8, Integer16, Integer32, Whole8, Whole16, Whole32, Real32, Real64,
+    Boolean, Void, Optional, Fallible,
     Array, Object, Record, Interface, Enum,
     Constant,
     If, Then, Else,

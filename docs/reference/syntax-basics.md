@@ -94,12 +94,13 @@ Implemented literal forms:
 | None | `none` | `optional<T>` value |
 | Array literal | `{1, 2, 3}` | `array<T>` |
 
-Numeric literals support decimal integers, binary (`0b`), octal (`0o`), hexadecimal (`0x`), and decimal real forms with a dot. Exponent notation and numeric suffixes are not implemented yet.
+Numeric literals support decimal integers, binary (`0b`), octal (`0o`), hexadecimal (`0x`), and decimal real forms with a dot. Unsuffixed integer literals can cover the implemented `integer32` / `whole32` range. Exponent notation and numeric suffixes are not implemented yet.
 
 Common mistakes:
 
 - Exponent literals such as `1e3` and numeric suffixes such as `i32` are draft-only today.
-- Assigning an integer literal directly to `whole` is not the current recommended pattern because there is no unsigned literal syntax yet.
+- Use `byte`, `whole8`, `whole16`, `whole32`, `integer8`, `integer16`, `integer32`, `real32`, and `real64` as type names when you want checked storage boundaries. `byte` is exactly `whole8`; `real64` is exactly `real`.
+- Dynamic narrowing to a sized type requires an explicit cast, for example `value as byte`.
 
 ## Expressions and Operators
 
@@ -163,6 +164,7 @@ Cast examples:
 ```code
 print(3.8 as integer);
 print(3 as real);
+print(255 as byte);
 ```
 
 Output:
@@ -170,6 +172,7 @@ Output:
 ```text
 3
 3
+255
 ```
 
 Postfix increment/decrement:
@@ -195,6 +198,7 @@ Common mistakes:
 - `&&` and `||` are not supported; use `and` and `or`.
 - Bitwise operators are not part of the current language.
 - Casts are intentionally limited to numeric types and enum/integer conversions today.
+- Sized numeric casts and sized storage boundaries perform runtime range checks for dynamic values.
 
 ## Strings and Interpolation
 

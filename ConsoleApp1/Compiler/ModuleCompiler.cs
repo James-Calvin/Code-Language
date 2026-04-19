@@ -1681,7 +1681,11 @@ static class ModuleCompiler
             ObjectDecl obj => new ObjectDecl(
                 obj.Name,
                 obj.IsRecord,
-                obj.Fields.Select(f => new FieldDecl(RewriteTypeRef(f.Type, typeAliases), f.Name, f.Visibility)).ToList(),
+                obj.Fields.Select(f => new FieldDecl(
+                    RewriteTypeRef(f.Type, typeAliases),
+                    f.Name,
+                    f.Initializer is null ? null : RewriteExpr(f.Initializer, typeAliases, namespaceAliases),
+                    f.Visibility)).ToList(),
                 obj.Constructors.Select(c => new ConstructorDecl(
                     c.Keyword,
                     c.Parameters.Select(p => new Parameter(p.Type is null ? null : RewriteTypeRef(p.Type, typeAliases), p.Name)).ToList(),

@@ -14,7 +14,6 @@ Use [Example Catalog](../example-catalog.md) and the current compiler as the tru
 | `integer64` and `whole64` | Deferred until the runtime has a cross-target exact wide-integer representation. |
 | Numeric literal suffixes such as `i32`, `w64`, `r32` | Draft-only. |
 | Exponent numeric literals such as `1e3` or `1.5e-2` | Draft-only. |
-| Field defaults such as `integer radius = 7;` inside object or record bodies | Planned. Fields still require constructor initialization today. |
 | `foreach` over `map`, `set`, `queue`, and `stack` | Deferred. `foreach` supports numeric counts and arrays today; planned map iteration should yield entry values. |
 
 ## Package and Module Features

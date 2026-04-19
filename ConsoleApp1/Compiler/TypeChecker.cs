@@ -17,6 +17,7 @@ sealed class TypeChecker
     private ObjectSymbol? _currentObjectSymbol;
     private TypeRef? _currentObjectTypeRef;
     private string? _currentAccessPackageName;
+    private bool _allowImplicitThisLookup = true;
     private int _loopDepth;
     private static readonly Dictionary<string, FunctionSignature> IntrinsicFunctions = BuildIntrinsicFunctions();
 
@@ -208,7 +209,7 @@ sealed class TypeChecker
                 symbol.Methods[methodKey] = new MethodSignature(method.Name, returnTypeRef, returnType, paramTypes, paramTypeRefs, methodKey, method.Body, method.Parameters, method.Visibility);
             }
 
-            if (symbol.Fields.Count > 0 && symbol.Constructors.Count == 0)
+            if (symbol.Fields.Count > 0 && symbol.Constructors.Count == 0 && obj.Fields.Any(field => field.Initializer is null))
             {
                 throw new CompilerException($"{Capitalize(typeKind)} '{obj.Name.Lexeme}' declares fields but has no constructor to initialize them", obj.Name.Line, obj.Name.Column);
             }
@@ -332,6 +333,7 @@ sealed class TypeChecker
         {
             if (stmt is not ObjectDecl obj)
                 continue;
+            CheckFieldInitializers(obj);
             CheckObjectConstructors(obj);
             CheckObjectMethods(obj);
         }
@@ -380,6 +382,50 @@ sealed class TypeChecker
         _currentAccessPackageName = previousAccessPackageName;
         if (retType != TypeSymbol.Void && !allPathsReturn)
             throw new CompilerException($"Function '{fn.Name.Lexeme}' may not return a value on all paths", fn.Name.Line, fn.Name.Column);
+    }
+
+    private void CheckFieldInitializers(ObjectDecl obj)
+    {
+        if (!_objects.TryGetValue(obj.Name.Lexeme, out var symbol))
+            return;
+
+        var previousObjectSymbol = _currentObjectSymbol;
+        var previousObjectTypeRef = _currentObjectTypeRef;
+        var previousAccessPackageName = _currentAccessPackageName;
+        var previousAllowImplicitThisLookup = _allowImplicitThisLookup;
+        _currentObjectSymbol = symbol;
+        _currentObjectTypeRef = new TypeRef(obj.Name.Lexeme, null, obj.Name.Line, obj.Name.Column);
+        _currentAccessPackageName = obj.OriginPackageName;
+        _allowImplicitThisLookup = false;
+
+        try
+        {
+            var env = new TypeEnvironment();
+            foreach (var field in obj.Fields)
+            {
+                if (field.Initializer is null)
+                    continue;
+
+                var initializerType = CheckExpr(field.Initializer, env, currentReturn: null);
+                var initializerTypeRef = ResolveExprTypeRef(field.Initializer, env);
+                RequireAssignable(
+                    MapType(field.Type),
+                    field.Type,
+                    initializerType,
+                    initializerTypeRef,
+                    field.Name.Line,
+                    field.Name.Column,
+                    "Field initializer type mismatch",
+                    field.Initializer);
+            }
+        }
+        finally
+        {
+            _currentObjectSymbol = previousObjectSymbol;
+            _currentObjectTypeRef = previousObjectTypeRef;
+            _currentAccessPackageName = previousAccessPackageName;
+            _allowImplicitThisLookup = previousAllowImplicitThisLookup;
+        }
     }
 
     private void CheckObjectConstructors(ObjectDecl obj)
@@ -470,7 +516,12 @@ sealed class TypeChecker
 
     private void EnsureAllFieldsInitialized(ObjectDecl obj, Block body)
     {
-        var assigned = ComputeDefiniteFieldAssignments(body, new HashSet<string>(StringComparer.Ordinal));
+        var initiallyAssigned = new HashSet<string>(
+            obj.Fields
+                .Where(field => field.Initializer is not null)
+                .Select(field => field.Name.Lexeme),
+            StringComparer.Ordinal);
+        var assigned = ComputeDefiniteFieldAssignments(body, initiallyAssigned);
         var missing = new List<string>();
         foreach (var field in obj.Fields)
         {
@@ -617,6 +668,9 @@ sealed class TypeChecker
     {
         type = TypeSymbol.Unknown;
         typeRef = null;
+
+        if (!_allowImplicitThisLookup)
+            return false;
 
         if (_currentObjectSymbol is null || _currentObjectTypeRef is null)
             return false;
@@ -1194,7 +1248,7 @@ sealed class TypeChecker
                     argTypes.Add((argType, argTypeRef));
                 }
 
-                if (_currentObjectSymbol is not null && _currentObjectTypeRef is not null && CurrentObjectHasMethodNamed(c.Callee.Lexeme))
+                if (_allowImplicitThisLookup && _currentObjectSymbol is not null && _currentObjectTypeRef is not null && CurrentObjectHasMethodNamed(c.Callee.Lexeme))
                 {
                     if (!TryResolveBestMethod(_currentObjectSymbol, c.Callee.Lexeme, argTypes, requireAccessible: true, out var method, out bool ambiguousMethod))
                     {

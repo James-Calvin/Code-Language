@@ -371,8 +371,11 @@ sealed class Parser
 
             var fType = ParseTypeRef();
             Token fname = Consume(TokenType.Identifier, "Expect field name.");
+            Expr? initializer = null;
+            if (Match(TokenType.Equal))
+                initializer = Expression();
             Consume(TokenType.Semicolon, "Expect ';' after field.");
-            fields.Add(new FieldDecl(fType, fname, visibility));
+            fields.Add(new FieldDecl(fType, fname, initializer, visibility));
         }
         Consume(TokenType.RightBrace, $"Expect '}}' after {(isRecord ? "record" : "object")} fields.");
         return new ObjectDecl(name, isRecord, fields, constructors, methods, inlineInterfaceMethods);

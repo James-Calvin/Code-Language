@@ -1,20 +1,27 @@
 object Person {
+  string name = "unnamed";
   integer age;
+
   constructor(integer value) {
-    this.age = value;
+    age = value;
   }
+
   function<integer> years() {
-    return this.age;
+    return age;
   }
 }
 
 object Team {
+  string label = "core";
   Person lead;
+
   constructor(Person captain) {
-    this.lead = captain;
+    lead = captain;
   }
 }
 
 Person ada = new Person(37);
 Team team = new Team(ada);
+print(team.label);
+print(team.lead.name);
 print(team.lead.years());

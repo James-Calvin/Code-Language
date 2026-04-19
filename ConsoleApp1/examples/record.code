@@ -6,11 +6,10 @@ interface StrengthReader {
 
 record Stats {
   integer strength;
-  integer bonus;
+  integer bonus = 1;
 
-  constructor(integer strength, integer bonus) {
+  constructor(integer strength) {
     this.strength = strength;
-    this.bonus = bonus;
   }
 
   function<Stats> boosted(integer amount) {
@@ -28,7 +27,7 @@ function<StrengthReader> expose(Stats stats) {
   return stats;
 }
 
-Stats player = new Stats(3, 1);
+Stats player = new Stats(3);
 Stats player_copy = player;
 player.strength = 9;
 

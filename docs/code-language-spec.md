@@ -422,10 +422,14 @@ print(turns.dequeue());
 - Object fields must be initialized either:
   - at field declaration, or
   - during constructor execution.
+- Field defaults use `Type name = expression;` inside object or record bodies.
+- Field default expressions are evaluated for each new instance before the constructor body runs.
+- Field default expressions do not have access to constructor parameters, `this`, or implicit field lookup; use a constructor for dependent initialization.
 - Current constructor rules (implemented):
-  - If an object has fields, it must declare at least one constructor.
+  - If an object or record has fields without defaults, it must declare at least one constructor.
+  - Objects or records whose fields all have defaults may omit constructors and still be constructed with `new Type()`.
   - Constructor overloads resolve by parameter-type signatures with best-match conversion scoring.
-  - Each constructor must definitely assign all declared fields via either `this.field = ...` or implicit field assignment (`field = ...`) inside the constructor body.
+  - Each constructor must definitely assign all declared fields that do not have field defaults via either `this.field = ...` or implicit field assignment (`field = ...`) inside the constructor body.
   - `return` is not currently allowed in constructors.
 - Current method lowering (implemented):
   - Methods are lowered to hidden callable bodies with implicit `this` as the first argument.
@@ -729,7 +733,6 @@ if x > 3 then panic("x too large");
 - Fallible-error propagation shorthand such as `try`.
 - `fallible<void, ErrorCode>` statement-level ergonomics.
 - Semicolon injection.
-- Field defaults in object/record bodies, for example `integer radius = 7;`.
 - `integer64` / `whole64`, numeric literal suffixes, and exponent numeric literals.
 - `foreach` over `map`, `set`, `queue`, and `stack`; planned map iteration should yield entry values.
 - Byte-channel color overloads such as `rgb(byte, byte, byte)` and `rgba(byte, byte, byte, byte)` on top of the implemented `byte` / `whole8` type surface; current color helpers use real channels.

@@ -11,11 +11,10 @@ This roadmap is implementation-truthful: items marked below are gaps from the cu
 ## Near-Term Gap Groups
 
 ### Language Gaps
-1. Field defaults for object/record fields, for example `integer radius = 7;`
-2. Fallible-error propagation shorthand after the explicit `on error` model is exercised
-3. `fallible<void, ErrorCode>` statement-level ergonomics
-4. Numeric polish follow-ups: `integer64` / `whole64`, numeric literal suffixes, and exponent real literals
-5. `foreach` over `map`, `set`, `queue`, and `stack`; planned map iteration should yield entry values
+1. Fallible-error propagation shorthand after the explicit `on error` model is exercised
+2. `fallible<void, ErrorCode>` statement-level ergonomics
+3. Numeric polish follow-ups: `integer64` / `whole64`, numeric literal suffixes, and exponent real literals
+4. `foreach` over `map`, `set`, `queue`, and `stack`; planned map iteration should yield entry values
 
 ### Stdlib and Runtime Gaps
 1. Broader standard-library modules after the core container/math baseline lands
@@ -70,8 +69,8 @@ This roadmap is implementation-truthful: items marked below are gaps from the cu
 | `[x]` | Object model | Constructor symbol collection (typed signatures) | Implemented with signature-based overload resolution |
 | `[x]` | Object model | VM heap object representation + opcodes (`NEW_OBJECT`, `GET_FIELD`, `SET_FIELD`) | Implemented with runtime object field dictionary |
 | `[x]` | Object model | Parse + lower `new Type(...)`, `obj.field`, `obj.field = value` | Implemented for object construction + field read/write |
-| `[x]` | Object model | Constructors + definite field initialization rules | Implemented baseline: fields require constructor init; constructors enforced |
-| `[!]` | Object model | Field defaults | Planned notes-derived gap: allow object/record field initializers such as `integer radius = 7;` without treating the feature as implemented yet |
+| `[x]` | Object model | Constructors + definite field initialization rules | Implemented: fields may use declaration defaults or constructor assignment; non-defaulted fields require definite constructor assignment |
+| `[x]` | Object model | Field defaults | Implemented for object/record fields with `Type name = expression;`; defaults run before constructor bodies, and dependent initialization still belongs in constructors |
 | `[x]` | Object model | Method declarations + call syntax (`obj.method(args)`) | Implemented with signature-based overload resolution; object methods support implicit-void authoring |
 | `[x]` | Object model | Temporary method lowering (`method` -> static fn with implicit `this`) | Implemented with compile-time signature binding (no dynamic dispatch yet) |
 | `[x]` | Object model | `record` declaration + value semantics (copy on assignment/pass/return) | Implemented: constructors, methods, inline/external interface implementations, copy-on-assignment/pass/return/container insertion, copy-by-value method receivers, structural equality for hashable records, and hashable record support in `map` / `set` |
@@ -132,7 +131,7 @@ This roadmap is implementation-truthful: items marked below are gaps from the cu
 | `[~]` | Testing | Object-model fuzz/property domains | Constructor/field mutation/member access invariants |
 
 ## Priority Rollup (benefit/effort)
-- High (`[!]`): keeping example/docs status aligned with implementation truth; notes-derived polish for field defaults and the graphical app profile.
+- High (`[!]`): keeping example/docs status aligned with implementation truth and the notes-derived graphical app profile.
 - Medium (`[~]`): fallible propagation shorthand, exact wide numerics/suffixes/exponent literals, richer browser input/audio/content handling, constant pool, optimizer expansion, tooling polish, and engine core/adapters.
 - Low (`[_]`): REPL, future stdlib/versioning, long-term runtime lifecycle strategy, remote package registry, and longer-horizon GPU/backend work.
 

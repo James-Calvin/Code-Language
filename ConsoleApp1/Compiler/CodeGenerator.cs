@@ -77,6 +77,7 @@ sealed class CodeGenerator
     private readonly HashSet<string> _recordNames = new(StringComparer.Ordinal);
     private readonly HashSet<string> _interfaceNames = new(StringComparer.Ordinal);
     private readonly Dictionary<string, Dictionary<string, TypeRef>> _objectFieldTypes = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, IReadOnlyList<FieldDecl>> _objectFieldDefaults = new(StringComparer.Ordinal);
     private readonly Dictionary<string, List<InterfaceDispatchTarget>> _interfaceDispatch = new(StringComparer.Ordinal);
     private readonly Dictionary<string, IReadOnlyList<TypeRef>> _interfaceMethodParamTypes = new(StringComparer.Ordinal);
     private TypeRef? _currentCallableReturnTypeRef;
@@ -128,6 +129,7 @@ sealed class CodeGenerator
                 fieldTypes[field.Name.Lexeme] = field.Type;
             }
             _objectFieldTypes[obj.Name.Lexeme] = fieldTypes;
+            _objectFieldDefaults[obj.Name.Lexeme] = obj.Fields.Where(field => field.Initializer is not null).ToList();
             foreach (var ctor in obj.Constructors)
             {
                 string key = ConstructorKey(obj.Name.Lexeme, ctor.Parameters);
@@ -241,6 +243,26 @@ sealed class CodeGenerator
         foreach (var method in obj.Methods)
         {
             EmitMethod(obj, method);
+        }
+    }
+
+    private void EmitFieldDefaultInitializers(string typeName)
+    {
+        if (!_objectFieldDefaults.TryGetValue(typeName, out var fields) || fields.Count == 0)
+            return;
+
+        foreach (var field in fields)
+        {
+            if (field.Initializer is null)
+                continue;
+
+            SetLoc(field.Name);
+            _builder.Dup();
+            Emit(field.Initializer);
+            EmitCloneForSourceExprIfNeeded(field.Initializer);
+            EmitStorageBoundaryCheck(field.Type);
+            _builder.SetField(field.Name.Lexeme);
+            _builder.Pop();
         }
     }
 
@@ -587,6 +609,7 @@ sealed class CodeGenerator
                     _builder.NewRecord(no.TypeName.Lexeme);
                 else
                     _builder.NewObject(no.TypeName.Lexeme);
+                EmitFieldDefaultInitializers(no.TypeName.Lexeme);
                 string ctorKey = no.ResolvedConstructorKey ?? ConstructorKey(no.TypeName.Lexeme, no.Arguments.Count);
                 if (_constructors.TryGetValue(ctorKey, out var ctor))
                 {

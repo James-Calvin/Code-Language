@@ -6,13 +6,15 @@ Objects are reference-like runtime instances.
 
 ```code
 object Person {
-  string name;
+  string name = "unknown";
+  integer visits = 0;
 
   constructor(string name) {
     this.name = name;
   }
 
   function greet() {
+    visits += 1;
     print("hello {name}");
   }
 }
@@ -31,13 +33,17 @@ Behavior:
 
 - Use `new Type(...)` to construct.
 - Fields are read and written with `object.field`.
+- Fields may declare defaults with `Type name = expression;`.
+- Defaults run for each new instance before the constructor body.
+- Fields without defaults must still be definitely assigned by every constructor.
 - Methods are called with `object.method(...)`.
 - Object variables refer to runtime instances.
 
 Common mistakes:
 
 - Field names `length`, `hasValue`, `value`, and `or` are reserved.
-- Objects with fields need constructors that assign every field.
+- Field defaults cannot read constructor parameters, `this`, or other fields. Use a constructor when one field depends on another.
+- Objects with fields that lack defaults need constructors that assign every non-defaulted field.
 
 ## Records
 
@@ -45,8 +51,8 @@ Records are copy-by-value helper data types.
 
 ```code
 record Point {
-  integer x;
-  integer y;
+  integer x = 0;
+  integer y = 0;
 
   constructor(integer x, integer y) {
     this.x = x;

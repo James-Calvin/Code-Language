@@ -775,6 +775,48 @@ print(history.length);",
 }
 Person p = new Person(42);
 print(p.age);", "42\n"),
+            ("object-field-defaults-no-constructor",
+@"object Counter {
+  integer count = 5;
+  string label = ""ready"";
+
+  function<integer> read() {
+    return count;
+  }
+}
+Counter c = new Counter();
+print(c.count);
+print(c.label);
+print(c.read());", "5\nready\n5\n"),
+            ("object-field-defaults-before-constructor",
+@"object Meter {
+  integer amount = 7;
+  integer doubled;
+
+  constructor() {
+    doubled = amount * 2;
+    amount += 1;
+  }
+}
+Meter meter = new Meter();
+print(meter.amount);
+print(meter.doubled);", "8\n14\n"),
+            ("record-field-defaults",
+@"record Point {
+  integer x = 2;
+  integer y = 3;
+
+  function<Point> moved(integer amount) {
+    x += amount;
+    y += amount;
+    return this;
+  }
+}
+Point start = new Point();
+Point moved = start.moved(5);
+print(start.x);
+print(moved.x);
+print(moved.y);", "2\n7\n8\n"),
             ("object-field-set",
 @"object Counter {
   integer count;
@@ -2067,7 +2109,10 @@ print(value);", "RuntimeError"),
             ("object-duplicate-field", @"object Person { integer age; integer age; constructor(integer v){ this.age = v; } }", "already defined"),
             ("object-unknown-field-type", @"object Person { UnknownType data; }", "Unknown type"),
             ("object-missing-constructor", @"object Person { integer age; }", "has no constructor"),
+            ("object-missing-constructor-for-partial-defaults", @"object Person { integer age = 1; string name; }", "has no constructor"),
             ("object-missing-field-init", @"object Person { integer age; constructor() { } }", "does not definitely assign fields"),
+            ("object-field-default-type-mismatch", @"object Person { integer age = ""old""; }", "Field initializer type mismatch"),
+            ("object-field-default-cannot-read-field", @"object Person { integer age = 1; integer next = age + 1; }", "Undefined variable 'age'"),
             ("object-new-ctor-arity-mismatch", @"object Person { integer age; constructor(integer value) { this.age = value; } } Person p = new Person();", "No matching constructor overload"),
             ("object-method-missing-return", @"object A { integer x; constructor(integer v){ this.x = v; } function<integer> f() { integer y = 1; } }", "may not return"),
             ("object-method-undefined", @"object A { integer x; constructor(integer v){ this.x = v; } } A a = new A(1); print(a.nope());", "no matching method overload"),

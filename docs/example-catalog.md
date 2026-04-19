@@ -1,6 +1,6 @@
 # Example Catalog
 
-Last updated: 2026-04-14
+Last updated: 2026-04-19
 
 This catalog is implementation-truthful.
 
@@ -17,7 +17,7 @@ Use this document as the primary answer to "does this exist yet?"
 | --- | --- | --- | --- |
 | `runnable` | `ConsoleApp1/examples/arithmetic.code` | `run` | Basic arithmetic, typed locals, numeric prefixes, real literals, and numeric casts |
 | `runnable` | `ConsoleApp1/examples/enum.code` | `run` | Strongly typed enumerations with `Enum.Member` access |
-| `runnable` | `ConsoleApp1/examples/record.code` | `run` | Copy-by-value records with methods, interface conformance, and return-and-reassign value updates |
+| `runnable` | `ConsoleApp1/examples/record.code` | `run` | Copy-by-value records with field defaults, methods, interface conformance, and return-and-reassign value updates |
 | `runnable` | `ConsoleApp1/examples/switch.code` | `run` | `switch` statements with enum and integer cases |
 | `runnable` | `ConsoleApp1/examples/fallible.code` | `run` | Recoverable errors with enum-coded `fallible<Value, ErrorCode>`, shorthand `fallible<Value>`, `on error`, and handler `yield` |
 | `runnable` | `ConsoleApp1/examples/strings.code` | `run` | String interpolation, expression interpolation, and escaped literal braces |
@@ -40,7 +40,7 @@ Use this document as the primary answer to "does this exist yet?"
 
 | Status | Path | Use | Notes |
 | --- | --- | --- | --- |
-| `runnable` | `ConsoleApp1/examples/object.code` | `run` | Object fields, constructors, and methods |
+| `runnable` | `ConsoleApp1/examples/object.code` | `run` | Object fields, field defaults, constructors, and methods |
 | `runnable` | `ConsoleApp1/examples/implicit_this.code` | `run` | Implicit field access and bare method calls inside object bodies |
 | `runnable` | `ConsoleApp1/examples/interface_dispatch.code` | `run` | Interface dispatch across object values |
 | `runnable` | `ConsoleApp1/examples/interface_array_dispatch.code` | `run` | Inline interface methods plus interface-typed arrays |

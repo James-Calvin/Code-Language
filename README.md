@@ -13,7 +13,7 @@ The repo contains:
 ## Features (implemented)
 - Typed variables/functions; primitives: `integer`/`whole`/`real`, sized numeric boundary types (`byte`, `whole8`, `whole16`, `whole32`, `integer8`, `integer16`, `integer32`, `real32`, `real64`), boolean, and string
 - Enumerations with strongly typed members accessed as `EnumName.Member`
-- Records with copy-on-assignment/pass/return semantics for data fields and constructors
+- Objects and records with fields, field defaults, constructors, methods, and record copy-on-assignment/pass/return semantics
 - Constants: `constant Type name = value;` (immutable after init)
 - Control flow: `if/then/else`, `switch`, `while`, `for`, `foreach` (numeric bounds and arrays), `break`, and `continue`
 - Expressions: arithmetic (including `%` and truncating integral `/`), comparisons, logical `and/or/not`, enhanced assignments (`+=`, `-=`, `*=`, `/=`, `%=` and postfix `++/--`) across variables, object fields, array elements, and map entries, plus string interpolation and concatenation
@@ -35,9 +35,9 @@ The repo contains:
 See [the language spec](docs/code-language-spec.md), [the feature roadmap](docs/features-roadmap.md), and [the web app/runtime V1 contract](docs/web-app-v1.md) for the current scope and the target developer workflow.
 
 ## Implemented Today vs Planned
-- Implemented today: enumerations, records, `switch`, `break`/`continue`, numeric base prefixes, decimal real literals, sized numerics with `byte` as an alias for `whole8`, truncating integral `/`, explicit numeric/enum casts, escaped interpolation braces, objects, interfaces, arrays, built-in collections, optionals, typed recoverable `fallible<Value, ErrorCode>` errors plus `fallible<Value>` shorthand, time/math intrinsics, grouped/selective/namespace/re-export imports, package manifests/lockfiles/library artifacts, target capability checks, `panic`, and the current web build/runtime slice.
+- Implemented today: enumerations, records, field defaults for object/record fields, `switch`, `break`/`continue`, numeric base prefixes, decimal real literals, sized numerics with `byte` as an alias for `whole8`, truncating integral `/`, explicit numeric/enum casts, escaped interpolation braces, objects, interfaces, arrays, built-in collections, optionals, typed recoverable `fallible<Value, ErrorCode>` errors plus `fallible<Value>` shorthand, time/math intrinsics, grouped/selective/namespace/re-export imports, package manifests/lockfiles/library artifacts, target capability checks, `panic`, and the current web build/runtime slice.
 - Implemented today: top-level module visibility modifiers (`public`, `package`, `private`) with legacy `export` compatibility, plus member-level visibility for object/record fields, constructors, and methods.
-- Planned, not implemented today: propagation shorthand for fallible errors, `fallible<void, E>`, semicolon injection, `integer64` / `whole64`, numeric suffixes, exponent numeric literals, field defaults, and `foreach` over non-array collections.
+- Planned, not implemented today: propagation shorthand for fallible errors, `fallible<void, E>`, semicolon injection, `integer64` / `whole64`, numeric suffixes, exponent numeric literals, and `foreach` over non-array collections.
 - Planned notes-derived language changes: byte-channel `rgb` / `rgba` overloads should build on the implemented `byte` / `whole8` type surface.
 - Planned notes-derived app/runtime changes: add a target-agnostic graphical app profile with top-level lifecycle authoring and an implicit engine prelude, keep explicit `MainScene` valid, and expand richer browser input/audio/content handling.
 - Example status and usage live in [the example catalog](docs/example-catalog.md).

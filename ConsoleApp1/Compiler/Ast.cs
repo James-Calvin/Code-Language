@@ -286,7 +286,7 @@ sealed class PackageDecl : Stmt
 
 sealed record Parameter(TypeRef? Type, Token Name);
 
-sealed record FieldDecl(TypeRef Type, Token Name, DeclarationVisibility Visibility = DeclarationVisibility.Public);
+sealed record FieldDecl(TypeRef Type, Token Name, Expr? Initializer = null, DeclarationVisibility Visibility = DeclarationVisibility.Public);
 
 sealed record EnumMemberDecl(Token Name, int? ExplicitValue);
 

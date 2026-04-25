@@ -82,7 +82,7 @@ Common mistakes:
 ## Build Web
 
 ```powershell
-dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- --build-web ConsoleApp1/examples/web_scene.code
+dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- --build-web ConsoleApp1/examples/shape_dodge.code
 ```
 
 Custom output:
@@ -101,7 +101,7 @@ Behavior:
 Common mistakes:
 
 - `--build-web` does not combine with module graph output yet.
-- The entry module must export a valid `MainScene` object.
+- The entry module must provide either an explicit `MainScene` object or top-level `start()` / `update()` / `draw()` functions.
 
 ## Module Graph
 

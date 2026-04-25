@@ -40,14 +40,15 @@ internal static class WebBuildPipeline
         {
             Target = CompileTarget.VmWeb,
             TraceLinker = traceLinker,
-            TraceWriter = traceWriter
+            TraceWriter = traceWriter,
+            EnableGraphicalAppProfile = true
         };
 
         var result = ModuleCompiler.CompileFromFileWithMetadata(fullSourcePath, options);
         if (result.WebScene is null)
         {
             throw new CompilerException(
-                "Web build requires object 'MainScene' with a zero-argument constructor and zero-argument start(), update(), and draw() methods.",
+                "Web build requires either an explicit object 'MainScene' with a zero-argument constructor and zero-argument start(), update(), and draw() methods, or a top-level web app entry with start(), update(), and draw() functions.",
                 1,
                 1);
         }

@@ -52,6 +52,20 @@ sealed class Literal : Expr
     public Literal(object? value, int line, int column) { Value = value; Line = line; Column = column; }
 }
 
+sealed class DefaultValueExpr : Expr
+{
+    public TypeRef Type { get; }
+    public int Line { get; }
+    public int Column { get; }
+
+    public DefaultValueExpr(TypeRef type, int line, int column)
+    {
+        Type = type;
+        Line = line;
+        Column = column;
+    }
+}
+
 sealed class InterpString : Expr
 {
     public IReadOnlyList<object> Parts { get; } // string segments or Expr
@@ -286,7 +300,12 @@ sealed class PackageDecl : Stmt
 
 sealed record Parameter(TypeRef? Type, Token Name);
 
-sealed record FieldDecl(TypeRef Type, Token Name, Expr? Initializer = null, DeclarationVisibility Visibility = DeclarationVisibility.Public);
+sealed record FieldDecl(
+    TypeRef Type,
+    Token Name,
+    Expr? Initializer = null,
+    DeclarationVisibility Visibility = DeclarationVisibility.Public,
+    bool IsConstant = false);
 
 sealed record EnumMemberDecl(Token Name, int? ExplicitValue);
 

@@ -1,6 +1,6 @@
 # Example Catalog
 
-Last updated: 2026-04-19
+Last updated: 2026-04-25
 
 This catalog is implementation-truthful.
 
@@ -66,8 +66,8 @@ Current limitation:
 | Status | Path | Use | Notes |
 | --- | --- | --- | --- |
 | `negative` | `ConsoleApp1/examples/panic.code` | `expected runtime error` | `panic(...)` raises `UserError` with stack info |
-| `runnable` | `ConsoleApp1/examples/shape_dodge.code` | `build-web` | Canonical small playable web demo |
-| `runnable` | `ConsoleApp1/examples/web_scene.code` | `build-web` | Broader scene-composition, rendering, assets, viewport, and pointer-input reference |
+| `runnable` | `ConsoleApp1/examples/shape_dodge.code` | `build-web` | Canonical small playable web demo using the inferred top-level web app profile |
+| `runnable` | `ConsoleApp1/examples/web_scene.code` | `build-web` | Broader explicit-`MainScene` scene-composition, rendering, assets, viewport, and pointer-input reference |
 
 ## Planned But Not Implemented Yet
 

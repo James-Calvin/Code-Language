@@ -1,6 +1,6 @@
 # Web App Runtime V1 Contract
 
-Last updated: 2026-04-19
+Last updated: 2026-04-25
 Status: implemented in a first working slice; broader engine/runtime expansion is still in progress
 
 ## Purpose
@@ -8,7 +8,7 @@ Status: implemented in a first working slice; broader engine/runtime expansion i
 This document freezes the first end-to-end browser app contract for Code and tracks the first working implementation slice.
 
 The goal of V1 is narrow:
-- write a Code app as a scene object
+- write a Code app as a scene object or top-level web app entry
 - build it for the web
 - receive a deployable static site folder
 - open `index.html` and get a full-window interactive 2D app
@@ -19,7 +19,7 @@ This document defines the contract that the current first slice implements and t
 
 - Primary target: `vm-web`
 - Primary workload: 2D interactive applications and games
-- Authoring model: scene object
+- Authoring model: explicit scene object or inferred top-level lifecycle entry
 - Browser presentation: fills the browser window by default
 - Coordinate model: guaranteed safe area of `640x360`, with hybrid-expanded world framing beyond that safe area when needed
 - Initial rendering/input scope: primitive drawing (`draw_rectangle`, outlines, lines, circles, polygons, text), image/sprite drawing, keyboard input, and primary pointer input
@@ -37,7 +37,7 @@ Current state:
 - A dedicated web build mode exists: `--build-web <entry.code>`.
 - The default web build output is `dist/`, unless `--out` is provided.
 - The generated app page owns the browser canvas and runtime bootstrap.
-- The current browser-backed V1 slice supports `MainScene`, `start()`, `update()`, `draw()`, optional `draw_hud()`, full-window presentation, hybrid-expanded framing around a fixed `640x360` safe area, keyboard input, primary pointer input, `clear()`, `draw_rectangle()`, `draw_rectangle_outline()`, `draw_line()`, `draw_circle()`, `draw_circle_outline()`, `draw_polygon()`, `draw_polygon_outline()`, `draw_text()`, `draw_image()`, `draw_sprite()`, `camera_view_*()`, `camera_safe_*()`, `screen_width()`, and `screen_height()`.
+- The current browser-backed V1 slice supports either an explicit `MainScene` object or an inferred top-level lifecycle entry with `start()`, `update()`, `draw()`, and optional `draw_hud()`, full-window presentation, hybrid-expanded framing around a fixed `640x360` safe area, keyboard input, primary pointer input, `clear()`, `draw_rectangle()`, `draw_rectangle_outline()`, `draw_line()`, `draw_circle()`, `draw_circle_outline()`, `draw_polygon()`, `draw_polygon_outline()`, `draw_text()`, `draw_image()`, `draw_sprite()`, `camera_view_*()`, `camera_safe_*()`, `screen_width()`, and `screen_height()`.
 - A higher-level wrapper layer now exists under `lib/engine/`: canonical modules `engine.colors`, `engine.drawing`, `engine.input`, `engine.viewport`, and `engine.scene`, with compatibility re-export modules `engine.view` and `engine.loop`.
 - Scene composition is now supported through explicit child-object registration against `Scene`.
 - Generated apps prevent browser scroll/panning for app-control keys: arrows, Space, Page Up, Page Down, Home, and End.
@@ -50,15 +50,23 @@ Planned V1 behavior:
 - Keep the current scene-object/browser contract stable while expanding the wrapper layer on top of it.
 - Expand beyond the current primitive/image-sprite/primary-input slice without forcing raw browser/bootstrap concerns into user code.
 - Reduce reliance on the lower-level upload harness in day-to-day development.
-- Add a target-agnostic graphical app profile that can synthesize the entry shell from top-level lifecycle authoring and an implicit engine prelude for `--build-web` first, without removing explicit `MainScene`.
+- Keep the current inferred web-entry slice stable while expanding it toward fuller target-agnostic reuse and keeping explicit `MainScene` available.
 
 ## Scene Object Contract
 
 V1 uses a convention over the existing object model. No new scene syntax is introduced.
 
-Entry convention:
-- The entry module for a V1 web app must export an object named `MainScene`.
-- `MainScene` must have a zero-argument constructor.
+Supported entry shapes:
+- Explicit scene object:
+  - The entry module exports an object named `MainScene`.
+  - `MainScene` has a zero-argument constructor.
+- Inferred top-level lifecycle entry:
+  - The `--build-web` entry module declares top-level `start()`, `update()`, and `draw()` functions, with optional `draw_hud()`.
+  - Top-level state declarations become fields on a synthesized internal `MainScene`.
+  - Top-level helper functions become methods on that synthesized internal `MainScene`.
+  - Top-level executable statements are rejected in this entry shape.
+  - Inferred entry modules receive an implicit namespace prelude: `Draw`, `Input`, `Viewport`, and `Colors`.
+  - Those prelude names are reserved while the inferred profile is active.
 
 Lifecycle:
 - The runtime instantiates `MainScene` once.
@@ -82,17 +90,17 @@ Method intent:
 - `draw_hud()` is for screen-edge-attached HUD or overlay work that should not move with the expanded world view.
 
 Scene composition:
-- `MainScene` remains the required exported entry object for web builds.
+- Explicit `MainScene` remains the advanced and compatibility path for web builds.
 - Larger projects are now expected to keep `MainScene` thin and register child objects through `engine.scene.Scene`.
 - Child-object lifecycle is split across `Startable`, `Updatable`, `WorldDrawable`, and `HudDrawable`.
 - Registration is explicit; there is no field auto-discovery in V1.
 - Registration changes are staged and applied at the start of the next `update()` phase.
 - `SceneLoop` is now part of the canonical `engine.scene` public surface; `engine.loop` remains as a temporary compatibility re-export.
 
-Planned app-profile direction:
+Current app-profile direction:
 - Explicit `MainScene` remains valid.
-- A future graphical app profile should allow top-level `start()`, `update()`, `draw()`, and optional `draw_hud()` authoring with an implicit engine prelude.
-- The profile should be target-agnostic so future native graphical targets can run the same Code source as the web target.
+- The first inferred profile slice is implemented for `--build-web` entry modules with top-level `start()`, `update()`, `draw()`, and optional `draw_hud()`, plus the implicit `Draw` / `Input` / `Viewport` / `Colors` namespace prelude.
+- The longer-term target is to carry that authoring shape toward broader target-agnostic reuse so future native graphical targets can run the same Code source.
 
 Important implementation note:
 - Object methods now support the same implicit-void authoring style as top-level functions.
@@ -101,7 +109,28 @@ Important implementation note:
 - Function-heavy wrapper modules can be imported as compile-time namespaces with `import everything as Draw from "engine/drawing.code";`.
 - The scene lifecycle is therefore expressed directly as `function start()`, `function update()`, and `function draw()`.
 
-Example target authoring shape:
+Small-app inferred-profile shape:
+
+```code
+integer x = 100;
+integer y = 120;
+integer speed = 2;
+
+function start() {
+}
+
+function update() {
+  if Input.key_is_down(37) then x -= speed;
+  if Input.key_is_down(39) then x += speed;
+}
+
+function draw() {
+  Draw.clear_screen(Colors.rgb(0, 0, 0));
+  Draw.rectangle(x, y, 24, 24, Colors.rgb(1, 1, 1));
+}
+```
+
+Advanced explicit-scene shape:
 
 ```code
 import everything as Draw from "engine/drawing.code";
@@ -210,7 +239,7 @@ export object MainScene {
 
 The example above matches the current recommended larger-project shape and is checked in as `ConsoleApp1/examples/web_scene.code`.
 
-For a smaller playable sample that stays within primitives plus keyboard input, see `ConsoleApp1/examples/shape_dodge.code`. `shape_dodge.code` is the current recommended "small game" demo, while `web_scene.code` remains the broader scene-composition, rendering, assets, and pointer-input reference. Example status and usage are cataloged in `docs/example-catalog.md`.
+For a smaller playable sample that uses the inferred web-entry profile, see `ConsoleApp1/examples/shape_dodge.code`. `shape_dodge.code` is the current recommended "small game" demo and the easiest web-entry starting point, while `web_scene.code` remains the broader explicit-scene composition, rendering, assets, and pointer-input reference. Example status and usage are cataloged in `docs/example-catalog.md`.
 
 ## Runtime Behavior
 
@@ -380,7 +409,7 @@ Developer-experience rule:
 Current CLI:
 
 ```text
-dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- --build-web ConsoleApp1/examples/web_scene.code
+dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- --build-web ConsoleApp1/examples/shape_dodge.code
 ```
 
 ## Acceptance Criteria

@@ -34,7 +34,7 @@ Use [Example Catalog](../example-catalog.md) and the current compiler as the tru
 | Audio APIs | Out of current V1 web slice. |
 | Physics APIs | Out of current V1 web slice. |
 | Richer content handling and asset pipeline | Planned. Current web build copies `assets/`. |
-| Target-agnostic graphical app profile | Planned. The desired shape is top-level lifecycle authoring with an implicit engine prelude and a synthesized entry shell for `--build-web` first, while keeping explicit `MainScene` valid. |
+| Broader target-agnostic expansion of the graphical app profile | First `--build-web` slice is implemented with top-level lifecycle authoring and an implicit engine prelude; carrying that authoring shape cleanly into future native graphical targets remains planned. |
 | Real browser-backed implementations for remaining raw window-handle engine stubs | Planned or wrapper-directed. Scene-runtime drawing/input are the current default. |
 | Capability query and fallback APIs | Planned design requirement. |
 | `engine.gpu`, WebGPU backend, native GPU parity | Roadmap item. |

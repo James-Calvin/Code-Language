@@ -136,7 +136,7 @@ Behavior:
 
 - These calls are prototype host bindings.
 - Current native and web VM host tables keep them available for parity and bring-up.
-- The default browser app workflow uses `--build-web`, `MainScene`, and the scene runtime instead.
+- The default browser app workflow uses `--build-web`, either an explicit `MainScene` or an inferred top-level lifecycle entry, and the scene runtime instead.
 
 ## Generated Web Scene Input Intrinsics
 

@@ -33,9 +33,11 @@ Common mistakes:
 - `--build-web` requires a `.code` input.
 - Module graph flags do not combine with `--build-web` yet.
 
-## MainScene Contract
+## Web Entry Contract
 
-A web app entry module exports an object named `MainScene`.
+A web app entry module may use either of these shapes:
+
+Explicit scene object:
 
 ```code
 export object MainScene {
@@ -56,22 +58,41 @@ export object MainScene {
 }
 ```
 
+Inferred top-level lifecycle entry:
+
+```code
+integer x = 100;
+integer speed = 2;
+
+function start() {
+}
+
+function update() {
+  if Input.key_is_down(39) then x += speed;
+}
+
+function draw() {
+  Draw.rectangle(x, 100, 24, 24, Colors.rgb(1, 1, 1));
+}
+```
+
 Rules:
 
-- `MainScene` must have a zero-argument constructor.
 - `start()`, `update()`, and `draw()` are required.
 - `draw_hud()` is optional.
-- The runtime creates `MainScene` once.
+- The runtime creates `MainScene` once, either explicitly or from the synthesized inferred entry.
 - `start()` runs once before updates.
 - `update()` runs at a fixed 60 Hz step.
 - `draw()` runs once per presented frame.
 - `draw_hud()` runs after `draw()` when present.
+- Inferred top-level lifecycle entry is a `--build-web` entry-module feature.
+- Inferred entry modules get implicit namespace access to `Draw`, `Input`, `Viewport`, and `Colors`.
 
 Common mistakes:
 
-- Missing `MainScene` or required lifecycle methods fails the web build.
-- Keep `MainScene` thin for larger apps and compose child objects through `engine.scene`.
-- A target-agnostic graphical app profile is planned to reduce `MainScene` and import boilerplate with top-level lifecycle authoring and an implicit engine prelude, but explicit `MainScene` is still the implemented entry contract today.
+- Missing both valid entry shapes fails the web build.
+- Keep explicit `MainScene` thin for larger apps and compose child objects through `engine.scene`.
+- Top-level executable statements are rejected in inferred entry modules.
 
 ## Coordinates
 

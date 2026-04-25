@@ -3186,6 +3186,33 @@ export function<string> readText() { return ""ok""; }",
     {
         int failures = 0;
 
+        void ExpectWebBuildCompilerError(string testName, IReadOnlyDictionary<string, string> files, string entryRelativePath, string expectedContains)
+        {
+            try
+            {
+                _ = BuildWebApp(files, entryRelativePath);
+                failures++;
+                Console.WriteLine($"[FAIL] {testName}: expected compile error");
+            }
+            catch (Compiler.CompilerException ex)
+            {
+                if (!ex.Message.Contains(expectedContains, StringComparison.Ordinal))
+                {
+                    failures++;
+                    Console.WriteLine($"[FAIL] {testName}: unexpected error '{ex.Message}'");
+                }
+                else
+                {
+                    Console.WriteLine($"[PASS] {testName}");
+                }
+            }
+            catch (Exception ex)
+            {
+                failures++;
+                Console.WriteLine($"[FAIL] {testName}: threw {ex.GetType().Name} - {ex.Message}");
+            }
+        }
+
         try
         {
             var outputs = BuildWebApp(
@@ -3194,53 +3221,46 @@ export function<string> readText() { return ""ok""; }",
                     ["assets/code-sheet.svg"] =
 "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"64\" height=\"32\"><rect width=\"32\" height=\"32\" fill=\"#0b1020\"/><rect x=\"32\" width=\"32\" height=\"32\" fill=\"#1d4ed8\"/></svg>",
                     ["main.code"] =
-@"import everything as Draw from ""engine/drawing.code"";
-import everything as Viewport from ""engine/viewport.code"";
-import everything as Input from ""engine/input.code"";
-import { rgb } from ""engine/colors.code"";
+@"integer start_x = 100;
+integer x = start_x;
+integer y = initial_y();
+integer speed = 2;
+constant integer hud_margin = 16;
 
-export object MainScene {
-  integer x;
-  integer y;
-  integer speed;
+function<integer> initial_y() {
+  return 120;
+}
 
-  constructor() {
-    this.x = 100;
-    this.y = 120;
-    this.speed = 2;
+function start() {
+}
+
+function update() {
+  if Input.key_is_down(37) then x -= speed;
+  if Input.key_is_down(39) then x += speed;
+  if Input.key_is_down(38) then y -= speed;
+  if Input.key_is_down(40) then y += speed;
+  if Input.pointer_was_pressed_now() then {
+    x = Input.pointer_world_x_position() as integer;
+    y = Input.pointer_world_y_position() as integer;
   }
+}
 
-  function start() {
+function draw() {
+  Draw.clear_screen(Colors.rgb(0, 0, 0));
+  Draw.line(Viewport.safe_left(), Viewport.safe_top(), Viewport.safe_right(), Viewport.safe_bottom(), Colors.rgb(1, 1, 1));
+  Draw.polygon({300, 80, 340, 92, 352, 120, 304, 124, 284, 100}, Colors.rgb(1, 1, 1));
+  Draw.circle(124, 84, 16, Colors.rgb(1, 1, 1));
+  Draw.image(""assets/code-sheet.svg"", 24, 220, 64, 32, 1);
+  Draw.sprite(""assets/code-sheet.svg"", 32, 0, 32, 32, 104, 210, 64, 64, 1);
+  if x > Viewport.view_left() - 24 and x < Viewport.view_right() then {
+    Draw.rectangle(x, y, 24, 24, Colors.rgb(1, 1, 1));
   }
+}
 
-  function update() {
-    if Input.key_is_down(37) then this.x -= this.speed;
-    if Input.key_is_down(39) then this.x += this.speed;
-    if Input.key_is_down(38) then this.y -= this.speed;
-    if Input.key_is_down(40) then this.y += this.speed;
-    if Input.pointer_was_pressed_now() then {
-      this.x = Input.pointer_world_x_position() as integer;
-      this.y = Input.pointer_world_y_position() as integer;
-    }
-  }
-
-  function draw() {
-    Draw.clear_screen(rgb(0, 0, 0));
-    Draw.line(Viewport.safe_left(), Viewport.safe_top(), Viewport.safe_right(), Viewport.safe_bottom(), rgb(1, 1, 1));
-    Draw.polygon({300, 80, 340, 92, 352, 120, 304, 124, 284, 100}, rgb(1, 1, 1));
-    Draw.circle(124, 84, 16, rgb(1, 1, 1));
-    Draw.image(""assets/code-sheet.svg"", 24, 220, 64, 32, 1);
-    Draw.sprite(""assets/code-sheet.svg"", 32, 0, 32, 32, 104, 210, 64, 64, 1);
-    if this.x > Viewport.view_left() - 24 and this.x < Viewport.view_right() then {
-      Draw.rectangle(this.x, this.y, 24, 24, rgb(1, 1, 1));
-    }
-  }
-
-  function draw_hud() {
-    Draw.text(""Code"", 16, 16, 18, ""left"", ""top"", rgb(1, 1, 1));
-    Draw.text(""Arrow keys move"", Viewport.hud_width() - 16, 16, 16, ""right"", ""top"", rgb(1, 1, 1));
-    Draw.text(""Pointer: {Input.pointer_screen_x_position()}, {Input.pointer_screen_y_position()}"", 16, 40, 14, ""left"", ""top"", rgb(1, 1, 1));
-  }
+function draw_hud() {
+  Draw.text(""Code"", hud_margin, hud_margin, 18, ""left"", ""top"", Colors.rgb(1, 1, 1));
+  Draw.text(""Arrow keys move"", Viewport.hud_width() - hud_margin, hud_margin, 16, ""right"", ""top"", Colors.rgb(1, 1, 1));
+  Draw.text(""Pointer: {Input.pointer_screen_x_position()}, {Input.pointer_screen_y_position()}"", hud_margin, 40, 14, ""left"", ""top"", Colors.rgb(1, 1, 1));
 }"
                 },
                 "main.code");
@@ -3293,6 +3313,60 @@ export object MainScene {
             var outputs = BuildWebApp(
                 new Dictionary<string, string>
                 {
+                    ["helper.code"] =
+@"export function helper() {
+  print(""helper"");
+}
+
+function start() {
+}
+
+function update() {
+}
+
+function draw() {
+}",
+                    ["main.code"] =
+@"import { helper } from ""helper.code"";
+
+export object MainScene {
+  constructor() {
+  }
+
+  function start() {
+    helper();
+  }
+
+  function update() {
+  }
+
+  function draw() {
+  }
+}"
+                },
+                "main.code");
+
+            if (!outputs.IndexHtml.Contains("\"typeName\": \"MainScene\"", StringComparison.Ordinal))
+            {
+                failures++;
+                Console.WriteLine("[FAIL] web-build-imported-lifecycle-names-not-special: generated metadata did not include MainScene");
+            }
+            else
+            {
+                Console.WriteLine("[PASS] web-build-imported-lifecycle-names-not-special");
+            }
+        }
+        catch (Exception ex)
+        {
+            failures++;
+            Console.WriteLine($"[FAIL] web-build-imported-lifecycle-names-not-special: threw {ex.GetType().Name} - {ex.Message}");
+        }
+
+        try
+        {
+            var outputs = BuildWebApp(
+                new Dictionary<string, string>
+                {
                     ["main.code"] =
 @"export object MainScene {
   constructor() {
@@ -3335,34 +3409,120 @@ export object MainScene {
             Console.WriteLine($"[FAIL] web-build-emit-bytecode: threw {ex.GetType().Name} - {ex.Message}");
         }
 
-        try
-        {
-            _ = BuildWebApp(
-                new Dictionary<string, string>
-                {
-                    ["main.code"] = "print(1);"
-                },
-                "main.code");
-            failures++;
-            Console.WriteLine("[FAIL] web-build-requires-main-scene: expected compile error");
-        }
-        catch (Compiler.CompilerException ex)
-        {
-            if (!ex.Message.Contains("Web build requires object 'MainScene'", StringComparison.Ordinal))
+        ExpectWebBuildCompilerError(
+            "web-build-requires-entry-shape",
+            new Dictionary<string, string>
             {
-                failures++;
-                Console.WriteLine($"[FAIL] web-build-requires-main-scene: unexpected error '{ex.Message}'");
-            }
-            else
+                ["main.code"] = "print(1);"
+            },
+            "main.code",
+            "Web build requires either an explicit object 'MainScene'");
+
+        ExpectWebBuildCompilerError(
+            "web-build-inferred-profile-missing-update",
+            new Dictionary<string, string>
             {
-                Console.WriteLine("[PASS] web-build-requires-main-scene");
-            }
-        }
-        catch (Exception ex)
-        {
-            failures++;
-            Console.WriteLine($"[FAIL] web-build-requires-main-scene: threw {ex.GetType().Name} - {ex.Message}");
-        }
+                ["main.code"] =
+@"function start() {
+}
+
+function draw() {
+}"
+            },
+            "main.code",
+            "update()");
+
+        ExpectWebBuildCompilerError(
+            "web-build-inferred-profile-mixed-explicit-and-top-level",
+            new Dictionary<string, string>
+            {
+                ["main.code"] =
+@"export object MainScene {
+  constructor() {
+  }
+
+  function start() {
+  }
+
+  function update() {
+  }
+
+  function draw() {
+  }
+}
+
+function start() {
+}
+
+function update() {
+}
+
+function draw() {
+}"
+            },
+            "main.code",
+            "cannot declare both an explicit 'MainScene' object and top-level lifecycle functions");
+
+        ExpectWebBuildCompilerError(
+            "web-build-inferred-profile-top-level-executable-statement",
+            new Dictionary<string, string>
+            {
+                ["main.code"] =
+@"integer counter = 0;
+
+function start() {
+}
+
+function update() {
+}
+
+function draw() {
+}
+
+print(counter);"
+            },
+            "main.code",
+            "only allows state declarations");
+
+        ExpectWebBuildCompilerError(
+            "web-build-inferred-profile-reserved-prelude-name",
+            new Dictionary<string, string>
+            {
+                ["main.code"] =
+@"integer Draw = 0;
+
+function start() {
+}
+
+function update() {
+}
+
+function draw() {
+  print(Draw);
+}"
+            },
+            "main.code",
+            "reserves 'Draw' for the implicit engine prelude");
+
+        ExpectWebBuildCompilerError(
+            "web-build-inferred-profile-constant-state-reassignment",
+            new Dictionary<string, string>
+            {
+                ["main.code"] =
+@"constant integer step = 1;
+
+function start() {
+}
+
+function update() {
+  step += 1;
+}
+
+function draw() {
+}"
+            },
+            "main.code",
+            "Cannot assign to constant 'step'");
 
         return failures;
     }

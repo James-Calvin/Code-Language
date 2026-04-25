@@ -18,6 +18,7 @@ sealed class TypeChecker
     private TypeRef? _currentObjectTypeRef;
     private string? _currentAccessPackageName;
     private bool _allowImplicitThisLookup = true;
+    private bool _checkingConstructorBody;
     private int _loopDepth;
     private static readonly Dictionary<string, FunctionSignature> IntrinsicFunctions = BuildIntrinsicFunctions();
 
@@ -157,7 +158,7 @@ sealed class TypeChecker
                     throw new CompilerException("Package-visible members require a containing package declaration.", field.Name.Line, field.Name.Column);
                 ValidateTypeRef(field.Type);
                 EnsureNotVoidTypeRef(field.Type, $"{Capitalize(typeKind)} fields cannot be void", field.Name.Line, field.Name.Column);
-                symbol.Fields[field.Name.Lexeme] = new FieldSignature(field.Name, field.Type, field.Visibility);
+                symbol.Fields[field.Name.Lexeme] = new FieldSignature(field.Name, field.Type, field.Visibility, field.IsConstant);
             }
 
             var ctorSignatures = new HashSet<string>(StringComparer.Ordinal);
@@ -436,6 +437,7 @@ sealed class TypeChecker
         var previousObjectSymbol = _currentObjectSymbol;
         var previousObjectTypeRef = _currentObjectTypeRef;
         var previousAccessPackageName = _currentAccessPackageName;
+        var previousCheckingConstructorBody = _checkingConstructorBody;
         _currentObjectSymbol = symbol;
         _currentObjectTypeRef = new TypeRef(obj.Name.Lexeme, null, obj.Name.Line, obj.Name.Column);
         _currentAccessPackageName = obj.OriginPackageName;
@@ -458,8 +460,16 @@ sealed class TypeChecker
                 // Constructor bodies are type-checked like regular blocks. Explicit return is currently not supported.
                 var previousReturnRef = _currentReturnTypeRef;
                 _currentReturnTypeRef = null;
-                CheckStmt(ctorSig.Body, env, currentReturn: null);
-                _currentReturnTypeRef = previousReturnRef;
+                _checkingConstructorBody = true;
+                try
+                {
+                    CheckStmt(ctorSig.Body, env, currentReturn: null);
+                }
+                finally
+                {
+                    _currentReturnTypeRef = previousReturnRef;
+                    _checkingConstructorBody = false;
+                }
                 EnsureAllFieldsInitialized(obj, ctorSig.Body);
             }
         }
@@ -468,6 +478,7 @@ sealed class TypeChecker
             _currentObjectSymbol = previousObjectSymbol;
             _currentObjectTypeRef = previousObjectTypeRef;
             _currentAccessPackageName = previousAccessPackageName;
+            _checkingConstructorBody = previousCheckingConstructorBody;
         }
     }
 
@@ -684,6 +695,33 @@ sealed class TypeChecker
         typeRef = field.TypeRef;
         type = MapType(typeRef);
         return true;
+    }
+
+    private bool TryResolveImplicitFieldSignature(Token name, TypeEnvironment env, out FieldSignature field)
+    {
+        field = null!;
+
+        if (!_allowImplicitThisLookup)
+            return false;
+
+        if (_currentObjectSymbol is null || _currentObjectTypeRef is null)
+            return false;
+
+        if (env.Contains(name.Lexeme))
+            return false;
+
+        return _currentObjectSymbol.Fields.TryGetValue(name.Lexeme, out field!);
+    }
+
+    private void EnsureCanAssignField(FieldSignature field, Token name)
+    {
+        if (!field.IsConstant)
+            return;
+
+        if (_checkingConstructorBody)
+            return;
+
+        throw new CompilerException($"Cannot assign to constant '{name.Lexeme}'", name.Line, name.Column);
     }
 
     private bool CurrentObjectHasMethodNamed(string methodName)
@@ -915,6 +953,8 @@ sealed class TypeChecker
     {
         switch (expr)
         {
+            case DefaultValueExpr d:
+                return MapType(d.Type);
             case Literal lit:
                 return lit.Value switch
                 {
@@ -1112,10 +1152,12 @@ sealed class TypeChecker
                 var targetType = CheckExpr(fset.Target.Target, env, currentReturn);
                 Require(targetType == TypeSymbol.Object || targetType == TypeSymbol.Record, fset.Target.Target, "Field assignment requires object or record target");
                 var rhsType = CheckExpr(fset.Value, env, currentReturn);
-                var expectedType = ResolveFieldType(fset.Target, env);
+                var field = ResolveFieldSignature(fset.Target, env, out _);
+                EnsureCanAssignField(field, fset.Target.Name);
+                var expectedType = MapType(field.TypeRef);
                 if (expectedType is TypeSymbol expected)
                 {
-                    var expectedTypeRef = ResolveFieldTypeRef(fset.Target, env);
+                    var expectedTypeRef = field.TypeRef;
                     var fieldValueTypeRef = ResolveExprTypeRef(fset.Value, env);
                     RequireAssignable(expected, expectedTypeRef, rhsType, fieldValueTypeRef, fset.Target.Name.Line, fset.Target.Name.Column, "Field assignment type mismatch", fset.Value);
                 }
@@ -1207,6 +1249,8 @@ sealed class TypeChecker
 
                 if (TryResolveImplicitField(a.Name, env, out var implicitFieldType, out var implicitFieldTypeRef))
                 {
+                    if (TryResolveImplicitFieldSignature(a.Name, env, out var implicitField))
+                        EnsureCanAssignField(implicitField, a.Name);
                     a.ResolvedImplicitFieldTypeRef = implicitFieldTypeRef;
                     RequireAssignable(implicitFieldType, implicitFieldTypeRef, rhs, rhsTypeRef, a.Name.Line, a.Name.Column, "Assignment type mismatch", a.Value);
                     return implicitFieldType;
@@ -2169,6 +2213,22 @@ sealed class TypeChecker
         _ => 0
     };
 
+    private FieldSignature ResolveFieldSignature(FieldAccessExpr fieldAccess, TypeEnvironment env, out ObjectSymbol ownerSymbol)
+    {
+        var targetType = ResolveExprTypeRef(fieldAccess.Target, env);
+        if (targetType is null)
+            throw new CompilerException("Could not resolve field target type", fieldAccess.Name.Line, fieldAccess.Name.Column);
+
+        if (!_objects.TryGetValue(targetType.Name, out ownerSymbol!))
+            throw new CompilerException($"Object '{targetType.Name}' has no field '{fieldAccess.Name.Lexeme}'", fieldAccess.Name.Line, fieldAccess.Name.Column);
+
+        if (!ownerSymbol.Fields.TryGetValue(fieldAccess.Name.Lexeme, out var field))
+            throw new CompilerException($"Object '{targetType.Name}' has no field '{fieldAccess.Name.Lexeme}'", fieldAccess.Name.Line, fieldAccess.Name.Column);
+
+        RequireMemberAccessible(ownerSymbol, field.Visibility, fieldAccess.Name, "field", field.Name.Lexeme);
+        return field;
+    }
+
     private TypeSymbol? ResolveFieldType(FieldAccessExpr fieldAccess, TypeEnvironment env)
     {
         if (fieldAccess.ResolvedEnumTypeRef is not null)
@@ -2177,18 +2237,7 @@ sealed class TypeChecker
         if (fieldAccess.ResolvedFallibleErrorFieldTypeRef is not null)
             return MapType(fieldAccess.ResolvedFallibleErrorFieldTypeRef);
 
-        var targetType = ResolveExprTypeRef(fieldAccess.Target, env);
-        if (targetType is null)
-            return null;
-
-        if (!_objects.TryGetValue(targetType.Name, out var objSymbol))
-            return null;
-
-        if (!objSymbol.Fields.TryGetValue(fieldAccess.Name.Lexeme, out var field))
-            throw new CompilerException($"Object '{targetType.Name}' has no field '{fieldAccess.Name.Lexeme}'", fieldAccess.Name.Line, fieldAccess.Name.Column);
-
-        RequireMemberAccessible(objSymbol, field.Visibility, fieldAccess.Name, "field", field.Name.Lexeme);
-        return MapType(field.TypeRef);
+        return MapType(ResolveFieldSignature(fieldAccess, env, out _).TypeRef);
     }
 
     private TypeRef? ResolveFieldTypeRef(FieldAccessExpr fieldAccess, TypeEnvironment env)
@@ -2199,21 +2248,15 @@ sealed class TypeChecker
         if (fieldAccess.ResolvedFallibleErrorFieldTypeRef is not null)
             return fieldAccess.ResolvedFallibleErrorFieldTypeRef;
 
-        var targetType = ResolveExprTypeRef(fieldAccess.Target, env);
-        if (targetType is null)
-            return null;
-        if (!_objects.TryGetValue(targetType.Name, out var objSymbol))
-            return null;
-        if (!objSymbol.Fields.TryGetValue(fieldAccess.Name.Lexeme, out var field))
-            throw new CompilerException($"Object '{targetType.Name}' has no field '{fieldAccess.Name.Lexeme}'", fieldAccess.Name.Line, fieldAccess.Name.Column);
-        RequireMemberAccessible(objSymbol, field.Visibility, fieldAccess.Name, "field", field.Name.Lexeme);
-        return field.TypeRef;
+        return ResolveFieldSignature(fieldAccess, env, out _).TypeRef;
     }
 
     private TypeRef? ResolveExprTypeRef(Expr expr, TypeEnvironment env)
     {
         switch (expr)
         {
+            case DefaultValueExpr d:
+                return d.Type;
             case ArrayLiteral al:
                 return al.ResolvedTypeRef;
             case NewArrayExpr na:
@@ -2239,15 +2282,7 @@ sealed class TypeChecker
                     return fa.ResolvedFallibleErrorFieldTypeRef;
                 if (fa.ResolvedEnumTypeRef is not null)
                     return fa.ResolvedEnumTypeRef;
-            {
-                var owner = ResolveExprTypeRef(fa.Target, env);
-                if (owner is null) return null;
-                if (!_objects.TryGetValue(owner.Name, out var objSymbol)) return null;
-                if (!objSymbol.Fields.TryGetValue(fa.Name.Lexeme, out var field))
-                    throw new CompilerException($"Object '{owner.Name}' has no field '{fa.Name.Lexeme}'", fa.Name.Line, fa.Name.Column);
-                RequireMemberAccessible(objSymbol, field.Visibility, fa.Name, "field", field.Name.Lexeme);
-                return field.TypeRef;
-            }
+                return ResolveFieldSignature(fa, env, out _).TypeRef;
             case MethodCallExpr mc:
                 return mc.ResolvedReturnTypeRef;
             case ArrayIndexExpr ai:
@@ -2300,6 +2335,8 @@ sealed class TypeChecker
 
                 if (TryResolveImplicitField(variable.Name, env, out var implicitFieldType, out var implicitFieldTypeRef))
                 {
+                    if (TryResolveImplicitFieldSignature(variable.Name, env, out var implicitField))
+                        EnsureCanAssignField(implicitField, variable.Name);
                     variable.ResolvedImplicitFieldTypeRef = implicitFieldTypeRef;
                     return (implicitFieldType, implicitFieldTypeRef, variable.Name);
                 }
@@ -2312,9 +2349,11 @@ sealed class TypeChecker
             {
                 var targetType = CheckExpr(fieldAccess.Target, env, currentReturn);
                 Require(targetType == TypeSymbol.Object || targetType == TypeSymbol.Record, fieldAccess.Target, "Field access requires object or record target");
+                var field = ResolveFieldSignature(fieldAccess, env, out _);
+                EnsureCanAssignField(field, fieldAccess.Name);
                 return (
-                    ResolveFieldType(fieldAccess, env) ?? TypeSymbol.Unknown,
-                    ResolveFieldTypeRef(fieldAccess, env),
+                    MapType(field.TypeRef),
+                    field.TypeRef,
                     fieldAccess.Name);
             }
             case ArrayIndexExpr arrayIndex:
@@ -2833,6 +2872,7 @@ sealed class TypeChecker
 
     private static int GetLine(Expr expr) => expr switch
     {
+        DefaultValueExpr d => d.Line,
         Literal l => l.Line,
         Variable v => v.Name.Line,
         Assign a => a.Name.Line,
@@ -2849,6 +2889,7 @@ sealed class TypeChecker
 
     private static int GetCol(Expr expr) => expr switch
     {
+        DefaultValueExpr d => d.Column,
         Literal l => l.Column,
         Variable v => v.Name.Column,
         Assign a => a.Name.Column,
@@ -2893,7 +2934,8 @@ sealed class TypeChecker
     private sealed record FieldSignature(
         Token Name,
         TypeRef TypeRef,
-        DeclarationVisibility Visibility);
+        DeclarationVisibility Visibility,
+        bool IsConstant);
     private sealed record ConstructorSignature(
         Token Keyword,
         IList<TypeSymbol> Params,

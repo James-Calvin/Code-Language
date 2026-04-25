@@ -1,6 +1,6 @@
 # Platform, Libraries, and Targets Roadmap
 
-Last updated: 2026-04-19
+Last updated: 2026-04-25
 
 This roadmap is specifically for:
 1) library/package system,
@@ -49,8 +49,10 @@ Near-term web build goal:
 - Default output directory: `dist/` in the package root when a manifest exists, otherwise `dist/` beside the entry `.code` file.
 - Current output: `index.html` with embedded bytecode so the page opens directly, plus copied `assets/` content when present.
 - Optional output: pass `--emit-web-bytecode` with `--build-web` to also write `app.bytecode` for debugging or inspection.
-- Current recommended authoring model: keep `MainScene` thin and compose child objects through `engine.scene.Scene` and `engine.scene.SceneLoop` (with `engine.loop` retained as a compatibility re-export during migration).
-- Planned authoring model: add a target-agnostic graphical app profile that supports top-level lifecycle authoring and an implicit engine prelude, synthesizes the web entry shell first, and leaves explicit `MainScene` valid.
+- Current recommended authoring models:
+  - small apps may use the inferred `--build-web` entry profile with top-level `start` / `update` / `draw` / optional `draw_hud` and implicit `Draw` / `Input` / `Viewport` / `Colors`
+  - larger apps may keep explicit `MainScene` thin and compose child objects through `engine.scene.Scene` and `engine.scene.SceneLoop` (with `engine.loop` retained as a compatibility re-export during migration)
+- Planned authoring expansion: carry the graphical app profile toward fuller target-agnostic reuse while leaving explicit `MainScene` valid.
 - The current `web-runtime/index.html` upload flow remains preview-only bootstrap tooling for raw bytecode bring-up and is no longer the primary workflow.
 
 ## 2) Host ABI v1 (concrete draft)
@@ -231,7 +233,7 @@ Legend:
 | `[~]` | Phase 4 | Browser-backed web app runtime | Implemented current slice: generated full-window canvas runtime, `MainScene` lifecycle (`start/update/draw` plus optional `draw_hud`), fixed-step loop, centered `640x360` safe area, hybrid-expanded world framing, copied `assets` output, browser-backed rectangles/outlines/lines/circles/polygons/text/images/sprites, keyboard and primary pointer input, app-key scroll prevention, canvas touch gesture suppression, and console-routed web `print`; expand advanced input/audio/content handling |
 | `[~]` | Phase 4 | Web engine host bindings (real impl) | Implemented current scene-runtime bindings for `key_down`, `pointer_world_x`, `pointer_world_y`, `pointer_screen_x`, `pointer_screen_y`, `pointer_is_down`, `pointer_was_pressed`, `pointer_was_released`, `clear`, `draw_rectangle`, `draw_rectangle_outline`, `draw_line`, `draw_circle`, `draw_circle_outline`, `draw_polygon`, `draw_polygon_outline`, `draw_text`, `draw_image`, `draw_sprite`, `camera_view_*`, `camera_safe_*`, and `screen_width` / `screen_height`; legacy window-handle web stubs still need real implementations or package-level wrappers |
 | `[!]` | Phase 4 | Backend-agnostic API contract | Freeze capability-query and fallback semantics so one Code source can target multiple backends predictably |
-| `[!]` | Phase 5 | Target-agnostic graphical app profile | Allow top-level `start`/`update`/`draw`/`draw_hud` authoring with an implicit engine prelude; synthesize the web entry shell first while preserving explicit `MainScene`, and keep the design portable to future native graphical targets |
+| `[~]` | Phase 5 | Target-agnostic graphical app profile | Implemented first `--build-web` slice: top-level `start`/`update`/`draw`/optional `draw_hud`, implicit `Draw` / `Input` / `Viewport` / `Colors`, synthesized `MainScene`, and explicit `MainScene` compatibility; broader native-target reuse remains planned |
 | `[~]` | Phase 5 | Engine core package set | Canonical `engine.scene` now exports `Scene`, `SceneLoop`, and lifecycle interfaces for explicit child-object composition; broader engine packages such as `engine.math` and `engine.ecs` are still pending |
 | `[~]` | Phase 5 | Engine platform adapters | Wrapper layer now includes canonical `engine.colors`, `engine.drawing`, `engine.input`, `engine.viewport`, and `engine.scene` plus compatibility re-export modules `engine.view` / `engine.loop`; still need fuller host-backed package taxonomy for native+web, byte-channel color overloads on top of the implemented `byte` / `whole8` surface, plus audio |
 | `[~]` | Phase 5 | `engine.gpu` ABI v1 | Add GPU resource/pipeline/dispatch ABI for compute-heavy and graphics-heavy workloads |
@@ -271,6 +273,6 @@ This order gets library system + target model stable before engine work starts.
    - Exit criteria: the runtime contract is reflected in engine-facing modules rather than only raw host ABI symbols.
 
 5. **Graphical app profile**
-   - Planned notes-derived direction: reduce `MainScene` and import boilerplate with a target-agnostic app profile, top-level lifecycle authoring, and an implicit engine prelude.
-   - First implementation target should be `--build-web`; explicit `MainScene` remains supported as the compatibility and advanced path.
+   - Implemented first slice: `--build-web` entry modules may now use top-level lifecycle authoring with an implicit `Draw` / `Input` / `Viewport` / `Colors` prelude and a synthesized `MainScene`.
+   - Next step: keep the current web-entry slice stable while carrying the same authoring model toward broader target-agnostic reuse.
 

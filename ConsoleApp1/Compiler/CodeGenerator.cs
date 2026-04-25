@@ -376,10 +376,7 @@ sealed class CodeGenerator
                 }
                 else
                 {
-                    if (v.Type.IsOptional)
-                        _builder.PushNone();
-                    else
-                        _builder.PushInt(0); // default
+                    EmitDefaultValue(v.Type);
                     EmitStorageBoundaryCheck(v.Type);
                 }
                 SetLoc(v.Name);
@@ -555,6 +552,10 @@ sealed class CodeGenerator
     {
         switch (expr)
         {
+            case DefaultValueExpr d:
+                SetLoc(d.Line, d.Column);
+                EmitDefaultValue(d.Type);
+                break;
             case Literal lit:
                 SetLoc(lit.Line, lit.Column);
                 if (lit.Value is string s)
@@ -865,6 +866,14 @@ sealed class CodeGenerator
         }
     }
 
+    private void EmitDefaultValue(TypeRef type)
+    {
+        if (type.IsOptional)
+            _builder.PushNone();
+        else
+            _builder.PushInt(0);
+    }
+
     private void EmitCast(CastExpr expr)
     {
         SetLoc(expr.AsToken);
@@ -1116,6 +1125,8 @@ sealed class CodeGenerator
     {
         switch (expr)
         {
+            case DefaultValueExpr d:
+                return d.Type;
             case Literal lit:
                 return lit.Value switch
                 {

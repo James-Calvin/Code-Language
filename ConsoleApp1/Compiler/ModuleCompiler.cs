@@ -13,6 +13,7 @@ sealed class ModuleCompileOptions
     public PackageManifest? PackageManifest { get; init; }
     public bool TraceLinker { get; init; }
     public Action<string>? TraceWriter { get; init; }
+    public bool EnableGraphicalAppProfile { get; init; }
 }
 
 sealed class ModuleCompileResult
@@ -267,7 +268,8 @@ static class ModuleCompiler
             Target = baseOptions.Target,
             PackageManifest = manifest,
             TraceLinker = baseOptions.TraceLinker,
-            TraceWriter = baseOptions.TraceWriter
+            TraceWriter = baseOptions.TraceWriter,
+            EnableGraphicalAppProfile = baseOptions.EnableGraphicalAppProfile
         };
         var linker = new ModuleLinker(projectRoot, fullEntryPath, compileOptions);
         var linkResult = linker.Link(fullEntryPath);
@@ -630,6 +632,12 @@ static class ModuleCompiler
             try
             {
                 var module = ParseModule(modulePath);
+                var graphicalAppProfile = AnalyzeGraphicalAppProfile(module);
+                if (graphicalAppProfile.IsEnabled)
+                {
+                    Trace($"Enable inferred graphical app profile for {FormatGraphPath(modulePath)}");
+                    InjectGraphicalAppPreludeImports(module, graphicalAppProfile);
+                }
                 Trace($"Parsed {FormatGraphPath(modulePath)} (imports={module.Imports.Count}, exports={module.ExportedDeclarations.Count})");
                 RegisterCapabilityFromPackage(module.PackageName, module.Path, module.PackageLine, module.PackageColumn);
                 RegisterCapabilitiesFromStatements(module.LocalStatements, module.Path);
@@ -747,6 +755,8 @@ static class ModuleCompiler
                 }
 
                 var rewrittenLocals = RewriteModuleStatements(module.LocalStatements, module.TypeAliases, module.NamespaceAliases);
+                if (graphicalAppProfile.IsEnabled)
+                    rewrittenLocals = LowerGraphicalAppEntryModule(rewrittenLocals, graphicalAppProfile);
                 AnnotateModuleStatements(rewrittenLocals, module.PackageName, module.Path);
                 module.LinkedStatements.AddRange(rewrittenLocals);
                 _modules[modulePath] = module;
@@ -775,6 +785,238 @@ static class ModuleCompiler
             int Line,
             int Column,
             string Context);
+
+        private sealed record GraphicalAppProfileAnalysis(
+            bool IsEnabled,
+            Token TriggerToken,
+            Token? StartToken,
+            Token? UpdateToken,
+            Token? DrawToken,
+            Token? DrawHudToken);
+
+        private static readonly (string Alias, string SourcePath)[] GraphicalAppPreludeImports =
+        [
+            ("Draw", "engine/drawing.code"),
+            ("Input", "engine/input.code"),
+            ("Viewport", "engine/viewport.code"),
+            ("Colors", "engine/colors.code")
+        ];
+
+        private GraphicalAppProfileAnalysis AnalyzeGraphicalAppProfile(ModuleInfo module)
+        {
+            if (!_options.EnableGraphicalAppProfile || !string.Equals(module.Path, _entryPath, StringComparison.OrdinalIgnoreCase))
+                return new GraphicalAppProfileAnalysis(false, new Token(TokenType.Identifier, "MainScene", null, 1, 1), null, null, null, null);
+
+            Token? mainSceneToken = null;
+            Token? startToken = null;
+            Token? updateToken = null;
+            Token? drawToken = null;
+            Token? drawHudToken = null;
+
+            for (int i = 0; i < module.LocalStatements.Count; i++)
+            {
+                switch (module.LocalStatements[i])
+                {
+                    case ObjectDecl obj when string.Equals(obj.Name.Lexeme, "MainScene", StringComparison.Ordinal):
+                        mainSceneToken = obj.Name;
+                        break;
+                    case FunctionDecl fn when string.Equals(fn.Name.Lexeme, "start", StringComparison.Ordinal):
+                        startToken = fn.Name;
+                        EnsureZeroArgumentLifecycle(fn);
+                        break;
+                    case FunctionDecl fn when string.Equals(fn.Name.Lexeme, "update", StringComparison.Ordinal):
+                        updateToken = fn.Name;
+                        EnsureZeroArgumentLifecycle(fn);
+                        break;
+                    case FunctionDecl fn when string.Equals(fn.Name.Lexeme, "draw", StringComparison.Ordinal):
+                        drawToken = fn.Name;
+                        EnsureZeroArgumentLifecycle(fn);
+                        break;
+                    case FunctionDecl fn when string.Equals(fn.Name.Lexeme, "draw_hud", StringComparison.Ordinal):
+                        drawHudToken = fn.Name;
+                        EnsureZeroArgumentLifecycle(fn);
+                        break;
+                }
+            }
+
+            bool hasLifecycleTrigger = startToken is not null || updateToken is not null || drawToken is not null;
+            if (!hasLifecycleTrigger)
+                return new GraphicalAppProfileAnalysis(false, mainSceneToken ?? drawHudToken ?? new Token(TokenType.Identifier, "MainScene", null, 1, 1), null, null, null, drawHudToken);
+
+            if (mainSceneToken is not null)
+            {
+                Token conflictToken = startToken ?? updateToken ?? drawToken ?? drawHudToken ?? mainSceneToken;
+                throw new CompilerException(
+                    "Web entry module cannot declare both an explicit 'MainScene' object and top-level lifecycle functions.",
+                    conflictToken.Line,
+                    conflictToken.Column);
+            }
+
+            if (startToken is null || updateToken is null || drawToken is null)
+            {
+                var missingHooks = new List<string>();
+                if (startToken is null) missingHooks.Add("start()");
+                if (updateToken is null) missingHooks.Add("update()");
+                if (drawToken is null) missingHooks.Add("draw()");
+                Token errorToken = startToken ?? updateToken ?? drawToken ?? drawHudToken ?? new Token(TokenType.Identifier, "start", null, 1, 1);
+                throw new CompilerException(
+                    $"Top-level web app entry requires {string.Join(", ", missingHooks)}.",
+                    errorToken.Line,
+                    errorToken.Column);
+            }
+
+            ValidateGraphicalAppPreludeNameCollisions(module);
+            ValidateGraphicalAppTopLevelStatements(module);
+
+            return new GraphicalAppProfileAnalysis(true, startToken, startToken, updateToken, drawToken, drawHudToken);
+        }
+
+        private static void EnsureZeroArgumentLifecycle(FunctionDecl function)
+        {
+            if (function.Parameters.Count == 0)
+                return;
+
+            throw new CompilerException(
+                $"Top-level lifecycle function '{function.Name.Lexeme}' must take zero arguments.",
+                function.Name.Line,
+                function.Name.Column);
+        }
+
+        private static void ValidateGraphicalAppTopLevelStatements(ModuleInfo module)
+        {
+            for (int i = 0; i < module.LocalStatements.Count; i++)
+            {
+                switch (module.LocalStatements[i])
+                {
+                    case VarDecl:
+                    case FunctionDecl:
+                    case ObjectDecl:
+                    case InterfaceDecl:
+                    case EnumDecl:
+                        continue;
+                    default:
+                        throw new CompilerException(
+                            "Top-level web app entry only allows state declarations, functions, objects, interfaces, and enums.",
+                            GetStmtLine(module.LocalStatements[i]),
+                            GetStmtColumn(module.LocalStatements[i]));
+                }
+            }
+        }
+
+        private static void ValidateGraphicalAppPreludeNameCollisions(ModuleInfo module)
+        {
+            for (int i = 0; i < GraphicalAppPreludeImports.Length; i++)
+            {
+                string reservedName = GraphicalAppPreludeImports[i].Alias;
+
+                foreach (var import in module.Imports)
+                {
+                    for (int bindingIndex = 0; bindingIndex < import.Bindings.Count; bindingIndex++)
+                    {
+                        var binding = import.Bindings[bindingIndex];
+                        string bindingName = binding.Alias?.Lexeme ?? binding.Name.Lexeme;
+                        Token bindingToken = binding.Alias ?? binding.Name;
+                        if (string.Equals(bindingName, reservedName, StringComparison.Ordinal))
+                        {
+                            throw new CompilerException(
+                                $"Top-level web app entry reserves '{reservedName}' for the implicit engine prelude.",
+                                bindingToken.Line,
+                                bindingToken.Column);
+                        }
+                    }
+                }
+
+                for (int stmtIndex = 0; stmtIndex < module.LocalStatements.Count; stmtIndex++)
+                {
+                    if (!TryGetGraphicalAppTopLevelName(module.LocalStatements[stmtIndex], out var topLevelName, out var topLevelToken))
+                        continue;
+
+                    if (string.Equals(topLevelName, reservedName, StringComparison.Ordinal))
+                    {
+                        throw new CompilerException(
+                            $"Top-level web app entry reserves '{reservedName}' for the implicit engine prelude.",
+                            topLevelToken.Line,
+                            topLevelToken.Column);
+                    }
+                }
+            }
+        }
+
+        private static bool TryGetGraphicalAppTopLevelName(Stmt stmt, out string name, out Token token)
+        {
+            switch (stmt)
+            {
+                case VarDecl v:
+                    name = v.Name.Lexeme;
+                    token = v.Name;
+                    return true;
+                default:
+                    return TryGetDeclarationName(stmt, out name, out token);
+            }
+        }
+
+        private void InjectGraphicalAppPreludeImports(ModuleInfo module, GraphicalAppProfileAnalysis graphicalAppProfile)
+        {
+            var injectedImports = new List<ImportDecl>(GraphicalAppPreludeImports.Length);
+            for (int i = 0; i < GraphicalAppPreludeImports.Length; i++)
+            {
+                var preludeImport = GraphicalAppPreludeImports[i];
+                Token everythingToken = new(TokenType.Identifier, "everything", null, graphicalAppProfile.TriggerToken.Line, graphicalAppProfile.TriggerToken.Column);
+                Token aliasToken = new(TokenType.Identifier, preludeImport.Alias, null, graphicalAppProfile.TriggerToken.Line, graphicalAppProfile.TriggerToken.Column);
+                Token sourceToken = new(TokenType.String, $"\"{preludeImport.SourcePath}\"", preludeImport.SourcePath, graphicalAppProfile.TriggerToken.Line, graphicalAppProfile.TriggerToken.Column);
+                injectedImports.Add(new ImportDecl([new ImportBinding(everythingToken, aliasToken, IsNamespace: true)], sourceToken));
+            }
+
+            module.Imports.InsertRange(0, injectedImports);
+        }
+
+        private static IList<Stmt> LowerGraphicalAppEntryModule(IList<Stmt> statements, GraphicalAppProfileAnalysis graphicalAppProfile)
+        {
+            var lowered = new List<Stmt>(statements.Count + 1);
+            var fields = new List<FieldDecl>();
+            var methods = new List<MethodDecl>();
+            var constructorStatements = new List<Stmt>();
+            Token? sceneToken = null;
+
+            for (int i = 0; i < statements.Count; i++)
+            {
+                switch (statements[i])
+                {
+                    case VarDecl variable:
+                    {
+                        sceneToken ??= variable.Name;
+                        fields.Add(new FieldDecl(variable.Type, variable.Name, null, DeclarationVisibility.Public, variable.IsConstant));
+                        Expr initializer = variable.Initializer ?? new DefaultValueExpr(variable.Type, variable.Name.Line, variable.Name.Column);
+                        constructorStatements.Add(new ExprStmt(new Assign(variable.Name, initializer)));
+                        if (variable.IsConstant && variable.Initializer is null)
+                        {
+                            throw new CompilerException(
+                                $"Constant '{variable.Name.Lexeme}' must be initialized",
+                                variable.Name.Line,
+                                variable.Name.Column);
+                        }
+                        break;
+                    }
+                    case FunctionDecl function:
+                        sceneToken ??= function.Name;
+                        methods.Add(new MethodDecl(function.Name, function.ReturnType, function.Parameters, function.Body));
+                        break;
+                    case ObjectDecl:
+                    case InterfaceDecl:
+                    case EnumDecl:
+                        sceneToken ??= GetDeclToken(statements[i]);
+                        lowered.Add(statements[i]);
+                        break;
+                }
+            }
+
+            sceneToken ??= graphicalAppProfile.TriggerToken;
+            var mainSceneName = new Token(TokenType.Identifier, "MainScene", null, sceneToken.Line, sceneToken.Column);
+            var constructorKeyword = new Token(TokenType.Constructor, "constructor", null, sceneToken.Line, sceneToken.Column);
+            var constructor = new ConstructorDecl(constructorKeyword, [], new Block(constructorStatements));
+            lowered.Add(new ObjectDecl(mainSceneName, isRecord: false, fields, [constructor], methods));
+            return lowered;
+        }
 
         private ModuleInfo ParseModule(string modulePath)
         {
@@ -1166,6 +1408,8 @@ static class ModuleCompiler
                 case Unary u:
                     ScanExprForCapabilities(u.Right, modulePath);
                     break;
+                case DefaultValueExpr:
+                    break;
                 case InterpString s:
                     for (int i = 0; i < s.Parts.Count; i++)
                     {
@@ -1256,6 +1500,7 @@ static class ModuleCompiler
 
         private static int GetExprLine(Expr expr) => expr switch
         {
+            DefaultValueExpr d => d.Line,
             Literal l => l.Line,
             InterpString i => i.Line,
             ArrayLiteral a => a.Line,
@@ -1285,6 +1530,7 @@ static class ModuleCompiler
 
         private static int GetExprColumn(Expr expr) => expr switch
         {
+            DefaultValueExpr d => d.Column,
             Literal l => l.Column,
             InterpString i => i.Column,
             ArrayLiteral a => a.Column,
@@ -1512,6 +1758,44 @@ static class ModuleCompiler
             _ => 1
         };
 
+        private static int GetStmtLine(Stmt stmt) => stmt switch
+        {
+            VarDecl v => v.Name.Line,
+            ExprStmt e => GetExprLine(e.Expression),
+            Block b when b.Statements.Count > 0 => GetStmtLine(b.Statements[0]),
+            IfStmt i => GetExprLine(i.Condition),
+            SwitchStmt s => GetExprLine(s.Value),
+            WhileStmt w => GetExprLine(w.Condition),
+            ReturnStmt r when r.Value is not null => GetExprLine(r.Value),
+            PrintStmt p => GetExprLine(p.Value),
+            PanicStmt p => GetExprLine(p.Value),
+            YieldStmt y => y.Keyword.Line,
+            BreakStmt b => b.Keyword.Line,
+            ContinueStmt c => c.Keyword.Line,
+            ForStmt f => f.Initializer is not null ? GetStmtLine(f.Initializer) : GetExprLine(f.Condition),
+            ForeachStmt f => f.Iterator.Line,
+            _ => GetDeclLine(stmt)
+        };
+
+        private static int GetStmtColumn(Stmt stmt) => stmt switch
+        {
+            VarDecl v => v.Name.Column,
+            ExprStmt e => GetExprColumn(e.Expression),
+            Block b when b.Statements.Count > 0 => GetStmtColumn(b.Statements[0]),
+            IfStmt i => GetExprColumn(i.Condition),
+            SwitchStmt s => GetExprColumn(s.Value),
+            WhileStmt w => GetExprColumn(w.Condition),
+            ReturnStmt r when r.Value is not null => GetExprColumn(r.Value),
+            PrintStmt p => GetExprColumn(p.Value),
+            PanicStmt p => GetExprColumn(p.Value),
+            YieldStmt y => y.Keyword.Column,
+            BreakStmt b => b.Keyword.Column,
+            ContinueStmt c => c.Keyword.Column,
+            ForStmt f => f.Initializer is not null ? GetStmtColumn(f.Initializer) : GetExprColumn(f.Condition),
+            ForeachStmt f => f.Iterator.Column,
+            _ => GetDeclColumn(stmt)
+        };
+
         private static bool TryGetDeclarationName(Stmt declaration, out string name, out Token token)
         {
             switch (declaration)
@@ -1685,7 +1969,8 @@ static class ModuleCompiler
                     RewriteTypeRef(f.Type, typeAliases),
                     f.Name,
                     f.Initializer is null ? null : RewriteExpr(f.Initializer, typeAliases, namespaceAliases),
-                    f.Visibility)).ToList(),
+                    f.Visibility,
+                    f.IsConstant)).ToList(),
                 obj.Constructors.Select(c => new ConstructorDecl(
                     c.Keyword,
                     c.Parameters.Select(p => new Parameter(p.Type is null ? null : RewriteTypeRef(p.Type, typeAliases), p.Name)).ToList(),
@@ -1734,6 +2019,7 @@ static class ModuleCompiler
                 ResolvedSizedNumericKind = c.ResolvedSizedNumericKind
             },
             Literal l => l,
+            DefaultValueExpr d => new DefaultValueExpr(RewriteTypeRef(d.Type, typeAliases), d.Line, d.Column),
             InterpString s => new InterpString(s.Parts.Select(p => p is Expr e ? (object)RewriteExpr(e, typeAliases, namespaceAliases) : p).ToList(), s.Line, s.Column),
             ArrayLiteral a => new ArrayLiteral(a.Elements.Select(e => RewriteExpr(e, typeAliases, namespaceAliases)).ToList(), a.Line, a.Column)
             {

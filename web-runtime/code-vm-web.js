@@ -559,6 +559,14 @@ export class CanvasSceneRuntime {
       ? options.title
       : "Code App";
     this.keysDown = new Set();
+    this.pointerScreenX = 0;
+    this.pointerScreenY = 0;
+    this.pointerIsDownNow = false;
+    this.pointerActiveId = null;
+    this.pointerPressedPending = false;
+    this.pointerReleasedPending = false;
+    this.pointerWasPressedForStep = false;
+    this.pointerWasReleasedForStep = false;
     this.stepMs = 1000 / 60;
     this.accumulatorMs = 0;
     this.lastTimestampMs = 0;
@@ -587,7 +595,13 @@ export class CanvasSceneRuntime {
     };
     this.handleBlur = () => {
       this.keysDown.clear();
+      this.cancelActivePointer();
     };
+    this.handlePointerDown = event => this.onPointerDown(event);
+    this.handlePointerMove = event => this.onPointerMove(event);
+    this.handlePointerUp = event => this.onPointerUp(event);
+    this.handlePointerCancel = event => this.onPointerCancel(event);
+    this.handleContextMenu = event => event.preventDefault();
     this.tick = timestamp => this.onFrame(timestamp);
   }
 
@@ -620,6 +634,8 @@ export class CanvasSceneRuntime {
     canvas.style.width = "100%";
     canvas.style.height = "100%";
     canvas.style.background = "transparent";
+    canvas.style.touchAction = "none";
+    canvas.style.userSelect = "none";
 
     const output = document.createElement("pre");
     output.style.position = "absolute";
@@ -650,16 +666,29 @@ export class CanvasSceneRuntime {
     window.addEventListener("keydown", this.handleKeyDown, { passive: false });
     window.addEventListener("keyup", this.handleKeyUp, { passive: false });
     window.addEventListener("blur", this.handleBlur);
+    canvas.addEventListener("pointerdown", this.handlePointerDown, { passive: false });
+    canvas.addEventListener("pointermove", this.handlePointerMove, { passive: false });
+    canvas.addEventListener("pointerup", this.handlePointerUp, { passive: false });
+    canvas.addEventListener("pointercancel", this.handlePointerCancel, { passive: false });
+    canvas.addEventListener("contextmenu", this.handleContextMenu);
     this.resize();
   }
 
   dispose() {
     this.stop();
+    if (this.canvas) {
+      this.canvas.removeEventListener("pointerdown", this.handlePointerDown);
+      this.canvas.removeEventListener("pointermove", this.handlePointerMove);
+      this.canvas.removeEventListener("pointerup", this.handlePointerUp);
+      this.canvas.removeEventListener("pointercancel", this.handlePointerCancel);
+      this.canvas.removeEventListener("contextmenu", this.handleContextMenu);
+    }
     window.removeEventListener("resize", this.handleResize);
     window.removeEventListener("keydown", this.handleKeyDown);
     window.removeEventListener("keyup", this.handleKeyUp);
     window.removeEventListener("blur", this.handleBlur);
     this.keysDown.clear();
+    this.cancelActivePointer();
   }
 
   resize() {
@@ -707,6 +736,137 @@ export class CanvasSceneRuntime {
 
   shouldPreventBrowserKeyDefault(event) {
     return this.appControlKeyCodes.has(event.keyCode);
+  }
+
+  preventPointerDefault(event) {
+    if (event.cancelable) {
+      event.preventDefault();
+    }
+  }
+
+  isPrimaryPointerEvent(event) {
+    return event.isPrimary !== false;
+  }
+
+  isPrimaryPointerDownEvent(event) {
+    if (!this.isPrimaryPointerEvent(event)) {
+      return false;
+    }
+    return event.pointerType !== "mouse" || event.button === 0;
+  }
+
+  shouldTrackPointerMove(event) {
+    if (this.pointerActiveId !== null) {
+      return event.pointerId === this.pointerActiveId;
+    }
+    return this.isPrimaryPointerEvent(event);
+  }
+
+  updatePointerPosition(event) {
+    if (!this.canvas) {
+      return;
+    }
+
+    const rect = this.canvas.getBoundingClientRect();
+    this.pointerScreenX = event.clientX - rect.left;
+    this.pointerScreenY = event.clientY - rect.top;
+  }
+
+  onPointerDown(event) {
+    if (!this.isPrimaryPointerDownEvent(event)) {
+      return;
+    }
+    if (this.pointerActiveId !== null && event.pointerId !== this.pointerActiveId) {
+      return;
+    }
+
+    this.preventPointerDefault(event);
+    this.updatePointerPosition(event);
+    this.pointerActiveId = event.pointerId;
+    if (!this.pointerIsDownNow) {
+      this.pointerPressedPending = true;
+    }
+    this.pointerIsDownNow = true;
+
+    if (this.canvas && typeof this.canvas.setPointerCapture === "function") {
+      try {
+        this.canvas.setPointerCapture(event.pointerId);
+      } catch {
+        // Browsers can reject capture if the pointer is no longer active.
+      }
+    }
+  }
+
+  onPointerMove(event) {
+    if (!this.shouldTrackPointerMove(event)) {
+      return;
+    }
+
+    this.preventPointerDefault(event);
+    this.updatePointerPosition(event);
+  }
+
+  onPointerUp(event) {
+    if (this.pointerActiveId !== null && event.pointerId !== this.pointerActiveId) {
+      return;
+    }
+    if (this.pointerActiveId === null && !this.isPrimaryPointerEvent(event)) {
+      return;
+    }
+
+    this.preventPointerDefault(event);
+    this.updatePointerPosition(event);
+    this.releaseActivePointer(event.pointerId);
+  }
+
+  onPointerCancel(event) {
+    if (this.pointerActiveId !== null && event.pointerId !== this.pointerActiveId) {
+      return;
+    }
+
+    this.preventPointerDefault(event);
+    this.updatePointerPosition(event);
+    this.releaseActivePointer(event.pointerId);
+  }
+
+  releaseActivePointer(pointerId) {
+    if (this.pointerIsDownNow) {
+      this.pointerReleasedPending = true;
+    }
+    this.pointerIsDownNow = false;
+    this.pointerActiveId = null;
+
+    if (this.canvas && typeof this.canvas.releasePointerCapture === "function") {
+      try {
+        this.canvas.releasePointerCapture(pointerId);
+      } catch {
+        // Capture may already be released by the browser.
+      }
+    }
+  }
+
+  cancelActivePointer() {
+    const pointerId = this.pointerActiveId;
+    if (this.pointerIsDownNow) {
+      this.pointerReleasedPending = true;
+    }
+    this.pointerIsDownNow = false;
+    this.pointerActiveId = null;
+
+    if (pointerId !== null && this.canvas && typeof this.canvas.releasePointerCapture === "function") {
+      try {
+        this.canvas.releasePointerCapture(pointerId);
+      } catch {
+        // Capture may already be released by the browser.
+      }
+    }
+  }
+
+  beginFixedUpdateStep() {
+    this.pointerWasPressedForStep = this.pointerPressedPending;
+    this.pointerWasReleasedForStep = this.pointerReleasedPending;
+    this.pointerPressedPending = false;
+    this.pointerReleasedPending = false;
   }
 
   showFatal(error) {
@@ -878,6 +1038,34 @@ export class CanvasSceneRuntime {
     return this.keysDown.has(Math.trunc(keyCode));
   }
 
+  pointerWorldX() {
+    return this.pointerScreenX / this.worldScale + this.viewLeft;
+  }
+
+  pointerWorldY() {
+    return this.pointerScreenY / this.worldScale + this.viewTop;
+  }
+
+  pointerScreenXPosition() {
+    return this.pointerScreenX;
+  }
+
+  pointerScreenYPosition() {
+    return this.pointerScreenY;
+  }
+
+  pointerIsDown() {
+    return this.pointerIsDownNow;
+  }
+
+  pointerWasPressed() {
+    return this.pointerWasPressedForStep;
+  }
+
+  pointerWasReleased() {
+    return this.pointerWasReleasedForStep;
+  }
+
   cameraViewLeft() {
     return this.viewLeft;
   }
@@ -1045,6 +1233,7 @@ export class CanvasSceneRuntime {
 
       this.setDrawSpace("world");
       while (this.accumulatorMs >= this.stepMs) {
+        this.beginFixedUpdateStep();
         this.vm.invokeVoid(this.sceneInfo.update.targetIp, this.sceneInfo.update.frameSize, [this.sceneObject]);
         this.accumulatorMs -= this.stepMs;
       }
@@ -1218,6 +1407,34 @@ export class WebVm {
         }
         return this.sceneHost.keyDown(toNumber(args[0], message => this.throwRuntime(message))) ? 1 : 0;
       }
+    });
+    this.hostBindings.set("engine.input.pointer_world_x_scene", {
+      arity: 0,
+      handler: () => this.sceneHost ? this.sceneHost.pointerWorldX() : 0
+    });
+    this.hostBindings.set("engine.input.pointer_world_y_scene", {
+      arity: 0,
+      handler: () => this.sceneHost ? this.sceneHost.pointerWorldY() : 0
+    });
+    this.hostBindings.set("engine.input.pointer_screen_x_scene", {
+      arity: 0,
+      handler: () => this.sceneHost ? this.sceneHost.pointerScreenXPosition() : 0
+    });
+    this.hostBindings.set("engine.input.pointer_screen_y_scene", {
+      arity: 0,
+      handler: () => this.sceneHost ? this.sceneHost.pointerScreenYPosition() : 0
+    });
+    this.hostBindings.set("engine.input.pointer_is_down_scene", {
+      arity: 0,
+      handler: () => this.sceneHost && this.sceneHost.pointerIsDown() ? 1 : 0
+    });
+    this.hostBindings.set("engine.input.pointer_was_pressed_scene", {
+      arity: 0,
+      handler: () => this.sceneHost && this.sceneHost.pointerWasPressed() ? 1 : 0
+    });
+    this.hostBindings.set("engine.input.pointer_was_released_scene", {
+      arity: 0,
+      handler: () => this.sceneHost && this.sceneHost.pointerWasReleased() ? 1 : 0
     });
     this.hostBindings.set("engine.window.camera_view_left_scene", {
       arity: 0,

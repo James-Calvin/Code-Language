@@ -148,10 +148,14 @@ Common mistakes:
 ## Engine Input
 
 ```code
-import { key_is_down } from "engine/input.code";
+import everything as Input from "engine/input.code";
 
-if key_is_down(37) then {
+if Input.key_is_down(37) then {
   print("left");
+}
+
+if Input.pointer_was_pressed_now() then {
+  print("clicked or tapped at {Input.pointer_world_x_position()}, {Input.pointer_world_y_position()}");
 }
 ```
 
@@ -160,8 +164,17 @@ API:
 | Function | Inputs | Returns |
 | --- | --- | --- |
 | `key_is_down(keycode)` | `integer` key code | `boolean` |
+| `pointer_world_x_position()` | none | `real` |
+| `pointer_world_y_position()` | none | `real` |
+| `pointer_screen_x_position()` | none | `real` |
+| `pointer_screen_y_position()` | none | `real` |
+| `pointer_is_down_now()` | none | `boolean` |
+| `pointer_was_pressed_now()` | none | `boolean` |
+| `pointer_was_released_now()` | none | `boolean` |
 
-The current browser-backed input slice supports keyboard state.
+The current browser-backed input slice supports keyboard state plus one primary pointer. The primary pointer is the left mouse button, primary pen button, or first/primary touch. Screen coordinates are HUD-space coordinates from the visible canvas top-left. World coordinates match `draw()` coordinates in the current hybrid-expanded visible world.
+
+Pointer edge helpers are fixed-update state intended for `update()`. A quick tap between updates can make pressed and released both true for the next update. Last known coordinates remain available after release.
 
 ## Engine Viewport
 
@@ -282,6 +295,13 @@ draw_text
 draw_image
 draw_sprite
 key_down
+pointer_world_x
+pointer_world_y
+pointer_screen_x
+pointer_screen_y
+pointer_is_down
+pointer_was_pressed
+pointer_was_released
 camera_view_left/top/width/height/right/bottom
 camera_safe_left/top/width/height/right/bottom
 screen_width

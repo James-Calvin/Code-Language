@@ -138,6 +138,23 @@ Behavior:
 - Current native and web VM host tables keep them available for parity and bring-up.
 - The default browser app workflow uses `--build-web`, `MainScene`, and the scene runtime instead.
 
+## Generated Web Scene Input Intrinsics
+
+Generated web apps expose a browser-backed scene input surface. Native execution and web execution without an attached scene host return neutral values for these helpers.
+
+| Function | Inputs | Returns |
+| --- | --- | --- |
+| `key_down(keycode)` | `integer` key code | `boolean` |
+| `pointer_world_x()` | none | `real` |
+| `pointer_world_y()` | none | `real` |
+| `pointer_screen_x()` | none | `real` |
+| `pointer_screen_y()` | none | `real` |
+| `pointer_is_down()` | none | `boolean` |
+| `pointer_was_pressed()` | none | `boolean` |
+| `pointer_was_released()` | none | `boolean` |
+
+Pointer input tracks one primary pointer: left mouse button, primary pen button, or first/primary touch. Screen coordinates are HUD-space coordinates from the visible canvas top-left; world coordinates match the current `draw()` world view. Prefer `engine.input` wrappers for new scene code.
+
 ## Target Restrictions
 
 Compile target is selected with:

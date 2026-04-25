@@ -1,7 +1,7 @@
 import everything as Draw from "engine/drawing.code";
 import everything as Viewport from "engine/viewport.code";
+import everything as Input from "engine/input.code";
 import { rgb, rgba } from "engine/colors.code";
-import { key_is_down } from "engine/input.code";
 import { HudDrawable, Scene, SceneLoop, Updatable, WorldDrawable } from "engine/scene.code";
 
 object BackgroundLayer {
@@ -32,10 +32,14 @@ object Player {
   }
 
   implement Updatable.update() {
-    if key_is_down(37) then x -= speed;
-    if key_is_down(39) then x += speed;
-    if key_is_down(38) then y -= speed;
-    if key_is_down(40) then y += speed;
+    if Input.key_is_down(37) then x -= speed;
+    if Input.key_is_down(39) then x += speed;
+    if Input.key_is_down(38) then y -= speed;
+    if Input.key_is_down(40) then y += speed;
+    if Input.pointer_was_pressed_now() then {
+      x = Input.pointer_world_x_position() as integer;
+      y = Input.pointer_world_y_position() as integer;
+    }
   }
 
   implement WorldDrawable.draw() {
@@ -58,6 +62,17 @@ object HeadsUpDisplay {
     Draw.text("Arrow keys move", Viewport.hud_width() - 16, 16, 16, "right", "top", rgb(1, 1, 1));
     Draw.text("Player X: {player.x}", 16, 40, 14, "left", "top", rgb(1, 1, 1));
     Draw.text("Player Y: {player.y}", 16, 64, 14, "left", "top", rgb(1, 1, 1));
+    Draw.text("Pointer world: {Input.pointer_world_x_position()}, {Input.pointer_world_y_position()}", 16, 88, 14, "left", "top", rgb(1, 1, 1));
+    Draw.text("Pointer screen: {Input.pointer_screen_x_position()}, {Input.pointer_screen_y_position()}", 16, 112, 14, "left", "top", rgb(1, 1, 1));
+    if Input.pointer_is_down_now() then {
+      Draw.text("Pointer down", 16, 136, 14, "left", "top", rgb(1, 1, 1));
+    }
+    if Input.pointer_was_pressed_now() then {
+      Draw.text("Pointer pressed", 16, 160, 14, "left", "top", rgb(1, 1, 1));
+    }
+    if Input.pointer_was_released_now() then {
+      Draw.text("Pointer released", 16, 184, 14, "left", "top", rgb(1, 1, 1));
+    }
   }
 }
 

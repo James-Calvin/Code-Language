@@ -1109,6 +1109,13 @@ print(point.read());", "10\n"),
   }
   function update() {
     print(key_down(37));
+    print(pointer_world_x());
+    print(pointer_world_y());
+    print(pointer_screen_x());
+    print(pointer_screen_y());
+    print(pointer_is_down());
+    print(pointer_was_pressed());
+    print(pointer_was_released());
   }
   function draw() {
     clear(0, 0, 0, 1);
@@ -1141,7 +1148,7 @@ MainScene scene = new MainScene();
 scene.start();
 scene.update();
 scene.draw();
-scene.draw_hud();", "start\n0\n0\n0\n640\n360\n640\n360\n640\n360\n640\n360\n"),
+scene.draw_hud();", "start\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0\n640\n360\n640\n360\n640\n360\n640\n360\n"),
         };
         var interfaceCases = new List<(string Name, string Source, string Expected)>
         {
@@ -1417,8 +1424,8 @@ export function<integer> sub(integer a, integer b) { return a - b; }",
                     ["main.code"] =
 @"import everything as Draw from ""engine/drawing.code"";
 import everything as Viewport from ""engine/viewport.code"";
+import everything as Input from ""engine/input.code"";
 import { rgb } from ""engine/colors.code"";
-import { key_is_down } from ""engine/input.code"";
 Draw.clear_screen(rgb(0, 0, 0));
 Draw.rectangle(10, 10, 12, 14, rgb(1, 1, 1));
 Draw.line(0, 0, 10, 10, rgb(1, 1, 1));
@@ -1428,11 +1435,18 @@ Draw.image(""assets/test.svg"", 0, 0, 16, 16, 1);
 Draw.sprite(""assets/test.svg"", 0, 0, 8, 8, 20, 20, 8, 8, 1);
 Draw.text(""ok"", Viewport.hud_width() - 10, 10, 12, ""right"", ""top"", rgb(1, 1, 1));
 print(Viewport.hud_width());
-print(key_is_down(37));",
+print(Input.key_is_down(37));
+print(Input.pointer_world_x_position());
+print(Input.pointer_world_y_position());
+print(Input.pointer_screen_x_position());
+print(Input.pointer_screen_y_position());
+print(Input.pointer_is_down_now());
+print(Input.pointer_was_pressed_now());
+print(Input.pointer_was_released_now());",
                     ["assets/test.svg"] = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\"></svg>",
                 },
                 "main.code",
-                "640\n0\n"
+                "640\n0\n0\n0\n0\n0\n0\n0\n0\n"
             ),
             (
                 "module-scene-canonical-import",
@@ -3182,8 +3196,8 @@ export function<string> readText() { return ""ok""; }",
                     ["main.code"] =
 @"import everything as Draw from ""engine/drawing.code"";
 import everything as Viewport from ""engine/viewport.code"";
+import everything as Input from ""engine/input.code"";
 import { rgb } from ""engine/colors.code"";
-import { key_is_down } from ""engine/input.code"";
 
 export object MainScene {
   integer x;
@@ -3200,10 +3214,14 @@ export object MainScene {
   }
 
   function update() {
-    if key_is_down(37) then this.x -= this.speed;
-    if key_is_down(39) then this.x += this.speed;
-    if key_is_down(38) then this.y -= this.speed;
-    if key_is_down(40) then this.y += this.speed;
+    if Input.key_is_down(37) then this.x -= this.speed;
+    if Input.key_is_down(39) then this.x += this.speed;
+    if Input.key_is_down(38) then this.y -= this.speed;
+    if Input.key_is_down(40) then this.y += this.speed;
+    if Input.pointer_was_pressed_now() then {
+      this.x = Input.pointer_world_x_position() as integer;
+      this.y = Input.pointer_world_y_position() as integer;
+    }
   }
 
   function draw() {
@@ -3221,6 +3239,7 @@ export object MainScene {
   function draw_hud() {
     Draw.text(""Code"", 16, 16, 18, ""left"", ""top"", rgb(1, 1, 1));
     Draw.text(""Arrow keys move"", Viewport.hud_width() - 16, 16, 16, ""right"", ""top"", rgb(1, 1, 1));
+    Draw.text(""Pointer: {Input.pointer_screen_x_position()}, {Input.pointer_screen_y_position()}"", 16, 40, 14, ""left"", ""top"", rgb(1, 1, 1));
   }
 }"
                 },
@@ -3242,6 +3261,10 @@ export object MainScene {
                 !outputs.IndexHtml.Contains("output: line => runtime.appendOutput(line)", StringComparison.Ordinal) &&
                 outputs.IndexHtml.Contains("this.appControlKeyCodes = new Set([32, 33, 34, 35, 36, 37, 38, 39, 40])", StringComparison.Ordinal) &&
                 outputs.IndexHtml.Contains("event.preventDefault()", StringComparison.Ordinal) &&
+                outputs.IndexHtml.Contains("touchAction = \"none\"", StringComparison.Ordinal) &&
+                outputs.IndexHtml.Contains("pointerdown", StringComparison.Ordinal) &&
+                outputs.IndexHtml.Contains("engine.input.pointer_world_x_scene", StringComparison.Ordinal) &&
+                outputs.IndexHtml.Contains("beginFixedUpdateStep()", StringComparison.Ordinal) &&
                 outputs.IndexHtml.Contains("\"typeName\": \"MainScene\"", StringComparison.Ordinal) &&
                 outputs.IndexHtml.Contains("\"virtualWidth\": 640", StringComparison.Ordinal) &&
                 outputs.IndexHtml.Contains("\"virtualHeight\": 360", StringComparison.Ordinal) &&
@@ -3883,6 +3906,44 @@ print(quick);";
             Console.WriteLine($"[FAIL] web-runtime-math-host-bindings: {ex.GetType().Name} - {ex.Message}");
         }
 
+        try
+        {
+            string runtimePath = Path.Combine(Directory.GetCurrentDirectory(), "web-runtime", "code-vm-web.js");
+            string runtimeText = File.ReadAllText(runtimePath);
+            string[] requiredSymbols =
+            {
+                "engine.input.pointer_world_x_scene",
+                "engine.input.pointer_world_y_scene",
+                "engine.input.pointer_screen_x_scene",
+                "engine.input.pointer_screen_y_scene",
+                "engine.input.pointer_is_down_scene",
+                "engine.input.pointer_was_pressed_scene",
+                "engine.input.pointer_was_released_scene"
+            };
+
+            foreach (string symbol in requiredSymbols)
+            {
+                string marker = $"this.hostBindings.set(\"{symbol}\"";
+                if (!runtimeText.Contains(marker, StringComparison.Ordinal))
+                    throw new Exception($"Web runtime is missing host binding '{symbol}'.");
+            }
+
+            bool hasPointerRuntime =
+                runtimeText.Contains("onPointerDown", StringComparison.Ordinal) &&
+                runtimeText.Contains("pointerWorldX()", StringComparison.Ordinal) &&
+                runtimeText.Contains("pointerScreenX / this.worldScale + this.viewLeft", StringComparison.Ordinal) &&
+                runtimeText.Contains("touchAction = \"none\"", StringComparison.Ordinal);
+            if (!hasPointerRuntime)
+                throw new Exception("Web runtime is missing primary pointer tracking or coordinate conversion support.");
+
+            Console.WriteLine("[PASS] web-runtime-pointer-host-bindings");
+        }
+        catch (Exception ex)
+        {
+            failures++;
+            Console.WriteLine($"[FAIL] web-runtime-pointer-host-bindings: {ex.GetType().Name} - {ex.Message}");
+        }
+
         return failures;
     }
 
@@ -3933,6 +3994,13 @@ print(quick);";
 print(window > 0);
 print(window_should_close(window));
 print(input_key_down(window, 32));
+print(pointer_world_x());
+print(pointer_world_y());
+print(pointer_screen_x());
+print(pointer_screen_y());
+print(pointer_is_down());
+print(pointer_was_pressed());
+print(pointer_was_released());
 gfx_clear(window, 0, 0, 0, 1);
 gfx_draw_rect(window, 0, 0, 10, 10, 1, 0, 0, 1);
 window_present(window);
@@ -3941,7 +4009,7 @@ print(1);";
         try
         {
             string output = Normalize(CompileAndRun(engineSource));
-            const string expected = "1\n1\n0\n1\n";
+            const string expected = "1\n1\n0\n0\n0\n0\n0\n0\n0\n0\n1\n";
             if (!string.Equals(output, expected, StringComparison.Ordinal))
             {
                 failures++;

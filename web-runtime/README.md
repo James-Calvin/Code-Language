@@ -43,6 +43,14 @@ Engine ABI stubs are available as no-ops on web:
 - `engine.gfx.draw_rect`
 
 Current generated scene-runtime bindings also support:
+- `engine.input.key_down_scene`
+- `engine.input.pointer_world_x_scene`
+- `engine.input.pointer_world_y_scene`
+- `engine.input.pointer_screen_x_scene`
+- `engine.input.pointer_screen_y_scene`
+- `engine.input.pointer_is_down_scene`
+- `engine.input.pointer_was_pressed_scene`
+- `engine.input.pointer_was_released_scene`
 - `engine.gfx.draw_rectangle_scene`
 - `engine.gfx.draw_rectangle_outline_scene`
 - `engine.gfx.draw_line_scene`
@@ -67,7 +75,7 @@ Compatibility note:
 2. Open the generated `dist/index.html` directly, or serve the generated folder from any static host.
 
 The generated web app path is now the main workflow for browser apps.
-- Current generated runtime behavior: full-bleed browser canvas, centered `640x360` safe area, hybrid-expanded world framing, optional `draw_hud()` for screen-edge HUD work, scene primitives for rectangles, outlines, lines, circles, polygons, text, images, and sprites, copied `assets/` content in the generated site output when present, app-key scroll prevention, and normal `print` output routed to the browser console.
+- Current generated runtime behavior: full-bleed browser canvas, centered `640x360` safe area, hybrid-expanded world framing, optional `draw_hud()` for screen-edge HUD work, scene primitives for rectangles, outlines, lines, circles, polygons, text, images, and sprites, keyboard and primary pointer input, copied `assets/` content in the generated site output when present, app-key scroll prevention, canvas touch gesture suppression, and normal `print` output routed to the browser console.
 - Generated web builds embed bytecode in `index.html` by default. Use `--emit-web-bytecode` with `--build-web` to also write `app.bytecode` for debugging or inspection.
 - The repo also ships a wrapper layer in `lib/engine/` so scene apps can import canonical modules `engine.colors`, `engine.drawing`, `engine.input`, `engine.viewport`, and `engine.scene` instead of relying on the raw helper surface. `engine.view` and `engine.loop` remain as compatibility re-exports.
 - The generated runtime is currently JavaScript, not Wasm. Wasm remains a future option if performance or parity data justifies the extra build complexity.

@@ -1,6 +1,6 @@
 # Platform, Libraries, and Targets Roadmap
 
-Last updated: 2026-04-14
+Last updated: 2026-04-19
 
 This roadmap is specifically for:
 1) library/package system,
@@ -228,8 +228,8 @@ Legend:
 | `[~]` | Phase 3 | Stdlib as packages | `std.core`, `std.math`, `std.time`, `standard.input_output` packaged and importable |
 | `[x]` | Phase 4 | Web bundle workflow | Implemented: `--build-web` emits a runnable static site folder with `index.html`, embedded bytecode, copied `assets` output when present, and optional `app.bytecode` via `--emit-web-bytecode` instead of relying on the preview harness |
 | `[x]` | Phase 4 | Web build artifact polish | Implemented: generated apps default to embedded bytecode in `index.html` without writing duplicate `app.bytecode`; `--emit-web-bytecode` writes the separate bytecode artifact when needed |
-| `[~]` | Phase 4 | Browser-backed web app runtime | Implemented current slice: generated full-window canvas runtime, `MainScene` lifecycle (`start/update/draw` plus optional `draw_hud`), fixed-step loop, centered `640x360` safe area, hybrid-expanded world framing, copied `assets` output, browser-backed rectangles/outlines/lines/circles/polygons/text/images/sprites, app-key scroll prevention, and console-routed web `print`; expand richer input/audio/content handling |
-| `[~]` | Phase 4 | Web engine host bindings (real impl) | Implemented current scene-runtime bindings for `key_down`, `clear`, `draw_rectangle`, `draw_rectangle_outline`, `draw_line`, `draw_circle`, `draw_circle_outline`, `draw_polygon`, `draw_polygon_outline`, `draw_text`, `draw_image`, `draw_sprite`, `camera_view_*`, `camera_safe_*`, and `screen_width` / `screen_height`; legacy window-handle web stubs still need real implementations or package-level wrappers |
+| `[~]` | Phase 4 | Browser-backed web app runtime | Implemented current slice: generated full-window canvas runtime, `MainScene` lifecycle (`start/update/draw` plus optional `draw_hud`), fixed-step loop, centered `640x360` safe area, hybrid-expanded world framing, copied `assets` output, browser-backed rectangles/outlines/lines/circles/polygons/text/images/sprites, keyboard and primary pointer input, app-key scroll prevention, canvas touch gesture suppression, and console-routed web `print`; expand advanced input/audio/content handling |
+| `[~]` | Phase 4 | Web engine host bindings (real impl) | Implemented current scene-runtime bindings for `key_down`, `pointer_world_x`, `pointer_world_y`, `pointer_screen_x`, `pointer_screen_y`, `pointer_is_down`, `pointer_was_pressed`, `pointer_was_released`, `clear`, `draw_rectangle`, `draw_rectangle_outline`, `draw_line`, `draw_circle`, `draw_circle_outline`, `draw_polygon`, `draw_polygon_outline`, `draw_text`, `draw_image`, `draw_sprite`, `camera_view_*`, `camera_safe_*`, and `screen_width` / `screen_height`; legacy window-handle web stubs still need real implementations or package-level wrappers |
 | `[!]` | Phase 4 | Backend-agnostic API contract | Freeze capability-query and fallback semantics so one Code source can target multiple backends predictably |
 | `[!]` | Phase 5 | Target-agnostic graphical app profile | Allow top-level `start`/`update`/`draw`/`draw_hud` authoring with an implicit engine prelude; synthesize the web entry shell first while preserving explicit `MainScene`, and keep the design portable to future native graphical targets |
 | `[~]` | Phase 5 | Engine core package set | Canonical `engine.scene` now exports `Scene`, `SceneLoop`, and lifecycle interfaces for explicit child-object composition; broader engine packages such as `engine.math` and `engine.ecs` are still pending |
@@ -262,8 +262,8 @@ This order gets library system + target model stable before engine work starts.
    - Current state: one command produces a runnable browser folder for a sample app, defaulting to `dist/`.
 
 3. **Browser-backed app runtime**
-   - Implemented current slice: generated app page and browser runtime fill the window, preserve aspect ratio with a centered `640x360` safe area, expand the visible world when needed, support optional `draw_hud`, own the main loop for a `MainScene`, and expose rectangles/outlines/lines/circles/polygons/text/images/sprites.
-   - Next step: expand richer input/audio/content handling while keeping the higher-level engine-facing API off raw window handles.
+   - Implemented current slice: generated app page and browser runtime fill the window, preserve aspect ratio with a centered `640x360` safe area, expand the visible world when needed, support optional `draw_hud`, own the main loop for a `MainScene`, and expose rectangles/outlines/lines/circles/polygons/text/images/sprites plus keyboard and primary pointer input.
+   - Next step: expand advanced input/audio/content handling while keeping the higher-level engine-facing API off raw window handles.
 
 4. **Engine packages + loop contract**
    - Implemented current slice: importable wrapper modules now exist for colors, drawing, input, viewport queries, scene composition, and scene-loop execution under `lib/engine/`.

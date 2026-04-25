@@ -1038,6 +1038,13 @@ sealed class Vm
 
         _hostBindings["engine.input.key_down"] = new HostBinding(2, _ => 0);
         _hostBindings["engine.input.key_down_scene"] = new HostBinding(1, _ => 0);
+        _hostBindings["engine.input.pointer_world_x_scene"] = new HostBinding(0, _ => 0.0);
+        _hostBindings["engine.input.pointer_world_y_scene"] = new HostBinding(0, _ => 0.0);
+        _hostBindings["engine.input.pointer_screen_x_scene"] = new HostBinding(0, _ => 0.0);
+        _hostBindings["engine.input.pointer_screen_y_scene"] = new HostBinding(0, _ => 0.0);
+        _hostBindings["engine.input.pointer_is_down_scene"] = new HostBinding(0, _ => 0);
+        _hostBindings["engine.input.pointer_was_pressed_scene"] = new HostBinding(0, _ => 0);
+        _hostBindings["engine.input.pointer_was_released_scene"] = new HostBinding(0, _ => 0);
         _hostBindings["engine.window.camera_view_left_scene"] = new HostBinding(0, _ => 0.0);
         _hostBindings["engine.window.camera_view_top_scene"] = new HostBinding(0, _ => 0.0);
         _hostBindings["engine.window.camera_view_width_scene"] = new HostBinding(0, _ => 640.0);

@@ -1,6 +1,6 @@
 # Web App Runtime V1 Contract
 
-Last updated: 2026-04-14
+Last updated: 2026-04-19
 Status: implemented in a first working slice; broader engine/runtime expansion is still in progress
 
 ## Purpose
@@ -22,7 +22,7 @@ This document defines the contract that the current first slice implements and t
 - Authoring model: scene object
 - Browser presentation: fills the browser window by default
 - Coordinate model: guaranteed safe area of `640x360`, with hybrid-expanded world framing beyond that safe area when needed
-- Initial rendering/input scope: primitive drawing (`draw_rectangle`, outlines, lines, circles, polygons, text), image/sprite drawing, and keyboard input
+- Initial rendering/input scope: primitive drawing (`draw_rectangle`, outlines, lines, circles, polygons, text), image/sprite drawing, keyboard input, and primary pointer input
 - Build output: deployable static site folder
 - Default output directory: `dist/`
 
@@ -37,7 +37,7 @@ Current state:
 - A dedicated web build mode exists: `--build-web <entry.code>`.
 - The default web build output is `dist/`, unless `--out` is provided.
 - The generated app page owns the browser canvas and runtime bootstrap.
-- The current browser-backed V1 slice supports `MainScene`, `start()`, `update()`, `draw()`, optional `draw_hud()`, full-window presentation, hybrid-expanded framing around a fixed `640x360` safe area, `key_down()`, `clear()`, `draw_rectangle()`, `draw_rectangle_outline()`, `draw_line()`, `draw_circle()`, `draw_circle_outline()`, `draw_polygon()`, `draw_polygon_outline()`, `draw_text()`, `draw_image()`, `draw_sprite()`, `camera_view_*()`, `camera_safe_*()`, `screen_width()`, and `screen_height()`.
+- The current browser-backed V1 slice supports `MainScene`, `start()`, `update()`, `draw()`, optional `draw_hud()`, full-window presentation, hybrid-expanded framing around a fixed `640x360` safe area, keyboard input, primary pointer input, `clear()`, `draw_rectangle()`, `draw_rectangle_outline()`, `draw_line()`, `draw_circle()`, `draw_circle_outline()`, `draw_polygon()`, `draw_polygon_outline()`, `draw_text()`, `draw_image()`, `draw_sprite()`, `camera_view_*()`, `camera_safe_*()`, `screen_width()`, and `screen_height()`.
 - A higher-level wrapper layer now exists under `lib/engine/`: canonical modules `engine.colors`, `engine.drawing`, `engine.input`, `engine.viewport`, and `engine.scene`, with compatibility re-export modules `engine.view` and `engine.loop`.
 - Scene composition is now supported through explicit child-object registration against `Scene`.
 - Generated apps prevent browser scroll/panning for app-control keys: arrows, Space, Page Up, Page Down, Home, and End.
@@ -48,7 +48,7 @@ Current state:
 
 Planned V1 behavior:
 - Keep the current scene-object/browser contract stable while expanding the wrapper layer on top of it.
-- Expand beyond the current primitive/image-sprite/keyboard slice without forcing raw browser/bootstrap concerns into user code.
+- Expand beyond the current primitive/image-sprite/primary-input slice without forcing raw browser/bootstrap concerns into user code.
 - Reduce reliance on the lower-level upload harness in day-to-day development.
 - Add a target-agnostic graphical app profile that can synthesize the entry shell from top-level lifecycle authoring and an implicit engine prelude for `--build-web` first, without removing explicit `MainScene`.
 
@@ -105,9 +105,9 @@ Example target authoring shape:
 
 ```code
 import everything as Draw from "engine/drawing.code";
+import everything as Input from "engine/input.code";
 import everything as Viewport from "engine/viewport.code";
 import { rgb, rgba } from "engine/colors.code";
-import { key_is_down } from "engine/input.code";
 import { HudDrawable, Scene, SceneLoop, Updatable, WorldDrawable } from "engine/scene.code";
 
 object Player {
@@ -122,10 +122,14 @@ object Player {
   }
 
   implement Updatable.update() {
-    if key_is_down(37) then x -= speed;
-    if key_is_down(39) then x += speed;
-    if key_is_down(38) then y -= speed;
-    if key_is_down(40) then y += speed;
+    if Input.key_is_down(37) then x -= speed;
+    if Input.key_is_down(39) then x += speed;
+    if Input.key_is_down(38) then y -= speed;
+    if Input.key_is_down(40) then y += speed;
+    if Input.pointer_was_pressed_now() then {
+      x = Input.pointer_world_x_position() as integer;
+      y = Input.pointer_world_y_position() as integer;
+    }
   }
 
   implement WorldDrawable.draw() {
@@ -163,6 +167,7 @@ object HeadsUpDisplay {
     Draw.text("Code", 16, 16, 18, "left", "top", rgb(1, 1, 1));
     Draw.text("Arrow keys move", Viewport.hud_width() - 16, 16, 16, "right", "top", rgb(1, 1, 1));
     Draw.text("Player X: {player.x}", 16, 40, 14, "left", "top", rgb(1, 1, 1));
+    Draw.text("Pointer: {Input.pointer_screen_x_position()}, {Input.pointer_screen_y_position()}", 16, 64, 14, "left", "top", rgb(1, 1, 1));
   }
 }
 
@@ -205,7 +210,7 @@ export object MainScene {
 
 The example above matches the current recommended larger-project shape and is checked in as `ConsoleApp1/examples/web_scene.code`.
 
-For a smaller playable sample that stays within primitives plus keyboard input, see `ConsoleApp1/examples/shape_dodge.code`. `shape_dodge.code` is the current recommended "small game" demo, while `web_scene.code` remains the broader scene-composition and rendering reference. Example status and usage are cataloged in `docs/example-catalog.md`.
+For a smaller playable sample that stays within primitives plus keyboard input, see `ConsoleApp1/examples/shape_dodge.code`. `shape_dodge.code` is the current recommended "small game" demo, while `web_scene.code` remains the broader scene-composition, rendering, assets, and pointer-input reference. Example status and usage are cataloged in `docs/example-catalog.md`.
 
 ## Runtime Behavior
 
@@ -257,6 +262,13 @@ Raw scene-runtime surface:
 - `draw_image(string source, real x, real y, real width, real height, real alpha)`
 - `draw_sprite(string source, real source_x, real source_y, real source_width, real source_height, real x, real y, real width, real height, real alpha)`
 - `key_down(integer keycode) -> boolean`
+- `pointer_world_x() -> real`
+- `pointer_world_y() -> real`
+- `pointer_screen_x() -> real`
+- `pointer_screen_y() -> real`
+- `pointer_is_down() -> boolean`
+- `pointer_was_pressed() -> boolean`
+- `pointer_was_released() -> boolean`
 - `camera_view_left() -> real`
 - `camera_view_top() -> real`
 - `camera_view_width() -> real`
@@ -290,6 +302,13 @@ Current wrapper layer:
   - `sprite(...)`
 - `engine.input`
   - `key_is_down(integer keycode) -> boolean`
+  - `pointer_world_x_position() -> real`
+  - `pointer_world_y_position() -> real`
+  - `pointer_screen_x_position() -> real`
+  - `pointer_screen_y_position() -> real`
+  - `pointer_is_down_now() -> boolean`
+  - `pointer_was_pressed_now() -> boolean`
+  - `pointer_was_released_now() -> boolean`
 - `engine.viewport`
   - `view_*()`
   - `safe_*()`
@@ -309,6 +328,11 @@ Behavior rules:
 - `draw_rectangle(...)`, `draw_rectangle_outline(...)`, `draw_line(...)`, `draw_circle(...)`, `draw_circle_outline(...)`, `draw_polygon(...)`, `draw_polygon_outline(...)`, `draw_text(...)`, `draw_image(...)`, and `draw_sprite(...)` draw in world coordinates during `draw()`.
 - The same drawing calls use screen-space coordinates during `draw_hud()`.
 - `key_down(...)` returns the current keyboard state without requiring a window handle.
+- `pointer_screen_x()` / `pointer_screen_y()` return HUD/screen-space coordinates from the visible canvas top-left.
+- `pointer_world_x()` / `pointer_world_y()` return coordinates in the current expanded world view, matching `draw()` coordinates.
+- `pointer_is_down()` tracks the primary pointer: left mouse button, primary pen button, or first/primary touch.
+- `pointer_was_pressed()` and `pointer_was_released()` are fixed-update edge states intended for `update()`; a quick tap between updates can make both true for the next update.
+- Last known pointer coordinates remain available after release; blur/cancel clears the down state and produces a release edge if needed.
 - `camera_view_*()` exposes the current expanded visible world bounds.
 - `camera_safe_*()` exposes the guaranteed `640x360` safe area bounds.
 - `screen_width()` / `screen_height()` expose the visible HUD/screen-space size.
@@ -322,7 +346,7 @@ Behavior rules:
 
 Out of scope for V1:
 - audio
-- mouse/touch input
+- multi-touch ids, gestures, right/middle mouse buttons, wheel input, and pointer event queues
 - physics
 - GPU abstraction work
 - editor tooling
@@ -367,6 +391,7 @@ The first implementation milestone is defined by the following conditions:
 - The app fills the browser window.
 - Rendering preserves aspect ratio with a centered `640x360` safe area and hybrid-expanded visible world.
 - Keyboard input works inside `update()`.
+- Primary pointer coordinates and press/release edges work inside `update()` and can be displayed in `draw_hud()`.
 - Rectangle, outline, circle, polygon, text, and image/sprite rendering work inside `draw()` / `draw_hud()`.
 - HUD anchoring works inside `draw_hud()` using `screen_width()` / `screen_height()`.
 - The first wrapper layer under `lib/engine/` covers colors, drawing, input, and view queries for scene apps.

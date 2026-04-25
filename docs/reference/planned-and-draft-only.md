@@ -12,8 +12,7 @@ Use [Example Catalog](../example-catalog.md) and the current compiler as the tru
 | `fallible<void, E>` | Deferred. Fallible success type cannot be `void` today. |
 | Semicolon injection | Draft-only. Write semicolons today. |
 | `integer64` and `whole64` | Deferred until the runtime has a cross-target exact wide-integer representation. |
-| Numeric literal suffixes such as `i32`, `w64`, `r32` | Draft-only. |
-| Exponent numeric literals such as `1e3` or `1.5e-2` | Draft-only. |
+| Numeric literal suffixes such as `i32`, `w64`, `r32` | Draft-only. ||
 | `foreach` over `map`, `set`, `queue`, and `stack` | Deferred. `foreach` supports numeric counts and arrays today; planned map iteration should yield entry values. |
 
 ## Package and Module Features
@@ -31,7 +30,7 @@ Use [Example Catalog](../example-catalog.md) and the current compiler as the tru
 | --- | --- |
 | Broader standard library beyond current containers, math, time, IO baseline | Planned. |
 | Byte-channel color overloads such as `rgb(byte, byte, byte)` and `rgba(byte, byte, byte, byte)` | Planned on top of the implemented `byte` / `whole8` type surface. Current `rgb` / `rgba` use real channels commonly from `0` to `1`. |
-| Mouse/touch input | Out of current V1 web slice. |
+| Advanced input beyond the primary pointer | Multi-touch ids, gestures, right/middle mouse buttons, wheel input, and event queues are deferred. Current generated web apps support keyboard state and one primary pointer. |
 | Audio APIs | Out of current V1 web slice. |
 | Physics APIs | Out of current V1 web slice. |
 | Richer content handling and asset pipeline | Planned. Current web build copies `assets/`. |

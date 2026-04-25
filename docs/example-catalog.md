@@ -67,7 +67,7 @@ Current limitation:
 | --- | --- | --- | --- |
 | `negative` | `ConsoleApp1/examples/panic.code` | `expected runtime error` | `panic(...)` raises `UserError` with stack info |
 | `runnable` | `ConsoleApp1/examples/shape_dodge.code` | `build-web` | Canonical small playable web demo |
-| `runnable` | `ConsoleApp1/examples/web_scene.code` | `build-web` | Broader scene-composition and rendering reference |
+| `runnable` | `ConsoleApp1/examples/web_scene.code` | `build-web` | Broader scene-composition, rendering, assets, viewport, and pointer-input reference |
 
 ## Planned But Not Implemented Yet
 

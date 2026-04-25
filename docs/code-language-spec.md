@@ -719,7 +719,7 @@ if x > 3 then panic("x too large");
     - `gfx_clear(...)`, `gfx_draw_rect(...)`
     - Current runtime behavior for these engine intrinsics is prototype/no-op on both native and web hosts.
   - Scene-oriented browser/runtime intrinsics are also available for the generated web app path:
-    - input/view: `key_down(...)`, `camera_view_*()`, `camera_safe_*()`, `screen_width()`, `screen_height()`
+    - input/view: `key_down(...)`, `pointer_world_x()`, `pointer_world_y()`, `pointer_screen_x()`, `pointer_screen_y()`, `pointer_is_down()`, `pointer_was_pressed()`, `pointer_was_released()`, `camera_view_*()`, `camera_safe_*()`, `screen_width()`, `screen_height()`
     - drawing: `clear(...)`, `draw_rectangle(...)`, `draw_rectangle_outline(...)`, `draw_line(...)`, `draw_circle(...)`, `draw_circle_outline(...)`, `draw_polygon(...)`, `draw_polygon_outline(...)`, `draw_text(...)`, `draw_image(...)`, `draw_sprite(...)`
   - The current repo ships a wrapper layer in `lib/engine/` over those scene/runtime intrinsics: canonical modules `engine.colors`, `engine.drawing`, `engine.input`, `engine.viewport`, and `engine.scene`, with compatibility re-export modules `engine.view` and `engine.loop`.
   - Note: high-range timing values may eventually need dedicated 64-bit numeric/value support for full precision guarantees.

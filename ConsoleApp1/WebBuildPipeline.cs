@@ -41,7 +41,8 @@ internal static class WebBuildPipeline
             Target = CompileTarget.VmWeb,
             TraceLinker = traceLinker,
             TraceWriter = traceWriter,
-            EnableGraphicalAppProfile = true
+            EnableGraphicalAppProfile = true,
+            EnableImpliedEngineImports = true
         };
 
         var result = ModuleCompiler.CompileFromFileWithMetadata(fullSourcePath, options);

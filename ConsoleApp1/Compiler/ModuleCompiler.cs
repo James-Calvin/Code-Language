@@ -14,6 +14,7 @@ sealed class ModuleCompileOptions
     public bool TraceLinker { get; init; }
     public Action<string>? TraceWriter { get; init; }
     public bool EnableGraphicalAppProfile { get; init; }
+    public bool EnableImpliedEngineImports { get; init; }
 }
 
 sealed class ModuleCompileResult
@@ -269,12 +270,13 @@ static class ModuleCompiler
             PackageManifest = manifest,
             TraceLinker = baseOptions.TraceLinker,
             TraceWriter = baseOptions.TraceWriter,
-            EnableGraphicalAppProfile = baseOptions.EnableGraphicalAppProfile
+            EnableGraphicalAppProfile = baseOptions.EnableGraphicalAppProfile,
+            EnableImpliedEngineImports = baseOptions.EnableImpliedEngineImports
         };
         var linker = new ModuleLinker(projectRoot, fullEntryPath, compileOptions);
         var linkResult = linker.Link(fullEntryPath);
         var loweredStatements = LowerInlineInterfaceImplementations(linkResult.Statements);
-        var typeChecker = new TypeChecker();
+        var typeChecker = new TypeChecker(enableImpliedEngineImports: compileOptions.EnableImpliedEngineImports);
         typeChecker.Check(loweredStatements);
         var generator = new CodeGenerator();
         var generated = generator.GenerateWithMetadata(loweredStatements);
@@ -555,6 +557,23 @@ static class ModuleCompiler
 
     private sealed class ModuleLinker
     {
+        private sealed record ImpliedEngineNamespaceSpec(string Alias, string SourcePath);
+        private sealed record ImpliedEngineUsage(HashSet<string> NamespaceAliases, HashSet<string> DirectNames);
+
+        private static readonly ImpliedEngineNamespaceSpec[] ImpliedEngineNamespaceImports =
+        [
+            new("Draw", "engine/drawing.code"),
+            new("Input", "engine/input.code"),
+            new("Viewport", "engine/viewport.code"),
+            new("Colors", "engine/colors.code")
+        ];
+
+        private static readonly string[] ImpliedEngineDirectImportSourcePaths =
+        [
+            "engine/colors.code",
+            "engine/scene.code"
+        ];
+
         private readonly string _projectRoot;
         private readonly string _displayRoot;
         private readonly string _entryPath;
@@ -565,6 +584,7 @@ static class ModuleCompiler
         private readonly List<string> _order = new();
         private readonly List<ModuleGraphEdge> _edges = new();
         private readonly Dictionary<string, CapabilityUse> _requiredCapabilities = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, HashSet<string>> _impliedDirectExportNames = new(StringComparer.OrdinalIgnoreCase);
 
         public ModuleLinker(string projectRoot, string entryPath, ModuleCompileOptions options)
         {
@@ -582,6 +602,7 @@ static class ModuleCompiler
             _order.Clear();
             _edges.Clear();
             _requiredCapabilities.Clear();
+            _impliedDirectExportNames.Clear();
             RegisterManifestCapabilities();
 
             Trace($"Link entry module {FormatGraphPath(entryPath)}");
@@ -632,12 +653,10 @@ static class ModuleCompiler
             try
             {
                 var module = ParseModule(modulePath);
+                ApplyImpliedEngineImports(module);
                 var graphicalAppProfile = AnalyzeGraphicalAppProfile(module);
                 if (graphicalAppProfile.IsEnabled)
-                {
                     Trace($"Enable inferred graphical app profile for {FormatGraphPath(modulePath)}");
-                    InjectGraphicalAppPreludeImports(module, graphicalAppProfile);
-                }
                 Trace($"Parsed {FormatGraphPath(modulePath)} (imports={module.Imports.Count}, exports={module.ExportedDeclarations.Count})");
                 RegisterCapabilityFromPackage(module.PackageName, module.Path, module.PackageLine, module.PackageColumn);
                 RegisterCapabilitiesFromStatements(module.LocalStatements, module.Path);
@@ -794,13 +813,60 @@ static class ModuleCompiler
             Token? DrawToken,
             Token? DrawHudToken);
 
-        private static readonly (string Alias, string SourcePath)[] GraphicalAppPreludeImports =
-        [
-            ("Draw", "engine/drawing.code"),
-            ("Input", "engine/input.code"),
-            ("Viewport", "engine/viewport.code"),
-            ("Colors", "engine/colors.code")
-        ];
+        private void ApplyImpliedEngineImports(ModuleInfo module)
+        {
+            if (!_options.EnableImpliedEngineImports || IsEnginePackage(module.PackageName))
+                return;
+
+            ValidateImpliedEngineNamespaceNameCollisions(module);
+            var usage = AnalyzeImpliedEngineUsage(module);
+            if (usage.NamespaceAliases.Count == 0 && usage.DirectNames.Count == 0)
+                return;
+
+            Token anchorToken = GetImpliedEngineAnchorToken(module);
+            var injectedImports = new List<ImportDecl>();
+
+            for (int i = 0; i < ImpliedEngineNamespaceImports.Length; i++)
+            {
+                var namespaceImport = ImpliedEngineNamespaceImports[i];
+                if (!usage.NamespaceAliases.Contains(namespaceImport.Alias))
+                    continue;
+                if (HasExactNamespaceImport(module, namespaceImport.Alias, namespaceImport.SourcePath))
+                    continue;
+
+                Token everythingToken = new(TokenType.Identifier, "everything", null, anchorToken.Line, anchorToken.Column);
+                Token aliasToken = new(TokenType.Identifier, namespaceImport.Alias, null, anchorToken.Line, anchorToken.Column);
+                Token sourceToken = new(TokenType.String, $"\"{namespaceImport.SourcePath}\"", namespaceImport.SourcePath, anchorToken.Line, anchorToken.Column);
+                injectedImports.Add(new ImportDecl([new ImportBinding(everythingToken, aliasToken, IsNamespace: true)], sourceToken));
+            }
+
+            for (int i = 0; i < ImpliedEngineDirectImportSourcePaths.Length; i++)
+            {
+                string sourcePath = ImpliedEngineDirectImportSourcePaths[i];
+                var exportNames = GetImpliedEngineDirectExportNames(module, sourcePath);
+                var matchedNames = usage.DirectNames
+                    .Where(name => exportNames.Contains(name) && !HasExactNonAliasedImport(module, sourcePath, name))
+                    .OrderBy(name => name, StringComparer.Ordinal)
+                    .ToList();
+                if (matchedNames.Count == 0)
+                    continue;
+
+                var bindings = new List<ImportBinding>(matchedNames.Count);
+                for (int nameIndex = 0; nameIndex < matchedNames.Count; nameIndex++)
+                {
+                    string matchedName = matchedNames[nameIndex];
+                    bindings.Add(new ImportBinding(
+                        new Token(TokenType.Identifier, matchedName, null, anchorToken.Line, anchorToken.Column),
+                        null));
+                }
+
+                Token sourceToken = new(TokenType.String, $"\"{sourcePath}\"", sourcePath, anchorToken.Line, anchorToken.Column);
+                injectedImports.Add(new ImportDecl(bindings, sourceToken));
+            }
+
+            if (injectedImports.Count > 0)
+                module.Imports.InsertRange(0, injectedImports);
+        }
 
         private GraphicalAppProfileAnalysis AnalyzeGraphicalAppProfile(ModuleInfo module)
         {
@@ -865,7 +931,6 @@ static class ModuleCompiler
                     errorToken.Column);
             }
 
-            ValidateGraphicalAppPreludeNameCollisions(module);
             ValidateGraphicalAppTopLevelStatements(module);
 
             return new GraphicalAppProfileAnalysis(true, startToken, startToken, updateToken, drawToken, drawHudToken);
@@ -903,11 +968,34 @@ static class ModuleCompiler
             }
         }
 
-        private static void ValidateGraphicalAppPreludeNameCollisions(ModuleInfo module)
+        private static bool IsEnginePackage(string? packageName)
         {
-            for (int i = 0; i < GraphicalAppPreludeImports.Length; i++)
+            if (string.IsNullOrWhiteSpace(packageName))
+                return false;
+            return string.Equals(packageName, "engine", StringComparison.Ordinal) ||
+                packageName.StartsWith("engine.", StringComparison.Ordinal);
+        }
+
+        private static Token GetImpliedEngineAnchorToken(ModuleInfo module)
+        {
+            if (module.Imports.Count > 0)
+                return module.Imports[0].Source;
+
+            for (int i = 0; i < module.LocalStatements.Count; i++)
             {
-                string reservedName = GraphicalAppPreludeImports[i].Alias;
+                if (TryGetGraphicalAppTopLevelName(module.LocalStatements[i], out _, out var token))
+                    return token;
+            }
+
+            return new Token(TokenType.Identifier, "MainScene", null, 1, 1);
+        }
+
+        private void ValidateImpliedEngineNamespaceNameCollisions(ModuleInfo module)
+        {
+            for (int i = 0; i < ImpliedEngineNamespaceImports.Length; i++)
+            {
+                string reservedName = ImpliedEngineNamespaceImports[i].Alias;
+                string reservedSourcePath = ImpliedEngineNamespaceImports[i].SourcePath;
 
                 foreach (var import in module.Imports)
                 {
@@ -916,30 +1004,501 @@ static class ModuleCompiler
                         var binding = import.Bindings[bindingIndex];
                         string bindingName = binding.Alias?.Lexeme ?? binding.Name.Lexeme;
                         Token bindingToken = binding.Alias ?? binding.Name;
-                        if (string.Equals(bindingName, reservedName, StringComparison.Ordinal))
+                        if (!string.Equals(bindingName, reservedName, StringComparison.Ordinal))
+                            continue;
+
+                        if (binding.IsNamespace &&
+                            string.Equals(import.SourcePath, reservedSourcePath, StringComparison.OrdinalIgnoreCase) &&
+                            binding.Alias is not null)
                         {
-                            throw new CompilerException(
-                                $"Top-level web app entry reserves '{reservedName}' for the implicit engine prelude.",
-                                bindingToken.Line,
-                                bindingToken.Column);
+                            continue;
                         }
+
+                        throw new CompilerException(
+                            $"Web-app modules reserve '{reservedName}' for implied engine imports.",
+                            bindingToken.Line,
+                            bindingToken.Column);
                     }
                 }
 
                 for (int stmtIndex = 0; stmtIndex < module.LocalStatements.Count; stmtIndex++)
                 {
-                    if (!TryGetGraphicalAppTopLevelName(module.LocalStatements[stmtIndex], out var topLevelName, out var topLevelToken))
-                        continue;
+                    ValidateImpliedEngineReservedNameInStmt(module.LocalStatements[stmtIndex], reservedName);
+                }
+            }
+        }
 
-                    if (string.Equals(topLevelName, reservedName, StringComparison.Ordinal))
+        private static void ValidateImpliedEngineReservedNameInStmt(Stmt stmt, string reservedName)
+        {
+            switch (stmt)
+            {
+                case VarDecl variable:
+                    ValidateImpliedEngineReservedName(variable.Name, reservedName);
+                    break;
+                case Block block:
+                    for (int i = 0; i < block.Statements.Count; i++)
+                        ValidateImpliedEngineReservedNameInStmt(block.Statements[i], reservedName);
+                    break;
+                case IfStmt ifStmt:
+                    ValidateImpliedEngineReservedNameInStmt(ifStmt.ThenBranch, reservedName);
+                    if (ifStmt.ElseBranch is not null)
+                        ValidateImpliedEngineReservedNameInStmt(ifStmt.ElseBranch, reservedName);
+                    break;
+                case SwitchStmt switchStmt:
+                    for (int i = 0; i < switchStmt.Cases.Count; i++)
+                        ValidateImpliedEngineReservedNameInStmt(switchStmt.Cases[i].Body, reservedName);
+                    if (switchStmt.DefaultBranch is not null)
+                        ValidateImpliedEngineReservedNameInStmt(switchStmt.DefaultBranch, reservedName);
+                    break;
+                case WhileStmt whileStmt:
+                    ValidateImpliedEngineReservedNameInStmt(whileStmt.Body, reservedName);
+                    break;
+                case ForStmt forStmt:
+                    if (forStmt.Initializer is not null)
+                        ValidateImpliedEngineReservedNameInStmt(forStmt.Initializer, reservedName);
+                    ValidateImpliedEngineReservedNameInStmt(forStmt.Body, reservedName);
+                    break;
+                case ForeachStmt foreachStmt:
+                    ValidateImpliedEngineReservedName(foreachStmt.Iterator, reservedName);
+                    ValidateImpliedEngineReservedNameInStmt(foreachStmt.Body, reservedName);
+                    break;
+                case FunctionDecl function:
+                    ValidateImpliedEngineReservedName(function.Name, reservedName);
+                    for (int i = 0; i < function.Parameters.Count; i++)
+                        ValidateImpliedEngineReservedName(function.Parameters[i].Name, reservedName);
+                    ValidateImpliedEngineReservedNameInStmt(function.Body, reservedName);
+                    break;
+                case ObjectDecl obj:
+                    ValidateImpliedEngineReservedName(obj.Name, reservedName);
+                    for (int i = 0; i < obj.Fields.Count; i++)
+                        ValidateImpliedEngineReservedName(obj.Fields[i].Name, reservedName);
+                    for (int i = 0; i < obj.Constructors.Count; i++)
                     {
-                        throw new CompilerException(
-                            $"Top-level web app entry reserves '{reservedName}' for the implicit engine prelude.",
-                            topLevelToken.Line,
-                            topLevelToken.Column);
+                        for (int p = 0; p < obj.Constructors[i].Parameters.Count; p++)
+                            ValidateImpliedEngineReservedName(obj.Constructors[i].Parameters[p].Name, reservedName);
+                        ValidateImpliedEngineReservedNameInStmt(obj.Constructors[i].Body, reservedName);
+                    }
+                    for (int i = 0; i < obj.Methods.Count; i++)
+                    {
+                        ValidateImpliedEngineReservedName(obj.Methods[i].Name, reservedName);
+                        for (int p = 0; p < obj.Methods[i].Parameters.Count; p++)
+                            ValidateImpliedEngineReservedName(obj.Methods[i].Parameters[p].Name, reservedName);
+                        ValidateImpliedEngineReservedNameInStmt(obj.Methods[i].Body, reservedName);
+                    }
+                    for (int i = 0; i < obj.InlineInterfaceMethods.Count; i++)
+                    {
+                        ValidateImpliedEngineReservedName(obj.InlineInterfaceMethods[i].MethodName, reservedName);
+                        for (int p = 0; p < obj.InlineInterfaceMethods[i].Parameters.Count; p++)
+                            ValidateImpliedEngineReservedName(obj.InlineInterfaceMethods[i].Parameters[p].Name, reservedName);
+                        ValidateImpliedEngineReservedNameInStmt(obj.InlineInterfaceMethods[i].Body, reservedName);
+                    }
+                    break;
+                case InterfaceDecl iface:
+                    ValidateImpliedEngineReservedName(iface.Name, reservedName);
+                    for (int i = 0; i < iface.Methods.Count; i++)
+                    {
+                        ValidateImpliedEngineReservedName(iface.Methods[i].Name, reservedName);
+                        for (int p = 0; p < iface.Methods[i].Parameters.Count; p++)
+                            ValidateImpliedEngineReservedName(iface.Methods[i].Parameters[p].Name, reservedName);
+                    }
+                    break;
+                case ImplementDecl implementDecl:
+                    ValidateImpliedEngineReservedName(implementDecl.InterfaceName, reservedName);
+                    ValidateImpliedEngineReservedName(implementDecl.ObjectName, reservedName);
+                    for (int i = 0; i < implementDecl.Methods.Count; i++)
+                    {
+                        ValidateImpliedEngineReservedName(implementDecl.Methods[i].InterfaceMethodName, reservedName);
+                        ValidateImpliedEngineReservedName(implementDecl.Methods[i].ViaObjectName, reservedName);
+                        ValidateImpliedEngineReservedName(implementDecl.Methods[i].ViaMethodName, reservedName);
+                        for (int p = 0; p < implementDecl.Methods[i].Parameters.Count; p++)
+                            ValidateImpliedEngineReservedName(implementDecl.Methods[i].Parameters[p].Name, reservedName);
+                    }
+                    break;
+                case EnumDecl enumDecl:
+                    ValidateImpliedEngineReservedName(enumDecl.Name, reservedName);
+                    for (int i = 0; i < enumDecl.Members.Count; i++)
+                        ValidateImpliedEngineReservedName(enumDecl.Members[i].Name, reservedName);
+                    break;
+            }
+        }
+
+        private static void ValidateImpliedEngineReservedName(Token token, string reservedName)
+        {
+            if (string.Equals(token.Lexeme, reservedName, StringComparison.Ordinal))
+            {
+                throw new CompilerException(
+                    $"Web-app modules reserve '{reservedName}' for implied engine imports.",
+                    token.Line,
+                    token.Column);
+            }
+        }
+
+        private static bool HasExactNamespaceImport(ModuleInfo module, string alias, string sourcePath)
+        {
+            foreach (var import in module.Imports)
+            {
+                if (!string.Equals(import.SourcePath, sourcePath, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                for (int bindingIndex = 0; bindingIndex < import.Bindings.Count; bindingIndex++)
+                {
+                    var binding = import.Bindings[bindingIndex];
+                    if (binding.IsNamespace &&
+                        string.Equals(binding.Alias?.Lexeme, alias, StringComparison.Ordinal))
+                    {
+                        return true;
                     }
                 }
             }
+
+            return false;
+        }
+
+        private static bool HasExactNonAliasedImport(ModuleInfo module, string sourcePath, string exportName)
+        {
+            foreach (var import in module.Imports)
+            {
+                if (!string.Equals(import.SourcePath, sourcePath, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                for (int bindingIndex = 0; bindingIndex < import.Bindings.Count; bindingIndex++)
+                {
+                    var binding = import.Bindings[bindingIndex];
+                    if (!binding.IsNamespace &&
+                        binding.Alias is null &&
+                        string.Equals(binding.Name.Lexeme, exportName, StringComparison.Ordinal))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        private HashSet<string> GetImpliedEngineDirectExportNames(ModuleInfo importerModule, string sourcePath)
+        {
+            Token sourceToken = new(TokenType.String, $"\"{sourcePath}\"", sourcePath, 1, 1);
+            string resolvedPath = ResolveImportPath(importerModule.Path, sourcePath, sourceToken);
+            if (_impliedDirectExportNames.TryGetValue(resolvedPath, out var cached))
+                return cached;
+
+            var exportNames = CollectImpliedEngineDirectExportNames(resolvedPath, new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+            _impliedDirectExportNames[resolvedPath] = exportNames;
+            return exportNames;
+        }
+
+        private HashSet<string> CollectImpliedEngineDirectExportNames(string modulePath, HashSet<string> visiting)
+        {
+            if (_impliedDirectExportNames.TryGetValue(modulePath, out var cached))
+                return cached;
+            if (!visiting.Add(modulePath))
+                return new HashSet<string>(StringComparer.Ordinal);
+
+            var module = ParseModule(modulePath);
+            var names = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var exported in module.ExportedDeclarations)
+            {
+                if (IsDirectImpliedDeclaration(exported.Value))
+                    names.Add(exported.Key);
+            }
+
+            for (int i = 0; i < module.Imports.Count; i++)
+            {
+                var import = module.Imports[i];
+                if (!import.IsExported)
+                    continue;
+
+                string dependencyPath = ResolveImportPath(module.Path, import.SourcePath, import.Source);
+                var dependencyNames = CollectImpliedEngineDirectExportNames(dependencyPath, visiting);
+                for (int bindingIndex = 0; bindingIndex < import.Bindings.Count; bindingIndex++)
+                {
+                    var binding = import.Bindings[bindingIndex];
+                    if (binding.IsNamespace)
+                        continue;
+                    if (dependencyNames.Contains(binding.Name.Lexeme))
+                        names.Add(binding.Alias?.Lexeme ?? binding.Name.Lexeme);
+                }
+            }
+
+            visiting.Remove(modulePath);
+            _impliedDirectExportNames[modulePath] = names;
+            return names;
+        }
+
+        private static bool IsDirectImpliedDeclaration(Stmt declaration)
+        {
+            return declaration is ObjectDecl or InterfaceDecl or EnumDecl;
+        }
+
+        private static ImpliedEngineUsage AnalyzeImpliedEngineUsage(ModuleInfo module)
+        {
+            var namespaceAliases = new HashSet<string>(StringComparer.Ordinal);
+            var directNames = new HashSet<string>(StringComparer.Ordinal);
+
+            for (int i = 0; i < module.LocalStatements.Count; i++)
+                CollectImpliedEngineUsage(module.LocalStatements[i], namespaceAliases, directNames);
+
+            return new ImpliedEngineUsage(namespaceAliases, directNames);
+        }
+
+        private static void CollectImpliedEngineUsage(Stmt stmt, HashSet<string> namespaceAliases, HashSet<string> directNames)
+        {
+            switch (stmt)
+            {
+                case VarDecl variable:
+                    CollectImpliedEngineUsage(variable.Type, directNames);
+                    if (variable.Initializer is not null)
+                        CollectImpliedEngineUsage(variable.Initializer, namespaceAliases, directNames);
+                    break;
+                case ExprStmt exprStmt:
+                    CollectImpliedEngineUsage(exprStmt.Expression, namespaceAliases, directNames);
+                    break;
+                case Block block:
+                    for (int i = 0; i < block.Statements.Count; i++)
+                        CollectImpliedEngineUsage(block.Statements[i], namespaceAliases, directNames);
+                    break;
+                case IfStmt ifStmt:
+                    CollectImpliedEngineUsage(ifStmt.Condition, namespaceAliases, directNames);
+                    CollectImpliedEngineUsage(ifStmt.ThenBranch, namespaceAliases, directNames);
+                    if (ifStmt.ElseBranch is not null)
+                        CollectImpliedEngineUsage(ifStmt.ElseBranch, namespaceAliases, directNames);
+                    break;
+                case SwitchStmt switchStmt:
+                    CollectImpliedEngineUsage(switchStmt.Value, namespaceAliases, directNames);
+                    for (int i = 0; i < switchStmt.Cases.Count; i++)
+                    {
+                        CollectImpliedEngineUsage(switchStmt.Cases[i].Value, namespaceAliases, directNames);
+                        CollectImpliedEngineUsage(switchStmt.Cases[i].Body, namespaceAliases, directNames);
+                    }
+                    if (switchStmt.DefaultBranch is not null)
+                        CollectImpliedEngineUsage(switchStmt.DefaultBranch, namespaceAliases, directNames);
+                    break;
+                case WhileStmt whileStmt:
+                    CollectImpliedEngineUsage(whileStmt.Condition, namespaceAliases, directNames);
+                    CollectImpliedEngineUsage(whileStmt.Body, namespaceAliases, directNames);
+                    break;
+                case ReturnStmt returnStmt when returnStmt.Value is not null:
+                    CollectImpliedEngineUsage(returnStmt.Value, namespaceAliases, directNames);
+                    break;
+                case PrintStmt printStmt:
+                    CollectImpliedEngineUsage(printStmt.Value, namespaceAliases, directNames);
+                    break;
+                case PanicStmt panicStmt:
+                    CollectImpliedEngineUsage(panicStmt.Value, namespaceAliases, directNames);
+                    break;
+                case YieldStmt yieldStmt:
+                    CollectImpliedEngineUsage(yieldStmt.Value, namespaceAliases, directNames);
+                    break;
+                case ForStmt forStmt:
+                    if (forStmt.Initializer is not null)
+                        CollectImpliedEngineUsage(forStmt.Initializer, namespaceAliases, directNames);
+                    CollectImpliedEngineUsage(forStmt.Condition, namespaceAliases, directNames);
+                    if (forStmt.Increment is not null)
+                        CollectImpliedEngineUsage(forStmt.Increment, namespaceAliases, directNames);
+                    CollectImpliedEngineUsage(forStmt.Body, namespaceAliases, directNames);
+                    break;
+                case ForeachStmt foreachStmt:
+                    CollectImpliedEngineUsage(foreachStmt.Iterable, namespaceAliases, directNames);
+                    CollectImpliedEngineUsage(foreachStmt.Body, namespaceAliases, directNames);
+                    break;
+                case FunctionDecl function:
+                    if (function.ReturnType is not null)
+                        CollectImpliedEngineUsage(function.ReturnType, directNames);
+                    for (int i = 0; i < function.Parameters.Count; i++)
+                    {
+                        if (function.Parameters[i].Type is not null)
+                            CollectImpliedEngineUsage(function.Parameters[i].Type!, directNames);
+                    }
+                    CollectImpliedEngineUsage(function.Body, namespaceAliases, directNames);
+                    break;
+                case ObjectDecl obj:
+                    for (int i = 0; i < obj.Fields.Count; i++)
+                    {
+                        CollectImpliedEngineUsage(obj.Fields[i].Type, directNames);
+                        if (obj.Fields[i].Initializer is not null)
+                            CollectImpliedEngineUsage(obj.Fields[i].Initializer!, namespaceAliases, directNames);
+                    }
+                    for (int i = 0; i < obj.Constructors.Count; i++)
+                    {
+                        for (int p = 0; p < obj.Constructors[i].Parameters.Count; p++)
+                        {
+                            if (obj.Constructors[i].Parameters[p].Type is not null)
+                                CollectImpliedEngineUsage(obj.Constructors[i].Parameters[p].Type!, directNames);
+                        }
+                        CollectImpliedEngineUsage(obj.Constructors[i].Body, namespaceAliases, directNames);
+                    }
+                    for (int i = 0; i < obj.Methods.Count; i++)
+                    {
+                        if (obj.Methods[i].ReturnType is not null)
+                            CollectImpliedEngineUsage(obj.Methods[i].ReturnType!, directNames);
+                        for (int p = 0; p < obj.Methods[i].Parameters.Count; p++)
+                        {
+                            if (obj.Methods[i].Parameters[p].Type is not null)
+                                CollectImpliedEngineUsage(obj.Methods[i].Parameters[p].Type!, directNames);
+                        }
+                        CollectImpliedEngineUsage(obj.Methods[i].Body, namespaceAliases, directNames);
+                    }
+                    for (int i = 0; i < obj.InlineInterfaceMethods.Count; i++)
+                    {
+                        directNames.Add(obj.InlineInterfaceMethods[i].InterfaceName.Lexeme);
+                        for (int p = 0; p < obj.InlineInterfaceMethods[i].Parameters.Count; p++)
+                        {
+                            if (obj.InlineInterfaceMethods[i].Parameters[p].Type is not null)
+                                CollectImpliedEngineUsage(obj.InlineInterfaceMethods[i].Parameters[p].Type!, directNames);
+                        }
+                        CollectImpliedEngineUsage(obj.InlineInterfaceMethods[i].Body, namespaceAliases, directNames);
+                    }
+                    break;
+                case InterfaceDecl iface:
+                    for (int i = 0; i < iface.Methods.Count; i++)
+                    {
+                        CollectImpliedEngineUsage(iface.Methods[i].ReturnType, directNames);
+                        for (int p = 0; p < iface.Methods[i].Parameters.Count; p++)
+                        {
+                            if (iface.Methods[i].Parameters[p].Type is not null)
+                                CollectImpliedEngineUsage(iface.Methods[i].Parameters[p].Type!, directNames);
+                        }
+                    }
+                    break;
+                case ImplementDecl implementDecl:
+                    directNames.Add(implementDecl.InterfaceName.Lexeme);
+                    directNames.Add(implementDecl.ObjectName.Lexeme);
+                    for (int i = 0; i < implementDecl.Methods.Count; i++)
+                    {
+                        directNames.Add(implementDecl.Methods[i].ViaObjectName.Lexeme);
+                        for (int p = 0; p < implementDecl.Methods[i].Parameters.Count; p++)
+                        {
+                            if (implementDecl.Methods[i].Parameters[p].Type is not null)
+                                CollectImpliedEngineUsage(implementDecl.Methods[i].Parameters[p].Type!, directNames);
+                        }
+                    }
+                    break;
+            }
+        }
+
+        private static void CollectImpliedEngineUsage(TypeRef type, HashSet<string> directNames)
+        {
+            directNames.Add(type.Name);
+            for (int i = 0; i < type.TypeArguments.Count; i++)
+                CollectImpliedEngineUsage(type.TypeArguments[i], directNames);
+        }
+
+        private static void CollectImpliedEngineUsage(Expr expr, HashSet<string> namespaceAliases, HashSet<string> directNames)
+        {
+            switch (expr)
+            {
+                case Binary binary:
+                    CollectImpliedEngineUsage(binary.Left, namespaceAliases, directNames);
+                    CollectImpliedEngineUsage(binary.Right, namespaceAliases, directNames);
+                    break;
+                case Unary unary:
+                    CollectImpliedEngineUsage(unary.Right, namespaceAliases, directNames);
+                    break;
+                case CastExpr cast:
+                    CollectImpliedEngineUsage(cast.Value, namespaceAliases, directNames);
+                    CollectImpliedEngineUsage(cast.TargetType, directNames);
+                    break;
+                case DefaultValueExpr defaultValue:
+                    CollectImpliedEngineUsage(defaultValue.Type, directNames);
+                    break;
+                case InterpString interpString:
+                    for (int i = 0; i < interpString.Parts.Count; i++)
+                    {
+                        if (interpString.Parts[i] is Expr embedded)
+                            CollectImpliedEngineUsage(embedded, namespaceAliases, directNames);
+                    }
+                    break;
+                case ArrayLiteral arrayLiteral:
+                    for (int i = 0; i < arrayLiteral.Elements.Count; i++)
+                        CollectImpliedEngineUsage(arrayLiteral.Elements[i], namespaceAliases, directNames);
+                    break;
+                case NewArrayExpr newArray:
+                    CollectImpliedEngineUsage(newArray.ElementType, directNames);
+                    CollectImpliedEngineUsage(newArray.Size, namespaceAliases, directNames);
+                    break;
+                case NewCollectionExpr newCollection:
+                    CollectImpliedEngineUsage(newCollection.CollectionType, directNames);
+                    break;
+                case ArrayLengthExpr arrayLength:
+                    CollectImpliedEngineUsage(arrayLength.Target, namespaceAliases, directNames);
+                    break;
+                case ArrayIndexExpr arrayIndex:
+                    CollectImpliedEngineUsage(arrayIndex.Array, namespaceAliases, directNames);
+                    CollectImpliedEngineUsage(arrayIndex.Index, namespaceAliases, directNames);
+                    break;
+                case OptionalOrExpr optionalOr:
+                    CollectImpliedEngineUsage(optionalOr.Optional, namespaceAliases, directNames);
+                    CollectImpliedEngineUsage(optionalOr.Fallback, namespaceAliases, directNames);
+                    break;
+                case OptionalHasValueExpr optionalHasValue:
+                    CollectImpliedEngineUsage(optionalHasValue.Target, namespaceAliases, directNames);
+                    break;
+                case OptionalValueExpr optionalValue:
+                    CollectImpliedEngineUsage(optionalValue.Target, namespaceAliases, directNames);
+                    break;
+                case FallibleErrorExpr fallibleError:
+                    for (int i = 0; i < fallibleError.Arguments.Count; i++)
+                        CollectImpliedEngineUsage(fallibleError.Arguments[i], namespaceAliases, directNames);
+                    break;
+                case OnErrorExpr onError:
+                    CollectImpliedEngineUsage(onError.Fallible, namespaceAliases, directNames);
+                    CollectImpliedEngineUsage(onError.Handler, namespaceAliases, directNames);
+                    break;
+                case FieldAccessExpr fieldAccess:
+                    if (fieldAccess.Target is Variable fieldTarget && IsImpliedEngineNamespace(fieldTarget.Name.Lexeme))
+                        namespaceAliases.Add(fieldTarget.Name.Lexeme);
+                    CollectImpliedEngineUsage(fieldAccess.Target, namespaceAliases, directNames);
+                    break;
+                case FieldSetExpr fieldSet:
+                    CollectImpliedEngineUsage(fieldSet.Target, namespaceAliases, directNames);
+                    CollectImpliedEngineUsage(fieldSet.Value, namespaceAliases, directNames);
+                    break;
+                case NewObjectExpr newObject:
+                    directNames.Add(newObject.TypeName.Lexeme);
+                    for (int i = 0; i < newObject.Arguments.Count; i++)
+                        CollectImpliedEngineUsage(newObject.Arguments[i], namespaceAliases, directNames);
+                    break;
+                case ArraySetExpr arraySet:
+                    CollectImpliedEngineUsage(arraySet.Target, namespaceAliases, directNames);
+                    CollectImpliedEngineUsage(arraySet.Value, namespaceAliases, directNames);
+                    break;
+                case Variable variable:
+                    if (IsImpliedEngineNamespace(variable.Name.Lexeme))
+                        namespaceAliases.Add(variable.Name.Lexeme);
+                    break;
+                case Assign assign:
+                    if (IsImpliedEngineNamespace(assign.Name.Lexeme))
+                        namespaceAliases.Add(assign.Name.Lexeme);
+                    CollectImpliedEngineUsage(assign.Value, namespaceAliases, directNames);
+                    break;
+                case CompoundAssignExpr compoundAssign:
+                    CollectImpliedEngineUsage(compoundAssign.Target, namespaceAliases, directNames);
+                    CollectImpliedEngineUsage(compoundAssign.Value, namespaceAliases, directNames);
+                    break;
+                case Call call:
+                    for (int i = 0; i < call.Arguments.Count; i++)
+                        CollectImpliedEngineUsage(call.Arguments[i], namespaceAliases, directNames);
+                    break;
+                case MethodCallExpr methodCall:
+                    if (methodCall.Target is Variable methodTarget && IsImpliedEngineNamespace(methodTarget.Name.Lexeme))
+                        namespaceAliases.Add(methodTarget.Name.Lexeme);
+                    CollectImpliedEngineUsage(methodCall.Target, namespaceAliases, directNames);
+                    for (int i = 0; i < methodCall.Arguments.Count; i++)
+                        CollectImpliedEngineUsage(methodCall.Arguments[i], namespaceAliases, directNames);
+                    break;
+            }
+        }
+
+        private static bool IsImpliedEngineNamespace(string name)
+        {
+            for (int i = 0; i < ImpliedEngineNamespaceImports.Length; i++)
+            {
+                if (string.Equals(ImpliedEngineNamespaceImports[i].Alias, name, StringComparison.Ordinal))
+                    return true;
+            }
+
+            return false;
         }
 
         private static bool TryGetGraphicalAppTopLevelName(Stmt stmt, out string name, out Token token)
@@ -953,21 +1512,6 @@ static class ModuleCompiler
                 default:
                     return TryGetDeclarationName(stmt, out name, out token);
             }
-        }
-
-        private void InjectGraphicalAppPreludeImports(ModuleInfo module, GraphicalAppProfileAnalysis graphicalAppProfile)
-        {
-            var injectedImports = new List<ImportDecl>(GraphicalAppPreludeImports.Length);
-            for (int i = 0; i < GraphicalAppPreludeImports.Length; i++)
-            {
-                var preludeImport = GraphicalAppPreludeImports[i];
-                Token everythingToken = new(TokenType.Identifier, "everything", null, graphicalAppProfile.TriggerToken.Line, graphicalAppProfile.TriggerToken.Column);
-                Token aliasToken = new(TokenType.Identifier, preludeImport.Alias, null, graphicalAppProfile.TriggerToken.Line, graphicalAppProfile.TriggerToken.Column);
-                Token sourceToken = new(TokenType.String, $"\"{preludeImport.SourcePath}\"", preludeImport.SourcePath, graphicalAppProfile.TriggerToken.Line, graphicalAppProfile.TriggerToken.Column);
-                injectedImports.Add(new ImportDecl([new ImportBinding(everythingToken, aliasToken, IsNamespace: true)], sourceToken));
-            }
-
-            module.Imports.InsertRange(0, injectedImports);
         }
 
         private static IList<Stmt> LowerGraphicalAppEntryModule(IList<Stmt> statements, GraphicalAppProfileAnalysis graphicalAppProfile)

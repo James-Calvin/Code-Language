@@ -735,7 +735,7 @@ if x > 3 then panic("x too large");
 - Semicolon injection.
 - `integer64` / `whole64`, numeric literal suffixes, and exponent numeric literals.
 - `foreach` over `map`, `set`, `queue`, and `stack`; planned map iteration should yield entry values.
-- Byte-channel color overloads such as `rgb(byte, byte, byte)` and `rgba(byte, byte, byte, byte)` on top of the implemented `byte` / `whole8` type surface; current color helpers use real channels.
+- Byte-channel `rgba(byte, byte, byte, byte)` on top of the implemented `byte` / `whole8` type surface; `rgb(byte, byte, byte)` is implemented today, while current `rgba` still uses real channels.
 
 ## 16. Comments
 - Single-line comments:

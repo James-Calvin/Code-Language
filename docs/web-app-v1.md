@@ -37,7 +37,7 @@ Current state:
 - A dedicated web build mode exists: `--build-web <entry.code>`.
 - The default web build output is `dist/`, unless `--out` is provided.
 - The generated app page owns the browser canvas and runtime bootstrap.
-- The current browser-backed V1 slice supports either an explicit `MainScene` object or an inferred top-level lifecycle entry with `start()`, `update()`, `draw()`, and optional `draw_hud()`, full-window presentation, hybrid-expanded framing around a fixed `640x360` safe area, keyboard input, primary pointer input, `clear()`, `draw_rectangle()`, `draw_rectangle_outline()`, `draw_line()`, `draw_circle()`, `draw_circle_outline()`, `draw_polygon()`, `draw_polygon_outline()`, `draw_text()`, `draw_image()`, `draw_sprite()`, `camera_view_*()`, `camera_safe_*()`, `screen_width()`, and `screen_height()`.
+- The current browser-backed V1 slice supports either an explicit `MainScene` object or an inferred top-level lifecycle entry with `start()`, `update()`, `draw()`, and optional `draw_hud()`, full-window presentation, hybrid-expanded framing around a fixed `640x360` safe area, keyboard input, primary pointer input, `clear()`, `draw_rectangle()`, `draw_rectangle_outline()`, `draw_line()`, `draw_circle()`, `draw_circle_outline()`, `draw_polygon()`, `draw_polygon_outline()`, `draw_text()`, `draw_image()`, `draw_sprite()`, `camera_view_*()`, `camera_safe_*()`, and `screen_width()`, plus usage-based implied engine imports across `--build-web` app modules.
 - A higher-level wrapper layer now exists under `lib/engine/`: canonical modules `engine.colors`, `engine.drawing`, `engine.input`, `engine.viewport`, and `engine.scene`, with compatibility re-export modules `engine.view` and `engine.loop`.
 - Scene composition is now supported through explicit child-object registration against `Scene`.
 - Generated apps prevent browser scroll/panning for app-control keys: arrows, Space, Page Up, Page Down, Home, and End.
@@ -65,8 +65,11 @@ Supported entry shapes:
   - Top-level state declarations become fields on a synthesized internal `MainScene`.
   - Top-level helper functions become methods on that synthesized internal `MainScene`.
   - Top-level executable statements are rejected in this entry shape.
-  - Inferred entry modules receive an implicit namespace prelude: `Draw`, `Input`, `Viewport`, and `Colors`.
-  - Those prelude names are reserved while the inferred profile is active.
+  - `--build-web` app modules receive usage-based implied engine imports.
+  - `Draw`, `Input`, `Viewport`, and `Colors` are available as implied namespaces.
+  - Direct `Color`, `Scene`, `SceneLoop`, `Startable`, `Updatable`, `WorldDrawable`, and `HudDrawable` names are also available without explicit imports.
+  - Bare engine functions such as `rectangle(...)` are not implied; use namespace style such as `Draw.rectangle(...)` or add an explicit import.
+  - The namespace names `Draw`, `Input`, `Viewport`, and `Colors` are reserved for web-app modules. Redundant explicit imports of those exact canonical namespaces still work.
 
 Lifecycle:
 - The runtime instantiates `MainScene` once.
@@ -99,7 +102,7 @@ Scene composition:
 
 Current app-profile direction:
 - Explicit `MainScene` remains valid.
-- The first inferred profile slice is implemented for `--build-web` entry modules with top-level `start()`, `update()`, `draw()`, and optional `draw_hud()`, plus the implicit `Draw` / `Input` / `Viewport` / `Colors` namespace prelude.
+- The first inferred profile slice is implemented for `--build-web` entry modules with top-level `start()`, `update()`, `draw()`, and optional `draw_hud()`, and it shares the same implied engine-import surface used by other web-app modules.
 - The longer-term target is to carry that authoring shape toward broader target-agnostic reuse so future native graphical targets can run the same Code source.
 
 Important implementation note:
@@ -126,19 +129,13 @@ function update() {
 
 function draw() {
   Draw.clear_screen(Colors.rgb(0, 0, 0));
-  Draw.rectangle(x, y, 24, 24, Colors.rgb(1, 1, 1));
+  Draw.rectangle(x, y, 24, 24, Colors.rgb(255, 255, 255));
 }
 ```
 
 Advanced explicit-scene shape:
 
 ```code
-import everything as Draw from "engine/drawing.code";
-import everything as Input from "engine/input.code";
-import everything as Viewport from "engine/viewport.code";
-import { rgb, rgba } from "engine/colors.code";
-import { HudDrawable, Scene, SceneLoop, Updatable, WorldDrawable } from "engine/scene.code";
-
 object Player {
   integer x;
   integer y;
@@ -163,8 +160,8 @@ object Player {
 
   implement WorldDrawable.draw() {
     if x > Viewport.view_left() - 24 and x < Viewport.view_right() then {
-      Draw.rectangle(x, y, 24, 24, rgb(1, 1, 1));
-      Draw.rectangle_outline(x - 4, y - 4, 32, 32, 2, rgba(1. / 4, 1. / 2, 1, 2. / 3));
+      Draw.rectangle(x, y, 24, 24, Colors.rgb(255, 255, 255));
+      Draw.rectangle_outline(x - 4, y - 4, 32, 32, 2, Colors.rgba(1. / 4, 1. / 2, 1, 2. / 3));
     }
   }
 }
@@ -174,12 +171,12 @@ object BackgroundLayer {
   }
 
   implement WorldDrawable.draw() {
-    Draw.clear_screen(rgb(0, 0, 0));
-    Draw.line(Viewport.safe_left(), Viewport.safe_top(), Viewport.safe_right(), Viewport.safe_bottom(), rgba(1, 1, 1, 1. / 3));
-    Draw.polygon({300, 80, 340, 92, 352, 120, 304, 124, 284, 100}, rgba(0, 1. / 2, 1, 1. / 3));
-    Draw.polygon_outline({300, 80, 340, 92, 352, 120, 304, 124, 284, 100}, 2, rgb(1, 1, 1));
-    Draw.circle(124, 84, 16, rgba(1, 1. / 2, 1. / 4, 1. / 2));
-    Draw.circle_outline(124, 84, 24, 2, rgb(1, 1, 1));
+    Draw.clear_screen(Colors.rgb(0, 0, 0));
+    Draw.line(Viewport.safe_left(), Viewport.safe_top(), Viewport.safe_right(), Viewport.safe_bottom(), Colors.rgba(1, 1, 1, 1. / 3));
+    Draw.polygon({300, 80, 340, 92, 352, 120, 304, 124, 284, 100}, Colors.rgba(0, 1. / 2, 1, 1. / 3));
+    Draw.polygon_outline({300, 80, 340, 92, 352, 120, 304, 124, 284, 100}, 2, Colors.rgb(255, 255, 255));
+    Draw.circle(124, 84, 16, Colors.rgba(1, 1. / 2, 1. / 4, 1. / 2));
+    Draw.circle_outline(124, 84, 24, 2, Colors.rgb(255, 255, 255));
     Draw.image("assets/code-sheet.svg", 24, 220, 64, 32, 1);
     Draw.sprite("assets/code-sheet.svg", 32, 0, 32, 32, 104, 210, 64, 64, 1);
   }
@@ -193,10 +190,10 @@ object HeadsUpDisplay {
   }
 
   implement HudDrawable.draw_hud() {
-    Draw.text("Code", 16, 16, 18, "left", "top", rgb(1, 1, 1));
-    Draw.text("Arrow keys move", Viewport.hud_width() - 16, 16, 16, "right", "top", rgb(1, 1, 1));
-    Draw.text("Player X: {player.x}", 16, 40, 14, "left", "top", rgb(1, 1, 1));
-    Draw.text("Pointer: {Input.pointer_screen_x_position()}, {Input.pointer_screen_y_position()}", 16, 64, 14, "left", "top", rgb(1, 1, 1));
+    Draw.text("Code", 16, 16, 18, "left", "top", Colors.rgb(255, 255, 255));
+    Draw.text("Arrow keys move", Viewport.hud_width() - 16, 16, 16, "right", "top", Colors.rgb(255, 255, 255));
+    Draw.text("Player X: {player.x}", 16, 40, 14, "left", "top", Colors.rgb(255, 255, 255));
+    Draw.text("Pointer: {Input.pointer_screen_x_position()}, {Input.pointer_screen_y_position()}", 16, 64, 14, "left", "top", Colors.rgb(255, 255, 255));
   }
 }
 
@@ -315,7 +312,7 @@ Raw scene-runtime surface:
 
 Current wrapper layer:
 - `engine.colors`
-  - `rgb(real red, real green, real blue) -> Color`
+  - `rgb(byte red, byte green, byte blue) -> Color`
   - `rgba(real red, real green, real blue, real alpha) -> Color`
 - `engine.drawing`
   - `clear_screen(Color color)`
@@ -368,7 +365,8 @@ Behavior rules:
 - `draw_text(...)` uses alignment strings: horizontal `"left"`, `"center"`, `"right"` and vertical `"top"`, `"middle"`, `"bottom"`.
 - `draw_polygon(...)` / `draw_polygon_outline(...)` take a flat numeric array of alternating `x, y` points.
 - `draw_image(...)` and `draw_sprite(...)` load from static asset paths in the built site folder.
-- Future byte-channel `rgb(byte, byte, byte)` and `rgba(byte, byte, byte, byte)` overloads should build on the implemented `byte` / `whole8` numeric type surface; current color wrappers use real channels commonly from `0` to `1`.
+- `rgb(byte, byte, byte)` uses byte channels from `0` to `255`; `byte` and `whole8` are the same type.
+- Future byte-channel `rgba(byte, byte, byte, byte)` should build on the implemented `byte` / `whole8` numeric type surface; current `rgba` still uses real channels commonly from `0` to `1`.
 - Integral `/` is truncating integer division. Use a `real` operand for ratio values, for example `1. / 4` or `1 as real / 4`.
 - Legacy `draw_rect(...)` remains accepted as a temporary compatibility alias, but docs and examples use `draw_rectangle(...)`.
 - Peek limiting, culling, and gameplay-specific visibility rules remain developer-authored in user code; the runtime only exposes the bounds needed to implement them.

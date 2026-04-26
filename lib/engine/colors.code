@@ -14,8 +14,8 @@ export object Color {
   }
 }
 
-export function<Color> rgb(real red, real green, real blue) {
-  return new Color(red, green, blue, 1);
+export function<Color> rgb(byte red, byte green, byte blue) {
+  return new Color((red as real) / 255., (green as real) / 255., (blue as real) / 255., 1);
 }
 
 export function<Color> rgba(real red, real green, real blue, real alpha) {

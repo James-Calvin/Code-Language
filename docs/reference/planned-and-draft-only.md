@@ -29,12 +29,12 @@ Use [Example Catalog](../example-catalog.md) and the current compiler as the tru
 | Feature | Status |
 | --- | --- |
 | Broader standard library beyond current containers, math, time, IO baseline | Planned. |
-| Byte-channel color overloads such as `rgb(byte, byte, byte)` and `rgba(byte, byte, byte, byte)` | Planned on top of the implemented `byte` / `whole8` type surface. Current `rgb` / `rgba` use real channels commonly from `0` to `1`. |
+| Byte-channel `rgba(byte, byte, byte, byte)` | Planned on top of the implemented `byte` / `whole8` type surface. `rgb(byte, byte, byte)` is implemented today; current `rgba` still uses real channels commonly from `0` to `1`. |
 | Advanced input beyond the primary pointer | Multi-touch ids, gestures, right/middle mouse buttons, wheel input, and event queues are deferred. Current generated web apps support keyboard state and one primary pointer. |
 | Audio APIs | Out of current V1 web slice. |
 | Physics APIs | Out of current V1 web slice. |
 | Richer content handling and asset pipeline | Planned. Current web build copies `assets/`. |
-| Broader target-agnostic expansion of the graphical app profile | First `--build-web` slice is implemented with top-level lifecycle authoring and an implicit engine prelude; carrying that authoring shape cleanly into future native graphical targets remains planned. |
+| Broader target-agnostic expansion of the graphical app profile | First `--build-web` slice is implemented with top-level lifecycle authoring and usage-based implied engine imports across web-app modules; carrying that authoring shape cleanly into future native graphical targets remains planned. |
 | Real browser-backed implementations for remaining raw window-handle engine stubs | Planned or wrapper-directed. Scene-runtime drawing/input are the current default. |
 | Capability query and fallback APIs | Planned design requirement. |
 | `engine.gpu`, WebGPU backend, native GPU parity | Roadmap item. |

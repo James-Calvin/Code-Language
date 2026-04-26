@@ -20,7 +20,14 @@ sealed class TypeChecker
     private bool _allowImplicitThisLookup = true;
     private bool _checkingConstructorBody;
     private int _loopDepth;
+    private readonly bool _enableImpliedEngineImports;
     private static readonly Dictionary<string, FunctionSignature> IntrinsicFunctions = BuildIntrinsicFunctions();
+    private static readonly Dictionary<string, string> ImpliedEngineFunctionNamespaces = BuildImpliedEngineFunctionNamespaces();
+
+    public TypeChecker(bool enableImpliedEngineImports = false)
+    {
+        _enableImpliedEngineImports = enableImpliedEngineImports;
+    }
 
     public void Check(IList<Stmt> statements)
     {
@@ -1308,7 +1315,18 @@ sealed class TypeChecker
                 }
 
                 if (!TryGetFunctionSignature(c.Callee.Lexeme, out var sig))
+                {
+                    if (_enableImpliedEngineImports &&
+                        ImpliedEngineFunctionNamespaces.TryGetValue(c.Callee.Lexeme, out var namespaceAlias))
+                    {
+                        throw new CompilerException(
+                            $"Engine function '{c.Callee.Lexeme}' is not implied as a bare call in web-app modules. Use '{namespaceAlias}.{c.Callee.Lexeme}(...)' or add an explicit import.",
+                            c.Callee.Line,
+                            c.Callee.Column);
+                    }
+
                     throw new CompilerException($"Undefined function '{c.Callee.Lexeme}'", c.Callee.Line, c.Callee.Column);
+                }
                 if (sig.Params.Count != c.Arguments.Count)
                     throw new CompilerException($"Function '{c.Callee.Lexeme}' expects {sig.Params.Count} args, got {c.Arguments.Count}", c.Callee.Line, c.Callee.Column);
                 for (int i = 0; i < c.Arguments.Count; i++)
@@ -2227,6 +2245,69 @@ sealed class TypeChecker
 
         RequireMemberAccessible(ownerSymbol, field.Visibility, fieldAccess.Name, "field", field.Name.Lexeme);
         return field;
+    }
+
+    private static Dictionary<string, string> BuildImpliedEngineFunctionNamespaces()
+    {
+        var map = new Dictionary<string, string>(StringComparer.Ordinal);
+
+        foreach (var name in new[]
+        {
+            "clear_screen",
+            "line",
+            "rectangle",
+            "rectangle_outline",
+            "circle",
+            "circle_outline",
+            "polygon",
+            "polygon_outline",
+            "text",
+            "image",
+            "sprite"
+        })
+        {
+            map[name] = "Draw";
+        }
+
+        foreach (var name in new[]
+        {
+            "key_is_down",
+            "pointer_world_x_position",
+            "pointer_world_y_position",
+            "pointer_screen_x_position",
+            "pointer_screen_y_position",
+            "pointer_is_down_now",
+            "pointer_was_pressed_now",
+            "pointer_was_released_now"
+        })
+        {
+            map[name] = "Input";
+        }
+
+        foreach (var name in new[]
+        {
+            "view_left",
+            "view_top",
+            "view_width",
+            "view_height",
+            "view_right",
+            "view_bottom",
+            "safe_left",
+            "safe_top",
+            "safe_width",
+            "safe_height",
+            "safe_right",
+            "safe_bottom",
+            "hud_width",
+            "hud_height"
+        })
+        {
+            map[name] = "Viewport";
+        }
+
+        map["rgb"] = "Colors";
+        map["rgba"] = "Colors";
+        return map;
     }
 
     private TypeSymbol? ResolveFieldType(FieldAccessExpr fieldAccess, TypeEnvironment env)

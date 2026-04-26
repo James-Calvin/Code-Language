@@ -1,6 +1,3 @@
-import { Color } from "engine/colors.code";
-import { HudDrawable, Scene, SceneLoop, Updatable, WorldDrawable } from "engine/scene.code";
-
 enum ObstacleKind {
   Rectangle;
   Circle;
@@ -33,7 +30,7 @@ object BackgroundLayer {
   }
 
   implement WorldDrawable.draw() {
-    Draw.clear_screen(Colors.rgb(1. / 32, 1. / 24, 3. / 32));
+    Draw.clear_screen(Colors.rgb(8, 11, 24));
     Draw.rectangle(Viewport.safe_left(), Viewport.safe_top(), Viewport.safe_width(), Viewport.safe_height(), Colors.rgba(1. / 12, 1. / 8, 3. / 16, 1));
     Draw.rectangle_outline(Viewport.safe_left(), Viewport.safe_top(), Viewport.safe_width(), Viewport.safe_height(), 2, Colors.rgba(3. / 4, 3. / 4, 1, 1. / 3));
     draw_lane_guides();
@@ -88,8 +85,8 @@ object Player {
   }
 
   implement WorldDrawable.draw() {
-    Draw.rectangle(x, y, width, height, Colors.rgb(3. / 16, 13. / 16, 1));
-    Draw.rectangle_outline(x, y, width, height, 2, Colors.rgb(1, 1, 1));
+    Draw.rectangle(x, y, width, height, Colors.rgb(48, 207, 255));
+    Draw.rectangle_outline(x, y, width, height, 2, Colors.rgb(255, 255, 255));
     Draw.line(x + width / 2, y + 4, x + width / 2, y + height - 4, Colors.rgba(1, 1, 1, 2. / 3));
   }
 
@@ -248,15 +245,15 @@ object ObstacleManager {
   }
 
   function<Color> fill_color(Obstacle obstacle) {
-    if obstacle.kind == ObstacleKind.Rectangle then return Colors.rgb(1, 7. / 16, 7. / 16);
-    if obstacle.kind == ObstacleKind.Circle then return Colors.rgb(1, 13. / 16, 1. / 4);
-    return Colors.rgb(1. / 4, 13. / 16, 1);
+    if obstacle.kind == ObstacleKind.Rectangle then return Colors.rgb(255, 112, 112);
+    if obstacle.kind == ObstacleKind.Circle then return Colors.rgb(255, 207, 64);
+    return Colors.rgb(64, 207, 255);
   }
 
   function<Color> outline_color(Obstacle obstacle) {
-    if obstacle.kind == ObstacleKind.Rectangle then return Colors.rgb(1, 7. / 8, 7. / 8);
-    if obstacle.kind == ObstacleKind.Circle then return Colors.rgb(1, 31. / 32, 3. / 4);
-    return Colors.rgb(7. / 8, 1, 1);
+    if obstacle.kind == ObstacleKind.Rectangle then return Colors.rgb(255, 223, 223);
+    if obstacle.kind == ObstacleKind.Circle then return Colors.rgb(255, 247, 191);
+    return Colors.rgb(223, 255, 255);
   }
 }
 
@@ -268,14 +265,14 @@ object HeadsUpDisplay {
   }
 
   implement HudDrawable.draw_hud() {
-    Draw.text("Shape Dodge", 16, 16, 22, "left", "top", Colors.rgb(1, 1, 1));
-    Draw.text("Left/Right move", Viewport.hud_width() - 16, 16, 15, "right", "top", Colors.rgb(1, 1, 1));
-    Draw.text("Score: {game_state.score}", 16, 48, 16, "left", "top", Colors.rgb(1, 1, 1));
-    Draw.text("Lives: {game_state.lives}", 16, 72, 16, "left", "top", Colors.rgb(1, 1, 1));
+    Draw.text("Shape Dodge", 16, 16, 22, "left", "top", Colors.rgb(255, 255, 255));
+    Draw.text("Left/Right move", Viewport.hud_width() - 16, 16, 15, "right", "top", Colors.rgb(255, 255, 255));
+    Draw.text("Score: {game_state.score}", 16, 48, 16, "left", "top", Colors.rgb(255, 255, 255));
+    Draw.text("Lives: {game_state.lives}", 16, 72, 16, "left", "top", Colors.rgb(255, 255, 255));
 
     if game_state.game_over then {
-      Draw.text("Game Over", Viewport.hud_width() / 2, Viewport.hud_height() / 2 - 18, 28, "center", "middle", Colors.rgb(1, 7. / 8, 7. / 8));
-      Draw.text("Press Space to restart", Viewport.hud_width() / 2, Viewport.hud_height() / 2 + 12, 16, "center", "middle", Colors.rgb(1, 1, 1));
+      Draw.text("Game Over", Viewport.hud_width() / 2, Viewport.hud_height() / 2 - 18, 28, "center", "middle", Colors.rgb(255, 223, 223));
+      Draw.text("Press Space to restart", Viewport.hud_width() / 2, Viewport.hud_height() / 2 + 12, 16, "center", "middle", Colors.rgb(255, 255, 255));
     }
   }
 }

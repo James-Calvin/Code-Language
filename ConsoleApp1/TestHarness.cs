@@ -1427,13 +1427,13 @@ import everything as Viewport from ""engine/viewport.code"";
 import everything as Input from ""engine/input.code"";
 import { rgb } from ""engine/colors.code"";
 Draw.clear_screen(rgb(0, 0, 0));
-Draw.rectangle(10, 10, 12, 14, rgb(1, 1, 1));
-Draw.line(0, 0, 10, 10, rgb(1, 1, 1));
-Draw.circle(20, 20, 8, rgb(1, 1, 1));
-Draw.polygon({0, 0, 12, 0, 6, 12}, rgb(1, 1, 1));
+Draw.rectangle(10, 10, 12, 14, rgb(255, 255, 255));
+Draw.line(0, 0, 10, 10, rgb(255, 255, 255));
+Draw.circle(20, 20, 8, rgb(255, 255, 255));
+Draw.polygon({0, 0, 12, 0, 6, 12}, rgb(255, 255, 255));
 Draw.image(""assets/test.svg"", 0, 0, 16, 16, 1);
 Draw.sprite(""assets/test.svg"", 0, 0, 8, 8, 20, 20, 8, 8, 1);
-Draw.text(""ok"", Viewport.hud_width() - 10, 10, 12, ""right"", ""top"", rgb(1, 1, 1));
+Draw.text(""ok"", Viewport.hud_width() - 10, 10, 12, ""right"", ""top"", rgb(255, 255, 255));
 print(Viewport.hud_width());
 print(Input.key_is_down(37));
 print(Input.pointer_world_x_position());
@@ -3247,20 +3247,20 @@ function update() {
 
 function draw() {
   Draw.clear_screen(Colors.rgb(0, 0, 0));
-  Draw.line(Viewport.safe_left(), Viewport.safe_top(), Viewport.safe_right(), Viewport.safe_bottom(), Colors.rgb(1, 1, 1));
-  Draw.polygon({300, 80, 340, 92, 352, 120, 304, 124, 284, 100}, Colors.rgb(1, 1, 1));
-  Draw.circle(124, 84, 16, Colors.rgb(1, 1, 1));
+  Draw.line(Viewport.safe_left(), Viewport.safe_top(), Viewport.safe_right(), Viewport.safe_bottom(), Colors.rgb(255, 255, 255));
+  Draw.polygon({300, 80, 340, 92, 352, 120, 304, 124, 284, 100}, Colors.rgb(255, 255, 255));
+  Draw.circle(124, 84, 16, Colors.rgb(255, 255, 255));
   Draw.image(""assets/code-sheet.svg"", 24, 220, 64, 32, 1);
   Draw.sprite(""assets/code-sheet.svg"", 32, 0, 32, 32, 104, 210, 64, 64, 1);
   if x > Viewport.view_left() - 24 and x < Viewport.view_right() then {
-    Draw.rectangle(x, y, 24, 24, Colors.rgb(1, 1, 1));
+    Draw.rectangle(x, y, 24, 24, Colors.rgb(255, 255, 255));
   }
 }
 
 function draw_hud() {
-  Draw.text(""Code"", hud_margin, hud_margin, 18, ""left"", ""top"", Colors.rgb(1, 1, 1));
-  Draw.text(""Arrow keys move"", Viewport.hud_width() - hud_margin, hud_margin, 16, ""right"", ""top"", Colors.rgb(1, 1, 1));
-  Draw.text(""Pointer: {Input.pointer_screen_x_position()}, {Input.pointer_screen_y_position()}"", hud_margin, 40, 14, ""left"", ""top"", Colors.rgb(1, 1, 1));
+  Draw.text(""Code"", hud_margin, hud_margin, 18, ""left"", ""top"", Colors.rgb(255, 255, 255));
+  Draw.text(""Arrow keys move"", Viewport.hud_width() - hud_margin, hud_margin, 16, ""right"", ""top"", Colors.rgb(255, 255, 255));
+  Draw.text(""Pointer: {Input.pointer_screen_x_position()}, {Input.pointer_screen_y_position()}"", hud_margin, 40, 14, ""left"", ""top"", Colors.rgb(255, 255, 255));
 }"
                 },
                 "main.code");
@@ -3409,6 +3409,115 @@ export object MainScene {
             Console.WriteLine($"[FAIL] web-build-emit-bytecode: threw {ex.GetType().Name} - {ex.Message}");
         }
 
+        try
+        {
+            var outputs = BuildWebApp(
+                new Dictionary<string, string>
+                {
+                    ["helper.code"] =
+@"export object HelperDrawable {
+  Color color;
+
+  constructor() {
+    color = Colors.rgb(255, 255, 255);
+  }
+
+  implement WorldDrawable.draw() {
+    Draw.rectangle(12, 12, 16, 16, color);
+  }
+}
+
+export function<HelperDrawable> make_helper_drawable() {
+  return new HelperDrawable();
+}",
+                    ["main.code"] =
+@"import { HelperDrawable, make_helper_drawable } from ""helper.code"";
+
+export object MainScene {
+  Scene scene;
+  SceneLoop loop;
+  HelperDrawable helper_drawable;
+
+  constructor() {
+    scene = new Scene();
+    loop = new SceneLoop(scene);
+    helper_drawable = make_helper_drawable();
+  }
+
+  function start() {
+    scene.add_world_drawable(helper_drawable, 0);
+    loop.start();
+  }
+
+  function update() {
+    loop.update();
+  }
+
+  function draw() {
+    loop.draw();
+  }
+}"
+                },
+                "main.code");
+
+            if (!outputs.IndexHtml.Contains("\"typeName\": \"MainScene\"", StringComparison.Ordinal))
+            {
+                failures++;
+                Console.WriteLine("[FAIL] web-build-implied-engine-imports-imported-module: generated metadata did not include MainScene");
+            }
+            else
+            {
+                Console.WriteLine("[PASS] web-build-implied-engine-imports-imported-module");
+            }
+        }
+        catch (Exception ex)
+        {
+            failures++;
+            Console.WriteLine($"[FAIL] web-build-implied-engine-imports-imported-module: threw {ex.GetType().Name} - {ex.Message}");
+        }
+
+        try
+        {
+            var outputs = BuildWebApp(
+                new Dictionary<string, string>
+                {
+                    ["main.code"] =
+@"import everything as Draw from ""engine/drawing.code"";
+import everything as Colors from ""engine/colors.code"";
+
+export object MainScene {
+  constructor() {
+  }
+
+  function start() {
+  }
+
+  function update() {
+  }
+
+  function draw() {
+    Draw.clear_screen(Colors.rgb(0, 0, 0));
+  }
+}"
+                },
+                "main.code");
+
+            if (!outputs.IndexHtml.Contains("\"typeName\": \"MainScene\"", StringComparison.Ordinal))
+            {
+                failures++;
+                Console.WriteLine("[FAIL] web-build-explicit-canonical-engine-namespace-imports: generated metadata did not include MainScene");
+            }
+            else
+            {
+                Console.WriteLine("[PASS] web-build-explicit-canonical-engine-namespace-imports");
+            }
+        }
+        catch (Exception ex)
+        {
+            failures++;
+            Console.WriteLine($"[FAIL] web-build-explicit-canonical-engine-namespace-imports: threw {ex.GetType().Name} - {ex.Message}");
+        }
+
         ExpectWebBuildCompilerError(
             "web-build-requires-entry-shape",
             new Dictionary<string, string>
@@ -3485,7 +3594,7 @@ print(counter);"
             "only allows state declarations");
 
         ExpectWebBuildCompilerError(
-            "web-build-inferred-profile-reserved-prelude-name",
+            "web-build-implied-engine-imports-reserved-namespace-name",
             new Dictionary<string, string>
             {
                 ["main.code"] =
@@ -3502,7 +3611,43 @@ function draw() {
 }"
             },
             "main.code",
-            "reserves 'Draw' for the implicit engine prelude");
+            "reserve 'Draw' for implied engine imports");
+
+        ExpectWebBuildCompilerError(
+            "web-build-implied-engine-imports-bare-engine-function",
+            new Dictionary<string, string>
+            {
+                ["main.code"] =
+@"function start() {
+}
+
+function update() {
+}
+
+function draw() {
+  rectangle(0, 0, 8, 8, Colors.rgb(255, 255, 255));
+}"
+            },
+            "main.code",
+            "Use 'Draw.rectangle(...)' or add an explicit import");
+
+        ExpectWebBuildCompilerError(
+            "web-build-engine-rgb-rejects-real-channels",
+            new Dictionary<string, string>
+            {
+                ["main.code"] =
+@"function start() {
+}
+
+function update() {
+}
+
+function draw() {
+  Draw.clear_screen(Colors.rgb(1. / 2, 0, 0));
+}"
+            },
+            "main.code",
+            "Argument 0 type mismatch");
 
         ExpectWebBuildCompilerError(
             "web-build-inferred-profile-constant-state-reassignment",
@@ -3523,6 +3668,27 @@ function draw() {
             },
             "main.code",
             "Cannot assign to constant 'step'");
+
+        try
+        {
+            CompileModulesExpectError(
+                new Dictionary<string, string>
+                {
+                    ["main.code"] =
+@"function main() {
+  Draw.clear_screen(Colors.rgb(0, 0, 0));
+}"
+                },
+                "main.code",
+                "Undefined variable 'Draw'",
+                Compiler.CompileTarget.VmWeb);
+            Console.WriteLine("[PASS] vm-web-without-build-does-not-imply-engine-imports");
+        }
+        catch (Exception ex)
+        {
+            failures++;
+            Console.WriteLine($"[FAIL] vm-web-without-build-does-not-imply-engine-imports: {ex.GetType().Name} - {ex.Message}");
+        }
 
         return failures;
     }

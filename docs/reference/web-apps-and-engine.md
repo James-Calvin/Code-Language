@@ -72,7 +72,7 @@ function update() {
 }
 
 function draw() {
-  Draw.rectangle(x, 100, 24, 24, Colors.rgb(1, 1, 1));
+  Draw.rectangle(x, 100, 24, 24, Colors.rgb(255, 255, 255));
 }
 ```
 
@@ -86,7 +86,10 @@ Rules:
 - `draw()` runs once per presented frame.
 - `draw_hud()` runs after `draw()` when present.
 - Inferred top-level lifecycle entry is a `--build-web` entry-module feature.
-- Inferred entry modules get implicit namespace access to `Draw`, `Input`, `Viewport`, and `Colors`.
+- `--build-web` app modules infer engine imports from usage.
+- `Draw`, `Input`, `Viewport`, and `Colors` are implied namespaces.
+- `Color`, `Scene`, `SceneLoop`, `Startable`, `Updatable`, `WorldDrawable`, and `HudDrawable` are available without explicit imports.
+- Bare engine functions such as `rectangle(...)` are still not implied; use namespace style such as `Draw.rectangle(...)` or add an explicit import.
 
 Common mistakes:
 
@@ -107,7 +110,7 @@ The guaranteed safe area is always `640x360`. Wider or taller browser windows ex
 
 ## Engine Colors
 
-Import:
+Import when you want it explicitly:
 
 ```code
 import { Color, rgb, rgba } from "engine/colors.code";
@@ -118,18 +121,18 @@ API:
 | Name | Inputs | Returns |
 | --- | --- | --- |
 | `Color` | fields `red`, `green`, `blue`, `alpha` | object |
-| `rgb(red, green, blue)` | `real`, `real`, `real` | `Color` with alpha `1` |
+| `rgb(red, green, blue)` | `byte`, `byte`, `byte` | `Color` with alpha `1` |
 | `rgba(red, green, blue, alpha)` | four `real` values | `Color` |
 
 Example:
 
 ```code
-Color white = rgb(1, 1, 1);
+Color white = rgb(255, 255, 255);
 ```
 
 ## Engine Drawing
 
-Import as a namespace:
+Import as a namespace when you want it explicitly:
 
 ```code
 import everything as Draw from "engine/drawing.code";
@@ -156,13 +159,15 @@ Example:
 
 ```code
 Draw.clear_screen(rgb(0, 0, 0));
-Draw.rectangle(100, 80, 32, 32, rgb(1, 1, 1));
+Draw.rectangle(100, 80, 32, 32, rgb(255, 255, 255));
 ```
+
+For `--build-web` app modules, the canonical style is still `Draw.rectangle(...)`, but `Draw` can now be implied from usage.
 
 Common mistakes:
 
-- Color channels are real values, commonly from `0` to `1`.
-- Byte-channel color overloads such as `rgb(byte, byte, byte)` are planned on top of the implemented `byte` / `whole8` numeric type surface; do not write those overloads today.
+- `rgb` color channels are byte values from `0` to `255`; `byte` and `whole8` are the same type.
+- `rgba` still uses real channels, commonly from `0` to `1`. A byte-channel `rgba(byte, byte, byte, byte)` helper remains planned.
 - `polygon` points are a flat numeric array: `{x1, y1, x2, y2, ...}`.
 - `text` alignment strings are `"left"`, `"center"`, `"right"` and `"top"`, `"middle"`, `"bottom"`.
 
@@ -199,7 +204,7 @@ Pointer edge helpers are fixed-update state intended for `update()`. A quick tap
 
 ## Engine Viewport
 
-Import:
+Import when you want it explicitly:
 
 ```code
 import everything as Viewport from "engine/viewport.code";
@@ -234,7 +239,7 @@ if x > Viewport.safe_right() then {
 
 ## Engine Scene
 
-Import:
+Import when you want it explicitly:
 
 ```code
 import { HudDrawable, Scene, SceneLoop, Updatable, WorldDrawable } from "engine/scene.code";
@@ -260,11 +265,11 @@ object Player {
   }
 
   implement Updatable.update() {
-    if key_is_down(39) then x += 2;
+    if Input.key_is_down(39) then x += 2;
   }
 
   implement WorldDrawable.draw() {
-    Draw.rectangle(x, 100, 24, 24, rgb(1, 1, 1));
+    Draw.rectangle(x, 100, 24, 24, Colors.rgb(255, 255, 255));
   }
 }
 ```

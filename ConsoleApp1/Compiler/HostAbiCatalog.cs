@@ -125,7 +125,15 @@ static class HostAbiCatalog
             ["engine.gfx.draw_line_scene"] = new HostAbiSymbol("engine.gfx.draw_line_scene", 8, "engine.gfx", HostAbiTargets.All),
             ["engine.gfx.draw_text_scene"] = new HostAbiSymbol("engine.gfx.draw_text_scene", 10, "engine.gfx", HostAbiTargets.All),
             ["engine.gfx.draw_image_scene"] = new HostAbiSymbol("engine.gfx.draw_image_scene", 6, "engine.gfx", HostAbiTargets.All),
-            ["engine.gfx.draw_sprite_scene"] = new HostAbiSymbol("engine.gfx.draw_sprite_scene", 10, "engine.gfx", HostAbiTargets.All)
+            ["engine.gfx.draw_sprite_scene"] = new HostAbiSymbol("engine.gfx.draw_sprite_scene", 10, "engine.gfx", HostAbiTargets.All),
+
+            ["engine.diagnostics.last_frame_interval_milliseconds_scene"] = new HostAbiSymbol("engine.diagnostics.last_frame_interval_milliseconds_scene", 0, "engine.diagnostics", HostAbiTargets.All),
+            ["engine.diagnostics.estimated_frames_per_second_scene"] = new HostAbiSymbol("engine.diagnostics.estimated_frames_per_second_scene", 0, "engine.diagnostics", HostAbiTargets.All),
+            ["engine.diagnostics.last_frame_work_milliseconds_scene"] = new HostAbiSymbol("engine.diagnostics.last_frame_work_milliseconds_scene", 0, "engine.diagnostics", HostAbiTargets.All),
+            ["engine.diagnostics.last_update_work_milliseconds_scene"] = new HostAbiSymbol("engine.diagnostics.last_update_work_milliseconds_scene", 0, "engine.diagnostics", HostAbiTargets.All),
+            ["engine.diagnostics.last_draw_work_milliseconds_scene"] = new HostAbiSymbol("engine.diagnostics.last_draw_work_milliseconds_scene", 0, "engine.diagnostics", HostAbiTargets.All),
+            ["engine.diagnostics.last_draw_hud_work_milliseconds_scene"] = new HostAbiSymbol("engine.diagnostics.last_draw_hud_work_milliseconds_scene", 0, "engine.diagnostics", HostAbiTargets.All),
+            ["engine.diagnostics.last_update_steps_scene"] = new HostAbiSymbol("engine.diagnostics.last_update_steps_scene", 0, "engine.diagnostics", HostAbiTargets.All)
         };
 
         return new ReadOnlyDictionary<string, HostAbiSymbol>(map);
@@ -401,7 +409,42 @@ static class HostAbiCatalog
                 (TypeSymbol.Real, "real"),
                 (TypeSymbol.Real, "real"),
                 (TypeSymbol.Real, "real"),
-                (TypeSymbol.Real, "real"))
+                (TypeSymbol.Real, "real")),
+            ["diagnostics_last_frame_interval_milliseconds"] = Sig(
+                "diagnostics_last_frame_interval_milliseconds",
+                "engine.diagnostics.last_frame_interval_milliseconds_scene",
+                TypeSymbol.Real,
+                "real"),
+            ["diagnostics_estimated_frames_per_second"] = Sig(
+                "diagnostics_estimated_frames_per_second",
+                "engine.diagnostics.estimated_frames_per_second_scene",
+                TypeSymbol.Real,
+                "real"),
+            ["diagnostics_last_frame_work_milliseconds"] = Sig(
+                "diagnostics_last_frame_work_milliseconds",
+                "engine.diagnostics.last_frame_work_milliseconds_scene",
+                TypeSymbol.Real,
+                "real"),
+            ["diagnostics_last_update_work_milliseconds"] = Sig(
+                "diagnostics_last_update_work_milliseconds",
+                "engine.diagnostics.last_update_work_milliseconds_scene",
+                TypeSymbol.Real,
+                "real"),
+            ["diagnostics_last_draw_work_milliseconds"] = Sig(
+                "diagnostics_last_draw_work_milliseconds",
+                "engine.diagnostics.last_draw_work_milliseconds_scene",
+                TypeSymbol.Real,
+                "real"),
+            ["diagnostics_last_draw_hud_work_milliseconds"] = Sig(
+                "diagnostics_last_draw_hud_work_milliseconds",
+                "engine.diagnostics.last_draw_hud_work_milliseconds_scene",
+                TypeSymbol.Real,
+                "real"),
+            ["diagnostics_last_update_steps"] = Sig(
+                "diagnostics_last_update_steps",
+                "engine.diagnostics.last_update_steps_scene",
+                TypeSymbol.Integer,
+                "integer")
         };
 
         return new ReadOnlyDictionary<string, HostAbiIntrinsic>(map);

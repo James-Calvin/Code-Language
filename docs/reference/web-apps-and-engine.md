@@ -87,7 +87,7 @@ Rules:
 - `draw_hud()` runs after `draw()` when present.
 - Inferred top-level lifecycle entry is a `--build-web` entry-module feature.
 - `--build-web` app modules infer engine imports from usage.
-- `Draw`, `Input`, `Viewport`, and `Colors` are implied namespaces.
+- `Draw`, `Input`, `Viewport`, `Colors`, and `Diagnostics` are implied namespaces.
 - `Color`, `Scene`, `SceneLoop`, `Startable`, `Updatable`, `WorldDrawable`, and `HudDrawable` are available without explicit imports.
 - Bare engine functions such as `rectangle(...)` are still not implied; use namespace style such as `Draw.rectangle(...)` or add an explicit import.
 
@@ -201,6 +201,40 @@ API:
 The current browser-backed input slice supports keyboard state plus one primary pointer. The primary pointer is the left mouse button, primary pen button, or first/primary touch. Screen coordinates are HUD-space coordinates from the visible canvas top-left. World coordinates match `draw()` coordinates in the current hybrid-expanded visible world.
 
 Pointer edge helpers are fixed-update state intended for `update()`. A quick tap between updates can make pressed and released both true for the next update. Last known coordinates remain available after release.
+
+## Engine Diagnostics
+
+Import when you want it explicitly:
+
+```code
+import everything as Diagnostics from "engine/diagnostics.code";
+```
+
+For `--build-web` app modules, `Diagnostics` can also be implied from usage.
+
+API:
+
+| Function | Returns |
+| --- | --- |
+| `last_frame_interval_milliseconds()` | `real` |
+| `estimated_frames_per_second()` | `real` |
+| `last_frame_work_milliseconds()` | `real` |
+| `last_update_work_milliseconds()` | `real` |
+| `last_draw_work_milliseconds()` | `real` |
+| `last_draw_hud_work_milliseconds()` | `real` |
+| `last_update_steps()` | `integer` |
+
+Example:
+
+```code
+function draw_hud() {
+  Draw.text("Frame work: {Diagnostics.last_frame_work_milliseconds()} ms", 16, 16, 14, "left", "top", Colors.rgb(255, 255, 255));
+}
+```
+
+Diagnostics are last-completed-frame values. They measure Code VM/runtime work around update, draw, and HUD invocation. They do not include browser compositor or GPU presentation time. Native execution and web execution without an attached scene host return neutral zero values.
+
+For a benchmark app, build `ConsoleApp1/examples/performance_dashboard.code`. Use it for relative comparisons and threshold-finding. Record browser, device, display refresh rate, and viewport size when comparing results. Use browser devtools Performance for deeper compositor/GPU analysis.
 
 ## Engine Viewport
 
@@ -328,6 +362,13 @@ pointer_screen_y
 pointer_is_down
 pointer_was_pressed
 pointer_was_released
+diagnostics_last_frame_interval_milliseconds
+diagnostics_estimated_frames_per_second
+diagnostics_last_frame_work_milliseconds
+diagnostics_last_update_work_milliseconds
+diagnostics_last_draw_work_milliseconds
+diagnostics_last_draw_hud_work_milliseconds
+diagnostics_last_update_steps
 camera_view_left/top/width/height/right/bottom
 camera_safe_left/top/width/height/right/bottom
 screen_width

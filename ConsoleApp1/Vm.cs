@@ -1074,6 +1074,14 @@ sealed class Vm
         _hostBindings["engine.gfx.draw_text_scene"] = new HostBinding(10, _ => 0);
         _hostBindings["engine.gfx.draw_image_scene"] = new HostBinding(6, _ => 0);
         _hostBindings["engine.gfx.draw_sprite_scene"] = new HostBinding(10, _ => 0);
+
+        _hostBindings["engine.diagnostics.last_frame_interval_milliseconds_scene"] = new HostBinding(0, _ => 0.0);
+        _hostBindings["engine.diagnostics.estimated_frames_per_second_scene"] = new HostBinding(0, _ => 0.0);
+        _hostBindings["engine.diagnostics.last_frame_work_milliseconds_scene"] = new HostBinding(0, _ => 0.0);
+        _hostBindings["engine.diagnostics.last_update_work_milliseconds_scene"] = new HostBinding(0, _ => 0.0);
+        _hostBindings["engine.diagnostics.last_draw_work_milliseconds_scene"] = new HostBinding(0, _ => 0.0);
+        _hostBindings["engine.diagnostics.last_draw_hud_work_milliseconds_scene"] = new HostBinding(0, _ => 0.0);
+        _hostBindings["engine.diagnostics.last_update_steps_scene"] = new HostBinding(0, _ => 0);
     }
 
     private void InitializeNativeHostBindings()

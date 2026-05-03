@@ -2307,6 +2307,21 @@ sealed class TypeChecker
 
         map["rgb"] = "Colors";
         map["rgba"] = "Colors";
+
+        foreach (var name in new[]
+        {
+            "last_frame_interval_milliseconds",
+            "estimated_frames_per_second",
+            "last_frame_work_milliseconds",
+            "last_update_work_milliseconds",
+            "last_draw_work_milliseconds",
+            "last_draw_hud_work_milliseconds",
+            "last_update_steps"
+        })
+        {
+            map[name] = "Diagnostics";
+        }
+
         return map;
     }
 

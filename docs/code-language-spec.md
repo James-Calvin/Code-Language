@@ -719,9 +719,9 @@ if x > 3 then panic("x too large");
     - `gfx_clear(...)`, `gfx_draw_rect(...)`
     - Current runtime behavior for these engine intrinsics is prototype/no-op on both native and web hosts.
   - Scene-oriented browser/runtime intrinsics are also available for the generated web app path:
-    - input/view: `key_down(...)`, `pointer_world_x()`, `pointer_world_y()`, `pointer_screen_x()`, `pointer_screen_y()`, `pointer_is_down()`, `pointer_was_pressed()`, `pointer_was_released()`, `camera_view_*()`, `camera_safe_*()`, `screen_width()`, `screen_height()`
+    - input/view/diagnostics: `key_down(...)`, `pointer_world_x()`, `pointer_world_y()`, `pointer_screen_x()`, `pointer_screen_y()`, `pointer_is_down()`, `pointer_was_pressed()`, `pointer_was_released()`, `camera_view_*()`, `camera_safe_*()`, `screen_width()`, `screen_height()`, `diagnostics_last_*()`, `diagnostics_estimated_frames_per_second()`
     - drawing: `clear(...)`, `draw_rectangle(...)`, `draw_rectangle_outline(...)`, `draw_line(...)`, `draw_circle(...)`, `draw_circle_outline(...)`, `draw_polygon(...)`, `draw_polygon_outline(...)`, `draw_text(...)`, `draw_image(...)`, `draw_sprite(...)`
-  - The current repo ships a wrapper layer in `lib/engine/` over those scene/runtime intrinsics: canonical modules `engine.colors`, `engine.drawing`, `engine.input`, `engine.viewport`, and `engine.scene`, with compatibility re-export modules `engine.view` and `engine.loop`.
+  - The current repo ships a wrapper layer in `lib/engine/` over those scene/runtime intrinsics: canonical modules `engine.colors`, `engine.drawing`, `engine.input`, `engine.viewport`, `engine.diagnostics`, and `engine.scene`, with compatibility re-export modules `engine.view` and `engine.loop`.
   - Note: high-range timing values may eventually need dedicated 64-bit numeric/value support for full precision guarantees.
 - Object and record construction and field access lower to dedicated VM opcodes (`NEW_OBJECT`, `NEW_RECORD`, `GET_FIELD`, `SET_FIELD`).
 - Real literals, wide integer literals, and numeric casts lower to dedicated VM opcodes (`PUSH_REAL`, `PUSH_WIDE_INTEGER`, `CAST_INTEGER`, `CAST_WHOLE`, `CAST_REAL`, `CHECKED_SIZED_NUMERIC_CAST`); enum casts remain integer-backed.
@@ -757,6 +757,7 @@ if x > 3 then panic("x too large");
   - `"hello {arguments[1]}"`
 - Interpolation rules:
   - Any expression valid in expression position may appear inside `{ ... }`.
+  - Each interpolated expression is converted to text before concatenation, so `"{a}{b}"` concatenates two text values rather than applying numeric `+`.
   - Escape literal braces with `\{` and `\}`.
   - Nested string literals inside an interpolation are disallowed to keep parsing simple.
 

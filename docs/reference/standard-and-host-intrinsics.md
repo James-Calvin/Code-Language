@@ -155,6 +155,22 @@ Generated web apps expose a browser-backed scene input surface. Native execution
 
 Pointer input tracks one primary pointer: left mouse button, primary pen button, or first/primary touch. Screen coordinates are HUD-space coordinates from the visible canvas top-left; world coordinates match the current `draw()` world view. Prefer `engine.input` wrappers for new scene code.
 
+## Generated Web Scene Diagnostics Intrinsics
+
+Generated web apps expose last-completed-frame diagnostics. Native execution and web execution without an attached scene host return neutral zero values for these helpers.
+
+| Function | Inputs | Returns |
+| --- | --- | --- |
+| `diagnostics_last_frame_interval_milliseconds()` | none | `real` |
+| `diagnostics_estimated_frames_per_second()` | none | `real` |
+| `diagnostics_last_frame_work_milliseconds()` | none | `real` |
+| `diagnostics_last_update_work_milliseconds()` | none | `real` |
+| `diagnostics_last_draw_work_milliseconds()` | none | `real` |
+| `diagnostics_last_draw_hud_work_milliseconds()` | none | `real` |
+| `diagnostics_last_update_steps()` | none | `integer` |
+
+These values measure browser runtime/VM work around update, draw, and HUD invocation. They do not include browser compositor or GPU presentation time. Prefer `engine.diagnostics` wrappers for new app code.
+
 ## Target Restrictions
 
 Compile target is selected with:

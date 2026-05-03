@@ -1,6 +1,6 @@
 # Example Catalog
 
-Last updated: 2026-04-25
+Last updated: 2026-04-26
 
 This catalog is implementation-truthful.
 
@@ -66,6 +66,7 @@ Current limitation:
 | Status | Path | Use | Notes |
 | --- | --- | --- | --- |
 | `negative` | `ConsoleApp1/examples/panic.code` | `expected runtime error` | `panic(...)` raises `UserError` with stack info |
+| `runnable` | `ConsoleApp1/examples/performance_dashboard.code` | `build-web` | Canonical performance diagnostics dashboard for mixed update/render/scene-dispatch stress, using `Diagnostics` last-frame metrics |
 | `runnable` | `ConsoleApp1/examples/shape_dodge.code` | `build-web` | Canonical small playable web demo using the inferred top-level web app profile and implied engine imports |
 | `runnable` | `ConsoleApp1/examples/web_scene.code` | `build-web` | Broader explicit-`MainScene` scene-composition, rendering, assets, viewport, pointer-input, and implied-engine-import reference |
 

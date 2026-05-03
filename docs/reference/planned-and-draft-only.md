@@ -34,6 +34,7 @@ Use [Example Catalog](../example-catalog.md) and the current compiler as the tru
 | Audio APIs | Out of current V1 web slice. |
 | Physics APIs | Out of current V1 web slice. |
 | Richer content handling and asset pipeline | Planned. Current web build copies `assets/`. |
+| Browser compositor/GPU performance timing | Deferred. Current `engine.diagnostics` reports last-completed-frame runtime/VM work, not compositor or GPU presentation time. |
 | Broader target-agnostic expansion of the graphical app profile | First `--build-web` slice is implemented with top-level lifecycle authoring and usage-based implied engine imports across web-app modules; carrying that authoring shape cleanly into future native graphical targets remains planned. |
 | Real browser-backed implementations for remaining raw window-handle engine stubs | Planned or wrapper-directed. Scene-runtime drawing/input are the current default. |
 | Capability query and fallback APIs | Planned design requirement. |

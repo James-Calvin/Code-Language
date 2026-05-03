@@ -18,6 +18,7 @@ static class CapabilityCatalog
         "engine.window",
         "engine.input",
         "engine.gfx",
+        "engine.diagnostics",
         "engine.audio"
     };
 
@@ -29,6 +30,7 @@ static class CapabilityCatalog
         "engine.window",
         "engine.input",
         "engine.gfx",
+        "engine.diagnostics",
         "engine.audio"
     };
 

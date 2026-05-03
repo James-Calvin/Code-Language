@@ -575,6 +575,12 @@ export class CanvasSceneRuntime {
     this.sceneObject = null;
     this.sceneInfo = null;
     this.vm = null;
+    this.lastFrameIntervalMs = 0;
+    this.lastFrameWorkMs = 0;
+    this.lastUpdateWorkMs = 0;
+    this.lastDrawWorkMs = 0;
+    this.lastDrawHudWorkMs = 0;
+    this.lastUpdateStepsCount = 0;
     this.appControlKeyCodes = new Set([32, 33, 34, 35, 36, 37, 38, 39, 40]);
     this.canvas = null;
     this.ctx = null;
@@ -1122,6 +1128,43 @@ export class CanvasSceneRuntime {
     return this.viewportHeight;
   }
 
+  lastFrameIntervalMilliseconds() {
+    return this.lastFrameIntervalMs;
+  }
+
+  estimatedFramesPerSecond() {
+    return this.lastFrameIntervalMs > 0 ? 1000 / this.lastFrameIntervalMs : 0;
+  }
+
+  lastFrameWorkMilliseconds() {
+    return this.lastFrameWorkMs;
+  }
+
+  lastUpdateWorkMilliseconds() {
+    return this.lastUpdateWorkMs;
+  }
+
+  lastDrawWorkMilliseconds() {
+    return this.lastDrawWorkMs;
+  }
+
+  lastDrawHudWorkMilliseconds() {
+    return this.lastDrawHudWorkMs;
+  }
+
+  lastUpdateSteps() {
+    return this.lastUpdateStepsCount;
+  }
+
+  publishDiagnostics(frameIntervalMs, frameWorkMs, updateWorkMs, drawWorkMs, drawHudWorkMs, updateSteps) {
+    this.lastFrameIntervalMs = frameIntervalMs;
+    this.lastFrameWorkMs = frameWorkMs;
+    this.lastUpdateWorkMs = updateWorkMs;
+    this.lastDrawWorkMs = drawWorkMs;
+    this.lastDrawHudWorkMs = drawHudWorkMs;
+    this.lastUpdateStepsCount = updateSteps;
+  }
+
   setDrawSpace(space) {
     this.drawSpace = space === "hud" ? "hud" : "world";
     this.applyCurrentTransform();
@@ -1210,6 +1253,7 @@ export class CanvasSceneRuntime {
     this.running = true;
     this.accumulatorMs = 0;
     this.lastTimestampMs = performance.now();
+    this.publishDiagnostics(0, 0, 0, 0, 0, 0);
     this.frameHandle = requestAnimationFrame(this.tick);
   }
 
@@ -1227,24 +1271,45 @@ export class CanvasSceneRuntime {
     }
 
     try {
-      const elapsedMs = Math.min(250, Math.max(0, timestamp - this.lastTimestampMs));
+      const frameIntervalMs = Math.max(0, timestamp - this.lastTimestampMs);
+      const elapsedMs = Math.min(250, frameIntervalMs);
       this.lastTimestampMs = timestamp;
       this.accumulatorMs += elapsedMs;
+
+      const frameWorkStartMs = performance.now();
+      let updateWorkMs = 0;
+      let updateSteps = 0;
+      let drawWorkMs = 0;
+      let drawHudWorkMs = 0;
 
       this.setDrawSpace("world");
       while (this.accumulatorMs >= this.stepMs) {
         this.beginFixedUpdateStep();
+        const updateStartMs = performance.now();
         this.vm.invokeVoid(this.sceneInfo.update.targetIp, this.sceneInfo.update.frameSize, [this.sceneObject]);
+        updateWorkMs += performance.now() - updateStartMs;
+        updateSteps += 1;
         this.accumulatorMs -= this.stepMs;
       }
 
       this.setDrawSpace("world");
+      const drawStartMs = performance.now();
       this.vm.invokeVoid(this.sceneInfo.draw.targetIp, this.sceneInfo.draw.frameSize, [this.sceneObject]);
+      drawWorkMs = performance.now() - drawStartMs;
       if (this.sceneInfo.drawHud) {
         this.setDrawSpace("hud");
+        const drawHudStartMs = performance.now();
         this.vm.invokeVoid(this.sceneInfo.drawHud.targetIp, this.sceneInfo.drawHud.frameSize, [this.sceneObject]);
+        drawHudWorkMs = performance.now() - drawHudStartMs;
       }
       this.setDrawSpace("world");
+      this.publishDiagnostics(
+        frameIntervalMs,
+        performance.now() - frameWorkStartMs,
+        updateWorkMs,
+        drawWorkMs,
+        drawHudWorkMs,
+        updateSteps);
       this.frameHandle = requestAnimationFrame(this.tick);
     } catch (error) {
       this.stop();
@@ -1491,6 +1556,34 @@ export class WebVm {
     this.hostBindings.set("engine.window.screen_height_scene", {
       arity: 0,
       handler: () => this.sceneHost ? this.sceneHost.screenHeight() : 360
+    });
+    this.hostBindings.set("engine.diagnostics.last_frame_interval_milliseconds_scene", {
+      arity: 0,
+      handler: () => this.sceneHost ? this.sceneHost.lastFrameIntervalMilliseconds() : 0
+    });
+    this.hostBindings.set("engine.diagnostics.estimated_frames_per_second_scene", {
+      arity: 0,
+      handler: () => this.sceneHost ? this.sceneHost.estimatedFramesPerSecond() : 0
+    });
+    this.hostBindings.set("engine.diagnostics.last_frame_work_milliseconds_scene", {
+      arity: 0,
+      handler: () => this.sceneHost ? this.sceneHost.lastFrameWorkMilliseconds() : 0
+    });
+    this.hostBindings.set("engine.diagnostics.last_update_work_milliseconds_scene", {
+      arity: 0,
+      handler: () => this.sceneHost ? this.sceneHost.lastUpdateWorkMilliseconds() : 0
+    });
+    this.hostBindings.set("engine.diagnostics.last_draw_work_milliseconds_scene", {
+      arity: 0,
+      handler: () => this.sceneHost ? this.sceneHost.lastDrawWorkMilliseconds() : 0
+    });
+    this.hostBindings.set("engine.diagnostics.last_draw_hud_work_milliseconds_scene", {
+      arity: 0,
+      handler: () => this.sceneHost ? this.sceneHost.lastDrawHudWorkMilliseconds() : 0
+    });
+    this.hostBindings.set("engine.diagnostics.last_update_steps_scene", {
+      arity: 0,
+      handler: () => this.sceneHost ? this.sceneHost.lastUpdateSteps() : 0
     });
     this.hostBindings.set("engine.gfx.clear", {
       arity: 5,

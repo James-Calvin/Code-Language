@@ -202,6 +202,15 @@ foreach i in n then print(i);",
 @"integer x = 3;
 print(""x={x}"");", "x=3\n")
             ,
+            ("interp-expression-only-is-string",
+@"integer x = 3;
+print(""{x}"" == ""3"");", "1\n")
+            ,
+            ("interp-adjacent-expressions-concatenate",
+@"integer x = 3;
+integer y = 4;
+print(""{x}{y}"");", "34\n")
+            ,
             ("interp-escaped-braces",
 @"integer x = 7;
 print(""literal \{braces\} and x={x}"");", "literal {braces} and x=7\n")
@@ -1425,6 +1434,7 @@ export function<integer> sub(integer a, integer b) { return a - b; }",
 @"import everything as Draw from ""engine/drawing.code"";
 import everything as Viewport from ""engine/viewport.code"";
 import everything as Input from ""engine/input.code"";
+import everything as Diagnostics from ""engine/diagnostics.code"";
 import { rgb } from ""engine/colors.code"";
 Draw.clear_screen(rgb(0, 0, 0));
 Draw.rectangle(10, 10, 12, 14, rgb(255, 255, 255));
@@ -1442,11 +1452,18 @@ print(Input.pointer_screen_x_position());
 print(Input.pointer_screen_y_position());
 print(Input.pointer_is_down_now());
 print(Input.pointer_was_pressed_now());
-print(Input.pointer_was_released_now());",
+print(Input.pointer_was_released_now());
+print(Diagnostics.last_frame_interval_milliseconds());
+print(Diagnostics.estimated_frames_per_second());
+print(Diagnostics.last_frame_work_milliseconds());
+print(Diagnostics.last_update_work_milliseconds());
+print(Diagnostics.last_draw_work_milliseconds());
+print(Diagnostics.last_draw_hud_work_milliseconds());
+print(Diagnostics.last_update_steps());",
                     ["assets/test.svg"] = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\"></svg>",
                 },
                 "main.code",
-                "640\n0\n0\n0\n0\n0\n0\n0\n0\n"
+                "640\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0\n"
             ),
             (
                 "module-scene-canonical-import",
@@ -3261,6 +3278,7 @@ function draw_hud() {
   Draw.text(""Code"", hud_margin, hud_margin, 18, ""left"", ""top"", Colors.rgb(255, 255, 255));
   Draw.text(""Arrow keys move"", Viewport.hud_width() - hud_margin, hud_margin, 16, ""right"", ""top"", Colors.rgb(255, 255, 255));
   Draw.text(""Pointer: {Input.pointer_screen_x_position()}, {Input.pointer_screen_y_position()}"", hud_margin, 40, 14, ""left"", ""top"", Colors.rgb(255, 255, 255));
+  Draw.text(""Frame work: {Diagnostics.last_frame_work_milliseconds()}"", hud_margin, 64, 14, ""left"", ""top"", Colors.rgb(255, 255, 255));
 }"
                 },
                 "main.code");
@@ -3284,6 +3302,8 @@ function draw_hud() {
                 outputs.IndexHtml.Contains("touchAction = \"none\"", StringComparison.Ordinal) &&
                 outputs.IndexHtml.Contains("pointerdown", StringComparison.Ordinal) &&
                 outputs.IndexHtml.Contains("engine.input.pointer_world_x_scene", StringComparison.Ordinal) &&
+                outputs.IndexHtml.Contains("engine.diagnostics.last_frame_work_milliseconds_scene", StringComparison.Ordinal) &&
+                outputs.IndexHtml.Contains("publishDiagnostics(", StringComparison.Ordinal) &&
                 outputs.IndexHtml.Contains("beginFixedUpdateStep()", StringComparison.Ordinal) &&
                 outputs.IndexHtml.Contains("\"typeName\": \"MainScene\"", StringComparison.Ordinal) &&
                 outputs.IndexHtml.Contains("\"virtualWidth\": 640", StringComparison.Ordinal) &&
@@ -3614,6 +3634,26 @@ function draw() {
             "reserve 'Draw' for implied engine imports");
 
         ExpectWebBuildCompilerError(
+            "web-build-implied-engine-imports-reserved-diagnostics-name",
+            new Dictionary<string, string>
+            {
+                ["main.code"] =
+@"integer Diagnostics = 0;
+
+function start() {
+}
+
+function update() {
+}
+
+function draw() {
+  print(Diagnostics);
+}"
+            },
+            "main.code",
+            "reserve 'Diagnostics' for implied engine imports");
+
+        ExpectWebBuildCompilerError(
             "web-build-implied-engine-imports-bare-engine-function",
             new Dictionary<string, string>
             {
@@ -3630,6 +3670,24 @@ function draw() {
             },
             "main.code",
             "Use 'Draw.rectangle(...)' or add an explicit import");
+
+        ExpectWebBuildCompilerError(
+            "web-build-implied-engine-imports-bare-diagnostics-function",
+            new Dictionary<string, string>
+            {
+                ["main.code"] =
+@"function start() {
+}
+
+function update() {
+}
+
+function draw() {
+  print(last_frame_work_milliseconds());
+}"
+            },
+            "main.code",
+            "Use 'Diagnostics.last_frame_work_milliseconds(...)' or add an explicit import");
 
         ExpectWebBuildCompilerError(
             "web-build-engine-rgb-rejects-real-channels",
@@ -3781,6 +3839,7 @@ function draw() {
 
         var webBuildExamples = new List<(string Name, string RelativePath)>
         {
+            ("example-performance-dashboard-web-build", @"ConsoleApp1/examples/performance_dashboard.code"),
             ("example-shape-dodge-web-build", @"ConsoleApp1/examples/shape_dodge.code"),
             ("example-web-scene-web-build", @"ConsoleApp1/examples/web_scene.code"),
         };
@@ -4000,6 +4059,8 @@ print(input_key_down(window, 13));
 gfx_clear(window, 0, 0, 0, 1);
 gfx_draw_rect(window, 1, 2, 3, 4, 1, 0, 0, 1);
 window_present(window);
+print(diagnostics_last_frame_interval_milliseconds());
+print(diagnostics_last_update_steps());
 print(1);";
 
         try
@@ -4268,6 +4329,44 @@ print(quick);";
         {
             failures++;
             Console.WriteLine($"[FAIL] web-runtime-pointer-host-bindings: {ex.GetType().Name} - {ex.Message}");
+        }
+
+        try
+        {
+            string runtimePath = Path.Combine(Directory.GetCurrentDirectory(), "web-runtime", "code-vm-web.js");
+            string runtimeText = File.ReadAllText(runtimePath);
+            string[] requiredSymbols =
+            {
+                "engine.diagnostics.last_frame_interval_milliseconds_scene",
+                "engine.diagnostics.estimated_frames_per_second_scene",
+                "engine.diagnostics.last_frame_work_milliseconds_scene",
+                "engine.diagnostics.last_update_work_milliseconds_scene",
+                "engine.diagnostics.last_draw_work_milliseconds_scene",
+                "engine.diagnostics.last_draw_hud_work_milliseconds_scene",
+                "engine.diagnostics.last_update_steps_scene"
+            };
+
+            foreach (string symbol in requiredSymbols)
+            {
+                string marker = $"this.hostBindings.set(\"{symbol}\"";
+                if (!runtimeText.Contains(marker, StringComparison.Ordinal))
+                    throw new Exception($"Web runtime is missing host binding '{symbol}'.");
+            }
+
+            bool hasDiagnosticsRuntime =
+                runtimeText.Contains("publishDiagnostics(", StringComparison.Ordinal) &&
+                runtimeText.Contains("lastFrameWorkMilliseconds()", StringComparison.Ordinal) &&
+                runtimeText.Contains("lastUpdateSteps()", StringComparison.Ordinal) &&
+                runtimeText.Contains("performance.now() - frameWorkStartMs", StringComparison.Ordinal);
+            if (!hasDiagnosticsRuntime)
+                throw new Exception("Web runtime is missing frame diagnostics measurement support.");
+
+            Console.WriteLine("[PASS] web-runtime-diagnostics-host-bindings");
+        }
+        catch (Exception ex)
+        {
+            failures++;
+            Console.WriteLine($"[FAIL] web-runtime-diagnostics-host-bindings: {ex.GetType().Name} - {ex.Message}");
         }
 
         return failures;

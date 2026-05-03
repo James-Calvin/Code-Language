@@ -565,7 +565,8 @@ static class ModuleCompiler
             new("Draw", "engine/drawing.code"),
             new("Input", "engine/input.code"),
             new("Viewport", "engine/viewport.code"),
-            new("Colors", "engine/colors.code")
+            new("Colors", "engine/colors.code"),
+            new("Diagnostics", "engine/diagnostics.code")
         ];
 
         private static readonly string[] ImpliedEngineDirectImportSourcePaths =

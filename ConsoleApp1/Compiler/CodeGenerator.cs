@@ -2076,7 +2076,9 @@ sealed class CodeGenerator
             }
             else if (part is Expr ePart)
             {
+                _builder.PushString(string.Empty);
                 Emit(ePart);
+                _builder.Add();
             }
             else
             {

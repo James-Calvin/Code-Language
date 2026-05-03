@@ -22,7 +22,7 @@ This document defines the contract that the current first slice implements and t
 - Authoring model: explicit scene object or inferred top-level lifecycle entry
 - Browser presentation: fills the browser window by default
 - Coordinate model: guaranteed safe area of `640x360`, with hybrid-expanded world framing beyond that safe area when needed
-- Initial rendering/input scope: primitive drawing (`draw_rectangle`, outlines, lines, circles, polygons, text), image/sprite drawing, keyboard input, and primary pointer input
+- Initial rendering/input/diagnostics scope: primitive drawing (`draw_rectangle`, outlines, lines, circles, polygons, text), image/sprite drawing, keyboard input, primary pointer input, and last-frame diagnostics
 - Build output: deployable static site folder
 - Default output directory: `dist/`
 
@@ -37,8 +37,8 @@ Current state:
 - A dedicated web build mode exists: `--build-web <entry.code>`.
 - The default web build output is `dist/`, unless `--out` is provided.
 - The generated app page owns the browser canvas and runtime bootstrap.
-- The current browser-backed V1 slice supports either an explicit `MainScene` object or an inferred top-level lifecycle entry with `start()`, `update()`, `draw()`, and optional `draw_hud()`, full-window presentation, hybrid-expanded framing around a fixed `640x360` safe area, keyboard input, primary pointer input, `clear()`, `draw_rectangle()`, `draw_rectangle_outline()`, `draw_line()`, `draw_circle()`, `draw_circle_outline()`, `draw_polygon()`, `draw_polygon_outline()`, `draw_text()`, `draw_image()`, `draw_sprite()`, `camera_view_*()`, `camera_safe_*()`, and `screen_width()`, plus usage-based implied engine imports across `--build-web` app modules.
-- A higher-level wrapper layer now exists under `lib/engine/`: canonical modules `engine.colors`, `engine.drawing`, `engine.input`, `engine.viewport`, and `engine.scene`, with compatibility re-export modules `engine.view` and `engine.loop`.
+- The current browser-backed V1 slice supports either an explicit `MainScene` object or an inferred top-level lifecycle entry with `start()`, `update()`, `draw()`, and optional `draw_hud()`, full-window presentation, hybrid-expanded framing around a fixed `640x360` safe area, keyboard input, primary pointer input, `clear()`, `draw_rectangle()`, `draw_rectangle_outline()`, `draw_line()`, `draw_circle()`, `draw_circle_outline()`, `draw_polygon()`, `draw_polygon_outline()`, `draw_text()`, `draw_image()`, `draw_sprite()`, `camera_view_*()`, `camera_safe_*()`, `screen_width()`, and last-frame diagnostics, plus usage-based implied engine imports across `--build-web` app modules.
+- A higher-level wrapper layer now exists under `lib/engine/`: canonical modules `engine.colors`, `engine.drawing`, `engine.input`, `engine.viewport`, `engine.diagnostics`, and `engine.scene`, with compatibility re-export modules `engine.view` and `engine.loop`.
 - Scene composition is now supported through explicit child-object registration against `Scene`.
 - Generated apps prevent browser scroll/panning for app-control keys: arrows, Space, Page Up, Page Down, Home, and End.
 - Normal generated-app `print` output goes to the browser console by default; the on-screen overlay is reserved for fatal/runtime diagnostics.
@@ -66,10 +66,10 @@ Supported entry shapes:
   - Top-level helper functions become methods on that synthesized internal `MainScene`.
   - Top-level executable statements are rejected in this entry shape.
   - `--build-web` app modules receive usage-based implied engine imports.
-  - `Draw`, `Input`, `Viewport`, and `Colors` are available as implied namespaces.
+  - `Draw`, `Input`, `Viewport`, `Colors`, and `Diagnostics` are available as implied namespaces.
   - Direct `Color`, `Scene`, `SceneLoop`, `Startable`, `Updatable`, `WorldDrawable`, and `HudDrawable` names are also available without explicit imports.
   - Bare engine functions such as `rectangle(...)` are not implied; use namespace style such as `Draw.rectangle(...)` or add an explicit import.
-  - The namespace names `Draw`, `Input`, `Viewport`, and `Colors` are reserved for web-app modules. Redundant explicit imports of those exact canonical namespaces still work.
+  - The namespace names `Draw`, `Input`, `Viewport`, `Colors`, and `Diagnostics` are reserved for web-app modules. Redundant explicit imports of those exact canonical namespaces still work.
 
 Lifecycle:
 - The runtime instantiates `MainScene` once.
@@ -236,7 +236,7 @@ export object MainScene {
 
 The example above matches the current recommended larger-project shape and is checked in as `ConsoleApp1/examples/web_scene.code`.
 
-For a smaller playable sample that uses the inferred web-entry profile, see `ConsoleApp1/examples/shape_dodge.code`. `shape_dodge.code` is the current recommended "small game" demo and the easiest web-entry starting point, while `web_scene.code` remains the broader explicit-scene composition, rendering, assets, and pointer-input reference. Example status and usage are cataloged in `docs/example-catalog.md`.
+For a smaller playable sample that uses the inferred web-entry profile, see `ConsoleApp1/examples/shape_dodge.code`. For performance diagnostics, see `ConsoleApp1/examples/performance_dashboard.code`. `shape_dodge.code` is the current recommended "small game" demo and the easiest web-entry starting point, while `web_scene.code` remains the broader explicit-scene composition, rendering, assets, and pointer-input reference. Example status and usage are cataloged in `docs/example-catalog.md`.
 
 ## Runtime Behavior
 
@@ -295,6 +295,13 @@ Raw scene-runtime surface:
 - `pointer_is_down() -> boolean`
 - `pointer_was_pressed() -> boolean`
 - `pointer_was_released() -> boolean`
+- `diagnostics_last_frame_interval_milliseconds() -> real`
+- `diagnostics_estimated_frames_per_second() -> real`
+- `diagnostics_last_frame_work_milliseconds() -> real`
+- `diagnostics_last_update_work_milliseconds() -> real`
+- `diagnostics_last_draw_work_milliseconds() -> real`
+- `diagnostics_last_draw_hud_work_milliseconds() -> real`
+- `diagnostics_last_update_steps() -> integer`
 - `camera_view_left() -> real`
 - `camera_view_top() -> real`
 - `camera_view_width() -> real`
@@ -335,6 +342,14 @@ Current wrapper layer:
   - `pointer_is_down_now() -> boolean`
   - `pointer_was_pressed_now() -> boolean`
   - `pointer_was_released_now() -> boolean`
+- `engine.diagnostics`
+  - `last_frame_interval_milliseconds() -> real`
+  - `estimated_frames_per_second() -> real`
+  - `last_frame_work_milliseconds() -> real`
+  - `last_update_work_milliseconds() -> real`
+  - `last_draw_work_milliseconds() -> real`
+  - `last_draw_hud_work_milliseconds() -> real`
+  - `last_update_steps() -> integer`
 - `engine.viewport`
   - `view_*()`
   - `safe_*()`
@@ -359,6 +374,9 @@ Behavior rules:
 - `pointer_is_down()` tracks the primary pointer: left mouse button, primary pen button, or first/primary touch.
 - `pointer_was_pressed()` and `pointer_was_released()` are fixed-update edge states intended for `update()`; a quick tap between updates can make both true for the next update.
 - Last known pointer coordinates remain available after release; blur/cancel clears the down state and produces a release edge if needed.
+- Diagnostics helpers return metrics from the last completed presented frame. During the current frame, they intentionally report the previous frame's published values.
+- `last_frame_work_milliseconds()` measures runtime VM work around update/draw/HUD invocation. It does not include browser compositor or GPU presentation time.
+- Use `ConsoleApp1/examples/performance_dashboard.code` for relative threshold-finding, and browser devtools Performance for deeper browser/compositor investigation.
 - `camera_view_*()` exposes the current expanded visible world bounds.
 - `camera_safe_*()` exposes the guaranteed `640x360` safe area bounds.
 - `screen_width()` / `screen_height()` expose the visible HUD/screen-space size.
@@ -419,9 +437,10 @@ The first implementation milestone is defined by the following conditions:
 - Rendering preserves aspect ratio with a centered `640x360` safe area and hybrid-expanded visible world.
 - Keyboard input works inside `update()`.
 - Primary pointer coordinates and press/release edges work inside `update()` and can be displayed in `draw_hud()`.
+- Last-frame diagnostics can be displayed in `draw_hud()` through `engine.diagnostics` / `Diagnostics`.
 - Rectangle, outline, circle, polygon, text, and image/sprite rendering work inside `draw()` / `draw_hud()`.
 - HUD anchoring works inside `draw_hud()` using `screen_width()` / `screen_height()`.
-- The first wrapper layer under `lib/engine/` covers colors, drawing, input, and view queries for scene apps.
+- The first wrapper layer under `lib/engine/` covers colors, drawing, input, diagnostics, and view queries for scene apps.
 
 Implementation note:
 - Automated coverage exists for bytecode generation, scene metadata extraction, and generated `index.html` contract.
@@ -430,7 +449,7 @@ Implementation note:
 ## Non-Goals for This Document
 
 This document does not define:
-- the broader engine package taxonomy beyond the current `engine.colors`, `engine.drawing`, `engine.input`, `engine.viewport`, and `engine.scene` wrappers
+- the broader engine package taxonomy beyond the current `engine.colors`, `engine.drawing`, `engine.input`, `engine.viewport`, `engine.diagnostics`, and `engine.scene` wrappers
 - editor or IDE integration
 - audio APIs
 - native app shell behavior beyond keeping portability in mind

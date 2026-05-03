@@ -1,0 +1,29 @@
+package engine.diagnostics;
+
+export function<real> last_frame_interval_milliseconds() {
+  return diagnostics_last_frame_interval_milliseconds();
+}
+
+export function<real> estimated_frames_per_second() {
+  return diagnostics_estimated_frames_per_second();
+}
+
+export function<real> last_frame_work_milliseconds() {
+  return diagnostics_last_frame_work_milliseconds();
+}
+
+export function<real> last_update_work_milliseconds() {
+  return diagnostics_last_update_work_milliseconds();
+}
+
+export function<real> last_draw_work_milliseconds() {
+  return diagnostics_last_draw_work_milliseconds();
+}
+
+export function<real> last_draw_hud_work_milliseconds() {
+  return diagnostics_last_draw_hud_work_milliseconds();
+}
+
+export function<integer> last_update_steps() {
+  return diagnostics_last_update_steps();
+}

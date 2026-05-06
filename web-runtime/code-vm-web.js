@@ -586,11 +586,16 @@ export class CanvasSceneRuntime {
     this.ctx = null;
     this.outputElement = null;
     this.imageCache = new Map();
+    this.audioHandles = new Map();
+    this.pendingAudioHandles = new Set();
+    this.nextAudioHandle = 1;
+    this.audioUnlocked = false;
     this.handleResize = () => this.resize();
     this.handleKeyDown = event => {
       if (this.shouldPreventBrowserKeyDefault(event)) {
         event.preventDefault();
       }
+      this.unlockAudio();
       this.keysDown.add(event.keyCode);
     };
     this.handleKeyUp = event => {
@@ -682,6 +687,9 @@ export class CanvasSceneRuntime {
 
   dispose() {
     this.stop();
+    this.stopAllSounds();
+    this.audioHandles.clear();
+    this.pendingAudioHandles.clear();
     if (this.canvas) {
       this.canvas.removeEventListener("pointerdown", this.handlePointerDown);
       this.canvas.removeEventListener("pointermove", this.handlePointerMove);
@@ -786,6 +794,7 @@ export class CanvasSceneRuntime {
       return;
     }
 
+    this.unlockAudio();
     this.preventPointerDefault(event);
     this.updatePointerPosition(event);
     this.pointerActiveId = event.pointerId;
@@ -1238,6 +1247,176 @@ export class CanvasSceneRuntime {
     return record;
   }
 
+  canPlaySound() {
+    return this.audioUnlocked;
+  }
+
+  playSound(source, volume) {
+    return this.createAudioHandle(source, volume, false);
+  }
+
+  playLoopingSound(source, volume) {
+    return this.createAudioHandle(source, volume, true);
+  }
+
+  stopSound(handle) {
+    const record = this.audioHandles.get(Math.trunc(handle));
+    if (!record) {
+      return 0;
+    }
+
+    record.stopped = true;
+    record.pending = false;
+    this.pendingAudioHandles.delete(record.handle);
+    if (record.audio) {
+      try {
+        record.audio.pause();
+        record.audio.currentTime = 0;
+      } catch {
+        // Some browsers can reject currentTime changes before metadata loads.
+      }
+    }
+    return 0;
+  }
+
+  setSoundVolume(handle, volume) {
+    const record = this.audioHandles.get(Math.trunc(handle));
+    if (!record) {
+      return 0;
+    }
+
+    record.volume = clampUnit(volume);
+    if (record.audio) {
+      record.audio.volume = record.volume;
+    }
+    return 0;
+  }
+
+  soundIsPlaying(handle) {
+    const record = this.audioHandles.get(Math.trunc(handle));
+    if (!record || record.stopped || record.failed || record.pending || !record.audio) {
+      return false;
+    }
+    return !record.audio.paused && !record.audio.ended;
+  }
+
+  stopAllSounds() {
+    for (const handle of Array.from(this.audioHandles.keys())) {
+      this.stopSound(handle);
+    }
+    this.pendingAudioHandles.clear();
+    return 0;
+  }
+
+  unlockAudio() {
+    if (this.audioUnlocked) {
+      return;
+    }
+
+    this.audioUnlocked = true;
+    this.flushPendingAudio();
+  }
+
+  flushPendingAudio() {
+    const handles = Array.from(this.pendingAudioHandles);
+    for (const handle of handles) {
+      const record = this.audioHandles.get(handle);
+      if (record && record.pending && !record.stopped && !record.failed) {
+        this.playAudioRecord(record);
+      } else {
+        this.pendingAudioHandles.delete(handle);
+      }
+    }
+  }
+
+  createAudioHandle(source, volume, loop) {
+    const normalizedSource = String(source || "");
+    const handle = this.nextAudioHandle++;
+    const record = {
+      handle,
+      source: normalizedSource,
+      audio: null,
+      loop,
+      volume: clampUnit(volume),
+      stopped: false,
+      failed: false,
+      pending: false
+    };
+
+    if (!normalizedSource) {
+      record.failed = true;
+      console.warn("Audio source is empty.");
+    } else if (typeof globalThis.Audio !== "function") {
+      record.failed = true;
+      console.warn("This browser runtime does not expose HTMLAudioElement playback.");
+    } else {
+      const audio = new globalThis.Audio(normalizedSource);
+      audio.loop = loop;
+      audio.volume = record.volume;
+      audio.preload = "auto";
+      audio.addEventListener("error", () => {
+        record.failed = true;
+        record.pending = false;
+        this.pendingAudioHandles.delete(handle);
+        console.warn(`Could not load audio '${normalizedSource}'.`);
+      });
+      audio.addEventListener("ended", () => {
+        if (!record.loop) {
+          record.stopped = true;
+        }
+      });
+      record.audio = audio;
+    }
+
+    this.audioHandles.set(handle, record);
+    if (!record.failed) {
+      if (this.audioUnlocked) {
+        this.playAudioRecord(record);
+      } else {
+        record.pending = true;
+        this.pendingAudioHandles.add(handle);
+      }
+    }
+
+    return handle;
+  }
+
+  playAudioRecord(record) {
+    if (!record.audio || record.stopped || record.failed) {
+      return;
+    }
+
+    record.pending = false;
+    this.pendingAudioHandles.delete(record.handle);
+    try {
+      record.audio.currentTime = 0;
+    } catch {
+      // Some browsers can reject currentTime changes before metadata loads.
+    }
+
+    const playResult = record.audio.play();
+    if (playResult && typeof playResult.catch === "function") {
+      playResult.catch(error => {
+        if (record.stopped) {
+          return;
+        }
+
+        if (error && error.name === "NotAllowedError") {
+          record.pending = true;
+          this.pendingAudioHandles.add(record.handle);
+          this.audioUnlocked = false;
+          return;
+        }
+
+        record.failed = true;
+        record.pending = false;
+        this.pendingAudioHandles.delete(record.handle);
+        const message = error && typeof error.message === "string" ? error.message : String(error);
+        console.warn(`Could not play audio '${record.source}': ${message}`);
+      });
+    }
+  }
+
   runScene(vm, sceneInfo) {
     this.vm = vm;
     this.sceneInfo = sceneInfo;
@@ -1263,6 +1442,7 @@ export class CanvasSceneRuntime {
       cancelAnimationFrame(this.frameHandle);
       this.frameHandle = 0;
     }
+    this.stopAllSounds();
   }
 
   onFrame(timestamp) {
@@ -1584,6 +1764,60 @@ export class WebVm {
     this.hostBindings.set("engine.diagnostics.last_update_steps_scene", {
       arity: 0,
       handler: () => this.sceneHost ? this.sceneHost.lastUpdateSteps() : 0
+    });
+    this.hostBindings.set("engine.audio.can_play_sound_scene", {
+      arity: 0,
+      handler: () => this.sceneHost && this.sceneHost.canPlaySound() ? 1 : 0
+    });
+    this.hostBindings.set("engine.audio.play_sound_scene", {
+      arity: 2,
+      handler: args => {
+        if (!this.sceneHost) {
+          return 0;
+        }
+        return this.sceneHost.playSound(
+          toText(args[0], message => this.throwRuntime(message)),
+          toNumber(args[1], message => this.throwRuntime(message))
+        );
+      }
+    });
+    this.hostBindings.set("engine.audio.play_looping_sound_scene", {
+      arity: 2,
+      handler: args => {
+        if (!this.sceneHost) {
+          return 0;
+        }
+        return this.sceneHost.playLoopingSound(
+          toText(args[0], message => this.throwRuntime(message)),
+          toNumber(args[1], message => this.throwRuntime(message))
+        );
+      }
+    });
+    this.hostBindings.set("engine.audio.stop_sound_scene", {
+      arity: 1,
+      handler: args => this.sceneHost
+        ? this.sceneHost.stopSound(toNumber(args[0], message => this.throwRuntime(message)))
+        : 0
+    });
+    this.hostBindings.set("engine.audio.set_sound_volume_scene", {
+      arity: 2,
+      handler: args => {
+        if (!this.sceneHost) {
+          return 0;
+        }
+        return this.sceneHost.setSoundVolume(
+          toNumber(args[0], message => this.throwRuntime(message)),
+          toNumber(args[1], message => this.throwRuntime(message))
+        );
+      }
+    });
+    this.hostBindings.set("engine.audio.sound_is_playing_scene", {
+      arity: 1,
+      handler: args => this.sceneHost && this.sceneHost.soundIsPlaying(toNumber(args[0], message => this.throwRuntime(message))) ? 1 : 0
+    });
+    this.hostBindings.set("engine.audio.stop_all_sounds_scene", {
+      arity: 0,
+      handler: () => this.sceneHost ? this.sceneHost.stopAllSounds() : 0
     });
     this.hostBindings.set("engine.gfx.clear", {
       arity: 5,

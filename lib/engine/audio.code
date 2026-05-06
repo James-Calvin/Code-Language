@@ -1,0 +1,29 @@
+package engine.audio;
+
+export function<boolean> can_play_sound() {
+  return audio_can_play_sound();
+}
+
+export function<integer> play_sound(string source, real volume) {
+  return audio_play_sound(source, volume);
+}
+
+export function<integer> play_looping_sound(string source, real volume) {
+  return audio_play_looping_sound(source, volume);
+}
+
+export function stop_sound(integer handle) {
+  audio_stop_sound(handle);
+}
+
+export function set_sound_volume(integer handle, real volume) {
+  audio_set_sound_volume(handle, volume);
+}
+
+export function<boolean> sound_is_playing(integer handle) {
+  return audio_sound_is_playing(handle);
+}
+
+export function stop_all_sounds() {
+  audio_stop_all_sounds();
+}

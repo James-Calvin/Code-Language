@@ -20,14 +20,14 @@ This roadmap is implementation-truthful: items marked below are gaps from the cu
 1. Broader standard-library modules after the core container/math baseline lands
 
 ### Web Runtime and Tooling Gaps
-1. Advanced browser input/audio/content handling beyond primary pointer input, diagnostics, and copied assets
+1. Advanced browser input/content handling beyond primary pointer input, diagnostics, copied assets, and basic asset-backed audio
 2. Broader performance instrumentation if browser compositor/GPU timing becomes necessary
 3. Optional explicit debug-output mode if normal `print` output ever needs to appear in-page again
 
 ### Engine and App Ergonomics Gaps
 1. Refine the graphical app profile beyond its current `--build-web` slice toward fuller target-agnostic reuse
 2. Broader engine wrapper packages; byte-style `rgba(byte, byte, byte, byte)` should build on the implemented `byte` / `whole8` surface now that `rgb(byte, byte, byte)` is implemented
-3. Advanced browser input/audio/content handling
+3. Advanced browser input/content handling and fuller audio mixing
 4. Longer-term GPU/backend work
 
 ## Status & Priority Table
@@ -110,13 +110,13 @@ This roadmap is implementation-truthful: items marked below are gaps from the cu
 | `[~]` | Platform/targets | Host ABI baseline | Implemented baseline `HOST_CALL` opcode + host binding tables for native/web modes (`standard.input_output.print`, `std.time.*`, native-only `standard.input_output.read_line`/`std.time.sleep_ms` with diagnostics) and engine stubs (`engine.window/input/gfx`); compile-time capability inference includes host-lowered intrinsics |
 | `[x]` | Platform/targets | Static-site web build workflow | Implemented: `--build-web` emits a runnable `dist/` folder (or custom `--out`) with `index.html`, embedded bytecode, copied `assets/` when present, and optional `app.bytecode` via `--emit-web-bytecode` |
 | `[x]` | Platform/targets | Web build artifact polish | Implemented notes-derived change: bytecode is embedded in `index.html` by default for direct opening, and `app.bytecode` is emitted only with `--emit-web-bytecode` |
-| `[~]` | Platform/targets | Browser-backed web app runtime | Implemented current slice: generated full-window canvas runtime owns resize, timing, `MainScene` lifecycle, optional `draw_hud`, centered `640x360` safe area, hybrid-expanded framing, copied `assets` output, rectangles/outlines/lines/circles/polygons/text/images/sprites, keyboard plus primary pointer input, last-frame diagnostics, app-key scroll prevention, canvas touch gesture suppression, and console-routed web `print`; expand advanced input/audio/content handling |
-| `[~]` | Platform/targets | Graphical app profile | Implemented first slice for `--build-web`: top-level `start` / `update` / `draw` / optional `draw_hud`, hoisted entry-module state, usage-based implied engine imports across web-app modules (`Draw` / `Input` / `Viewport` / `Colors` / `Diagnostics` plus direct `Color` and canonical `engine.scene` types), synthesized `MainScene`, and explicit `MainScene` compatibility; broader target-agnostic reuse remains pending |
-| `[~]` | Platform/targets | Web engine host bindings | Implemented current scene-runtime bindings for `key_down`, `pointer_world_x`, `pointer_world_y`, `pointer_screen_x`, `pointer_screen_y`, `pointer_is_down`, `pointer_was_pressed`, `pointer_was_released`, `clear`, `draw_rectangle`, `draw_rectangle_outline`, `draw_line`, `draw_circle`, `draw_circle_outline`, `draw_polygon`, `draw_polygon_outline`, `draw_text`, `draw_image`, `draw_sprite`, `camera_view_*`, `camera_safe_*`, `screen_width` / `screen_height`, and `diagnostics_last_*`; legacy window/input/gfx handle-based stubs still need real browser-backed behavior or wrappers |
+| `[~]` | Platform/targets | Browser-backed web app runtime | Implemented current slice: generated full-window canvas runtime owns resize, timing, `MainScene` lifecycle, optional `draw_hud`, centered `640x360` safe area, hybrid-expanded framing, copied `assets` output, rectangles/outlines/lines/circles/polygons/text/images/sprites, keyboard plus primary pointer input, asset-backed one-shot/looping audio, last-frame diagnostics, app-key scroll prevention, canvas touch gesture suppression, and console-routed web `print`; expand advanced input/content handling and fuller audio mixing |
+| `[~]` | Platform/targets | Graphical app profile | Implemented first slice for `--build-web`: top-level `start` / `update` / `draw` / optional `draw_hud`, hoisted entry-module state, usage-based implied engine imports across web-app modules (`Draw` / `Input` / `Viewport` / `Colors` / `Diagnostics` / `Audio` plus direct `Color` and canonical `engine.scene` types), synthesized `MainScene`, and explicit `MainScene` compatibility; broader target-agnostic reuse remains pending |
+| `[~]` | Platform/targets | Web engine host bindings | Implemented current scene-runtime bindings for `key_down`, `pointer_world_x`, `pointer_world_y`, `pointer_screen_x`, `pointer_screen_y`, `pointer_is_down`, `pointer_was_pressed`, `pointer_was_released`, `clear`, `draw_rectangle`, `draw_rectangle_outline`, `draw_line`, `draw_circle`, `draw_circle_outline`, `draw_polygon`, `draw_polygon_outline`, `draw_text`, `draw_image`, `draw_sprite`, `camera_view_*`, `camera_safe_*`, `screen_width` / `screen_height`, `diagnostics_last_*`, and `audio_*`; legacy window/input/gfx handle-based stubs still need real browser-backed behavior or wrappers |
 | `[!]` | Platform/targets | Backend-agnostic engine API contract | Lock capability-query + fallback semantics so Code source remains portable across web/native backends |
 | `[~]` | Platform/targets | Native/web parity validation | Single-source app/game runs across both targets with explicit capability fallback behavior |
 | `[~]` | Game engine | Engine core packages | Canonical `engine.scene` now exports `Scene`, `SceneLoop`, and lifecycle interfaces for explicit child-object composition; `engine.math` / broader engine packages still pending |
-| `[~]` | Game engine | Engine platform adapters | Wrapper layer now includes canonical `engine.colors`, `engine.drawing`, `engine.input`, `engine.viewport`, `engine.diagnostics`, and `engine.scene` with compatibility `engine.view` / `engine.loop`; still need fuller host-backed packages including audio and a future byte-channel `rgba(byte, byte, byte, byte)` helper on top of the implemented `byte` / `whole8` surface |
+| `[~]` | Game engine | Engine platform adapters | Wrapper layer now includes canonical `engine.colors`, `engine.drawing`, `engine.input`, `engine.viewport`, `engine.diagnostics`, `engine.audio`, and `engine.scene` with compatibility `engine.view` / `engine.loop`; still need fuller host-backed packages, a future byte-channel `rgba(byte, byte, byte, byte)` helper on top of the implemented `byte` / `whole8` surface, and fuller audio mixer controls |
 | `[~]` | Game engine | `engine.gpu` ABI v1 | GPU resource/pipeline/dispatch API for simulation/ML/graphics workloads |
 | `[~]` | Game engine | WebGPU backend | Implement `engine.gpu` via WebGPU on `vm-web` with fallback policy |
 | `[~]` | Game engine | Native GPU backend parity | Implement same `engine.gpu` ABI on `vm-native` backend(s) |
@@ -133,7 +133,7 @@ This roadmap is implementation-truthful: items marked below are gaps from the cu
 
 ## Priority Rollup (benefit/effort)
 - High (`[!]`): keeping example/docs status aligned with implementation truth and tightening the broader target-agnostic direction of the graphical app profile.
-- Medium (`[~]`): fallible propagation shorthand, exact wide numerics/suffixes/exponent literals, advanced browser input/audio/content handling, constant pool, optimizer expansion, tooling polish, and engine core/adapters.
+- Medium (`[~]`): fallible propagation shorthand, exact wide numerics/suffixes/exponent literals, advanced browser input/content handling, fuller audio mixing, constant pool, optimizer expansion, tooling polish, and engine core/adapters.
 - Low (`[_]`): REPL, future stdlib/versioning, long-term runtime lifecycle strategy, remote package registry, and longer-horizon GPU/backend work.
 
 See also: `docs/platform-roadmap.md` for ABI schema, package manifest schema, and phased execution plan.

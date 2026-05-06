@@ -171,6 +171,22 @@ Generated web apps expose last-completed-frame diagnostics. Native execution and
 
 These values measure browser runtime/VM work around update, draw, and HUD invocation. They do not include browser compositor or GPU presentation time. Prefer `engine.diagnostics` wrappers for new app code.
 
+## Generated Web Scene Audio Intrinsics
+
+Generated web apps expose asset-backed audio helpers. Native execution and web execution without an attached scene host return neutral values and perform no playback.
+
+| Function | Inputs | Returns |
+| --- | --- | --- |
+| `audio_can_play_sound()` | none | `boolean` |
+| `audio_play_sound(source, volume)` | `string`, `real` | `integer` handle |
+| `audio_play_looping_sound(source, volume)` | `string`, `real` | `integer` handle |
+| `audio_stop_sound(handle)` | `integer` | `void` |
+| `audio_set_sound_volume(handle, volume)` | `integer`, `real` | `void` |
+| `audio_sound_is_playing(handle)` | `integer` | `boolean` |
+| `audio_stop_all_sounds()` | none | `void` |
+
+The browser runtime uses static asset paths, lazy loading, and browser audio unlock on first key or pointer input. Prefer `engine.audio` wrappers for new app code.
+
 ## Target Restrictions
 
 Compile target is selected with:

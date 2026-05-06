@@ -1435,6 +1435,7 @@ export function<integer> sub(integer a, integer b) { return a - b; }",
 import everything as Viewport from ""engine/viewport.code"";
 import everything as Input from ""engine/input.code"";
 import everything as Diagnostics from ""engine/diagnostics.code"";
+import everything as Audio from ""engine/audio.code"";
 import { rgb } from ""engine/colors.code"";
 Draw.clear_screen(rgb(0, 0, 0));
 Draw.rectangle(10, 10, 12, 14, rgb(255, 255, 255));
@@ -1459,11 +1460,18 @@ print(Diagnostics.last_frame_work_milliseconds());
 print(Diagnostics.last_update_work_milliseconds());
 print(Diagnostics.last_draw_work_milliseconds());
 print(Diagnostics.last_draw_hud_work_milliseconds());
-print(Diagnostics.last_update_steps());",
+print(Diagnostics.last_update_steps());
+print(Audio.can_play_sound());
+print(Audio.play_sound(""assets/click.wav"", 1));
+print(Audio.play_looping_sound(""assets/loop.wav"", 1));
+print(Audio.sound_is_playing(1));
+Audio.set_sound_volume(1, 1);
+Audio.stop_sound(1);
+Audio.stop_all_sounds();",
                     ["assets/test.svg"] = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\"></svg>",
                 },
                 "main.code",
-                "640\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0\n"
+                "640\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0\n"
             ),
             (
                 "module-scene-canonical-import",
@@ -3279,6 +3287,7 @@ function draw_hud() {
   Draw.text(""Arrow keys move"", Viewport.hud_width() - hud_margin, hud_margin, 16, ""right"", ""top"", Colors.rgb(255, 255, 255));
   Draw.text(""Pointer: {Input.pointer_screen_x_position()}, {Input.pointer_screen_y_position()}"", hud_margin, 40, 14, ""left"", ""top"", Colors.rgb(255, 255, 255));
   Draw.text(""Frame work: {Diagnostics.last_frame_work_milliseconds()}"", hud_margin, 64, 14, ""left"", ""top"", Colors.rgb(255, 255, 255));
+  Draw.text(""Audio ready: {Audio.can_play_sound()}"", hud_margin, 88, 14, ""left"", ""top"", Colors.rgb(255, 255, 255));
 }"
                 },
                 "main.code");
@@ -3303,6 +3312,7 @@ function draw_hud() {
                 outputs.IndexHtml.Contains("pointerdown", StringComparison.Ordinal) &&
                 outputs.IndexHtml.Contains("engine.input.pointer_world_x_scene", StringComparison.Ordinal) &&
                 outputs.IndexHtml.Contains("engine.diagnostics.last_frame_work_milliseconds_scene", StringComparison.Ordinal) &&
+                outputs.IndexHtml.Contains("engine.audio.can_play_sound_scene", StringComparison.Ordinal) &&
                 outputs.IndexHtml.Contains("publishDiagnostics(", StringComparison.Ordinal) &&
                 outputs.IndexHtml.Contains("beginFixedUpdateStep()", StringComparison.Ordinal) &&
                 outputs.IndexHtml.Contains("\"typeName\": \"MainScene\"", StringComparison.Ordinal) &&
@@ -3449,9 +3459,13 @@ export object MainScene {
 
 export function<HelperDrawable> make_helper_drawable() {
   return new HelperDrawable();
+}
+
+export function<integer> play_helper_sound() {
+  return Audio.play_sound(""assets/click.wav"", 1);
 }",
                     ["main.code"] =
-@"import { HelperDrawable, make_helper_drawable } from ""helper.code"";
+@"import { HelperDrawable, make_helper_drawable, play_helper_sound } from ""helper.code"";
 
 export object MainScene {
   Scene scene;
@@ -3467,6 +3481,7 @@ export object MainScene {
   function start() {
     scene.add_world_drawable(helper_drawable, 0);
     loop.start();
+    play_helper_sound();
   }
 
   function update() {
@@ -3654,6 +3669,26 @@ function draw() {
             "reserve 'Diagnostics' for implied engine imports");
 
         ExpectWebBuildCompilerError(
+            "web-build-implied-engine-imports-reserved-audio-name",
+            new Dictionary<string, string>
+            {
+                ["main.code"] =
+@"integer Audio = 0;
+
+function start() {
+}
+
+function update() {
+}
+
+function draw() {
+  print(Audio);
+}"
+            },
+            "main.code",
+            "reserve 'Audio' for implied engine imports");
+
+        ExpectWebBuildCompilerError(
             "web-build-implied-engine-imports-bare-engine-function",
             new Dictionary<string, string>
             {
@@ -3688,6 +3723,24 @@ function draw() {
             },
             "main.code",
             "Use 'Diagnostics.last_frame_work_milliseconds(...)' or add an explicit import");
+
+        ExpectWebBuildCompilerError(
+            "web-build-implied-engine-imports-bare-audio-function",
+            new Dictionary<string, string>
+            {
+                ["main.code"] =
+@"function start() {
+}
+
+function update() {
+}
+
+function draw() {
+  print(play_sound(""assets/click.wav"", 1));
+}"
+            },
+            "main.code",
+            "Use 'Audio.play_sound(...)' or add an explicit import");
 
         ExpectWebBuildCompilerError(
             "web-build-engine-rgb-rejects-real-channels",
@@ -3839,6 +3892,7 @@ function draw() {
 
         var webBuildExamples = new List<(string Name, string RelativePath)>
         {
+            ("example-audio-demo-web-build", @"ConsoleApp1/examples/audio_demo.code"),
             ("example-performance-dashboard-web-build", @"ConsoleApp1/examples/performance_dashboard.code"),
             ("example-shape-dodge-web-build", @"ConsoleApp1/examples/shape_dodge.code"),
             ("example-web-scene-web-build", @"ConsoleApp1/examples/web_scene.code"),
@@ -4061,6 +4115,13 @@ gfx_draw_rect(window, 1, 2, 3, 4, 1, 0, 0, 1);
 window_present(window);
 print(diagnostics_last_frame_interval_milliseconds());
 print(diagnostics_last_update_steps());
+print(audio_can_play_sound());
+print(audio_play_sound(""assets/click.wav"", 1));
+print(audio_play_looping_sound(""assets/loop.wav"", 1));
+print(audio_sound_is_playing(1));
+audio_set_sound_volume(1, 1);
+audio_stop_sound(1);
+audio_stop_all_sounds();
 print(1);";
 
         try
@@ -4369,6 +4430,47 @@ print(quick);";
             Console.WriteLine($"[FAIL] web-runtime-diagnostics-host-bindings: {ex.GetType().Name} - {ex.Message}");
         }
 
+        try
+        {
+            string runtimePath = Path.Combine(Directory.GetCurrentDirectory(), "web-runtime", "code-vm-web.js");
+            string runtimeText = File.ReadAllText(runtimePath);
+            string[] requiredSymbols =
+            {
+                "engine.audio.can_play_sound_scene",
+                "engine.audio.play_sound_scene",
+                "engine.audio.play_looping_sound_scene",
+                "engine.audio.stop_sound_scene",
+                "engine.audio.set_sound_volume_scene",
+                "engine.audio.sound_is_playing_scene",
+                "engine.audio.stop_all_sounds_scene"
+            };
+
+            foreach (string symbol in requiredSymbols)
+            {
+                string marker = $"this.hostBindings.set(\"{symbol}\"";
+                if (!runtimeText.Contains(marker, StringComparison.Ordinal))
+                    throw new Exception($"Web runtime is missing host binding '{symbol}'.");
+            }
+
+            bool hasAudioRuntime =
+                runtimeText.Contains("this.audioHandles = new Map()", StringComparison.Ordinal) &&
+                runtimeText.Contains("this.pendingAudioHandles = new Set()", StringComparison.Ordinal) &&
+                runtimeText.Contains("unlockAudio()", StringComparison.Ordinal) &&
+                runtimeText.Contains("flushPendingAudio()", StringComparison.Ordinal) &&
+                runtimeText.Contains("clampUnit(volume)", StringComparison.Ordinal) &&
+                runtimeText.Contains("stopAllSounds()", StringComparison.Ordinal) &&
+                runtimeText.Contains("soundIsPlaying(handle)", StringComparison.Ordinal);
+            if (!hasAudioRuntime)
+                throw new Exception("Web runtime is missing handle-based audio playback support.");
+
+            Console.WriteLine("[PASS] web-runtime-audio-host-bindings");
+        }
+        catch (Exception ex)
+        {
+            failures++;
+            Console.WriteLine($"[FAIL] web-runtime-audio-host-bindings: {ex.GetType().Name} - {ex.Message}");
+        }
+
         return failures;
     }
 
@@ -4426,6 +4528,13 @@ print(pointer_screen_y());
 print(pointer_is_down());
 print(pointer_was_pressed());
 print(pointer_was_released());
+print(audio_can_play_sound());
+print(audio_play_sound(""assets/click.wav"", 1));
+print(audio_play_looping_sound(""assets/loop.wav"", 1));
+print(audio_sound_is_playing(1));
+audio_set_sound_volume(1, 1);
+audio_stop_sound(1);
+audio_stop_all_sounds();
 gfx_clear(window, 0, 0, 0, 1);
 gfx_draw_rect(window, 0, 0, 10, 10, 1, 0, 0, 1);
 window_present(window);
@@ -4434,7 +4543,7 @@ print(1);";
         try
         {
             string output = Normalize(CompileAndRun(engineSource));
-            const string expected = "1\n1\n0\n0\n0\n0\n0\n0\n0\n0\n1\n";
+            const string expected = "1\n1\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1\n";
             if (!string.Equals(output, expected, StringComparison.Ordinal))
             {
                 failures++;

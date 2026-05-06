@@ -133,7 +133,15 @@ static class HostAbiCatalog
             ["engine.diagnostics.last_update_work_milliseconds_scene"] = new HostAbiSymbol("engine.diagnostics.last_update_work_milliseconds_scene", 0, "engine.diagnostics", HostAbiTargets.All),
             ["engine.diagnostics.last_draw_work_milliseconds_scene"] = new HostAbiSymbol("engine.diagnostics.last_draw_work_milliseconds_scene", 0, "engine.diagnostics", HostAbiTargets.All),
             ["engine.diagnostics.last_draw_hud_work_milliseconds_scene"] = new HostAbiSymbol("engine.diagnostics.last_draw_hud_work_milliseconds_scene", 0, "engine.diagnostics", HostAbiTargets.All),
-            ["engine.diagnostics.last_update_steps_scene"] = new HostAbiSymbol("engine.diagnostics.last_update_steps_scene", 0, "engine.diagnostics", HostAbiTargets.All)
+            ["engine.diagnostics.last_update_steps_scene"] = new HostAbiSymbol("engine.diagnostics.last_update_steps_scene", 0, "engine.diagnostics", HostAbiTargets.All),
+
+            ["engine.audio.can_play_sound_scene"] = new HostAbiSymbol("engine.audio.can_play_sound_scene", 0, "engine.audio", HostAbiTargets.All),
+            ["engine.audio.play_sound_scene"] = new HostAbiSymbol("engine.audio.play_sound_scene", 2, "engine.audio", HostAbiTargets.All),
+            ["engine.audio.play_looping_sound_scene"] = new HostAbiSymbol("engine.audio.play_looping_sound_scene", 2, "engine.audio", HostAbiTargets.All),
+            ["engine.audio.stop_sound_scene"] = new HostAbiSymbol("engine.audio.stop_sound_scene", 1, "engine.audio", HostAbiTargets.All),
+            ["engine.audio.set_sound_volume_scene"] = new HostAbiSymbol("engine.audio.set_sound_volume_scene", 2, "engine.audio", HostAbiTargets.All),
+            ["engine.audio.sound_is_playing_scene"] = new HostAbiSymbol("engine.audio.sound_is_playing_scene", 1, "engine.audio", HostAbiTargets.All),
+            ["engine.audio.stop_all_sounds_scene"] = new HostAbiSymbol("engine.audio.stop_all_sounds_scene", 0, "engine.audio", HostAbiTargets.All)
         };
 
         return new ReadOnlyDictionary<string, HostAbiSymbol>(map);
@@ -444,7 +452,50 @@ static class HostAbiCatalog
                 "diagnostics_last_update_steps",
                 "engine.diagnostics.last_update_steps_scene",
                 TypeSymbol.Integer,
-                "integer")
+                "integer"),
+            ["audio_can_play_sound"] = Sig(
+                "audio_can_play_sound",
+                "engine.audio.can_play_sound_scene",
+                TypeSymbol.Boolean,
+                "boolean"),
+            ["audio_play_sound"] = Sig(
+                "audio_play_sound",
+                "engine.audio.play_sound_scene",
+                TypeSymbol.Integer,
+                "integer",
+                (TypeSymbol.String, "string"),
+                (TypeSymbol.Real, "real")),
+            ["audio_play_looping_sound"] = Sig(
+                "audio_play_looping_sound",
+                "engine.audio.play_looping_sound_scene",
+                TypeSymbol.Integer,
+                "integer",
+                (TypeSymbol.String, "string"),
+                (TypeSymbol.Real, "real")),
+            ["audio_stop_sound"] = Sig(
+                "audio_stop_sound",
+                "engine.audio.stop_sound_scene",
+                TypeSymbol.Void,
+                "void",
+                (TypeSymbol.Integer, "integer")),
+            ["audio_set_sound_volume"] = Sig(
+                "audio_set_sound_volume",
+                "engine.audio.set_sound_volume_scene",
+                TypeSymbol.Void,
+                "void",
+                (TypeSymbol.Integer, "integer"),
+                (TypeSymbol.Real, "real")),
+            ["audio_sound_is_playing"] = Sig(
+                "audio_sound_is_playing",
+                "engine.audio.sound_is_playing_scene",
+                TypeSymbol.Boolean,
+                "boolean",
+                (TypeSymbol.Integer, "integer")),
+            ["audio_stop_all_sounds"] = Sig(
+                "audio_stop_all_sounds",
+                "engine.audio.stop_all_sounds_scene",
+                TypeSymbol.Void,
+                "void")
         };
 
         return new ReadOnlyDictionary<string, HostAbiIntrinsic>(map);

@@ -1082,6 +1082,14 @@ sealed class Vm
         _hostBindings["engine.diagnostics.last_draw_work_milliseconds_scene"] = new HostBinding(0, _ => 0.0);
         _hostBindings["engine.diagnostics.last_draw_hud_work_milliseconds_scene"] = new HostBinding(0, _ => 0.0);
         _hostBindings["engine.diagnostics.last_update_steps_scene"] = new HostBinding(0, _ => 0);
+
+        _hostBindings["engine.audio.can_play_sound_scene"] = new HostBinding(0, _ => 0);
+        _hostBindings["engine.audio.play_sound_scene"] = new HostBinding(2, _ => 0);
+        _hostBindings["engine.audio.play_looping_sound_scene"] = new HostBinding(2, _ => 0);
+        _hostBindings["engine.audio.stop_sound_scene"] = new HostBinding(1, _ => 0);
+        _hostBindings["engine.audio.set_sound_volume_scene"] = new HostBinding(2, _ => 0);
+        _hostBindings["engine.audio.sound_is_playing_scene"] = new HostBinding(1, _ => 0);
+        _hostBindings["engine.audio.stop_all_sounds_scene"] = new HostBinding(0, _ => 0);
     }
 
     private void InitializeNativeHostBindings()

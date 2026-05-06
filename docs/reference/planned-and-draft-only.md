@@ -31,7 +31,7 @@ Use [Example Catalog](../example-catalog.md) and the current compiler as the tru
 | Broader standard library beyond current containers, math, time, IO baseline | Planned. |
 | Byte-channel `rgba(byte, byte, byte, byte)` | Planned on top of the implemented `byte` / `whole8` type surface. `rgb(byte, byte, byte)` is implemented today; current `rgba` still uses real channels commonly from `0` to `1`. |
 | Advanced input beyond the primary pointer | Multi-touch ids, gestures, right/middle mouse buttons, wheel input, and event queues are deferred. Current generated web apps support keyboard state and one primary pointer. |
-| Audio APIs | Out of current V1 web slice. |
+| Full audio mixer APIs | Deferred. Current generated web apps support asset-backed one-shot and looping audio through `engine.audio`; panning, fades, pitch, buses, streamed decode controls, and guaranteed low-latency scheduling are still planned. |
 | Physics APIs | Out of current V1 web slice. |
 | Richer content handling and asset pipeline | Planned. Current web build copies `assets/`. |
 | Browser compositor/GPU performance timing | Deferred. Current `engine.diagnostics` reports last-completed-frame runtime/VM work, not compositor or GPU presentation time. |

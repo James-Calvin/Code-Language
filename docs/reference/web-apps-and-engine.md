@@ -87,7 +87,7 @@ Rules:
 - `draw_hud()` runs after `draw()` when present.
 - Inferred top-level lifecycle entry is a `--build-web` entry-module feature.
 - `--build-web` app modules infer engine imports from usage.
-- `Draw`, `Input`, `Viewport`, `Colors`, and `Diagnostics` are implied namespaces.
+- `Draw`, `Input`, `Viewport`, `Colors`, `Diagnostics`, and `Audio` are implied namespaces.
 - `Color`, `Scene`, `SceneLoop`, `Startable`, `Updatable`, `WorldDrawable`, and `HudDrawable` are available without explicit imports.
 - Bare engine functions such as `rectangle(...)` are still not implied; use namespace style such as `Draw.rectangle(...)` or add an explicit import.
 
@@ -236,6 +236,48 @@ Diagnostics are last-completed-frame values. They measure Code VM/runtime work a
 
 For a benchmark app, build `ConsoleApp1/examples/performance_dashboard.code`. Use it for relative comparisons and threshold-finding. Record browser, device, display refresh rate, and viewport size when comparing results. Use browser devtools Performance for deeper compositor/GPU analysis.
 
+## Engine Audio
+
+Import when you want it explicitly:
+
+```code
+import everything as Audio from "engine/audio.code";
+```
+
+For `--build-web` app modules, `Audio` can also be implied from usage.
+
+API:
+
+| Function | Inputs | Returns |
+| --- | --- | --- |
+| `can_play_sound()` | none | `boolean` |
+| `play_sound(source, volume)` | `string`, `real` | `integer` handle |
+| `play_looping_sound(source, volume)` | `string`, `real` | `integer` handle |
+| `stop_sound(handle)` | `integer` | `void` |
+| `set_sound_volume(handle, volume)` | `integer`, `real` | `void` |
+| `sound_is_playing(handle)` | `integer` | `boolean` |
+| `stop_all_sounds()` | none | `void` |
+
+Example:
+
+```code
+integer loop_handle = 0;
+
+function update() {
+  if Input.key_is_down(32) then {
+    Audio.play_sound("assets/click.wav", 0.8);
+  }
+
+  if loop_handle == 0 and Input.key_is_down(77) then {
+    loop_handle = Audio.play_looping_sound("assets/loop.wav", 0.5);
+  }
+}
+```
+
+Audio source paths are static asset paths in the generated site folder. `play_sound` starts overlapping one-shot sounds, while `play_looping_sound` is intended for background loops. Browser autoplay policy means audio unlocks on the first key or pointer input; calls made before unlock are queued. Missing or unsupported assets are non-fatal and report not playing. Native execution and web execution without an attached scene host return neutral values and perform no playback.
+
+V1 does not include a full mixer: panning, fades, pitch, buses, streamed decode controls, and guaranteed low-latency scheduling are deferred.
+
 ## Engine Viewport
 
 Import when you want it explicitly:
@@ -369,6 +411,13 @@ diagnostics_last_update_work_milliseconds
 diagnostics_last_draw_work_milliseconds
 diagnostics_last_draw_hud_work_milliseconds
 diagnostics_last_update_steps
+audio_can_play_sound
+audio_play_sound
+audio_play_looping_sound
+audio_stop_sound
+audio_set_sound_volume
+audio_sound_is_playing
+audio_stop_all_sounds
 camera_view_left/top/width/height/right/bottom
 camera_safe_left/top/width/height/right/bottom
 screen_width

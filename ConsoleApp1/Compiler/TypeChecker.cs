@@ -2322,6 +2322,20 @@ sealed class TypeChecker
             map[name] = "Diagnostics";
         }
 
+        foreach (var name in new[]
+        {
+            "can_play_sound",
+            "play_sound",
+            "play_looping_sound",
+            "stop_sound",
+            "set_sound_volume",
+            "sound_is_playing",
+            "stop_all_sounds"
+        })
+        {
+            map[name] = "Audio";
+        }
+
         return map;
     }
 

@@ -1,0 +1,74 @@
+real volume = 0.6;
+integer loop_handle = 0;
+integer last_effect_handle = 0;
+boolean previous_space_down = false;
+boolean previous_m_down = false;
+boolean previous_up_down = false;
+boolean previous_down_down = false;
+
+function start() {
+}
+
+function update() {
+  boolean space_down = Input.key_is_down(32);
+  boolean m_down = Input.key_is_down(77);
+  boolean up_down = Input.key_is_down(38);
+  boolean down_down = Input.key_is_down(40);
+
+  if space_down and not previous_space_down then {
+    last_effect_handle = Audio.play_sound("assets/click.wav", volume);
+  }
+
+  if m_down and not previous_m_down then {
+    if loop_handle != 0 and Audio.sound_is_playing(loop_handle) then {
+      Audio.stop_sound(loop_handle);
+      loop_handle = 0;
+    } else {
+      loop_handle = Audio.play_looping_sound("assets/loop.wav", volume);
+    }
+  }
+
+  if up_down and not previous_up_down then {
+    volume += 0.1;
+    if volume > 1 then volume = 1;
+    if loop_handle != 0 then Audio.set_sound_volume(loop_handle, volume);
+  }
+
+  if down_down and not previous_down_down then {
+    volume -= 0.1;
+    if volume < 0 then volume = 0;
+    if loop_handle != 0 then Audio.set_sound_volume(loop_handle, volume);
+  }
+
+  previous_space_down = space_down;
+  previous_m_down = m_down;
+  previous_up_down = up_down;
+  previous_down_down = down_down;
+}
+
+function draw() {
+  Draw.clear_screen(Colors.rgb(8, 12, 22));
+
+  real center_x = Viewport.safe_left() + Viewport.safe_width() / 2;
+  real center_y = Viewport.safe_top() + Viewport.safe_height() / 2;
+  real pulse = 28 + volume * 36;
+
+  Draw.circle(center_x, center_y, pulse, Colors.rgba(0.1, 0.55, 0.95, 0.55));
+  Draw.circle_outline(center_x, center_y, pulse + 8, 2, Colors.rgba(1, 1, 1, 0.5));
+  Draw.line(center_x - 96, center_y, center_x + 96, center_y, Colors.rgba(1, 1, 1, 0.35));
+  Draw.line(center_x, center_y - 72, center_x, center_y + 72, Colors.rgba(1, 1, 1, 0.35));
+}
+
+function draw_hud() {
+  Color text_color = Colors.rgb(245, 247, 255);
+  Color accent_color = Colors.rgb(104, 216, 255);
+  Color dim_color = Colors.rgb(150, 160, 180);
+
+  Draw.text("Audio Demo", 18, 18, 20, "left", "top", text_color);
+  Draw.text("Space: sound effect | M: loop music | Up/Down: volume", 18, 48, 14, "left", "top", dim_color);
+  Draw.text("Audio unlocked: {Audio.can_play_sound()}", 18, 82, 14, "left", "top", accent_color);
+  Draw.text("Volume: {volume}", 18, 106, 14, "left", "top", text_color);
+  Draw.text("Last effect handle: {last_effect_handle}", 18, 130, 14, "left", "top", text_color);
+  Draw.text("Loop handle: {loop_handle} | playing: {Audio.sound_is_playing(loop_handle)}", 18, 154, 14, "left", "top", text_color);
+  Draw.text("First key or pointer input unlocks browser audio.", Viewport.hud_width() - 18, Viewport.hud_height() - 24, 13, "right", "bottom", dim_color);
+}

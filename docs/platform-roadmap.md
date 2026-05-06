@@ -1,6 +1,6 @@
 # Platform, Libraries, and Targets Roadmap
 
-Last updated: 2026-04-25
+Last updated: 2026-05-05
 
 This roadmap is specifically for:
 1) library/package system,
@@ -50,7 +50,7 @@ Near-term web build goal:
 - Current output: `index.html` with embedded bytecode so the page opens directly, plus copied `assets/` content when present.
 - Optional output: pass `--emit-web-bytecode` with `--build-web` to also write `app.bytecode` for debugging or inspection.
 - Current recommended authoring models:
-  - small apps may use the inferred `--build-web` entry profile with top-level `start` / `update` / `draw` / optional `draw_hud` and usage-based implied engine imports (`Draw` / `Input` / `Viewport` / `Colors` / `Diagnostics`, plus direct `Color` and canonical `engine.scene` types)
+  - small apps may use the inferred `--build-web` entry profile with top-level `start` / `update` / `draw` / optional `draw_hud` and usage-based implied engine imports (`Draw` / `Input` / `Viewport` / `Colors` / `Diagnostics` / `Audio`, plus direct `Color` and canonical `engine.scene` types)
   - larger apps may keep explicit `MainScene` thin and compose child objects through `engine.scene.Scene` and `engine.scene.SceneLoop` (with `engine.loop` retained as a compatibility re-export during migration)
 - Planned authoring expansion: carry the graphical app profile toward fuller target-agnostic reuse while leaving explicit `MainScene` valid.
 - The current `web-runtime/index.html` upload flow remains preview-only bootstrap tooling for raw bytecode bring-up and is no longer the primary workflow.
@@ -107,7 +107,13 @@ Host calls are explicit, capability-scoped bindings provided by the runtime host
 - `engine.diagnostics`
   - last-completed-frame timing metrics for generated scene runtimes
 - `engine.audio`
-  - `play_sfx(string id, real volume) -> void`
+  - `can_play_sound() -> boolean`
+  - `play_sound(string source, real volume) -> integer`
+  - `play_looping_sound(string source, real volume) -> integer`
+  - `stop_sound(integer handle) -> void`
+  - `set_sound_volume(integer handle, real volume) -> void`
+  - `sound_is_playing(integer handle) -> boolean`
+  - `stop_all_sounds() -> void`
 - `engine.gpu` (planned)
   - adapter/device discovery, capability query, and limits
   - buffer/texture creation and updates
@@ -224,7 +230,7 @@ Legend:
 | Priority | Phase | Work Item | Deliverable / Exit Criteria |
 | --- | --- | --- | --- |
 | `[x]` | Phase 1 | Target flag + capability validation | Implemented: `--target vm-native|vm-web` with compile-time capability matrix checks |
-| `[~]` | Phase 1 | Host ABI v1 baseline | Implemented baseline `HOST_CALL` + native/web host tables + `HostBindingError`; includes `standard.input_output.print`, `std.time.*`, native-only `read_line`/`sleep_ms` diagnostics, engine window/input/gfx no-op stubs, and scene diagnostics |
+| `[~]` | Phase 1 | Host ABI v1 baseline | Implemented baseline `HOST_CALL` + native/web host tables + `HostBindingError`; includes `standard.input_output.print`, `std.time.*`, native-only `read_line`/`sleep_ms` diagnostics, engine window/input/gfx no-op stubs, scene diagnostics, and scene audio |
 | `[x]` | Phase 2 | Manifest parser + validation | Implemented baseline: nearest-manifest discovery, schema v1 validation, target and host capability checks |
 | `[x]` | Phase 2 | Dependency resolver + lockfile | Implemented baseline local resolver + deterministic `code.lock.json` generation (target-scoped) |
 | `[x]` | Phase 2 | Library artifact format (`.codelib`) | Implemented baseline: library manifests emit `.codelib`, resolver validates/prefer artifact paths in `code.lock.json`, CLI can run/disasm `.codelib` |
@@ -232,12 +238,12 @@ Legend:
 | `[~]` | Phase 3 | Stdlib as packages | `std.core`, `std.math`, `std.time`, `standard.input_output` packaged and importable |
 | `[x]` | Phase 4 | Web bundle workflow | Implemented: `--build-web` emits a runnable static site folder with `index.html`, embedded bytecode, copied `assets` output when present, and optional `app.bytecode` via `--emit-web-bytecode` instead of relying on the preview harness |
 | `[x]` | Phase 4 | Web build artifact polish | Implemented: generated apps default to embedded bytecode in `index.html` without writing duplicate `app.bytecode`; `--emit-web-bytecode` writes the separate bytecode artifact when needed |
-| `[~]` | Phase 4 | Browser-backed web app runtime | Implemented current slice: generated full-window canvas runtime, `MainScene` lifecycle (`start/update/draw` plus optional `draw_hud`), fixed-step loop, centered `640x360` safe area, hybrid-expanded world framing, copied `assets` output, browser-backed rectangles/outlines/lines/circles/polygons/text/images/sprites, keyboard and primary pointer input, last-frame diagnostics, app-key scroll prevention, canvas touch gesture suppression, and console-routed web `print`; expand advanced input/audio/content handling |
-| `[~]` | Phase 4 | Web engine host bindings (real impl) | Implemented current scene-runtime bindings for `key_down`, `pointer_world_x`, `pointer_world_y`, `pointer_screen_x`, `pointer_screen_y`, `pointer_is_down`, `pointer_was_pressed`, `pointer_was_released`, `clear`, `draw_rectangle`, `draw_rectangle_outline`, `draw_line`, `draw_circle`, `draw_circle_outline`, `draw_polygon`, `draw_polygon_outline`, `draw_text`, `draw_image`, `draw_sprite`, `camera_view_*`, `camera_safe_*`, `screen_width` / `screen_height`, and `diagnostics_last_*`; legacy window-handle web stubs still need real implementations or package-level wrappers |
+| `[~]` | Phase 4 | Browser-backed web app runtime | Implemented current slice: generated full-window canvas runtime, `MainScene` lifecycle (`start/update/draw` plus optional `draw_hud`), fixed-step loop, centered `640x360` safe area, hybrid-expanded world framing, copied `assets` output, browser-backed rectangles/outlines/lines/circles/polygons/text/images/sprites, keyboard and primary pointer input, asset-backed one-shot/looping audio, last-frame diagnostics, app-key scroll prevention, canvas touch gesture suppression, and console-routed web `print`; expand advanced input/content handling and fuller audio mixing |
+| `[~]` | Phase 4 | Web engine host bindings (real impl) | Implemented current scene-runtime bindings for `key_down`, `pointer_world_x`, `pointer_world_y`, `pointer_screen_x`, `pointer_screen_y`, `pointer_is_down`, `pointer_was_pressed`, `pointer_was_released`, `clear`, `draw_rectangle`, `draw_rectangle_outline`, `draw_line`, `draw_circle`, `draw_circle_outline`, `draw_polygon`, `draw_polygon_outline`, `draw_text`, `draw_image`, `draw_sprite`, `camera_view_*`, `camera_safe_*`, `screen_width` / `screen_height`, `diagnostics_last_*`, and `audio_*`; legacy window-handle web stubs still need real implementations or package-level wrappers |
 | `[!]` | Phase 4 | Backend-agnostic API contract | Freeze capability-query and fallback semantics so one Code source can target multiple backends predictably |
-| `[~]` | Phase 5 | Target-agnostic graphical app profile | Implemented first `--build-web` slice: top-level `start`/`update`/`draw`/optional `draw_hud`, usage-based implied engine imports across web-app modules (`Draw` / `Input` / `Viewport` / `Colors` / `Diagnostics`, plus direct `Color` and canonical `engine.scene` types), synthesized `MainScene`, and explicit `MainScene` compatibility; broader native-target reuse remains planned |
+| `[~]` | Phase 5 | Target-agnostic graphical app profile | Implemented first `--build-web` slice: top-level `start`/`update`/`draw`/optional `draw_hud`, usage-based implied engine imports across web-app modules (`Draw` / `Input` / `Viewport` / `Colors` / `Diagnostics` / `Audio`, plus direct `Color` and canonical `engine.scene` types), synthesized `MainScene`, and explicit `MainScene` compatibility; broader native-target reuse remains planned |
 | `[~]` | Phase 5 | Engine core package set | Canonical `engine.scene` now exports `Scene`, `SceneLoop`, and lifecycle interfaces for explicit child-object composition; broader engine packages such as `engine.math` and `engine.ecs` are still pending |
-| `[~]` | Phase 5 | Engine platform adapters | Wrapper layer now includes canonical `engine.colors`, `engine.drawing`, `engine.input`, `engine.viewport`, `engine.diagnostics`, and `engine.scene` plus compatibility re-export modules `engine.view` / `engine.loop`; still need fuller host-backed package taxonomy for native+web, a byte-channel `rgba(byte, byte, byte, byte)` helper on top of the implemented `byte` / `whole8` surface, plus audio |
+| `[~]` | Phase 5 | Engine platform adapters | Wrapper layer now includes canonical `engine.colors`, `engine.drawing`, `engine.input`, `engine.viewport`, `engine.diagnostics`, `engine.audio`, and `engine.scene` plus compatibility re-export modules `engine.view` / `engine.loop`; still need fuller host-backed package taxonomy for native+web, a byte-channel `rgba(byte, byte, byte, byte)` helper on top of the implemented `byte` / `whole8` surface, and fuller audio mixer controls |
 | `[~]` | Phase 5 | `engine.gpu` ABI v1 | Add GPU resource/pipeline/dispatch ABI for compute-heavy and graphics-heavy workloads |
 | `[~]` | Phase 5 | WebGPU backend | Implement `engine.gpu` on `vm-web` with explicit fallback policy when WebGPU is unavailable |
 | `[~]` | Phase 5 | Native GPU backend parity | Implement the same `engine.gpu` ABI on `vm-native` backend(s) for parity and performance |
@@ -266,12 +272,12 @@ This order gets library system + target model stable before engine work starts.
    - Current state: one command produces a runnable browser folder for a sample app, defaulting to `dist/`.
 
 3. **Browser-backed app runtime**
-   - Implemented current slice: generated app page and browser runtime fill the window, preserve aspect ratio with a centered `640x360` safe area, expand the visible world when needed, support optional `draw_hud`, own the main loop for a `MainScene`, and expose rectangles/outlines/lines/circles/polygons/text/images/sprites plus keyboard, primary pointer input, and last-frame diagnostics.
-   - Next step: expand advanced input/audio/content handling while keeping the higher-level engine-facing API off raw window handles.
+   - Implemented current slice: generated app page and browser runtime fill the window, preserve aspect ratio with a centered `640x360` safe area, expand the visible world when needed, support optional `draw_hud`, own the main loop for a `MainScene`, and expose rectangles/outlines/lines/circles/polygons/text/images/sprites plus keyboard, primary pointer input, asset-backed audio, and last-frame diagnostics.
+   - Next step: expand advanced input/content handling and fuller audio mixing while keeping the higher-level engine-facing API off raw window handles.
 
 4. **Engine packages + loop contract**
-   - Implemented current slice: importable wrapper modules now exist for colors, drawing, input, viewport queries, diagnostics, scene composition, and scene-loop execution under `lib/engine/`.
-   - Next step: grow that wrapper layer into broader `engine.window`, `engine.input`, `engine.gfx`, audio, and higher-level content helpers without collapsing back to raw host symbols.
+   - Implemented current slice: importable wrapper modules now exist for colors, drawing, input, viewport queries, diagnostics, audio, scene composition, and scene-loop execution under `lib/engine/`.
+   - Next step: grow that wrapper layer into broader `engine.window`, `engine.input`, `engine.gfx`, audio mixer, and higher-level content helpers without collapsing back to raw host symbols.
    - Exit criteria: the runtime contract is reflected in engine-facing modules rather than only raw host ABI symbols.
 
 5. **Graphical app profile**

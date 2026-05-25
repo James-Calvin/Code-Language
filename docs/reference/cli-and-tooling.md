@@ -1,157 +1,89 @@
 # CLI and Tooling
 
-Commands are run from the repository root.
+This page documents the installed public compiler CLI. Maintainer-only commands are listed at the end.
 
-## Run a `.code` File
+## Build A Web App
 
 ```powershell
-dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- ConsoleApp1/examples/arithmetic.code
+compiler path/to/source.code
 ```
 
 Behavior:
 
-- Compiles the source to `.bytecode`.
-- Runs it unless `--compile-only` is present.
-- Default target is `vm-native`.
-
-## Compile Only
-
-```powershell
-dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- --compile-only ConsoleApp1/examples/arithmetic.code
-```
+- Builds a deployable static web app.
+- Writes output to `./source/` in the current directory.
+- Emits `index.html` with embedded bytecode and browser runtime.
+- Copies `assets/` when present beside the entry file or package root.
 
 Custom output:
 
 ```powershell
-dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- --compile-only --out .tmp/demo.bytecode ConsoleApp1/examples/arithmetic.code
+compiler path/to/source.code -o MyApp
+```
+
+Equivalent long form:
+
+```powershell
+compiler path/to/source.code --output MyApp
 ```
 
 Common mistakes:
 
-- `--out` points to a bytecode file for normal compile mode.
-- `--out` points to a directory for `--build-web`.
-
-## Run Bytecode or Library Artifacts
-
-```powershell
-dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- ConsoleApp1/examples/arithmetic.bytecode
-```
-
-```powershell
-dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- path/to/package-0.1.0-vm-native.codelib
-```
-
-The CLI accepts `.bytecode` and `.codelib` inputs.
-
-## Disassemble
-
-```powershell
-dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- --disasm path/to/file.bytecode
-```
-
-```powershell
-dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- --disasm path/to/library.codelib
-```
-
-## Dump Tokens
-
-```powershell
-dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- --dump-tokens ConsoleApp1/examples/arithmetic.code
-```
-
-This prints lexer tokens with line and column information.
-
-## Compile Targets
-
-```powershell
-dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- --target vm-web --compile-only ConsoleApp1/examples/time.code
-```
-
-Targets:
-
-| Target | Use |
-| --- | --- |
-| `vm-native` | Default CLI/native host bindings |
-| `vm-web` | Web host capability checks and web host binding table |
-
-Common mistakes:
-
-- Native-only APIs such as `read_line()` and `sleep_ms()` are rejected for `vm-web`.
-- Runtime host mode follows `--target` when running `.code`, `.bytecode`, or `.codelib` through the CLI.
-
-## Build Web
-
-```powershell
-dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- --build-web ConsoleApp1/examples/shape_dodge.code
-```
-
-Custom output:
-
-```powershell
-dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- --build-web --out .tmp/web-build ConsoleApp1/examples/web_scene.code
-```
-
-Behavior:
-
-- Forces target `vm-web`.
-- Emits `index.html` with embedded bytecode.
-- Copies `assets/` when present.
-- Use `--emit-web-bytecode` with `--build-web` to also write `app.bytecode` for debugging or inspection.
-
-Common mistakes:
-
-- `--build-web` does not combine with module graph output yet.
+- Output is relative to the current directory, not the entry file directory.
 - The entry module must provide either an explicit `MainScene` object or top-level `start()` / `update()` / `draw()` functions.
+- Rebuilding overwrites generated files, but it does not clean unrelated files from the output folder.
 
-## Module Graph
-
-Print graph:
-
-```powershell
-dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- --compile-only --dump-module-graph ConsoleApp1/examples/modules/main.code
-```
-
-Write graph:
+## Native Mode
 
 ```powershell
-dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- --compile-only --dump-module-graph graph.json ConsoleApp1/examples/modules/main.code
+compiler --native ConsoleApp1/examples/arithmetic.code
 ```
 
-Force format:
+Behavior:
+
+- Compiles the source to bytecode.
+- Writes default bytecode to `./arithmetic.bytecode` in the current directory for the example above.
+- Runs it with native host bindings.
+- Use this for console examples and native-only APIs such as `read_line()`.
+
+Compile only in native mode:
 
 ```powershell
-dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- --compile-only --dump-module-graph graph.txt --module-graph-format dot ConsoleApp1/examples/modules/main.code
+compiler --native --compile-only -o .tmp/demo.bytecode ConsoleApp1/examples/arithmetic.code
 ```
 
-Formats:
+## Public Options
 
-| Format | How selected |
+| Option | Use |
 | --- | --- |
-| `text` | default |
-| `json` | `.json` output or `--module-graph-format json` |
-| `dot` | `.dot`, `.gv`, or `--module-graph-format dot` |
+| `-o <folder>` / `--output <folder>` | Set web output folder, or native bytecode file when combined with `--native --compile-only` |
+| `--native` | Compile and run using native host bindings |
+| `--version` | Print compiler version |
+| `--help` / `-h` | Print public help |
 
-## Linker Trace
+## Advanced And Maintainer Commands
+
+These flags remain supported for compatibility and compiler development, but they are not part of the public quickstart.
+
+| Command | Use |
+| --- | --- |
+| `--build-web` | Explicitly request the web build path; public CLI defaults to this for `.code` input |
+| `--out <path>` | Legacy alias for `-o` / `--output` |
+| `--target vm-native\|vm-web` | Select bytecode compile/run target for internal target checks |
+| `--compile-only` | Compile bytecode without running in native/internal modes |
+| `--emit-web-bytecode` | Also emit `app.bytecode` when building a web app |
+| `--disasm <file.bytecode\|file.codelib>` | Disassemble bytecode or library artifacts |
+| `--dump-tokens <file.code>` | Print lexer tokens |
+| `--dump-module-graph [out]` | Print or write the module graph |
+| `--module-graph-format text\|json\|dot` | Force module graph output format |
+| `--trace-linker` | Print linker resolution steps to stderr |
+| `--run-tests` | Run the compiler/runtime harness |
+| `--skip-tests` | Compatibility no-op for the old no-argument CLI path |
+
+Examples:
 
 ```powershell
-dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- --compile-only --trace-linker ConsoleApp1/examples/modules/main.code
+compiler --target vm-web --compile-only ConsoleApp1/examples/time.code
+compiler --compile-only --dump-module-graph graph.json ConsoleApp1/examples/modules/main.code
+compiler --disasm path/to/file.bytecode
 ```
-
-This prints import resolution and linker steps to stderr.
-
-## Tests
-
-```powershell
-dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- --run-tests
-```
-
-Coverage includes:
-
-- VM opcode tests
-- compiler integration tests
-- examples from the example catalog
-- web build smoke tests
-- native/web host ABI parity checks
-- fuzz suites for arithmetic, booleans, strings, loops, and panic
-
-If the CLI is run with no args and without `--skip-tests`, it runs tests and then a small bytecode demo.

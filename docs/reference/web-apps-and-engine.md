@@ -3,7 +3,7 @@
 ## Build a Web App
 
 ```powershell
-dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- --build-web ConsoleApp1/examples/shape_dodge.code
+compiler ConsoleApp1/examples/shape_dodge.code
 ```
 
 Output folder:
@@ -13,25 +13,25 @@ Output folder:
 
 Current note:
 
-- The generated `index.html` embeds the bytecode for direct opening. Use `--emit-web-bytecode` with `--build-web` to also write `app.bytecode` for debugging or inspection.
+- The generated `index.html` embeds the bytecode for direct opening. Maintainer builds can pass `--emit-web-bytecode` to also write `app.bytecode` for debugging or inspection.
 - Generated apps route normal `print` output to the browser console. The on-screen overlay is reserved for fatal/runtime diagnostics.
 - Generated apps prevent browser scroll/panning for app-control keys such as arrows, Space, Page Up, Page Down, Home, and End.
 
 Default output:
 
-- package root `dist/` when a nearest `code.package.json` exists
-- entry-file directory `dist/` when no manifest exists
+- `./shape_dodge/` for `ConsoleApp1/examples/shape_dodge.code`
+- in general, `./<entry-file-name-without-extension>/` from the current directory
 
 Custom output:
 
 ```powershell
-dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- --build-web --out .tmp/web-demo ConsoleApp1/examples/web_scene.code
+compiler ConsoleApp1/examples/web_scene.code -o .tmp/web-demo
 ```
 
 Common mistakes:
 
-- `--build-web` requires a `.code` input.
-- Module graph flags do not combine with `--build-web` yet.
+- Web builds require a `.code` input.
+- Module graph flags do not combine with web builds yet.
 
 ## Web Entry Contract
 
@@ -85,8 +85,8 @@ Rules:
 - `update()` runs at a fixed 60 Hz step.
 - `draw()` runs once per presented frame.
 - `draw_hud()` runs after `draw()` when present.
-- Inferred top-level lifecycle entry is a `--build-web` entry-module feature.
-- `--build-web` app modules infer engine imports from usage.
+- Inferred top-level lifecycle entry is a web-build entry-module feature.
+- Web app modules infer engine imports from usage.
 - `Draw`, `Input`, `Viewport`, `Colors`, `Diagnostics`, and `Audio` are implied namespaces.
 - `Color`, `Scene`, `SceneLoop`, `Startable`, `Updatable`, `WorldDrawable`, and `HudDrawable` are available without explicit imports.
 - Bare engine functions such as `rectangle(...)` are still not implied; use namespace style such as `Draw.rectangle(...)` or add an explicit import.
@@ -162,7 +162,7 @@ Draw.clear_screen(rgb(0, 0, 0));
 Draw.rectangle(100, 80, 32, 32, rgb(255, 255, 255));
 ```
 
-For `--build-web` app modules, the canonical style is still `Draw.rectangle(...)`, but `Draw` can now be implied from usage.
+For web app modules, the canonical style is still `Draw.rectangle(...)`, but `Draw` can now be implied from usage.
 
 Common mistakes:
 
@@ -210,7 +210,7 @@ Import when you want it explicitly:
 import everything as Diagnostics from "engine/diagnostics.code";
 ```
 
-For `--build-web` app modules, `Diagnostics` can also be implied from usage.
+For web app modules, `Diagnostics` can also be implied from usage.
 
 API:
 
@@ -244,7 +244,7 @@ Import when you want it explicitly:
 import everything as Audio from "engine/audio.code";
 ```
 
-For `--build-web` app modules, `Audio` can also be implied from usage.
+For web app modules, `Audio` can also be implied from usage.
 
 API:
 

@@ -676,7 +676,8 @@ if x > 3 then panic("x too large");
   - Module graph output format supports `text` (default), `json`, and `dot` (Graphviz).
   - Format selection: explicit `--module-graph-format <text|json|dot>` or file extension inference (`.json`, `.dot`, `.gv`).
   - `--trace-linker` prints linker visit/resolve/link steps.
-- Compile target selection is available via `--target vm-native|vm-web` (default: `vm-native`).
+- Public `.code` input builds a web app by default. Native compile/run is selected with `--native`.
+- Maintainer target selection remains available via `--target vm-native|vm-web`.
 - Target capability validation (current baseline):
   - Compiler infers capability groups from module package/import namespaces (`std.*`, `engine.*`) and from host-lowered language features (`print`, time intrinsics, native-only host intrinsics, and engine host stubs).
   - Compiler merges inferred capabilities with manifest-declared `hostAbi.requires`.

@@ -41,16 +41,18 @@ Target IDs (v1):
 - `vm-web`
 
 CLI direction:
-- `--target vm-native|vm-web`
-- default: `vm-native` when omitted.
+- public default: `compiler entry.code` builds a web app
+- `-o` / `--output` changes the web output folder
+- `--native` selects native compile-and-run behavior
+- hidden maintainer compatibility: `--target vm-native|vm-web`
 
 Near-term web build goal:
-- A dedicated web build mode now emits a deployable static site folder via `--build-web`.
-- Default output directory: `dist/` in the package root when a manifest exists, otherwise `dist/` beside the entry `.code` file.
+- A `.code` input now emits a deployable static site folder by default.
+- Default output directory: a folder in the current working directory named after the entry file.
 - Current output: `index.html` with embedded bytecode so the page opens directly, plus copied `assets/` content when present.
-- Optional output: pass `--emit-web-bytecode` with `--build-web` to also write `app.bytecode` for debugging or inspection.
+- Optional debug output: pass `--emit-web-bytecode` to also write `app.bytecode` for debugging or inspection.
 - Current recommended authoring models:
-  - small apps may use the inferred `--build-web` entry profile with top-level `start` / `update` / `draw` / optional `draw_hud` and usage-based implied engine imports (`Draw` / `Input` / `Viewport` / `Colors` / `Diagnostics` / `Audio`, plus direct `Color` and canonical `engine.scene` types)
+  - small apps may use the inferred web entry profile with top-level `start` / `update` / `draw` / optional `draw_hud` and usage-based implied engine imports (`Draw` / `Input` / `Viewport` / `Colors` / `Diagnostics` / `Audio`, plus direct `Color` and canonical `engine.scene` types)
   - larger apps may keep explicit `MainScene` thin and compose child objects through `engine.scene.Scene` and `engine.scene.SceneLoop` (with `engine.loop` retained as a compatibility re-export during migration)
 - Planned authoring expansion: carry the graphical app profile toward fuller target-agnostic reuse while leaving explicit `MainScene` valid.
 - The current `web-runtime/index.html` upload flow remains preview-only bootstrap tooling for raw bytecode bring-up and is no longer the primary workflow.
@@ -229,19 +231,19 @@ Legend:
 
 | Priority | Phase | Work Item | Deliverable / Exit Criteria |
 | --- | --- | --- | --- |
-| `[x]` | Phase 1 | Target flag + capability validation | Implemented: `--target vm-native|vm-web` with compile-time capability matrix checks |
+| `[x]` | Phase 1 | Target flag + capability validation | Implemented: hidden maintainer `--target vm-native|vm-web` with compile-time capability matrix checks |
 | `[~]` | Phase 1 | Host ABI v1 baseline | Implemented baseline `HOST_CALL` + native/web host tables + `HostBindingError`; includes `standard.input_output.print`, `std.time.*`, native-only `read_line`/`sleep_ms` diagnostics, engine window/input/gfx no-op stubs, scene diagnostics, and scene audio |
 | `[x]` | Phase 2 | Manifest parser + validation | Implemented baseline: nearest-manifest discovery, schema v1 validation, target and host capability checks |
 | `[x]` | Phase 2 | Dependency resolver + lockfile | Implemented baseline local resolver + deterministic `code.lock.json` generation (target-scoped) |
 | `[x]` | Phase 2 | Library artifact format (`.codelib`) | Implemented baseline: library manifests emit `.codelib`, resolver validates/prefer artifact paths in `code.lock.json`, CLI can run/disasm `.codelib` |
 | `[x]` | Phase 3 | Web app/runtime V1 contract | Documented in `docs/web-app-v1.md`: scene-object authoring, `start/update/draw` plus optional `draw_hud`, full-window browser runtime, centered `640x360` safe area, hybrid-expanded framing, and static-site output target |
 | `[~]` | Phase 3 | Stdlib as packages | `std.core`, `std.math`, `std.time`, `standard.input_output` packaged and importable |
-| `[x]` | Phase 4 | Web bundle workflow | Implemented: `--build-web` emits a runnable static site folder with `index.html`, embedded bytecode, copied `assets` output when present, and optional `app.bytecode` via `--emit-web-bytecode` instead of relying on the preview harness |
+| `[x]` | Phase 4 | Web bundle workflow | Implemented: public `.code` input emits a runnable static site folder with `index.html`, embedded bytecode, copied `assets` output when present, and optional `app.bytecode` via `--emit-web-bytecode` instead of relying on the preview harness |
 | `[x]` | Phase 4 | Web build artifact polish | Implemented: generated apps default to embedded bytecode in `index.html` without writing duplicate `app.bytecode`; `--emit-web-bytecode` writes the separate bytecode artifact when needed |
 | `[~]` | Phase 4 | Browser-backed web app runtime | Implemented current slice: generated full-window canvas runtime, `MainScene` lifecycle (`start/update/draw` plus optional `draw_hud`), fixed-step loop, centered `640x360` safe area, hybrid-expanded world framing, copied `assets` output, browser-backed rectangles/outlines/lines/circles/polygons/text/images/sprites, keyboard and primary pointer input, asset-backed one-shot/looping audio, last-frame diagnostics, app-key scroll prevention, canvas touch gesture suppression, and console-routed web `print`; expand advanced input/content handling and fuller audio mixing |
 | `[~]` | Phase 4 | Web engine host bindings (real impl) | Implemented current scene-runtime bindings for `key_down`, `pointer_world_x`, `pointer_world_y`, `pointer_screen_x`, `pointer_screen_y`, `pointer_is_down`, `pointer_was_pressed`, `pointer_was_released`, `clear`, `draw_rectangle`, `draw_rectangle_outline`, `draw_line`, `draw_circle`, `draw_circle_outline`, `draw_polygon`, `draw_polygon_outline`, `draw_text`, `draw_image`, `draw_sprite`, `camera_view_*`, `camera_safe_*`, `screen_width` / `screen_height`, `diagnostics_last_*`, and `audio_*`; legacy window-handle web stubs still need real implementations or package-level wrappers |
 | `[!]` | Phase 4 | Backend-agnostic API contract | Freeze capability-query and fallback semantics so one Code source can target multiple backends predictably |
-| `[~]` | Phase 5 | Target-agnostic graphical app profile | Implemented first `--build-web` slice: top-level `start`/`update`/`draw`/optional `draw_hud`, usage-based implied engine imports across web-app modules (`Draw` / `Input` / `Viewport` / `Colors` / `Diagnostics` / `Audio`, plus direct `Color` and canonical `engine.scene` types), synthesized `MainScene`, and explicit `MainScene` compatibility; broader native-target reuse remains planned |
+| `[~]` | Phase 5 | Target-agnostic graphical app profile | Implemented first web-entry slice: top-level `start`/`update`/`draw`/optional `draw_hud`, usage-based implied engine imports across web-app modules (`Draw` / `Input` / `Viewport` / `Colors` / `Diagnostics` / `Audio`, plus direct `Color` and canonical `engine.scene` types), synthesized `MainScene`, and explicit `MainScene` compatibility; broader native-target reuse remains planned |
 | `[~]` | Phase 5 | Engine core package set | Canonical `engine.scene` now exports `Scene`, `SceneLoop`, and lifecycle interfaces for explicit child-object composition; broader engine packages such as `engine.math` and `engine.ecs` are still pending |
 | `[~]` | Phase 5 | Engine platform adapters | Wrapper layer now includes canonical `engine.colors`, `engine.drawing`, `engine.input`, `engine.viewport`, `engine.diagnostics`, `engine.audio`, and `engine.scene` plus compatibility re-export modules `engine.view` / `engine.loop`; still need fuller host-backed package taxonomy for native+web, a byte-channel `rgba(byte, byte, byte, byte)` helper on top of the implemented `byte` / `whole8` surface, and fuller audio mixer controls |
 | `[~]` | Phase 5 | `engine.gpu` ABI v1 | Add GPU resource/pipeline/dispatch ABI for compute-heavy and graphics-heavy workloads |
@@ -268,8 +270,8 @@ This order gets library system + target model stable before engine work starts.
    - Exit criteria: docs, roadmap, and README all point to the same scene-object/full-window/static-site direction with no contradictory claims.
 
 2. **Web bundle workflow**
-   - Implemented first slice: `--build-web` emits a runnable static site folder instead of a raw `.bytecode` file plus a manual upload step.
-   - Current state: one command produces a runnable browser folder for a sample app, defaulting to `dist/`.
+   - Implemented first slice: `compiler entry.code` emits a runnable static site folder instead of a raw `.bytecode` file plus a manual upload step.
+   - Current state: one command produces a runnable browser folder for a sample app, defaulting to a folder named after the entry file.
 
 3. **Browser-backed app runtime**
    - Implemented current slice: generated app page and browser runtime fill the window, preserve aspect ratio with a centered `640x360` safe area, expand the visible world when needed, support optional `draw_hud`, own the main loop for a `MainScene`, and expose rectangles/outlines/lines/circles/polygons/text/images/sprites plus keyboard, primary pointer input, asset-backed audio, and last-frame diagnostics.
@@ -281,6 +283,6 @@ This order gets library system + target model stable before engine work starts.
    - Exit criteria: the runtime contract is reflected in engine-facing modules rather than only raw host ABI symbols.
 
 5. **Graphical app profile**
-   - Implemented first slice: `--build-web` entry modules may now use top-level lifecycle authoring with a synthesized `MainScene`, and all web-app modules infer canonical engine imports from usage.
+   - Implemented first slice: web entry modules may now use top-level lifecycle authoring with a synthesized `MainScene`, and all web-app modules infer canonical engine imports from usage.
    - Next step: keep the current web-entry slice stable while carrying the same authoring model toward broader target-agnostic reuse.
 

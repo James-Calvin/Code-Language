@@ -34,16 +34,16 @@ hello, world
 ## Run a Program
 
 ```powershell
-dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- ConsoleApp1/examples/arithmetic.code
+compiler --native ConsoleApp1/examples/arithmetic.code
 ```
 
 ## Build a Web App
 
 ```powershell
-dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- --build-web ConsoleApp1/examples/shape_dodge.code
+compiler ConsoleApp1/examples/shape_dodge.code
 ```
 
-The web build emits a static site folder containing `index.html` with embedded bytecode. If an `assets/` folder exists beside the entry file or package root, it is copied into the output. Use `--emit-web-bytecode` with `--build-web` to also write `app.bytecode` for debugging or inspection.
+The web build emits `shape_dodge/index.html` in the current directory. If an `assets/` folder exists beside the entry file or package root, it is copied into the output.
 
 ## Reference Format
 

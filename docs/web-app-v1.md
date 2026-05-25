@@ -24,20 +24,20 @@ This document defines the contract that the current first slice implements and t
 - Coordinate model: guaranteed safe area of `640x360`, with hybrid-expanded world framing beyond that safe area when needed
 - Initial rendering/input/audio/diagnostics scope: primitive drawing (`draw_rectangle`, outlines, lines, circles, polygons, text), image/sprite drawing, keyboard input, primary pointer input, asset-backed one-shot/looping audio, and last-frame diagnostics
 - Build output: deployable static site folder
-- Default output directory: `dist/`
+- Default output directory: a folder in the current working directory named after the entry file, for example `shape_dodge/`
 
 Output directory rules:
-- If a nearest `code.package.json` exists, emit `dist/` in the package root by default.
-- If no manifest exists, emit `dist/` beside the entry `.code` file by default.
+- `compiler path/to/source.code` emits `./source/` from the current working directory by default.
+- `compiler path/to/source.code -o MyApp` emits `./MyApp/`.
 
 ## Current vs Planned
 
 Current state:
 - The compiler can target `vm-web`.
-- A dedicated web build mode exists: `--build-web <entry.code>`.
-- The default web build output is `dist/`, unless `--out` is provided.
+- Web build is the default public compiler behavior for `.code` input.
+- The public output flag is `-o` / `--output`.
 - The generated app page owns the browser canvas and runtime bootstrap.
-- The current browser-backed V1 slice supports either an explicit `MainScene` object or an inferred top-level lifecycle entry with `start()`, `update()`, `draw()`, and optional `draw_hud()`, full-window presentation, hybrid-expanded framing around a fixed `640x360` safe area, keyboard input, primary pointer input, `clear()`, `draw_rectangle()`, `draw_rectangle_outline()`, `draw_line()`, `draw_circle()`, `draw_circle_outline()`, `draw_polygon()`, `draw_polygon_outline()`, `draw_text()`, `draw_image()`, `draw_sprite()`, asset-backed one-shot/looping audio, `camera_view_*()`, `camera_safe_*()`, `screen_width()`, and last-frame diagnostics, plus usage-based implied engine imports across `--build-web` app modules.
+- The current browser-backed V1 slice supports either an explicit `MainScene` object or an inferred top-level lifecycle entry with `start()`, `update()`, `draw()`, and optional `draw_hud()`, full-window presentation, hybrid-expanded framing around a fixed `640x360` safe area, keyboard input, primary pointer input, `clear()`, `draw_rectangle()`, `draw_rectangle_outline()`, `draw_line()`, `draw_circle()`, `draw_circle_outline()`, `draw_polygon()`, `draw_polygon_outline()`, `draw_text()`, `draw_image()`, `draw_sprite()`, asset-backed one-shot/looping audio, `camera_view_*()`, `camera_safe_*()`, `screen_width()`, and last-frame diagnostics, plus usage-based implied engine imports across web app modules.
 - A higher-level wrapper layer now exists under `lib/engine/`: canonical modules `engine.colors`, `engine.drawing`, `engine.input`, `engine.viewport`, `engine.diagnostics`, `engine.audio`, and `engine.scene`, with compatibility re-export modules `engine.view` and `engine.loop`.
 - Scene composition is now supported through explicit child-object registration against `Scene`.
 - Generated apps prevent browser scroll/panning for app-control keys: arrows, Space, Page Up, Page Down, Home, and End.
@@ -61,11 +61,11 @@ Supported entry shapes:
   - The entry module exports an object named `MainScene`.
   - `MainScene` has a zero-argument constructor.
 - Inferred top-level lifecycle entry:
-  - The `--build-web` entry module declares top-level `start()`, `update()`, and `draw()` functions, with optional `draw_hud()`.
+  - The web app entry module declares top-level `start()`, `update()`, and `draw()` functions, with optional `draw_hud()`.
   - Top-level state declarations become fields on a synthesized internal `MainScene`.
   - Top-level helper functions become methods on that synthesized internal `MainScene`.
   - Top-level executable statements are rejected in this entry shape.
-  - `--build-web` app modules receive usage-based implied engine imports.
+  - Web app modules receive usage-based implied engine imports.
   - `Draw`, `Input`, `Viewport`, `Colors`, `Diagnostics`, and `Audio` are available as implied namespaces.
   - Direct `Color`, `Scene`, `SceneLoop`, `Startable`, `Updatable`, `WorldDrawable`, and `HudDrawable` names are also available without explicit imports.
   - Bare engine functions such as `rectangle(...)` are not implied; use namespace style such as `Draw.rectangle(...)` or add an explicit import.
@@ -102,7 +102,7 @@ Scene composition:
 
 Current app-profile direction:
 - Explicit `MainScene` remains valid.
-- The first inferred profile slice is implemented for `--build-web` entry modules with top-level `start()`, `update()`, `draw()`, and optional `draw_hud()`, and it shares the same implied engine-import surface used by other web-app modules.
+- The first inferred profile slice is implemented for web entry modules with top-level `start()`, `update()`, `draw()`, and optional `draw_hud()`, and it shares the same implied engine-import surface used by other web-app modules.
 - The longer-term target is to carry that authoring shape toward broader target-agnostic reuse so future native graphical targets can run the same Code source.
 
 Important implementation note:
@@ -427,11 +427,11 @@ Current implementation output:
 - copied `assets/` directory when present beside the entry file or in the package root
 - The runtime loader is currently inlined into `index.html`.
 - The compiled bytecode is embedded in `index.html` so direct opening does not require a fetch of `app.bytecode`.
-- `app.bytecode` is emitted only when `--emit-web-bytecode` is passed to `--build-web`.
+- `app.bytecode` is emitted only when the maintainer/debug flag `--emit-web-bytecode` is passed.
 - The browser VM/runtime is currently JavaScript. Wasm is deferred until measured performance or parity work justifies the extra build/tooling complexity.
 
 Required behavior:
-- Opening `dist/index.html` runs the app directly.
+- Opening the generated `index.html` runs the app directly.
 - The generated page is the app page, not a developer harness or file-upload UI.
 - The build output is static-host friendly and can be served by any basic static host.
 - Relative asset paths such as `assets/code-sheet.svg` remain valid in the generated output.
@@ -443,14 +443,14 @@ Developer-experience rule:
 Current CLI:
 
 ```text
-dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- --build-web ConsoleApp1/examples/shape_dodge.code
+compiler ConsoleApp1/examples/shape_dodge.code
 ```
 
 ## Acceptance Criteria
 
 The first implementation milestone is defined by the following conditions:
-- A sample scene-object app builds to `dist/`.
-- Opening `dist/index.html` runs without a manual upload step.
+- A sample scene-object app builds to a folder named after the entry file.
+- Opening the generated `index.html` runs without a manual upload step.
 - The app fills the browser window.
 - Rendering preserves aspect ratio with a centered `640x360` safe area and hybrid-expanded visible world.
 - Keyboard input works inside `update()`.

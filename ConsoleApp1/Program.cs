@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Reflection;
 using ConsoleApp1.Compiler;
 
 namespace ConsoleApp1;
@@ -8,6 +9,24 @@ internal static class Program
 {
     public static void Main(string[] args)
     {
+        if (args.Length == 1 && IsHelpFlag(args[0]))
+        {
+            PrintHelp();
+            return;
+        }
+
+        if (args.Length == 1 && args[0] == "--version")
+        {
+            Console.WriteLine(GetVersion());
+            return;
+        }
+
+        if (args.Length == 0)
+        {
+            PrintHelp();
+            return;
+        }
+
         string? disasmPath = null;
         string? bytecodePath = null;
         string? libraryPath = null;
@@ -22,6 +41,7 @@ internal static class Program
         string? moduleGraphFormat = null;
         bool traceLinker = false;
         bool buildWeb = false;
+        bool nativeMode = false;
         bool emitWebBytecode = false;
         bool targetSpecified = false;
         CompileTarget compileTarget = CompileTarget.VmNative;
@@ -38,12 +58,17 @@ internal static class Program
                     if (i + 1 >= args.Length) Fail("Usage: --dump-tokens <file.code>");
                     dumpTokensPath = args[++i];
                     break;
+                case "-o":
+                case "--output":
                 case "--out":
-                    if (i + 1 >= args.Length) Fail("Usage: --out <output.bytecode|output-directory>");
+                    if (i + 1 >= args.Length) Fail("Usage: -o <output-folder-or-bytecode-file>");
                     outPath = args[++i];
                     break;
                 case "--build-web":
                     buildWeb = true;
+                    break;
+                case "--native":
+                    nativeMode = true;
                     break;
                 case "--emit-web-bytecode":
                     emitWebBytecode = true;
@@ -103,8 +128,11 @@ internal static class Program
         if (moduleGraphFormat is not null && !dumpModuleGraph)
             Fail("--module-graph-format requires --dump-module-graph.");
 
-        if (emitWebBytecode && !buildWeb)
-            Fail("--emit-web-bytecode requires --build-web.");
+        if (buildWeb && nativeMode)
+            Fail("--build-web cannot be combined with --native.");
+
+        if (nativeMode && targetSpecified && compileTarget != CompileTarget.VmNative)
+            Fail("--native requires target vm-native.");
 
         if (buildWeb)
         {
@@ -112,6 +140,20 @@ internal static class Program
                 Fail("--build-web requires target vm-web.");
             compileTarget = CompileTarget.VmWeb;
         }
+        else if (nativeMode)
+        {
+            compileTarget = CompileTarget.VmNative;
+        }
+        else if (targetSpecified && compileTarget == CompileTarget.VmNative)
+        {
+            nativeMode = true;
+        }
+
+        bool shouldBuildWeb = codePath is not null &&
+            (buildWeb || (!nativeMode && !compileOnly && !targetSpecified && !dumpModuleGraph));
+
+        if (emitWebBytecode && !shouldBuildWeb && !buildWeb)
+            Fail("--emit-web-bytecode can only be used when building a web app.");
 
         if (disasmPath != null)
         {
@@ -131,16 +173,17 @@ internal static class Program
 
         if (codePath != null)
         {
-            if (buildWeb)
+            if (shouldBuildWeb)
             {
                 if (dumpModuleGraph || moduleGraphOutputPath is not null || moduleGraphFormat is not null)
-                    Fail("Module graph options are not supported with --build-web yet.");
+                    Fail("Module graph options are not supported with web builds yet.");
 
-                BuildWebApp(codePath, outPath, traceLinker, emitWebBytecode);
+                string outputDirectory = ResolveCliWebOutputDirectory(codePath, outPath);
+                BuildWebApp(codePath, outputDirectory, traceLinker, emitWebBytecode);
                 return;
             }
 
-            string outputPath = outPath ?? Path.ChangeExtension(codePath, ".bytecode");
+            string outputPath = outPath ?? ResolveCliNativeOutputPath(codePath);
             CompileToFile(codePath, outputPath, dumpModuleGraph, moduleGraphOutputPath, moduleGraphFormat, traceLinker, compileTarget);
             if (!compileOnly)
                 RunBytecode(outputPath, MapHostTarget(compileTarget));
@@ -163,16 +206,7 @@ internal static class Program
         }
 
         if (!skipTests)
-            TestHarness.RunAll();
-
-        Console.WriteLine();
-        Console.WriteLine("Demo: (2 + 3) * 4");
-        var program = BytecodeBuilder.New()
-            .PushInt(2).PushInt(3).Add()
-            .PushInt(4).Mul()
-            .Print().Halt()
-            .ToArray();
-        new Vm(program).Run();
+            PrintHelp();
     }
 
     private static void CompileToFile(
@@ -194,6 +228,9 @@ internal static class Program
                 TraceWriter = traceLinker ? message => Console.Error.WriteLine($"[linker] {message}") : null
             };
             var result = ModuleCompiler.CompileFromFileWithMetadata(sourcePath, options);
+            string? outputDirectory = Path.GetDirectoryName(Path.GetFullPath(outputPath));
+            if (!string.IsNullOrWhiteSpace(outputDirectory))
+                Directory.CreateDirectory(outputDirectory);
             File.WriteAllBytes(outputPath, result.Bytecode);
             Console.WriteLine($"Compiled {sourcePath} -> {outputPath} (target={target.ToCliValue()})");
             if (dumpModuleGraph)
@@ -346,6 +383,62 @@ internal static class Program
     {
         Console.Error.WriteLine(message);
         Environment.Exit(1);
+    }
+
+    private static bool IsHelpFlag(string arg) =>
+        arg is "--help" or "-h" or "/?";
+
+    private static string ResolveCliWebOutputDirectory(string sourcePath, string? outputPath)
+    {
+        if (!string.IsNullOrWhiteSpace(outputPath))
+            return Path.GetFullPath(outputPath);
+
+        string sourceName = Path.GetFileNameWithoutExtension(sourcePath);
+        if (string.IsNullOrWhiteSpace(sourceName))
+            sourceName = "app";
+
+        return Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), sourceName));
+    }
+
+    private static string ResolveCliNativeOutputPath(string sourcePath)
+    {
+        string sourceName = Path.GetFileNameWithoutExtension(sourcePath);
+        if (string.IsNullOrWhiteSpace(sourceName))
+            sourceName = "app";
+
+        return Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), sourceName + ".bytecode"));
+    }
+
+    private static string GetVersion()
+    {
+        var assembly = Assembly.GetExecutingAssembly();
+        var info = assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
+        if (!string.IsNullOrWhiteSpace(info))
+            return info;
+
+        return assembly.GetName().Version?.ToString() ?? "unknown";
+    }
+
+    private static void PrintHelp()
+    {
+        Console.WriteLine($$"""
+compiler {{GetVersion()}}
+
+Usage:
+  compiler <file.code> [-o output-folder]
+  compiler --native <file.code>
+
+Options:
+  -o, --output <folder>      Set the web output folder.
+  --native                   Compile and run with native host bindings.
+  --version                  Show the compiler version.
+  --help, -h, /?             Show this help.
+
+Examples:
+  compiler source.code
+  compiler source.code -o MyApp
+  compiler --native ConsoleApp1/examples/arithmetic.code
+""");
     }
 
     private static byte[] LoadBytecodePayload(string path)

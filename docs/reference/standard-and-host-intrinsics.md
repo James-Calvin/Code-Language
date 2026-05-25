@@ -136,7 +136,7 @@ Behavior:
 
 - These calls are prototype host bindings.
 - Current native and web VM host tables keep them available for parity and bring-up.
-- The default browser app workflow uses `--build-web`, either an explicit `MainScene` or an inferred top-level lifecycle entry, and the scene runtime instead.
+- The default browser app workflow uses `compiler entry.code`, either an explicit `MainScene` or an inferred top-level lifecycle entry, and the scene runtime instead.
 
 ## Generated Web Scene Input Intrinsics
 
@@ -192,7 +192,7 @@ The browser runtime uses static asset paths, lazy loading, and browser audio unl
 Compile target is selected with:
 
 ```powershell
-dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- --target vm-web --compile-only ConsoleApp1/examples/time.code
+compiler --target vm-web --compile-only ConsoleApp1/examples/time.code
 ```
 
 Native-only calls rejected on `vm-web`:

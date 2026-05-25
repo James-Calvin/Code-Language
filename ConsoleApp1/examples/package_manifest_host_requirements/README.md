@@ -8,7 +8,7 @@ This folder has two package examples for target/capability behavior.
 
 Compile:
 ```
-dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- --target vm-web --compile-only ConsoleApp1/examples/package_manifest_host_requirements/ok/main.code
+compiler --target vm-web --compile-only ConsoleApp1/examples/package_manifest_host_requirements/ok/main.code
 ```
 
 ## `web_blocked/`
@@ -18,6 +18,6 @@ dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- --target vm-web --compile
 
 Compile (expected failure):
 ```
-dotnet run --project ConsoleApp1/ConsoleApp1.csproj -- --target vm-web --compile-only ConsoleApp1/examples/package_manifest_host_requirements/web_blocked/main.code
+compiler --target vm-web --compile-only ConsoleApp1/examples/package_manifest_host_requirements/web_blocked/main.code
 ```
 

@@ -28,14 +28,14 @@ function<StrengthReader> expose(Stats stats) {
 }
 
 Stats player = new Stats(3);
-Stats player_copy = player;
+Stats playerCopy = player;
 player.strength = 9;
 
 print(player.strength);
-print(player_copy.strength);
+print(playerCopy.strength);
 
-Stats promoted = player_copy.boosted(2);
-print(player_copy.strength);
+Stats promoted = playerCopy.boosted(2);
+print(playerCopy.strength);
 print(promoted.strength);
 print(promoted.bonus);
 

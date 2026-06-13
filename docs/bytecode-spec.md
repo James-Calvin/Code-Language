@@ -68,14 +68,14 @@ Version: 0.13 (2026-04-14)
 | 0x22 | `GET_TYPE_NAME` | - | 0 | Pop object, push runtime object type name string |
 | 0x23 | `INTERFACE_CALL` | int32 explicitArgCount, int32 entryCount, repeated `(string typeName, int32 target, int32 locals)` | -explicitArgCount-1+1 | Pop args and target object, dispatch by runtime object type |
 | 0x24 | `MOD` | - | -1 | Pop `a`, `b`; push `a % b`; throws on modulo-by-zero |
-| 0x25 | `TIME_UNIX_MS` | - | +1 | Push current Unix wall-clock milliseconds |
-| 0x26 | `TIME_UNIX_US` | - | +1 | Push current Unix wall-clock microseconds |
-| 0x27 | `TIME_MONO_NS` | - | +1 | Push process-relative monotonic nanoseconds |
-| 0x28 | `TIME_MONO_TICKS` | - | +1 | Push runtime monotonic tick counter |
-| 0x29 | `TIME_MONO_TICKS_PER_SECOND` | - | +1 | Push monotonic tick frequency |
+| 0x25 | `TIME_unixMilliseconds` | - | +1 | Push current Unix wall-clock milliseconds |
+| 0x26 | `TIME_unixMicroseconds` | - | +1 | Push current Unix wall-clock microseconds |
+| 0x27 | `TIME_monotonicNanoseconds` | - | +1 | Push process-relative monotonic nanoseconds |
+| 0x28 | `TIME_monotonicTicks` | - | +1 | Push runtime monotonic tick counter |
+| 0x29 | `TIME_monotonicTicksPerSecond` | - | +1 | Push monotonic tick frequency |
 | 0x2A | `HOST_CALL` | string symbol, int32 argc | -argc+1 | Invoke host binding by symbol; pushes one return value |
 | 0x2B | `ARRAY_APPEND` | - | -1 | Pop value, pop array, append element, push `0` |
-| 0x2C | `ARRAY_REMOVE_AT` | - | -2+1 | Pop index, pop array, remove element, push `0` |
+| 0x2C | `ARRAY_removeAt` | - | -2+1 | Pop index, pop array, remove element, push `0` |
 | 0x2D | `NEW_MAP` | - | +1 | Push empty map |
 | 0x2E | `MAP_GET` | - | -1 | Pop key, pop map, push value; throws if key missing |
 | 0x2F | `MAP_SET` | - | -2 | Pop value, pop key, pop map; assign entry; push value |
@@ -119,7 +119,7 @@ Version: 0.13 (2026-04-14)
 - Comparisons return `1.0` for true and `0.0` for false; logical `and` / `or` short-circuit in codegen.
 - Locals grow dynamically when `STORE` / `LOAD` targets exceed current length; functions track max locals for `CALL` frame sizing.
 - Debug entries map instruction-pointer offsets back to source line/column for runtime stack traces.
-- Arrays are VM-managed lists. `NEW_ARRAY` pops pre-pushed elements, `NEW_ARRAY_N` allocates default-filled arrays, `ARRAY_GET` / `ARRAY_SET` index them, and `ARRAY_APPEND` / `ARRAY_REMOVE_AT` mutate them in place.
+- Arrays are VM-managed lists. `NEW_ARRAY` pops pre-pushed elements, `NEW_ARRAY_N` allocates default-filled arrays, `ARRAY_GET` / `ARRAY_SET` index them, and `ARRAY_APPEND` / `ARRAY_removeAt` mutate them in place.
 - `ARRAY_LENGTH` also reports the size of VM-managed `map`, `set`, `queue`, and `stack` values.
 - Maps and sets use VM-managed keyed containers. `MAP_GET` throws on missing keys. `MAP_CONTAINS` / `SET_CONTAINS` return `1` or `0`. Remove operations are no-ops when the entry is absent.
 - Queues and stacks use VM-managed containers with empty-checking on `QUEUE_DEQUEUE` / `QUEUE_PEEK` / `STACK_POP` / `STACK_PEEK`.
@@ -137,6 +137,6 @@ Version: 0.13 (2026-04-14)
   - native-only APIs: `standard.input_output.read_line`, `std.time.sleep_ms`
   - engine stubs: `engine.window.*`, `engine.input.*`, `engine.gfx.*`
   - generated web-app scene runtime: `engine.input.key_down_scene`, `engine.input.pointer_world_x_scene`, `engine.input.pointer_world_y_scene`, `engine.input.pointer_screen_x_scene`, `engine.input.pointer_screen_y_scene`, `engine.input.pointer_is_down_scene`, `engine.input.pointer_was_pressed_scene`, `engine.input.pointer_was_released_scene`, `engine.window.camera_view_*_scene`, `engine.window.camera_safe_*_scene`, `engine.window.screen_width_scene`, `engine.window.screen_height_scene`, `engine.gfx.clear_scene`, `engine.gfx.draw_rectangle_scene`, `engine.gfx.draw_rectangle_outline_scene`, `engine.gfx.draw_line_scene`, `engine.gfx.draw_circle_scene`, `engine.gfx.draw_circle_outline_scene`, `engine.gfx.draw_polygon_scene`, `engine.gfx.draw_polygon_outline_scene`, `engine.gfx.draw_text_scene`, `engine.gfx.draw_image_scene`, `engine.gfx.draw_sprite_scene`, `engine.diagnostics.*_scene`, `engine.audio.*_scene`
-- Runtime hosts still accept legacy migration aliases such as `std.io.*` and scene `draw_rect`-era symbols so previously compiled artifacts continue to run during the rename window.
+- Source-level public names are camelCase after the naming cleanup, but bytecode host symbols remain stable where possible. Runtime hosts still accept older ABI symbols such as `std.io.*` and scene `draw_rect`-era symbols for previously compiled artifacts; those are not current source-level aliases.
 - Runtime host mode (`vm-native` / `vm-web`) selects the host binding table used by `HOST_CALL`; missing symbol/arity mismatches raise `HostBindingError`.
 - Native-only symbols are expected to raise target-specific `HostBindingError` diagnostics when executed on `vm-web`.

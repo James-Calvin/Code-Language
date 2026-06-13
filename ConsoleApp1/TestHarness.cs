@@ -586,11 +586,11 @@ print(holder.calls);", "5\n6\n3\n"),
             ("constant-ok", @"constant real PI = 3; print(PI);", "3\n")
             ,
             ("time-intrinsics",
-@"print(unix_ms() > 0);
-print(unix_us() > 0);
-print(mono_ns() >= 0);
-print(mono_ticks() > 0);
-print(mono_ticks_per_second() > 0);",
+@"print(unixMilliseconds() > 0);
+print(unixMicroseconds() > 0);
+print(monotonicNanoseconds() >= 0);
+print(monotonicTicks() > 0);
+print(monotonicTicksPerSecond() > 0);",
              "1\n1\n1\n1\n1\n")
             ,
             ("math-random-intrinsics",
@@ -706,8 +706,8 @@ integer value = outer() on error {
 };
 print(value);", "wrapped\n8\n")
             ,
-            ("legacy-draw-rectangle-alias",
-@"draw_rect(0, 0, 8, 8, 1, 1, 1, 1);
+            ("draw-rectangle-canonical",
+@"drawRectangle(0, 0, 8, 8, 1, 1, 1, 1);
 print(1);", "1\n")
         };
         var arrayCases = new List<(string Name, string Source, string Expected)>
@@ -719,7 +719,7 @@ print(1);", "1\n")
             ("array-index", @"array<integer> items = {10,20,30}; print(items[0]); print(items[2]);", "10\n30\n"),
             ("array-set", @"array<integer> items = {10,20,30}; items[1] = 99; print(items[0]); print(items[1]); print(items[2]);", "10\n99\n30\n"),
             ("array-compound-assignment", @"array<integer> items = {10,20,30}; integer index = 1; items[index] += 5; items[index]--; print(items[index]);", "24\n"),
-            ("array-append-remove", @"array<integer> items = new array<integer>(0); items.append(10); items.append(20); items.remove_at(0); print(items.length); print(items[0]);", "1\n20\n"),
+            ("array-append-remove", @"array<integer> items = new array<integer>(0); items.append(10); items.append(20); items.removeAt(0); print(items.length); print(items[0]);", "1\n20\n"),
             ("array-record-copy-boundaries",
 @"record Stats {
   integer strength;
@@ -1117,47 +1117,47 @@ print(point.read());", "10\n"),
     print(""start"");
   }
   function update() {
-    print(key_down(37));
-    print(pointer_world_x());
-    print(pointer_world_y());
-    print(pointer_screen_x());
-    print(pointer_screen_y());
-    print(pointer_is_down());
-    print(pointer_was_pressed());
-    print(pointer_was_released());
+    print(inputKeyDown(37));
+    print(inputPointerWorldX());
+    print(inputPointerWorldY());
+    print(inputPointerScreenX());
+    print(inputPointerScreenY());
+    print(inputPointerIsDown());
+    print(inputPointerWasPressed());
+    print(inputPointerWasReleased());
   }
   function draw() {
     clear(0, 0, 0, 1);
-    draw_rectangle(camera_view_left(), camera_view_top(), 30, 40, 1, 1, 1, 1);
-    draw_rectangle_outline(camera_view_left() + 4, camera_view_top() + 4, 20, 30, 2, 1, 1, 1, 1);
-    draw_circle(camera_safe_left() + 20, camera_safe_top() + 20, 10, 1, 1, 1, 1);
-    draw_circle_outline(camera_safe_left() + 20, camera_safe_top() + 20, 16, 2, 1, 1, 1, 1);
-    draw_polygon({0, 0, 10, 0, 5, 10}, 1, 1, 1, 1);
-    draw_polygon_outline({0, 0, 10, 0, 5, 10}, 2, 1, 1, 1, 1);
-    draw_line(camera_safe_left(), camera_safe_top(), camera_safe_right(), camera_safe_bottom(), 1, 1, 1, 1);
-    draw_image(""assets/example.svg"", 0, 0, 16, 16, 1);
-    draw_sprite(""assets/example.svg"", 0, 0, 8, 8, 16, 16, 8, 8, 1);
-    print(camera_view_left());
-    print(camera_view_top());
-    print(camera_view_width());
-    print(camera_view_height());
-    print(camera_view_right());
-    print(camera_view_bottom());
-    print(camera_safe_width());
-    print(camera_safe_height());
+    drawRectangle(cameraViewLeft(), cameraViewTop(), 30, 40, 1, 1, 1, 1);
+    drawRectangleOutline(cameraViewLeft() + 4, cameraViewTop() + 4, 20, 30, 2, 1, 1, 1, 1);
+    drawCircle(cameraSafeLeft() + 20, cameraSafeTop() + 20, 10, 1, 1, 1, 1);
+    drawCircleOutline(cameraSafeLeft() + 20, cameraSafeTop() + 20, 16, 2, 1, 1, 1, 1);
+    drawPolygon({0, 0, 10, 0, 5, 10}, 1, 1, 1, 1);
+    drawPolygonOutline({0, 0, 10, 0, 5, 10}, 2, 1, 1, 1, 1);
+    drawLine(cameraSafeLeft(), cameraSafeTop(), cameraSafeRight(), cameraSafeBottom(), 1, 1, 1, 1);
+    drawImage(""assets/example.svg"", 0, 0, 16, 16, 1);
+    drawSprite(""assets/example.svg"", 0, 0, 8, 8, 16, 16, 8, 8, 1);
+    print(cameraViewLeft());
+    print(cameraViewTop());
+    print(cameraViewWidth());
+    print(cameraViewHeight());
+    print(cameraViewRight());
+    print(cameraViewBottom());
+    print(cameraSafeWidth());
+    print(cameraSafeHeight());
   }
-  function draw_hud() {
-    draw_rectangle(screen_width() - 10, screen_height() - 10, 8, 8, 1, 1, 1, 1);
-    draw_text(""hud"", screen_width() - 12, 12, 12, ""right"", ""top"", 1, 1, 1, 1);
-    print(screen_width());
-    print(screen_height());
+  function drawHud() {
+    drawRectangle(screenWidth() - 10, screenHeight() - 10, 8, 8, 1, 1, 1, 1);
+    drawText(""hud"", screenWidth() - 12, 12, 12, ""right"", ""top"", 1, 1, 1, 1);
+    print(screenWidth());
+    print(screenHeight());
   }
 }
 MainScene scene = new MainScene();
 scene.start();
 scene.update();
 scene.draw();
-scene.draw_hud();", "start\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0\n640\n360\n640\n360\n640\n360\n640\n360\n"),
+scene.drawHud();", "start\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0\n640\n360\n640\n360\n640\n360\n640\n360\n"),
         };
         var interfaceCases = new List<(string Name, string Source, string Expected)>
         {
@@ -1437,37 +1437,37 @@ import everything as Input from ""engine/input.code"";
 import everything as Diagnostics from ""engine/diagnostics.code"";
 import everything as Audio from ""engine/audio.code"";
 import { rgb } from ""engine/colors.code"";
-Draw.clear_screen(rgb(0, 0, 0));
+Draw.clearScreen(rgb(0, 0, 0));
 Draw.rectangle(10, 10, 12, 14, rgb(255, 255, 255));
 Draw.line(0, 0, 10, 10, rgb(255, 255, 255));
 Draw.circle(20, 20, 8, rgb(255, 255, 255));
 Draw.polygon({0, 0, 12, 0, 6, 12}, rgb(255, 255, 255));
 Draw.image(""assets/test.svg"", 0, 0, 16, 16, 1);
 Draw.sprite(""assets/test.svg"", 0, 0, 8, 8, 20, 20, 8, 8, 1);
-Draw.text(""ok"", Viewport.hud_width() - 10, 10, 12, ""right"", ""top"", rgb(255, 255, 255));
-print(Viewport.hud_width());
-print(Input.key_is_down(37));
-print(Input.pointer_world_x_position());
-print(Input.pointer_world_y_position());
-print(Input.pointer_screen_x_position());
-print(Input.pointer_screen_y_position());
-print(Input.pointer_is_down_now());
-print(Input.pointer_was_pressed_now());
-print(Input.pointer_was_released_now());
-print(Diagnostics.last_frame_interval_milliseconds());
-print(Diagnostics.estimated_frames_per_second());
-print(Diagnostics.last_frame_work_milliseconds());
-print(Diagnostics.last_update_work_milliseconds());
-print(Diagnostics.last_draw_work_milliseconds());
-print(Diagnostics.last_draw_hud_work_milliseconds());
-print(Diagnostics.last_update_steps());
-print(Audio.can_play_sound());
-print(Audio.play_sound(""assets/click.wav"", 1));
-print(Audio.play_looping_sound(""assets/loop.wav"", 1));
-print(Audio.sound_is_playing(1));
-Audio.set_sound_volume(1, 1);
-Audio.stop_sound(1);
-Audio.stop_all_sounds();",
+Draw.text(""ok"", Viewport.hudWidth() - 10, 10, 12, ""right"", ""top"", rgb(255, 255, 255));
+print(Viewport.hudWidth());
+print(Input.keyIsDown(37));
+print(Input.pointerWorldX());
+print(Input.pointerWorldY());
+print(Input.pointerScreenX());
+print(Input.pointerScreenY());
+print(Input.pointerIsDown());
+print(Input.pointerWasPressed());
+print(Input.pointerWasReleased());
+print(Diagnostics.lastFrameIntervalMilliseconds());
+print(Diagnostics.estimatedFramesPerSecond());
+print(Diagnostics.lastFrameWorkMilliseconds());
+print(Diagnostics.lastUpdateWorkMilliseconds());
+print(Diagnostics.lastDrawWorkMilliseconds());
+print(Diagnostics.lastDrawHudWorkMilliseconds());
+print(Diagnostics.lastUpdateSteps());
+print(Audio.canPlaySound());
+print(Audio.playSound(""assets/click.wav"", 1));
+print(Audio.playLoopingSound(""assets/loop.wav"", 1));
+print(Audio.soundIsPlaying(1));
+Audio.setSoundVolume(1, 1);
+Audio.stopSound(1);
+Audio.stopAllSounds();",
                     ["assets/test.svg"] = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\"></svg>",
                 },
                 "main.code",
@@ -1490,7 +1490,7 @@ object Layer {
 
 Scene scene = new Scene();
 SceneLoop loop = new SceneLoop(scene);
-scene.add_world_drawable(new Layer(), 0);
+scene.addWorldDrawable(new Layer(), 0);
 loop.start();
 loop.draw();",
                 },
@@ -1546,9 +1546,9 @@ implement Updatable for Counter {
 
 Scene scene = new Scene();
 SceneLoop loop = new SceneLoop(scene);
-scene.add_world_drawable(new Upper(), 10);
-scene.add_world_drawable(new Lower(), 0);
-scene.add_updatable(new Counter());
+scene.addWorldDrawable(new Upper(), 10);
+scene.addWorldDrawable(new Lower(), 0);
+scene.addUpdatable(new Counter());
 loop.start();
 loop.update();
 loop.draw();",
@@ -1590,8 +1590,8 @@ object Spawner {
   function update() {
     print(""spawner-update"");
     if not spawned then {
-      scene.add_startable(child);
-      scene.add_updatable(child);
+      scene.addStartable(child);
+      scene.addUpdatable(child);
       spawned = true;
     }
   }
@@ -1613,7 +1613,7 @@ Scene scene = new Scene();
 SceneLoop loop = new SceneLoop(scene);
 Child child = new Child();
 Spawner spawner = new Spawner(scene, child);
-scene.add_updatable(spawner);
+scene.addUpdatable(spawner);
 loop.start();
 loop.update();
 loop.update();",
@@ -1649,7 +1649,7 @@ object Remover {
 
   function update() {
     if not removed then {
-      scene.remove_updatable(child);
+      scene.removeUpdatable(child);
       removed = true;
     }
     print(""remover"");
@@ -1668,8 +1668,8 @@ Scene scene = new Scene();
 SceneLoop loop = new SceneLoop(scene);
 Child child = new Child();
 Remover remover = new Remover(scene, child);
-scene.add_updatable(child);
-scene.add_updatable(remover);
+scene.addUpdatable(child);
+scene.addUpdatable(remover);
 loop.start();
 loop.update();
 loop.update();",
@@ -1922,7 +1922,7 @@ export function<integer> sub(integer a, integer b) { return a - b; }",
                 "module-graph-hostcall-capabilities",
                 new Dictionary<string, string>
                 {
-                    ["main.code"] = "print(unix_ms());",
+                    ["main.code"] = "print(unixMilliseconds());",
                 },
                 "main.code",
                 new[]
@@ -1951,7 +1951,7 @@ export function<integer> sub(integer a, integer b) { return a - b; }",
                 "module-graph-hostcall-native-only-capabilities",
                 new Dictionary<string, string>
                 {
-                    ["main.code"] = "sleep_ms(0);\nprint(read_line());",
+                    ["main.code"] = "sleepMilliseconds(0);\nprint(readLine());",
                 },
                 "main.code",
                 new[]
@@ -2222,8 +2222,12 @@ print(w.read());", "Undefined variable"),
 @"constant integer PI = 3;
 PI = 4;", "Cannot assign to constant 'PI'"),
             ("constant-missing-init", @"constant integer value;", "must be initialized"),
-            ("time-intrinsic-arity", @"print(unix_ms(1));", "expects 0 args"),
+            ("time-intrinsic-arity", @"print(unixMilliseconds(1));", "expects 0 args"),
             ("math-intrinsic-arity", @"print(minimum(1));", "expects 2 args"),
+            ("old-read-line-name-rejected", @"print(read_line());", "Undefined function 'read_line'"),
+            ("old-sleep-ms-name-rejected", @"sleep_ms(0);", "Undefined function 'sleep_ms'"),
+            ("old-remove-at-name-rejected", @"array<integer> items = {1}; items.remove_at(0);", "Array has no method 'remove_at'"),
+            ("old-key-down-name-rejected", @"print(key_down(37));", "Undefined function 'key_down'"),
             ("fallible-type-argument-arity",
 @"function<fallible<integer, integer, integer>> parse() {
   return 1;
@@ -2875,7 +2879,7 @@ export function<string> readText() { return ""ok""; }",
                 Compiler.CompileTarget.VmWeb,
                 new Dictionary<string, string>
                 {
-                    ["main.code"] = "print(read_line());",
+                    ["main.code"] = "print(readLine());",
                 },
                 "main.code",
                 "Capability 'standard.input_output.read_line' is not available for target 'vm-web'"
@@ -2885,7 +2889,7 @@ export function<string> readText() { return ""ok""; }",
                 Compiler.CompileTarget.VmWeb,
                 new Dictionary<string, string>
                 {
-                    ["main.code"] = "sleep_ms(1); print(1);",
+                    ["main.code"] = "sleepMilliseconds(1); print(1);",
                 },
                 "main.code",
                 "Capability 'std.time.sleep_ms' is not available for target 'vm-web'"
@@ -3260,34 +3264,34 @@ function start() {
 }
 
 function update() {
-  if Input.key_is_down(37) then x -= speed;
-  if Input.key_is_down(39) then x += speed;
-  if Input.key_is_down(38) then y -= speed;
-  if Input.key_is_down(40) then y += speed;
-  if Input.pointer_was_pressed_now() then {
-    x = Input.pointer_world_x_position() as integer;
-    y = Input.pointer_world_y_position() as integer;
+  if Input.keyIsDown(37) then x -= speed;
+  if Input.keyIsDown(39) then x += speed;
+  if Input.keyIsDown(38) then y -= speed;
+  if Input.keyIsDown(40) then y += speed;
+  if Input.pointerWasPressed() then {
+    x = Input.pointerWorldX() as integer;
+    y = Input.pointerWorldY() as integer;
   }
 }
 
 function draw() {
-  Draw.clear_screen(Colors.rgb(0, 0, 0));
-  Draw.line(Viewport.safe_left(), Viewport.safe_top(), Viewport.safe_right(), Viewport.safe_bottom(), Colors.rgb(255, 255, 255));
+  Draw.clearScreen(Colors.rgb(0, 0, 0));
+  Draw.line(Viewport.safeLeft(), Viewport.safeTop(), Viewport.safeRight(), Viewport.safeBottom(), Colors.rgb(255, 255, 255));
   Draw.polygon({300, 80, 340, 92, 352, 120, 304, 124, 284, 100}, Colors.rgb(255, 255, 255));
   Draw.circle(124, 84, 16, Colors.rgb(255, 255, 255));
   Draw.image(""assets/code-sheet.svg"", 24, 220, 64, 32, 1);
   Draw.sprite(""assets/code-sheet.svg"", 32, 0, 32, 32, 104, 210, 64, 64, 1);
-  if x > Viewport.view_left() - 24 and x < Viewport.view_right() then {
+  if x > Viewport.viewLeft() - 24 and x < Viewport.viewRight() then {
     Draw.rectangle(x, y, 24, 24, Colors.rgb(255, 255, 255));
   }
 }
 
-function draw_hud() {
+function drawHud() {
   Draw.text(""Code"", hud_margin, hud_margin, 18, ""left"", ""top"", Colors.rgb(255, 255, 255));
-  Draw.text(""Arrow keys move"", Viewport.hud_width() - hud_margin, hud_margin, 16, ""right"", ""top"", Colors.rgb(255, 255, 255));
-  Draw.text(""Pointer: {Input.pointer_screen_x_position()}, {Input.pointer_screen_y_position()}"", hud_margin, 40, 14, ""left"", ""top"", Colors.rgb(255, 255, 255));
-  Draw.text(""Frame work: {Diagnostics.last_frame_work_milliseconds()}"", hud_margin, 64, 14, ""left"", ""top"", Colors.rgb(255, 255, 255));
-  Draw.text(""Audio ready: {Audio.can_play_sound()}"", hud_margin, 88, 14, ""left"", ""top"", Colors.rgb(255, 255, 255));
+  Draw.text(""Arrow keys move"", Viewport.hudWidth() - hud_margin, hud_margin, 16, ""right"", ""top"", Colors.rgb(255, 255, 255));
+  Draw.text(""Pointer: {Input.pointerScreenX()}, {Input.pointerScreenY()}"", hud_margin, 40, 14, ""left"", ""top"", Colors.rgb(255, 255, 255));
+  Draw.text(""Frame work: {Diagnostics.lastFrameWorkMilliseconds()}"", hud_margin, 64, 14, ""left"", ""top"", Colors.rgb(255, 255, 255));
+  Draw.text(""Audio ready: {Audio.canPlaySound()}"", hud_margin, 88, 14, ""left"", ""top"", Colors.rgb(255, 255, 255));
 }"
                 },
                 "main.code");
@@ -3462,7 +3466,7 @@ export function<HelperDrawable> make_helper_drawable() {
 }
 
 export function<integer> play_helper_sound() {
-  return Audio.play_sound(""assets/click.wav"", 1);
+  return Audio.playSound(""assets/click.wav"", 1);
 }",
                     ["main.code"] =
 @"import { HelperDrawable, make_helper_drawable, play_helper_sound } from ""helper.code"";
@@ -3479,7 +3483,7 @@ export object MainScene {
   }
 
   function start() {
-    scene.add_world_drawable(helper_drawable, 0);
+    scene.addWorldDrawable(helper_drawable, 0);
     loop.start();
     play_helper_sound();
   }
@@ -3531,7 +3535,7 @@ export object MainScene {
   }
 
   function draw() {
-    Draw.clear_screen(Colors.rgb(0, 0, 0));
+    Draw.clearScreen(Colors.rgb(0, 0, 0));
   }
 }"
                 },
@@ -3577,6 +3581,26 @@ function draw() {
             "update()");
 
         ExpectWebBuildCompilerError(
+            "web-build-inferred-profile-old-draw-hud-name",
+            new Dictionary<string, string>
+            {
+                ["main.code"] =
+@"function start() {
+}
+
+function update() {
+}
+
+function draw() {
+}
+
+function draw_hud() {
+}"
+            },
+            "main.code",
+            "Use 'drawHud()'");
+
+        ExpectWebBuildCompilerError(
             "web-build-inferred-profile-mixed-explicit-and-top-level",
             new Dictionary<string, string>
             {
@@ -3606,6 +3630,31 @@ function draw() {
             },
             "main.code",
             "cannot declare both an explicit 'MainScene' object and top-level lifecycle functions");
+
+        ExpectWebBuildCompilerError(
+            "web-build-explicit-main-scene-old-draw-hud-name",
+            new Dictionary<string, string>
+            {
+                ["main.code"] =
+@"export object MainScene {
+  constructor() {
+  }
+
+  function start() {
+  }
+
+  function update() {
+  }
+
+  function draw() {
+  }
+
+  function draw_hud() {
+  }
+}"
+            },
+            "main.code",
+            "Use 'drawHud()'");
 
         ExpectWebBuildCompilerError(
             "web-build-inferred-profile-top-level-executable-statement",
@@ -3707,6 +3756,24 @@ function draw() {
             "Use 'Draw.rectangle(...)' or add an explicit import");
 
         ExpectWebBuildCompilerError(
+            "web-build-old-input-key-name-rejected",
+            new Dictionary<string, string>
+            {
+                ["main.code"] =
+@"function start() {
+}
+
+function update() {
+  print(Input.key_is_down(37));
+}
+
+function draw() {
+}"
+            },
+            "main.code",
+            "Namespace 'Input' does not export function 'key_is_down'");
+
+        ExpectWebBuildCompilerError(
             "web-build-implied-engine-imports-bare-diagnostics-function",
             new Dictionary<string, string>
             {
@@ -3718,11 +3785,11 @@ function update() {
 }
 
 function draw() {
-  print(last_frame_work_milliseconds());
+  print(lastFrameWorkMilliseconds());
 }"
             },
             "main.code",
-            "Use 'Diagnostics.last_frame_work_milliseconds(...)' or add an explicit import");
+            "Use 'Diagnostics.lastFrameWorkMilliseconds(...)' or add an explicit import");
 
         ExpectWebBuildCompilerError(
             "web-build-implied-engine-imports-bare-audio-function",
@@ -3736,11 +3803,11 @@ function update() {
 }
 
 function draw() {
-  print(play_sound(""assets/click.wav"", 1));
+  print(playSound(""assets/click.wav"", 1));
 }"
             },
             "main.code",
-            "Use 'Audio.play_sound(...)' or add an explicit import");
+            "Use 'Audio.playSound(...)' or add an explicit import");
 
         ExpectWebBuildCompilerError(
             "web-build-engine-rgb-rejects-real-channels",
@@ -3754,7 +3821,7 @@ function update() {
 }
 
 function draw() {
-  Draw.clear_screen(Colors.rgb(1. / 2, 0, 0));
+  Draw.clearScreen(Colors.rgb(1. / 2, 0, 0));
 }"
             },
             "main.code",
@@ -3787,7 +3854,7 @@ function draw() {
                 {
                     ["main.code"] =
 @"function main() {
-  Draw.clear_screen(Colors.rgb(0, 0, 0));
+  Draw.clearScreen(Colors.rgb(0, 0, 0));
 }"
                 },
                 "main.code",
@@ -3994,11 +4061,11 @@ function draw() {
     {
         int failures = 0;
         string source =
-@"print(unix_ms() > 0);
-print(unix_us() > 0);
-print(mono_ns() >= 0);
-print(mono_ticks() > 0);
-print(mono_ticks_per_second() > 0);";
+@"print(unixMilliseconds() > 0);
+print(unixMicroseconds() > 0);
+print(monotonicNanoseconds() >= 0);
+print(monotonicTicks() > 0);
+print(monotonicTicksPerSecond() > 0);";
 
         try
         {
@@ -4106,22 +4173,22 @@ print(rounded);";
         }
 
         string engineSource =
-@"whole window = window_create(""demo"", 320, 200);
+@"whole window = windowCreate(""demo"", 320, 200);
 print(window > 0);
-print(window_should_close(window));
-print(input_key_down(window, 13));
-gfx_clear(window, 0, 0, 0, 1);
-gfx_draw_rect(window, 1, 2, 3, 4, 1, 0, 0, 1);
-window_present(window);
-print(diagnostics_last_frame_interval_milliseconds());
-print(diagnostics_last_update_steps());
-print(audio_can_play_sound());
-print(audio_play_sound(""assets/click.wav"", 1));
-print(audio_play_looping_sound(""assets/loop.wav"", 1));
-print(audio_sound_is_playing(1));
-audio_set_sound_volume(1, 1);
-audio_stop_sound(1);
-audio_stop_all_sounds();
+print(windowShouldClose(window));
+print(windowInputKeyDown(window, 13));
+gfxClear(window, 0, 0, 0, 1);
+gfxDrawRectangle(window, 1, 2, 3, 4, 1, 0, 0, 1);
+windowPresent(window);
+print(diagnosticsLastFrameIntervalMilliseconds());
+print(diagnosticsLastUpdateSteps());
+print(audioCanPlaySound());
+print(audioPlaySound(""assets/click.wav"", 1));
+print(audioPlayLoopingSound(""assets/loop.wav"", 1));
+print(audioSoundIsPlaying(1));
+audioSetSoundVolume(1, 1);
+audioStopSound(1);
+audioStopAllSounds();
 print(1);";
 
         try
@@ -4480,7 +4547,7 @@ print(quick);";
 
         try
         {
-            string output = Normalize(CompileAndRun("print(read_line());", input: "hello\n"));
+            string output = Normalize(CompileAndRun("print(readLine());", input: "hello\n"));
             if (!string.Equals(output, "hello\n", StringComparison.Ordinal))
             {
                 failures++;
@@ -4499,7 +4566,7 @@ print(quick);";
 
         try
         {
-            string output = Normalize(CompileAndRun("sleep_ms(0); print(1);"));
+            string output = Normalize(CompileAndRun("sleepMilliseconds(0); print(1);"));
             if (!string.Equals(output, "1\n", StringComparison.Ordinal))
             {
                 failures++;
@@ -4517,27 +4584,27 @@ print(quick);";
         }
 
         string engineSource =
-@"whole window = window_create(""demo"", 640, 480);
+@"whole window = windowCreate(""demo"", 640, 480);
 print(window > 0);
-print(window_should_close(window));
-print(input_key_down(window, 32));
-print(pointer_world_x());
-print(pointer_world_y());
-print(pointer_screen_x());
-print(pointer_screen_y());
-print(pointer_is_down());
-print(pointer_was_pressed());
-print(pointer_was_released());
-print(audio_can_play_sound());
-print(audio_play_sound(""assets/click.wav"", 1));
-print(audio_play_looping_sound(""assets/loop.wav"", 1));
-print(audio_sound_is_playing(1));
-audio_set_sound_volume(1, 1);
-audio_stop_sound(1);
-audio_stop_all_sounds();
-gfx_clear(window, 0, 0, 0, 1);
-gfx_draw_rect(window, 0, 0, 10, 10, 1, 0, 0, 1);
-window_present(window);
+print(windowShouldClose(window));
+print(windowInputKeyDown(window, 32));
+print(inputPointerWorldX());
+print(inputPointerWorldY());
+print(inputPointerScreenX());
+print(inputPointerScreenY());
+print(inputPointerIsDown());
+print(inputPointerWasPressed());
+print(inputPointerWasReleased());
+print(audioCanPlaySound());
+print(audioPlaySound(""assets/click.wav"", 1));
+print(audioPlayLoopingSound(""assets/loop.wav"", 1));
+print(audioSoundIsPlaying(1));
+audioSetSoundVolume(1, 1);
+audioStopSound(1);
+audioStopAllSounds();
+gfxClear(window, 0, 0, 0, 1);
+gfxDrawRectangle(window, 0, 0, 10, 10, 1, 0, 0, 1);
+windowPresent(window);
 print(1);";
 
         try
@@ -4563,7 +4630,7 @@ print(1);";
         try
         {
             _ = CompileAndRun(
-                "print(read_line());",
+                "print(readLine());",
                 Compiler.CompileTarget.VmNative,
                 VmHostTarget.Web);
             failures++;
@@ -4594,7 +4661,7 @@ print(1);";
         try
         {
             _ = CompileAndRun(
-                "sleep_ms(1); print(1);",
+                "sleepMilliseconds(1); print(1);",
                 Compiler.CompileTarget.VmNative,
                 VmHostTarget.Web);
             failures++;
@@ -5355,4 +5422,3 @@ print(sum);";
 
     private static string Normalize(string text) => text.Replace("\r\n", "\n");
 }
-

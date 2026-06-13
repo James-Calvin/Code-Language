@@ -15,7 +15,7 @@ public object Meter {
     }
   }
 
-  package function add_bonus() {
+  package function addBonus() {
     amount += bonus;
     clamp();
   }

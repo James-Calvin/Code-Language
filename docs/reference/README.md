@@ -9,15 +9,16 @@ For deeper design notes, see [Code Language Specification](../code-language-spec
 ## Reading Order
 
 1. [Syntax Basics](syntax-basics.md)
-2. [Types and Values](types-and-values.md)
-3. [Control Flow and Errors](control-flow-and-errors.md)
-4. [Functions and Methods](functions-and-methods.md)
-5. [Objects, Records, and Interfaces](objects-records-interfaces.md)
-6. [Modules and Packages](modules-and-packages.md)
-7. [Standard and Host Intrinsics](standard-and-host-intrinsics.md)
-8. [Web Apps and Engine Modules](web-apps-and-engine.md)
-9. [CLI and Tooling](cli-and-tooling.md)
-10. [Planned and Draft-Only Features](planned-and-draft-only.md)
+2. [Naming and Style](naming-and-style.md)
+3. [Types and Values](types-and-values.md)
+4. [Control Flow and Errors](control-flow-and-errors.md)
+5. [Functions and Methods](functions-and-methods.md)
+6. [Objects, Records, and Interfaces](objects-records-interfaces.md)
+7. [Modules and Packages](modules-and-packages.md)
+8. [Standard and Host Intrinsics](standard-and-host-intrinsics.md)
+9. [Web Apps and Engine Modules](web-apps-and-engine.md)
+10. [CLI and Tooling](cli-and-tooling.md)
+11. [Planned and Draft-Only Features](planned-and-draft-only.md)
 
 ## Smallest Program
 

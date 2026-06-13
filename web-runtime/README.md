@@ -81,7 +81,7 @@ Current generated scene-runtime bindings also support:
 - `engine.window.screen_height_scene`
 
 Compatibility note:
-- The runtime still accepts legacy aliases such as `std.io.*` and `engine.gfx.draw_rect_scene` so older compiled artifacts continue to run during the rename window.
+- The runtime still accepts legacy ABI symbols such as `std.io.*` and `engine.gfx.draw_rect_scene` so older compiled artifacts continue to run. These are not current source-level aliases.
 
 ## Primary workflow
 1. Build a scene app:
@@ -89,7 +89,7 @@ Compatibility note:
 2. Open the generated `web_scene/index.html` directly, or serve the generated folder from any static host.
 
 The generated web app path is now the main workflow for browser apps.
-- Current generated runtime behavior: full-bleed browser canvas, centered `640x360` safe area, hybrid-expanded world framing, optional `draw_hud()` for screen-edge HUD work, scene primitives for rectangles, outlines, lines, circles, polygons, text, images, and sprites, keyboard and primary pointer input, asset-backed one-shot/looping audio, last-completed-frame diagnostics, copied `assets/` content in the generated site output when present, app-key scroll prevention, canvas touch gesture suppression, and normal `print` output routed to the browser console.
+- Current generated runtime behavior: full-bleed browser canvas, centered `640x360` safe area, hybrid-expanded world framing, optional `drawHud()` for screen-edge HUD work, scene primitives for rectangles, outlines, lines, circles, polygons, text, images, and sprites, keyboard and primary pointer input, asset-backed one-shot/looping audio, last-completed-frame diagnostics, copied `assets/` content in the generated site output when present, app-key scroll prevention, canvas touch gesture suppression, and normal `print` output routed to the browser console.
 - Audio uses `HTMLAudioElement`, lazy asset paths, integer playback handles, volume clamping, and browser audio unlock on first key or pointer input. It is not a full mixer yet.
 - Diagnostics measure runtime/VM work around update, draw, and HUD invocation. They do not include browser compositor or GPU presentation time.
 - Generated web builds embed bytecode in `index.html` by default. Maintainer builds can use `--emit-web-bytecode` to also write `app.bytecode` for debugging or inspection.
@@ -105,4 +105,3 @@ The generated web app path is now the main workflow for browser apps.
 4. Load the generated `.bytecode` file and click **Run**.
 
 This file-picker flow remains a temporary low-level path for raw bytecode bring-up and debugging. For normal browser-app development, use `compiler entry.code`.
-

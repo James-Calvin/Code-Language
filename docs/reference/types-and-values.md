@@ -68,7 +68,7 @@ Array operations:
 | `items[index]` | numeric index | element value |
 | `items[index] = value` | numeric index, element value | updates the element |
 | `items.append(value)` | element value | appends one item |
-| `items.remove_at(index)` | numeric index | removes the item |
+| `items.removeAt(index)` | numeric index | removes the item |
 
 Example:
 

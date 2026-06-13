@@ -1,10 +1,10 @@
-whole window = window_create("demo", 800, 600);
+whole window = windowCreate("demo", 800, 600);
 print("window handle > 0: {window > 0}");
-print("should close: {window_should_close(window)}");
-print("space down: {input_key_down(window, 32)}");
+print("should close: {windowShouldClose(window)}");
+print("space down: {windowInputKeyDown(window, 32)}");
 
-gfx_clear(window, 0, 0, 0, 1);
-gfx_draw_rect(window, 10, 10, 100, 50, 1, 0, 0, 1);
-window_present(window);
+gfxClear(window, 0, 0, 0, 1);
+gfxDrawRectangle(window, 10, 10, 100, 50, 1, 0, 0, 1);
+windowPresent(window);
 
 print("engine stubs done");

@@ -1,6 +1,6 @@
 // Sized numeric storage boundaries and explicit narrowing.
 
-function<whole8> echo_channel(byte value) {
+function<whole8> echoChannel(byte value) {
   return value;
 }
 
@@ -27,38 +27,38 @@ byte channel = 250;
 channel += 5;
 print(channel);
 
-whole8 same_channel = channel;
-whole16 wider_whole = channel;
-integer16 wider_signed = channel;
-print(same_channel);
-print(wider_whole);
-print(wider_signed);
+whole8 sameChannel = channel;
+whole16 widerWhole = channel;
+integer16 widerSigned = channel;
+print(sameChannel);
+print(widerWhole);
+print(widerSigned);
 
-integer8 small_signed = -12;
-integer16 wider_signed_from_small = small_signed;
-integer32 signed_min = -2147483648;
-integer32 signed_max = 2147483647;
-whole32 whole_max = 4294967295;
-whole32 hex_max = 0xffffffff;
-print(wider_signed_from_small);
-print(signed_min);
-print(signed_max);
-print(whole_max);
-print(hex_max);
+integer8 smallSigned = -12;
+integer16 widerSignedFromSmall = smallSigned;
+integer32 signedMin = -2147483648;
+integer32 signedMax = 2147483647;
+whole32 wholeMax = 4294967295;
+whole32 hexMax = 0xffffffff;
+print(widerSignedFromSmall);
+print(signedMin);
+print(signedMax);
+print(wholeMax);
+print(hexMax);
 
-whole16 cast_wide = 300 as whole16;
+whole16 castWide = 300 as whole16;
 integer8 truncated = 3.8 as integer8;
-real32 stored_real32 = 1.25 as real32;
-real64 stored_real64 = stored_real32;
-print(cast_wide);
+real32 storedReal32 = 1.25 as real32;
+real64 storedReal64 = storedReal32;
+print(castWide);
 print(truncated);
-print(stored_real64);
+print(storedReal64);
 
 array<whole8> channels = new array<whole8>(0);
 channels.append(channel);
 print(channels.length);
 print(channels[0]);
-print(echo_channel(channel));
+print(echoChannel(channel));
 
 Pixel pixel = new Pixel(10 as byte, 20 as byte, 30 as byte);
 print(pixel.total());

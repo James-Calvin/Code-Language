@@ -1470,7 +1470,7 @@ sealed class CodeGenerator
             case ("array", "append"):
                 _builder.ArrayAppend();
                 break;
-            case ("array", "remove_at"):
+            case ("array", "removeAt"):
                 _builder.ArrayRemoveAt();
                 break;
             case ("map", "contains"):
@@ -2145,7 +2145,16 @@ sealed class CodeGenerator
         MethodDecl? start = FindZeroArgMethod(sceneObject.Methods, "start");
         MethodDecl? update = FindZeroArgMethod(sceneObject.Methods, "update");
         MethodDecl? draw = FindZeroArgMethod(sceneObject.Methods, "draw");
-        MethodDecl? drawHud = FindZeroArgMethod(sceneObject.Methods, "draw_hud");
+        MethodDecl? oldDrawHud = FindZeroArgMethod(sceneObject.Methods, "draw_hud");
+        if (oldDrawHud is not null)
+        {
+            throw new CompilerException(
+                "Use 'drawHud()' for the HUD lifecycle hook; 'draw_hud()' is no longer part of the public API.",
+                oldDrawHud.Name.Line,
+                oldDrawHud.Name.Column);
+        }
+
+        MethodDecl? drawHud = FindZeroArgMethod(sceneObject.Methods, "drawHud");
 
         if (ctor is null || start is null || update is null || draw is null)
             return null;

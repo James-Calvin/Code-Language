@@ -175,13 +175,13 @@ static class HostAbiCatalog
 
         var map = new Dictionary<string, HostAbiIntrinsic>(StringComparer.Ordinal)
         {
-            ["unix_ms"] = Sig("unix_ms", "std.time.unix_ms", TypeSymbol.Integer, "integer"),
-            ["unix_us"] = Sig("unix_us", "std.time.unix_us", TypeSymbol.Integer, "integer"),
-            ["mono_ns"] = Sig("mono_ns", "std.time.mono_ns", TypeSymbol.Integer, "integer"),
-            ["mono_ticks"] = Sig("mono_ticks", "std.time.mono_ticks", TypeSymbol.Integer, "integer"),
-            ["mono_ticks_per_second"] = Sig("mono_ticks_per_second", "std.time.mono_ticks_per_second", TypeSymbol.Integer, "integer"),
-            ["sleep_ms"] = Sig("sleep_ms", "std.time.sleep_ms", TypeSymbol.Void, "void", (TypeSymbol.Integer, "integer")),
-            ["read_line"] = Sig("read_line", "standard.input_output.read_line", TypeSymbol.String, "string"),
+            ["unixMilliseconds"] = Sig("unixMilliseconds", "std.time.unix_ms", TypeSymbol.Integer, "integer"),
+            ["unixMicroseconds"] = Sig("unixMicroseconds", "std.time.unix_us", TypeSymbol.Integer, "integer"),
+            ["monotonicNanoseconds"] = Sig("monotonicNanoseconds", "std.time.mono_ns", TypeSymbol.Integer, "integer"),
+            ["monotonicTicks"] = Sig("monotonicTicks", "std.time.mono_ticks", TypeSymbol.Integer, "integer"),
+            ["monotonicTicksPerSecond"] = Sig("monotonicTicksPerSecond", "std.time.mono_ticks_per_second", TypeSymbol.Integer, "integer"),
+            ["sleepMilliseconds"] = Sig("sleepMilliseconds", "std.time.sleep_ms", TypeSymbol.Void, "void", (TypeSymbol.Integer, "integer")),
+            ["readLine"] = Sig("readLine", "standard.input_output.read_line", TypeSymbol.String, "string"),
             ["minimum"] = Sig("minimum", "std.math.minimum", TypeSymbol.Real, "real", (TypeSymbol.Real, "real"), (TypeSymbol.Real, "real")),
             ["maximum"] = Sig("maximum", "std.math.maximum", TypeSymbol.Real, "real", (TypeSymbol.Real, "real"), (TypeSymbol.Real, "real")),
             ["absolute"] = Sig("absolute", "std.math.absolute", TypeSymbol.Real, "real", (TypeSymbol.Real, "real")),
@@ -191,62 +191,62 @@ static class HostAbiCatalog
             ["cosine"] = Sig("cosine", "std.math.cosine", TypeSymbol.Real, "real", (TypeSymbol.Real, "real")),
             ["random"] = Sig("random", "std.math.random", TypeSymbol.Real, "real"),
 
-            ["window_create"] = Sig(
-                "window_create",
+            ["windowCreate"] = Sig(
+                "windowCreate",
                 "engine.window.create",
                 TypeSymbol.Whole,
                 "whole",
                 (TypeSymbol.String, "string"),
                 (TypeSymbol.Integer, "integer"),
                 (TypeSymbol.Integer, "integer")),
-            ["window_should_close"] = Sig(
-                "window_should_close",
+            ["windowShouldClose"] = Sig(
+                "windowShouldClose",
                 "engine.window.should_close",
                 TypeSymbol.Boolean,
                 "boolean",
                 (TypeSymbol.Whole, "whole")),
-            ["window_present"] = Sig(
-                "window_present",
+            ["windowPresent"] = Sig(
+                "windowPresent",
                 "engine.window.present",
                 TypeSymbol.Void,
                 "void",
                 (TypeSymbol.Whole, "whole")),
-            ["input_key_down"] = Sig(
-                "input_key_down",
+            ["windowInputKeyDown"] = Sig(
+                "windowInputKeyDown",
                 "engine.input.key_down",
                 TypeSymbol.Boolean,
                 "boolean",
                 (TypeSymbol.Whole, "whole"),
                 (TypeSymbol.Integer, "integer")),
-            ["key_down"] = Sig(
-                "key_down",
+            ["inputKeyDown"] = Sig(
+                "inputKeyDown",
                 "engine.input.key_down_scene",
                 TypeSymbol.Boolean,
                 "boolean",
                 (TypeSymbol.Integer, "integer")),
-            ["pointer_world_x"] = Sig("pointer_world_x", "engine.input.pointer_world_x_scene", TypeSymbol.Real, "real"),
-            ["pointer_world_y"] = Sig("pointer_world_y", "engine.input.pointer_world_y_scene", TypeSymbol.Real, "real"),
-            ["pointer_screen_x"] = Sig("pointer_screen_x", "engine.input.pointer_screen_x_scene", TypeSymbol.Real, "real"),
-            ["pointer_screen_y"] = Sig("pointer_screen_y", "engine.input.pointer_screen_y_scene", TypeSymbol.Real, "real"),
-            ["pointer_is_down"] = Sig("pointer_is_down", "engine.input.pointer_is_down_scene", TypeSymbol.Boolean, "boolean"),
-            ["pointer_was_pressed"] = Sig("pointer_was_pressed", "engine.input.pointer_was_pressed_scene", TypeSymbol.Boolean, "boolean"),
-            ["pointer_was_released"] = Sig("pointer_was_released", "engine.input.pointer_was_released_scene", TypeSymbol.Boolean, "boolean"),
-            ["camera_view_left"] = Sig("camera_view_left", "engine.window.camera_view_left_scene", TypeSymbol.Real, "real"),
-            ["camera_view_top"] = Sig("camera_view_top", "engine.window.camera_view_top_scene", TypeSymbol.Real, "real"),
-            ["camera_view_width"] = Sig("camera_view_width", "engine.window.camera_view_width_scene", TypeSymbol.Real, "real"),
-            ["camera_view_height"] = Sig("camera_view_height", "engine.window.camera_view_height_scene", TypeSymbol.Real, "real"),
-            ["camera_view_right"] = Sig("camera_view_right", "engine.window.camera_view_right_scene", TypeSymbol.Real, "real"),
-            ["camera_view_bottom"] = Sig("camera_view_bottom", "engine.window.camera_view_bottom_scene", TypeSymbol.Real, "real"),
-            ["camera_safe_left"] = Sig("camera_safe_left", "engine.window.camera_safe_left_scene", TypeSymbol.Real, "real"),
-            ["camera_safe_top"] = Sig("camera_safe_top", "engine.window.camera_safe_top_scene", TypeSymbol.Real, "real"),
-            ["camera_safe_width"] = Sig("camera_safe_width", "engine.window.camera_safe_width_scene", TypeSymbol.Real, "real"),
-            ["camera_safe_height"] = Sig("camera_safe_height", "engine.window.camera_safe_height_scene", TypeSymbol.Real, "real"),
-            ["camera_safe_right"] = Sig("camera_safe_right", "engine.window.camera_safe_right_scene", TypeSymbol.Real, "real"),
-            ["camera_safe_bottom"] = Sig("camera_safe_bottom", "engine.window.camera_safe_bottom_scene", TypeSymbol.Real, "real"),
-            ["screen_width"] = Sig("screen_width", "engine.window.screen_width_scene", TypeSymbol.Real, "real"),
-            ["screen_height"] = Sig("screen_height", "engine.window.screen_height_scene", TypeSymbol.Real, "real"),
-            ["gfx_clear"] = Sig(
-                "gfx_clear",
+            ["inputPointerWorldX"] = Sig("inputPointerWorldX", "engine.input.pointer_world_x_scene", TypeSymbol.Real, "real"),
+            ["inputPointerWorldY"] = Sig("inputPointerWorldY", "engine.input.pointer_world_y_scene", TypeSymbol.Real, "real"),
+            ["inputPointerScreenX"] = Sig("inputPointerScreenX", "engine.input.pointer_screen_x_scene", TypeSymbol.Real, "real"),
+            ["inputPointerScreenY"] = Sig("inputPointerScreenY", "engine.input.pointer_screen_y_scene", TypeSymbol.Real, "real"),
+            ["inputPointerIsDown"] = Sig("inputPointerIsDown", "engine.input.pointer_is_down_scene", TypeSymbol.Boolean, "boolean"),
+            ["inputPointerWasPressed"] = Sig("inputPointerWasPressed", "engine.input.pointer_was_pressed_scene", TypeSymbol.Boolean, "boolean"),
+            ["inputPointerWasReleased"] = Sig("inputPointerWasReleased", "engine.input.pointer_was_released_scene", TypeSymbol.Boolean, "boolean"),
+            ["cameraViewLeft"] = Sig("cameraViewLeft", "engine.window.camera_view_left_scene", TypeSymbol.Real, "real"),
+            ["cameraViewTop"] = Sig("cameraViewTop", "engine.window.camera_view_top_scene", TypeSymbol.Real, "real"),
+            ["cameraViewWidth"] = Sig("cameraViewWidth", "engine.window.camera_view_width_scene", TypeSymbol.Real, "real"),
+            ["cameraViewHeight"] = Sig("cameraViewHeight", "engine.window.camera_view_height_scene", TypeSymbol.Real, "real"),
+            ["cameraViewRight"] = Sig("cameraViewRight", "engine.window.camera_view_right_scene", TypeSymbol.Real, "real"),
+            ["cameraViewBottom"] = Sig("cameraViewBottom", "engine.window.camera_view_bottom_scene", TypeSymbol.Real, "real"),
+            ["cameraSafeLeft"] = Sig("cameraSafeLeft", "engine.window.camera_safe_left_scene", TypeSymbol.Real, "real"),
+            ["cameraSafeTop"] = Sig("cameraSafeTop", "engine.window.camera_safe_top_scene", TypeSymbol.Real, "real"),
+            ["cameraSafeWidth"] = Sig("cameraSafeWidth", "engine.window.camera_safe_width_scene", TypeSymbol.Real, "real"),
+            ["cameraSafeHeight"] = Sig("cameraSafeHeight", "engine.window.camera_safe_height_scene", TypeSymbol.Real, "real"),
+            ["cameraSafeRight"] = Sig("cameraSafeRight", "engine.window.camera_safe_right_scene", TypeSymbol.Real, "real"),
+            ["cameraSafeBottom"] = Sig("cameraSafeBottom", "engine.window.camera_safe_bottom_scene", TypeSymbol.Real, "real"),
+            ["screenWidth"] = Sig("screenWidth", "engine.window.screen_width_scene", TypeSymbol.Real, "real"),
+            ["screenHeight"] = Sig("screenHeight", "engine.window.screen_height_scene", TypeSymbol.Real, "real"),
+            ["gfxClear"] = Sig(
+                "gfxClear",
                 "engine.gfx.clear",
                 TypeSymbol.Void,
                 "void",
@@ -264,8 +264,8 @@ static class HostAbiCatalog
                 (TypeSymbol.Real, "real"),
                 (TypeSymbol.Real, "real"),
                 (TypeSymbol.Real, "real")),
-            ["gfx_draw_rect"] = Sig(
-                "gfx_draw_rect",
+            ["gfxDrawRectangle"] = Sig(
+                "gfxDrawRectangle",
                 "engine.gfx.draw_rect",
                 TypeSymbol.Void,
                 "void",
@@ -278,8 +278,8 @@ static class HostAbiCatalog
                 (TypeSymbol.Real, "real"),
                 (TypeSymbol.Real, "real"),
                 (TypeSymbol.Real, "real")),
-            ["draw_rectangle"] = Sig(
-                "draw_rectangle",
+            ["drawRectangle"] = Sig(
+                "drawRectangle",
                 "engine.gfx.draw_rectangle_scene",
                 TypeSymbol.Void,
                 "void",
@@ -291,21 +291,8 @@ static class HostAbiCatalog
                 (TypeSymbol.Real, "real"),
                 (TypeSymbol.Real, "real"),
                 (TypeSymbol.Real, "real")),
-            ["draw_rect"] = Sig(
-                "draw_rect",
-                "engine.gfx.draw_rectangle_scene",
-                TypeSymbol.Void,
-                "void",
-                (TypeSymbol.Real, "real"),
-                (TypeSymbol.Real, "real"),
-                (TypeSymbol.Real, "real"),
-                (TypeSymbol.Real, "real"),
-                (TypeSymbol.Real, "real"),
-                (TypeSymbol.Real, "real"),
-                (TypeSymbol.Real, "real"),
-                (TypeSymbol.Real, "real")),
-            ["draw_rectangle_outline"] = Sig(
-                "draw_rectangle_outline",
+            ["drawRectangleOutline"] = Sig(
+                "drawRectangleOutline",
                 "engine.gfx.draw_rectangle_outline_scene",
                 TypeSymbol.Void,
                 "void",
@@ -318,8 +305,8 @@ static class HostAbiCatalog
                 (TypeSymbol.Real, "real"),
                 (TypeSymbol.Real, "real"),
                 (TypeSymbol.Real, "real")),
-            ["draw_circle"] = Sig(
-                "draw_circle",
+            ["drawCircle"] = Sig(
+                "drawCircle",
                 "engine.gfx.draw_circle_scene",
                 TypeSymbol.Void,
                 "void",
@@ -330,8 +317,8 @@ static class HostAbiCatalog
                 (TypeSymbol.Real, "real"),
                 (TypeSymbol.Real, "real"),
                 (TypeSymbol.Real, "real")),
-            ["draw_circle_outline"] = Sig(
-                "draw_circle_outline",
+            ["drawCircleOutline"] = Sig(
+                "drawCircleOutline",
                 "engine.gfx.draw_circle_outline_scene",
                 TypeSymbol.Void,
                 "void",
@@ -343,8 +330,8 @@ static class HostAbiCatalog
                 (TypeSymbol.Real, "real"),
                 (TypeSymbol.Real, "real"),
                 (TypeSymbol.Real, "real")),
-            ["draw_polygon"] = Sig(
-                "draw_polygon",
+            ["drawPolygon"] = Sig(
+                "drawPolygon",
                 "engine.gfx.draw_polygon_scene",
                 TypeSymbol.Void,
                 "void",
@@ -353,8 +340,8 @@ static class HostAbiCatalog
                 (TypeSymbol.Real, "real"),
                 (TypeSymbol.Real, "real"),
                 (TypeSymbol.Real, "real")),
-            ["draw_polygon_outline"] = Sig(
-                "draw_polygon_outline",
+            ["drawPolygonOutline"] = Sig(
+                "drawPolygonOutline",
                 "engine.gfx.draw_polygon_outline_scene",
                 TypeSymbol.Void,
                 "void",
@@ -364,8 +351,8 @@ static class HostAbiCatalog
                 (TypeSymbol.Real, "real"),
                 (TypeSymbol.Real, "real"),
                 (TypeSymbol.Real, "real")),
-            ["draw_line"] = Sig(
-                "draw_line",
+            ["drawLine"] = Sig(
+                "drawLine",
                 "engine.gfx.draw_line_scene",
                 TypeSymbol.Void,
                 "void",
@@ -377,8 +364,8 @@ static class HostAbiCatalog
                 (TypeSymbol.Real, "real"),
                 (TypeSymbol.Real, "real"),
                 (TypeSymbol.Real, "real")),
-            ["draw_text"] = Sig(
-                "draw_text",
+            ["drawText"] = Sig(
+                "drawText",
                 "engine.gfx.draw_text_scene",
                 TypeSymbol.Void,
                 "void",
@@ -392,8 +379,8 @@ static class HostAbiCatalog
                 (TypeSymbol.Real, "real"),
                 (TypeSymbol.Real, "real"),
                 (TypeSymbol.Real, "real")),
-            ["draw_image"] = Sig(
-                "draw_image",
+            ["drawImage"] = Sig(
+                "drawImage",
                 "engine.gfx.draw_image_scene",
                 TypeSymbol.Void,
                 "void",
@@ -403,8 +390,8 @@ static class HostAbiCatalog
                 (TypeSymbol.Real, "real"),
                 (TypeSymbol.Real, "real"),
                 (TypeSymbol.Real, "real")),
-            ["draw_sprite"] = Sig(
-                "draw_sprite",
+            ["drawSprite"] = Sig(
+                "drawSprite",
                 "engine.gfx.draw_sprite_scene",
                 TypeSymbol.Void,
                 "void",
@@ -418,81 +405,81 @@ static class HostAbiCatalog
                 (TypeSymbol.Real, "real"),
                 (TypeSymbol.Real, "real"),
                 (TypeSymbol.Real, "real")),
-            ["diagnostics_last_frame_interval_milliseconds"] = Sig(
-                "diagnostics_last_frame_interval_milliseconds",
+            ["diagnosticsLastFrameIntervalMilliseconds"] = Sig(
+                "diagnosticsLastFrameIntervalMilliseconds",
                 "engine.diagnostics.last_frame_interval_milliseconds_scene",
                 TypeSymbol.Real,
                 "real"),
-            ["diagnostics_estimated_frames_per_second"] = Sig(
-                "diagnostics_estimated_frames_per_second",
+            ["diagnosticsEstimatedFramesPerSecond"] = Sig(
+                "diagnosticsEstimatedFramesPerSecond",
                 "engine.diagnostics.estimated_frames_per_second_scene",
                 TypeSymbol.Real,
                 "real"),
-            ["diagnostics_last_frame_work_milliseconds"] = Sig(
-                "diagnostics_last_frame_work_milliseconds",
+            ["diagnosticsLastFrameWorkMilliseconds"] = Sig(
+                "diagnosticsLastFrameWorkMilliseconds",
                 "engine.diagnostics.last_frame_work_milliseconds_scene",
                 TypeSymbol.Real,
                 "real"),
-            ["diagnostics_last_update_work_milliseconds"] = Sig(
-                "diagnostics_last_update_work_milliseconds",
+            ["diagnosticsLastUpdateWorkMilliseconds"] = Sig(
+                "diagnosticsLastUpdateWorkMilliseconds",
                 "engine.diagnostics.last_update_work_milliseconds_scene",
                 TypeSymbol.Real,
                 "real"),
-            ["diagnostics_last_draw_work_milliseconds"] = Sig(
-                "diagnostics_last_draw_work_milliseconds",
+            ["diagnosticsLastDrawWorkMilliseconds"] = Sig(
+                "diagnosticsLastDrawWorkMilliseconds",
                 "engine.diagnostics.last_draw_work_milliseconds_scene",
                 TypeSymbol.Real,
                 "real"),
-            ["diagnostics_last_draw_hud_work_milliseconds"] = Sig(
-                "diagnostics_last_draw_hud_work_milliseconds",
+            ["diagnosticsLastDrawHudWorkMilliseconds"] = Sig(
+                "diagnosticsLastDrawHudWorkMilliseconds",
                 "engine.diagnostics.last_draw_hud_work_milliseconds_scene",
                 TypeSymbol.Real,
                 "real"),
-            ["diagnostics_last_update_steps"] = Sig(
-                "diagnostics_last_update_steps",
+            ["diagnosticsLastUpdateSteps"] = Sig(
+                "diagnosticsLastUpdateSteps",
                 "engine.diagnostics.last_update_steps_scene",
                 TypeSymbol.Integer,
                 "integer"),
-            ["audio_can_play_sound"] = Sig(
-                "audio_can_play_sound",
+            ["audioCanPlaySound"] = Sig(
+                "audioCanPlaySound",
                 "engine.audio.can_play_sound_scene",
                 TypeSymbol.Boolean,
                 "boolean"),
-            ["audio_play_sound"] = Sig(
-                "audio_play_sound",
+            ["audioPlaySound"] = Sig(
+                "audioPlaySound",
                 "engine.audio.play_sound_scene",
                 TypeSymbol.Integer,
                 "integer",
                 (TypeSymbol.String, "string"),
                 (TypeSymbol.Real, "real")),
-            ["audio_play_looping_sound"] = Sig(
-                "audio_play_looping_sound",
+            ["audioPlayLoopingSound"] = Sig(
+                "audioPlayLoopingSound",
                 "engine.audio.play_looping_sound_scene",
                 TypeSymbol.Integer,
                 "integer",
                 (TypeSymbol.String, "string"),
                 (TypeSymbol.Real, "real")),
-            ["audio_stop_sound"] = Sig(
-                "audio_stop_sound",
+            ["audioStopSound"] = Sig(
+                "audioStopSound",
                 "engine.audio.stop_sound_scene",
                 TypeSymbol.Void,
                 "void",
                 (TypeSymbol.Integer, "integer")),
-            ["audio_set_sound_volume"] = Sig(
-                "audio_set_sound_volume",
+            ["audioSetSoundVolume"] = Sig(
+                "audioSetSoundVolume",
                 "engine.audio.set_sound_volume_scene",
                 TypeSymbol.Void,
                 "void",
                 (TypeSymbol.Integer, "integer"),
                 (TypeSymbol.Real, "real")),
-            ["audio_sound_is_playing"] = Sig(
-                "audio_sound_is_playing",
+            ["audioSoundIsPlaying"] = Sig(
+                "audioSoundIsPlaying",
                 "engine.audio.sound_is_playing_scene",
                 TypeSymbol.Boolean,
                 "boolean",
                 (TypeSymbol.Integer, "integer")),
-            ["audio_stop_all_sounds"] = Sig(
-                "audio_stop_all_sounds",
+            ["audioStopAllSounds"] = Sig(
+                "audioStopAllSounds",
                 "engine.audio.stop_all_sounds_scene",
                 TypeSymbol.Void,
                 "void")

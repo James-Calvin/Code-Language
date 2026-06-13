@@ -1581,12 +1581,12 @@ sealed class TypeChecker
                 return TypeSymbol.Void;
             }
 
-            if (string.Equals(methodCall.MethodName.Lexeme, "remove_at", StringComparison.Ordinal))
+            if (string.Equals(methodCall.MethodName.Lexeme, "removeAt", StringComparison.Ordinal))
             {
                 if (arguments.Count != 1)
-                    throw new CompilerException("Array method 'remove_at' expects 1 argument", methodCall.MethodName.Line, methodCall.MethodName.Column);
-                Require(IsNumeric(arguments[0].Symbol), methodCall.Arguments[0], "Array method 'remove_at' index must be numeric");
-                methodCall.ResolvedBuiltInCollectionMethodName = "remove_at";
+                    throw new CompilerException("Array method 'removeAt' expects 1 argument", methodCall.MethodName.Line, methodCall.MethodName.Column);
+                Require(IsNumeric(arguments[0].Symbol), methodCall.Arguments[0], "Array method 'removeAt' index must be numeric");
+                methodCall.ResolvedBuiltInCollectionMethodName = "removeAt";
                 methodCall.ResolvedReturnTypeRef = BuildImplicitVoidTypeRef(methodCall.MethodName);
                 return TypeSymbol.Void;
             }
@@ -2253,14 +2253,14 @@ sealed class TypeChecker
 
         foreach (var name in new[]
         {
-            "clear_screen",
+            "clearScreen",
             "line",
             "rectangle",
-            "rectangle_outline",
+            "rectangleOutline",
             "circle",
-            "circle_outline",
+            "circleOutline",
             "polygon",
-            "polygon_outline",
+            "polygonOutline",
             "text",
             "image",
             "sprite"
@@ -2271,14 +2271,14 @@ sealed class TypeChecker
 
         foreach (var name in new[]
         {
-            "key_is_down",
-            "pointer_world_x_position",
-            "pointer_world_y_position",
-            "pointer_screen_x_position",
-            "pointer_screen_y_position",
-            "pointer_is_down_now",
-            "pointer_was_pressed_now",
-            "pointer_was_released_now"
+            "keyIsDown",
+            "pointerWorldX",
+            "pointerWorldY",
+            "pointerScreenX",
+            "pointerScreenY",
+            "pointerIsDown",
+            "pointerWasPressed",
+            "pointerWasReleased"
         })
         {
             map[name] = "Input";
@@ -2286,20 +2286,20 @@ sealed class TypeChecker
 
         foreach (var name in new[]
         {
-            "view_left",
-            "view_top",
-            "view_width",
-            "view_height",
-            "view_right",
-            "view_bottom",
-            "safe_left",
-            "safe_top",
-            "safe_width",
-            "safe_height",
-            "safe_right",
-            "safe_bottom",
-            "hud_width",
-            "hud_height"
+            "viewLeft",
+            "viewTop",
+            "viewWidth",
+            "viewHeight",
+            "viewRight",
+            "viewBottom",
+            "safeLeft",
+            "safeTop",
+            "safeWidth",
+            "safeHeight",
+            "safeRight",
+            "safeBottom",
+            "hudWidth",
+            "hudHeight"
         })
         {
             map[name] = "Viewport";
@@ -2310,13 +2310,13 @@ sealed class TypeChecker
 
         foreach (var name in new[]
         {
-            "last_frame_interval_milliseconds",
-            "estimated_frames_per_second",
-            "last_frame_work_milliseconds",
-            "last_update_work_milliseconds",
-            "last_draw_work_milliseconds",
-            "last_draw_hud_work_milliseconds",
-            "last_update_steps"
+            "lastFrameIntervalMilliseconds",
+            "estimatedFramesPerSecond",
+            "lastFrameWorkMilliseconds",
+            "lastUpdateWorkMilliseconds",
+            "lastDrawWorkMilliseconds",
+            "lastDrawHudWorkMilliseconds",
+            "lastUpdateSteps"
         })
         {
             map[name] = "Diagnostics";
@@ -2324,13 +2324,13 @@ sealed class TypeChecker
 
         foreach (var name in new[]
         {
-            "can_play_sound",
-            "play_sound",
-            "play_looping_sound",
-            "stop_sound",
-            "set_sound_volume",
-            "sound_is_playing",
-            "stop_all_sounds"
+            "canPlaySound",
+            "playSound",
+            "playLoopingSound",
+            "stopSound",
+            "setSoundVolume",
+            "soundIsPlaying",
+            "stopAllSounds"
         })
         {
             map[name] = "Audio";

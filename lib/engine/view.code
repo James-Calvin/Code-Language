@@ -1,3 +1,3 @@
 package engine.view;
 
-export import { hud_height, hud_width, safe_bottom, safe_height, safe_left, safe_right, safe_top, safe_width, view_bottom, view_height, view_left, view_right, view_top, view_width } from "engine/viewport.code";
+export import { hudHeight, hudWidth, safeBottom, safeHeight, safeLeft, safeRight, safeTop, safeWidth, viewBottom, viewHeight, viewLeft, viewRight, viewTop, viewWidth } from "engine/viewport.code";

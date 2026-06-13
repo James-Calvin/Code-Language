@@ -26,18 +26,18 @@ Notes:
 
 | Function | Inputs | Returns | Targets |
 | --- | --- | --- | --- |
-| `unix_ms()` | none | `integer` Unix milliseconds | native, web |
-| `unix_us()` | none | `integer` Unix microseconds | native, web |
-| `mono_ns()` | none | `integer` monotonic nanoseconds | native, web |
-| `mono_ticks()` | none | `integer` monotonic ticks | native, web |
-| `mono_ticks_per_second()` | none | `integer` tick frequency | native, web |
-| `sleep_ms(ms)` | `integer` milliseconds | `void` | native only |
+| `unixMilliseconds()` | none | `integer` Unix milliseconds | native, web |
+| `unixMicroseconds()` | none | `integer` Unix microseconds | native, web |
+| `monotonicNanoseconds()` | none | `integer` monotonic nanoseconds | native, web |
+| `monotonicTicks()` | none | `integer` monotonic ticks | native, web |
+| `monotonicTicksPerSecond()` | none | `integer` tick frequency | native, web |
+| `sleepMilliseconds(ms)` | `integer` milliseconds | `void` | native only |
 
 Example:
 
 ```code
-print(unix_ms() > 0);
-print(mono_ticks_per_second() > 0);
+print(unixMilliseconds() > 0);
+print(monotonicTicksPerSecond() > 0);
 ```
 
 Output:
@@ -49,7 +49,7 @@ Output:
 
 Common mistakes:
 
-- `sleep_ms` is rejected when compiling for `vm-web`.
+- `sleepMilliseconds` is rejected when compiling for `vm-web`.
 - High-range timing values are represented through the current VM numeric model.
 
 ## Math and Randomness
@@ -97,18 +97,18 @@ Common mistakes:
 
 | Function | Inputs | Returns | Targets |
 | --- | --- | --- | --- |
-| `read_line()` | none | `string` | native only |
+| `readLine()` | none | `string` | native only |
 
 Example:
 
 ```code
-string line = read_line();
+string line = readLine();
 print("you typed: {line}");
 ```
 
 Common mistakes:
 
-- `read_line` is rejected when compiling for `vm-web`.
+- `readLine` is rejected when compiling for `vm-web`.
 - Browser input should use the web scene input APIs instead.
 
 ## Prototype Engine Host Intrinsics
@@ -117,19 +117,19 @@ These lower-level host intrinsics exist, but scene apps should prefer [Web Apps 
 
 | Function | Inputs | Returns |
 | --- | --- | --- |
-| `window_create(title, width, height)` | `string`, `integer`, `integer` | `whole` |
-| `window_should_close(window)` | `whole` | `boolean` |
-| `window_present(window)` | `whole` | `void` |
-| `input_key_down(window, keycode)` | `whole`, `integer` | `boolean` |
-| `gfx_clear(window, r, g, b, a)` | `whole`, `real`, `real`, `real`, `real` | `void` |
-| `gfx_draw_rect(window, x, y, w, h, r, g, b, a)` | `whole`, eight `real` values | `void` |
+| `windowCreate(title, width, height)` | `string`, `integer`, `integer` | `whole` |
+| `windowShouldClose(window)` | `whole` | `boolean` |
+| `windowPresent(window)` | `whole` | `void` |
+| `windowInputKeyDown(window, keycode)` | `whole`, `integer` | `boolean` |
+| `gfxClear(window, r, g, b, a)` | `whole`, `real`, `real`, `real`, `real` | `void` |
+| `gfxDrawRectangle(window, x, y, w, h, r, g, b, a)` | `whole`, eight `real` values | `void` |
 
 Example:
 
 ```code
-whole window = window_create("demo", 320, 200);
+whole window = windowCreate("demo", 320, 200);
 print(window > 0);
-print(window_should_close(window));
+print(windowShouldClose(window));
 ```
 
 Behavior:
@@ -144,14 +144,14 @@ Generated web apps expose a browser-backed scene input surface. Native execution
 
 | Function | Inputs | Returns |
 | --- | --- | --- |
-| `key_down(keycode)` | `integer` key code | `boolean` |
-| `pointer_world_x()` | none | `real` |
-| `pointer_world_y()` | none | `real` |
-| `pointer_screen_x()` | none | `real` |
-| `pointer_screen_y()` | none | `real` |
-| `pointer_is_down()` | none | `boolean` |
-| `pointer_was_pressed()` | none | `boolean` |
-| `pointer_was_released()` | none | `boolean` |
+| `inputKeyDown(keycode)` | `integer` key code | `boolean` |
+| `inputPointerWorldX()` | none | `real` |
+| `inputPointerWorldY()` | none | `real` |
+| `inputPointerScreenX()` | none | `real` |
+| `inputPointerScreenY()` | none | `real` |
+| `inputPointerIsDown()` | none | `boolean` |
+| `inputPointerWasPressed()` | none | `boolean` |
+| `inputPointerWasReleased()` | none | `boolean` |
 
 Pointer input tracks one primary pointer: left mouse button, primary pen button, or first/primary touch. Screen coordinates are HUD-space coordinates from the visible canvas top-left; world coordinates match the current `draw()` world view. Prefer `engine.input` wrappers for new scene code.
 
@@ -161,13 +161,13 @@ Generated web apps expose last-completed-frame diagnostics. Native execution and
 
 | Function | Inputs | Returns |
 | --- | --- | --- |
-| `diagnostics_last_frame_interval_milliseconds()` | none | `real` |
-| `diagnostics_estimated_frames_per_second()` | none | `real` |
-| `diagnostics_last_frame_work_milliseconds()` | none | `real` |
-| `diagnostics_last_update_work_milliseconds()` | none | `real` |
-| `diagnostics_last_draw_work_milliseconds()` | none | `real` |
-| `diagnostics_last_draw_hud_work_milliseconds()` | none | `real` |
-| `diagnostics_last_update_steps()` | none | `integer` |
+| `diagnosticsLastFrameIntervalMilliseconds()` | none | `real` |
+| `diagnosticsEstimatedFramesPerSecond()` | none | `real` |
+| `diagnosticsLastFrameWorkMilliseconds()` | none | `real` |
+| `diagnosticsLastUpdateWorkMilliseconds()` | none | `real` |
+| `diagnosticsLastDrawWorkMilliseconds()` | none | `real` |
+| `diagnosticsLastDrawHudWorkMilliseconds()` | none | `real` |
+| `diagnosticsLastUpdateSteps()` | none | `integer` |
 
 These values measure browser runtime/VM work around update, draw, and HUD invocation. They do not include browser compositor or GPU presentation time. Prefer `engine.diagnostics` wrappers for new app code.
 
@@ -177,13 +177,13 @@ Generated web apps expose asset-backed audio helpers. Native execution and web e
 
 | Function | Inputs | Returns |
 | --- | --- | --- |
-| `audio_can_play_sound()` | none | `boolean` |
-| `audio_play_sound(source, volume)` | `string`, `real` | `integer` handle |
-| `audio_play_looping_sound(source, volume)` | `string`, `real` | `integer` handle |
-| `audio_stop_sound(handle)` | `integer` | `void` |
-| `audio_set_sound_volume(handle, volume)` | `integer`, `real` | `void` |
-| `audio_sound_is_playing(handle)` | `integer` | `boolean` |
-| `audio_stop_all_sounds()` | none | `void` |
+| `audioCanPlaySound()` | none | `boolean` |
+| `audioPlaySound(source, volume)` | `string`, `real` | `integer` handle |
+| `audioPlayLoopingSound(source, volume)` | `string`, `real` | `integer` handle |
+| `audioStopSound(handle)` | `integer` | `void` |
+| `audioSetSoundVolume(handle, volume)` | `integer`, `real` | `void` |
+| `audioSoundIsPlaying(handle)` | `integer` | `boolean` |
+| `audioStopAllSounds()` | none | `void` |
 
 The browser runtime uses static asset paths, lazy loading, and browser audio unlock on first key or pointer input. Prefer `engine.audio` wrappers for new app code.
 
@@ -197,7 +197,7 @@ compiler --target vm-web --compile-only ConsoleApp1/examples/time.code
 
 Native-only calls rejected on `vm-web`:
 
-- `read_line()`
-- `sleep_ms(ms)`
+- `readLine()`
+- `sleepMilliseconds(ms)`
 
 Capability checks also consider package/import namespaces and manifest `hostAbi.requires`.

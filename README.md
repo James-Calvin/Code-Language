@@ -70,7 +70,7 @@ function update() {
 }
 
 function draw() {
-  Draw.clear_screen(Colors.rgb(0, 0, 0));
+  Draw.clearScreen(Colors.rgb(0, 0, 0));
   Draw.text("hello, world", 24, 24, 18, "left", "top", Colors.rgb(255, 255, 255));
 }
 ```
@@ -84,10 +84,11 @@ Implemented today:
 - typed variables/functions; primitives: `integer`, `whole`, `real`, `boolean`, `string`, sized numeric boundary types, and `byte`
 - objects, records, interfaces, arrays, maps, sets, queues, stacks, optionals, and typed recoverable `fallible` errors
 - `if`, `switch`, `while`, `for`, `foreach`, `break`, `continue`, functions, methods, modules, package manifests, lockfiles, and library artifacts
-- web app lifecycle entry through top-level `start()`, `update()`, `draw()`, and optional `draw_hud()`
+- web app lifecycle entry through top-level `start()`, `update()`, `draw()`, and optional `drawHud()`
 - engine wrapper modules for colors, drawing, input, viewport, diagnostics, audio, and scene composition
+- public naming style uses `PascalCase` for types/namespaces and `camelCase` for functions, methods, fields, locals, constants, and lifecycle hooks
 
-See the [language reference](docs/reference/README.md), [web app runtime contract](docs/web-app-v1.md), and [example catalog](docs/example-catalog.md) for the implementation-truth docs.
+See the [language reference](docs/reference/README.md), [naming and style guide](docs/reference/naming-and-style.md), [web app runtime contract](docs/web-app-v1.md), and [example catalog](docs/example-catalog.md) for the implementation-truth docs.
 
 ## For Maintainers
 

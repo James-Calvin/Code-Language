@@ -1,8 +1,8 @@
-integer ms = unix_ms();
-integer us = unix_us();
-integer ns = mono_ns();
-integer ticks = mono_ticks();
-integer freq = mono_ticks_per_second();
+integer ms = unixMilliseconds();
+integer us = unixMicroseconds();
+integer ns = monotonicNanoseconds();
+integer ticks = monotonicTicks();
+integer freq = monotonicTicksPerSecond();
 
 print(ms > 0);
 print(us >= ms * 1000);

@@ -285,7 +285,7 @@ while value != someValue then {
 }
 ```
 
-- Arrays (current impl): array literal syntax `{a, b, c}` builds a runtime array; typed declarations `array<integer> xs = {1,2,3};`; dynamic `new array<integer>(n)` requires a size; `xs.length` yields length; `xs[index]` reads an element; `xs[index] = value` writes an element; `xs.append(value)` grows the array; `xs.remove_at(index)` removes an element; `foreach` can iterate arrays by element in addition to numeric bounds.
+- Arrays (current impl): array literal syntax `{a, b, c}` builds a runtime array; typed declarations `array<integer> xs = {1,2,3};`; dynamic `new array<integer>(n)` requires a size; `xs.length` yields length; `xs[index]` reads an element; `xs[index] = value` writes an element; `xs.append(value)` grows the array; `xs.removeAt(index)` removes an element; `foreach` can iterate arrays by element in addition to numeric bounds.
 - Built-in collections (current impl):
   - `map<Key, Value>` uses `new map<Key, Value>()`, supports `.length`, indexing (`items[key]`, `items[key] = value`), `contains(key)`, and `remove(key)`.
   - `set<Value>` uses `new set<Value>()`, supports `.length`, `add(value)`, `contains(value)`, and `remove(value)`.
@@ -363,7 +363,7 @@ if not isReady then {
   - `stack<Value>`
 - Growable array methods:
   - `items.append(value)`
-  - `items.remove_at(index)`
+  - `items.removeAt(index)`
 - Map operations:
   - `items[key]`
   - `items[key] = value`
@@ -388,7 +388,7 @@ if not isReady then {
 array<integer> numbers = {1, 1, 2, 3, 5, 8, 13};
 array<integer> otherNumbers = new array<integer>(10);
 numbers.append(21);
-numbers.remove_at(0);
+numbers.removeAt(0);
 
 map<string, integer> scores = new map<string, integer>();
 scores["coins"] = 10;
@@ -692,13 +692,13 @@ if x > 3 then panic("x too large");
   - Artifact contains package identity, target, entry path, export map, required capabilities, and embedded bytecode payload.
   - CLI accepts `.codelib` as executable/disassemblable input.
 - Time intrinsics (current baseline):
-  - `unix_ms() -> integer`
-  - `unix_us() -> integer`
-  - `mono_ns() -> integer` (monotonic process-relative nanoseconds)
-  - `mono_ticks() -> integer`
-  - `mono_ticks_per_second() -> integer`
-  - `sleep_ms(integer ms) -> void` (native-only host API; compile-time target check rejects it for `vm-web`)
-  - `read_line() -> string` (native-only host API; compile-time target check rejects it for `vm-web`)
+  - `unixMilliseconds() -> integer`
+  - `unixMicroseconds() -> integer`
+  - `monotonicNanoseconds() -> integer` (monotonic process-relative nanoseconds)
+  - `monotonicTicks() -> integer`
+  - `monotonicTicksPerSecond() -> integer`
+  - `sleepMilliseconds(integer ms) -> void` (native-only host API; compile-time target check rejects it for `vm-web`)
+  - `readLine() -> string` (native-only host API; compile-time target check rejects it for `vm-web`)
   - These currently lower through host ABI symbols (`std.time.*`) rather than dedicated language-level stdlib modules.
 - Math and randomness intrinsics (current baseline):
   - `minimum(real left, real right) -> real`
@@ -715,18 +715,18 @@ if x > 3 then panic("x too large");
   - VM host binding mismatch (missing symbol/arity) raises `HostBindingError` at runtime.
   - Native-only host calls include target-specific runtime diagnostics when executed on `vm-web` host tables.
   - Engine-facing host stubs are available through intrinsics:
-    - `window_create(...)`, `window_should_close(...)`, `window_present(...)`
-    - `input_key_down(...)`
-    - `gfx_clear(...)`, `gfx_draw_rect(...)`
+    - `windowCreate(...)`, `windowShouldClose(...)`, `windowPresent(...)`
+    - `windowInputKeyDown(...)`
+    - `gfxClear(...)`, `gfxDrawRectangle(...)`
     - Current runtime behavior for these engine intrinsics is prototype/no-op on both native and web hosts.
   - Scene-oriented browser/runtime intrinsics are also available for the generated web app path:
-    - input/view/diagnostics/audio: `key_down(...)`, `pointer_world_x()`, `pointer_world_y()`, `pointer_screen_x()`, `pointer_screen_y()`, `pointer_is_down()`, `pointer_was_pressed()`, `pointer_was_released()`, `camera_view_*()`, `camera_safe_*()`, `screen_width()`, `screen_height()`, `diagnostics_last_*()`, `diagnostics_estimated_frames_per_second()`, `audio_can_play_sound()`, `audio_play_sound(...)`, `audio_play_looping_sound(...)`, `audio_stop_sound(...)`, `audio_set_sound_volume(...)`, `audio_sound_is_playing(...)`, `audio_stop_all_sounds()`
-    - drawing: `clear(...)`, `draw_rectangle(...)`, `draw_rectangle_outline(...)`, `draw_line(...)`, `draw_circle(...)`, `draw_circle_outline(...)`, `draw_polygon(...)`, `draw_polygon_outline(...)`, `draw_text(...)`, `draw_image(...)`, `draw_sprite(...)`
+    - input/view/diagnostics/audio: `inputKeyDown(...)`, `inputPointerWorldX()`, `inputPointerWorldY()`, `inputPointerScreenX()`, `inputPointerScreenY()`, `inputPointerIsDown()`, `inputPointerWasPressed()`, `inputPointerWasReleased()`, `cameraView*()`, `cameraSafe*()`, `screenWidth()`, `screenHeight()`, `diagnosticsLast*()`, `diagnosticsEstimatedFramesPerSecond()`, `audioCanPlaySound()`, `audioPlaySound(...)`, `audioPlayLoopingSound(...)`, `audioStopSound(...)`, `audioSetSoundVolume(...)`, `audioSoundIsPlaying(...)`, `audioStopAllSounds()`
+    - drawing: `clear(...)`, `drawRectangle(...)`, `drawRectangleOutline(...)`, `drawLine(...)`, `drawCircle(...)`, `drawCircleOutline(...)`, `drawPolygon(...)`, `drawPolygonOutline(...)`, `drawText(...)`, `drawImage(...)`, `drawSprite(...)`
   - The current repo ships a wrapper layer in `lib/engine/` over those scene/runtime intrinsics: canonical modules `engine.colors`, `engine.drawing`, `engine.input`, `engine.viewport`, `engine.diagnostics`, `engine.audio`, and `engine.scene`, with compatibility re-export modules `engine.view` and `engine.loop`.
   - Note: high-range timing values may eventually need dedicated 64-bit numeric/value support for full precision guarantees.
 - Object and record construction and field access lower to dedicated VM opcodes (`NEW_OBJECT`, `NEW_RECORD`, `GET_FIELD`, `SET_FIELD`).
 - Real literals, wide integer literals, and numeric casts lower to dedicated VM opcodes (`PUSH_REAL`, `PUSH_WIDE_INTEGER`, `CAST_INTEGER`, `CAST_WHOLE`, `CAST_REAL`, `CHECKED_SIZED_NUMERIC_CAST`); enum casts remain integer-backed.
-- Arrays: literals `{...}` create arrays; typed declarations `array<integer> xs = {1,2,3};`; dynamic `new array<integer>(n)` requires a size; `xs.length` yields length; `xs.append(value)` and `xs.remove_at(index)` grow/shrink arrays; `foreach` iterates arrays by element.
+- Arrays: literals `{...}` create arrays; typed declarations `array<integer> xs = {1,2,3};`; dynamic `new array<integer>(n)` requires a size; `xs.length` yields length; `xs.append(value)` and `xs.removeAt(index)` grow/shrink arrays; `foreach` iterates arrays by element.
 - Built-in collections: `map`, `set`, `queue`, and `stack` lower to dedicated VM opcodes; `.length` also covers those collection types.
 - Recoverable fallible values lower to dedicated VM opcodes (`FALLIBLE_SUCCESS`, `FALLIBLE_ERROR`, `FALLIBLE_IS_ERROR`, `FALLIBLE_VALUE`, `FALLIBLE_ERROR_CODE`, `FALLIBLE_ERROR_MESSAGE`); `panic(...)` still lowers to `THROW_ERROR`.
 
@@ -769,4 +769,3 @@ if x > 3 then panic("x too large");
 
 ## 19. Open Questions
 - Future package search paths beyond project `lib/` (configuration format, stdlib layout).
-

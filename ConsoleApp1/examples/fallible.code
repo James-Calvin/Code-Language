@@ -7,18 +7,18 @@ enum ParseError {
   Invalid;
 }
 
-function<fallible<integer, ParseError>> parse_count(string text) {
+function<fallible<integer, ParseError>> parseCount(string text) {
   if text == "" then return error(ParseError.Empty, "count was empty");
   if text == "one" then return 1;
   if text == "two" then return 2;
   return error(ParseError.Invalid, "expected 'one' or 'two'");
 }
 
-integer first = parse_count("two") on error {
+integer first = parseCount("two") on error {
   yield 0;
 };
 
-integer second = parse_count("") on error {
+integer second = parseCount("") on error {
   print(error.message);
   switch error.code then {
     case ParseError.Empty then yield 0;
@@ -27,7 +27,7 @@ integer second = parse_count("") on error {
   }
 };
 
-integer third = parse_count("many") on error {
+integer third = parseCount("many") on error {
   print(error.message);
   switch error.code then {
     case ParseError.Empty then yield 0;
@@ -36,12 +36,12 @@ integer third = parse_count("many") on error {
   }
 };
 
-function<fallible<integer>> quick_load(boolean ok) {
+function<fallible<integer>> quickLoad(boolean ok) {
   if ok then return 7;
   return error("quick load failed");
 }
 
-integer quick = quick_load(false) on error {
+integer quick = quickLoad(false) on error {
   print(error.code);
   print(error.message);
   yield 0;

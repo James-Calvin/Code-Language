@@ -901,6 +901,11 @@ static class ModuleCompiler
                         EnsureZeroArgumentLifecycle(fn);
                         break;
                     case FunctionDecl fn when string.Equals(fn.Name.Lexeme, "draw_hud", StringComparison.Ordinal):
+                        throw new CompilerException(
+                            "Use 'drawHud()' for the HUD lifecycle hook; 'draw_hud()' is no longer part of the public API.",
+                            fn.Name.Line,
+                            fn.Name.Column);
+                    case FunctionDecl fn when string.Equals(fn.Name.Lexeme, "drawHud", StringComparison.Ordinal):
                         drawHudToken = fn.Name;
                         EnsureZeroArgumentLifecycle(fn);
                         break;

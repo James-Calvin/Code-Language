@@ -1,33 +1,33 @@
 package engine.input;
 
-export function<boolean> key_is_down(integer keycode) {
-  return key_down(keycode);
+export function<boolean> keyIsDown(integer keycode) {
+  return inputKeyDown(keycode);
 }
 
-export function<real> pointer_world_x_position() {
-  return pointer_world_x();
+export function<real> pointerWorldX() {
+  return inputPointerWorldX();
 }
 
-export function<real> pointer_world_y_position() {
-  return pointer_world_y();
+export function<real> pointerWorldY() {
+  return inputPointerWorldY();
 }
 
-export function<real> pointer_screen_x_position() {
-  return pointer_screen_x();
+export function<real> pointerScreenX() {
+  return inputPointerScreenX();
 }
 
-export function<real> pointer_screen_y_position() {
-  return pointer_screen_y();
+export function<real> pointerScreenY() {
+  return inputPointerScreenY();
 }
 
-export function<boolean> pointer_is_down_now() {
-  return pointer_is_down();
+export function<boolean> pointerIsDown() {
+  return inputPointerIsDown();
 }
 
-export function<boolean> pointer_was_pressed_now() {
-  return pointer_was_pressed();
+export function<boolean> pointerWasPressed() {
+  return inputPointerWasPressed();
 }
 
-export function<boolean> pointer_was_released_now() {
-  return pointer_was_released();
+export function<boolean> pointerWasReleased() {
+  return inputPointerWasReleased();
 }

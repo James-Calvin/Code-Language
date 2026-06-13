@@ -44,7 +44,7 @@ Behavior:
 - Compiles the source to bytecode.
 - Writes default bytecode to `./arithmetic.bytecode` in the current directory for the example above.
 - Runs it with native host bindings.
-- Use this for console examples and native-only APIs such as `read_line()`.
+- Use this for console examples and native-only APIs such as `readLine()`.
 
 Compile only in native mode:
 

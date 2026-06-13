@@ -22,7 +22,7 @@ This document defines the contract that the current first slice implements and t
 - Authoring model: explicit scene object or inferred top-level lifecycle entry
 - Browser presentation: fills the browser window by default
 - Coordinate model: guaranteed safe area of `640x360`, with hybrid-expanded world framing beyond that safe area when needed
-- Initial rendering/input/audio/diagnostics scope: primitive drawing (`draw_rectangle`, outlines, lines, circles, polygons, text), image/sprite drawing, keyboard input, primary pointer input, asset-backed one-shot/looping audio, and last-frame diagnostics
+- Initial rendering/input/audio/diagnostics scope: primitive drawing (`drawRectangle`, outlines, lines, circles, polygons, text), image/sprite drawing, keyboard input, primary pointer input, asset-backed one-shot/looping audio, and last-frame diagnostics
 - Build output: deployable static site folder
 - Default output directory: a folder in the current working directory named after the entry file, for example `shape_dodge/`
 
@@ -37,7 +37,7 @@ Current state:
 - Web build is the default public compiler behavior for `.code` input.
 - The public output flag is `-o` / `--output`.
 - The generated app page owns the browser canvas and runtime bootstrap.
-- The current browser-backed V1 slice supports either an explicit `MainScene` object or an inferred top-level lifecycle entry with `start()`, `update()`, `draw()`, and optional `draw_hud()`, full-window presentation, hybrid-expanded framing around a fixed `640x360` safe area, keyboard input, primary pointer input, `clear()`, `draw_rectangle()`, `draw_rectangle_outline()`, `draw_line()`, `draw_circle()`, `draw_circle_outline()`, `draw_polygon()`, `draw_polygon_outline()`, `draw_text()`, `draw_image()`, `draw_sprite()`, asset-backed one-shot/looping audio, `camera_view_*()`, `camera_safe_*()`, `screen_width()`, and last-frame diagnostics, plus usage-based implied engine imports across web app modules.
+- The current browser-backed V1 slice supports either an explicit `MainScene` object or an inferred top-level lifecycle entry with `start()`, `update()`, `draw()`, and optional `drawHud()`, full-window presentation, hybrid-expanded framing around a fixed `640x360` safe area, keyboard input, primary pointer input, `clear()`, `drawRectangle()`, `drawRectangleOutline()`, `drawLine()`, `drawCircle()`, `drawCircleOutline()`, `drawPolygon()`, `drawPolygonOutline()`, `drawText()`, `drawImage()`, `drawSprite()`, asset-backed one-shot/looping audio, `cameraView*()`, `cameraSafe*()`, `screenWidth()`, and last-frame diagnostics, plus usage-based implied engine imports across web app modules.
 - A higher-level wrapper layer now exists under `lib/engine/`: canonical modules `engine.colors`, `engine.drawing`, `engine.input`, `engine.viewport`, `engine.diagnostics`, `engine.audio`, and `engine.scene`, with compatibility re-export modules `engine.view` and `engine.loop`.
 - Scene composition is now supported through explicit child-object registration against `Scene`.
 - Generated apps prevent browser scroll/panning for app-control keys: arrows, Space, Page Up, Page Down, Home, and End.
@@ -61,7 +61,7 @@ Supported entry shapes:
   - The entry module exports an object named `MainScene`.
   - `MainScene` has a zero-argument constructor.
 - Inferred top-level lifecycle entry:
-  - The web app entry module declares top-level `start()`, `update()`, and `draw()` functions, with optional `draw_hud()`.
+  - The web app entry module declares top-level `start()`, `update()`, and `draw()` functions, with optional `drawHud()`.
   - Top-level state declarations become fields on a synthesized internal `MainScene`.
   - Top-level helper functions become methods on that synthesized internal `MainScene`.
   - Top-level executable statements are rejected in this entry shape.
@@ -76,7 +76,7 @@ Lifecycle:
 - The runtime calls `start()` exactly once after scene creation and before the first update.
 - The runtime calls `update()` on a fixed-step simulation loop at 60 updates per second.
 - The runtime calls `draw()` once per presented frame.
-- If present, the runtime calls `draw_hud()` once per presented frame after `draw()`.
+- If present, the runtime calls `drawHud()` once per presented frame after `draw()`.
 
 Required methods:
 - `start()`
@@ -84,13 +84,13 @@ Required methods:
 - `draw()`
 
 Optional method:
-- `draw_hud()`
+- `drawHud()`
 
 Method intent:
 - `start()` is for initialization that depends on the runtime being ready.
 - `update()` is for simulation, state changes, and input-driven gameplay logic.
 - `draw()` is for rendering the current world/gameplay state.
-- `draw_hud()` is for screen-edge-attached HUD or overlay work that should not move with the expanded world view.
+- `drawHud()` is for screen-edge-attached HUD or overlay work that should not move with the expanded world view.
 
 Scene composition:
 - Explicit `MainScene` remains the advanced and compatibility path for web builds.
@@ -102,7 +102,7 @@ Scene composition:
 
 Current app-profile direction:
 - Explicit `MainScene` remains valid.
-- The first inferred profile slice is implemented for web entry modules with top-level `start()`, `update()`, `draw()`, and optional `draw_hud()`, and it shares the same implied engine-import surface used by other web-app modules.
+- The first inferred profile slice is implemented for web entry modules with top-level `start()`, `update()`, `draw()`, and optional `drawHud()`, and it shares the same implied engine-import surface used by other web-app modules.
 - The longer-term target is to carry that authoring shape toward broader target-agnostic reuse so future native graphical targets can run the same Code source.
 
 Important implementation note:
@@ -123,12 +123,12 @@ function start() {
 }
 
 function update() {
-  if Input.key_is_down(37) then x -= speed;
-  if Input.key_is_down(39) then x += speed;
+  if Input.keyIsDown(37) then x -= speed;
+  if Input.keyIsDown(39) then x += speed;
 }
 
 function draw() {
-  Draw.clear_screen(Colors.rgb(0, 0, 0));
+  Draw.clearScreen(Colors.rgb(0, 0, 0));
   Draw.rectangle(x, y, 24, 24, Colors.rgb(255, 255, 255));
 }
 ```
@@ -148,20 +148,20 @@ object Player {
   }
 
   implement Updatable.update() {
-    if Input.key_is_down(37) then x -= speed;
-    if Input.key_is_down(39) then x += speed;
-    if Input.key_is_down(38) then y -= speed;
-    if Input.key_is_down(40) then y += speed;
-    if Input.pointer_was_pressed_now() then {
-      x = Input.pointer_world_x_position() as integer;
-      y = Input.pointer_world_y_position() as integer;
+    if Input.keyIsDown(37) then x -= speed;
+    if Input.keyIsDown(39) then x += speed;
+    if Input.keyIsDown(38) then y -= speed;
+    if Input.keyIsDown(40) then y += speed;
+    if Input.pointerWasPressed() then {
+      x = Input.pointerWorldX() as integer;
+      y = Input.pointerWorldY() as integer;
     }
   }
 
   implement WorldDrawable.draw() {
-    if x > Viewport.view_left() - 24 and x < Viewport.view_right() then {
+    if x > Viewport.viewLeft() - 24 and x < Viewport.viewRight() then {
       Draw.rectangle(x, y, 24, 24, Colors.rgb(255, 255, 255));
-      Draw.rectangle_outline(x - 4, y - 4, 32, 32, 2, Colors.rgba(1. / 4, 1. / 2, 1, 2. / 3));
+      Draw.rectangleOutline(x - 4, y - 4, 32, 32, 2, Colors.rgba(1. / 4, 1. / 2, 1, 2. / 3));
     }
   }
 }
@@ -171,12 +171,12 @@ object BackgroundLayer {
   }
 
   implement WorldDrawable.draw() {
-    Draw.clear_screen(Colors.rgb(0, 0, 0));
-    Draw.line(Viewport.safe_left(), Viewport.safe_top(), Viewport.safe_right(), Viewport.safe_bottom(), Colors.rgba(1, 1, 1, 1. / 3));
+    Draw.clearScreen(Colors.rgb(0, 0, 0));
+    Draw.line(Viewport.safeLeft(), Viewport.safeTop(), Viewport.safeRight(), Viewport.safeBottom(), Colors.rgba(1, 1, 1, 1. / 3));
     Draw.polygon({300, 80, 340, 92, 352, 120, 304, 124, 284, 100}, Colors.rgba(0, 1. / 2, 1, 1. / 3));
-    Draw.polygon_outline({300, 80, 340, 92, 352, 120, 304, 124, 284, 100}, 2, Colors.rgb(255, 255, 255));
+    Draw.polygonOutline({300, 80, 340, 92, 352, 120, 304, 124, 284, 100}, 2, Colors.rgb(255, 255, 255));
     Draw.circle(124, 84, 16, Colors.rgba(1, 1. / 2, 1. / 4, 1. / 2));
-    Draw.circle_outline(124, 84, 24, 2, Colors.rgb(255, 255, 255));
+    Draw.circleOutline(124, 84, 24, 2, Colors.rgb(255, 255, 255));
     Draw.image("assets/code-sheet.svg", 24, 220, 64, 32, 1);
     Draw.sprite("assets/code-sheet.svg", 32, 0, 32, 32, 104, 210, 64, 64, 1);
   }
@@ -189,11 +189,11 @@ object HeadsUpDisplay {
     this.player = player;
   }
 
-  implement HudDrawable.draw_hud() {
+  implement HudDrawable.drawHud() {
     Draw.text("Code", 16, 16, 18, "left", "top", Colors.rgb(255, 255, 255));
-    Draw.text("Arrow keys move", Viewport.hud_width() - 16, 16, 16, "right", "top", Colors.rgb(255, 255, 255));
+    Draw.text("Arrow keys move", Viewport.hudWidth() - 16, 16, 16, "right", "top", Colors.rgb(255, 255, 255));
     Draw.text("Player X: {player.x}", 16, 40, 14, "left", "top", Colors.rgb(255, 255, 255));
-    Draw.text("Pointer: {Input.pointer_screen_x_position()}, {Input.pointer_screen_y_position()}", 16, 64, 14, "left", "top", Colors.rgb(255, 255, 255));
+    Draw.text("Pointer: {Input.pointerScreenX()}, {Input.pointerScreenY()}", 16, 64, 14, "left", "top", Colors.rgb(255, 255, 255));
   }
 }
 
@@ -213,10 +213,10 @@ export object MainScene {
   }
 
   function start() {
-    scene.add_world_drawable(background_layer, 0);
-    scene.add_updatable(player);
-    scene.add_world_drawable(player, 10);
-    scene.add_hud_drawable(heads_up_display, 0);
+    scene.addWorldDrawable(background_layer, 0);
+    scene.addUpdatable(player);
+    scene.addWorldDrawable(player, 10);
+    scene.addHudDrawable(heads_up_display, 0);
     loop.start();
   }
 
@@ -228,8 +228,8 @@ export object MainScene {
     loop.draw();
   }
 
-  function draw_hud() {
-    loop.draw_hud();
+  function drawHud() {
+    loop.drawHud();
   }
 }
 ```
@@ -260,16 +260,16 @@ Scaling:
 
 World vs HUD spaces:
 - `draw()` uses world-space coordinates in the expanded visible world rectangle.
-- `draw_hud()` uses screen-space coordinates anchored to the visible browser edges.
+- `drawHud()` uses screen-space coordinates anchored to the visible browser edges.
 - HUD origin is top-left of the visible screen.
-- HUD size is exposed through `screen_width()` and `screen_height()`.
+- HUD size is exposed through `screenWidth()` and `screenHeight()`.
 
 Loop behavior:
 - `update()` runs at a fixed 60 Hz step.
 - `draw()` runs once per presented frame.
-- `draw_hud()` runs once per presented frame after `draw()` when present.
+- `drawHud()` runs once per presented frame after `draw()` when present.
 - If rendering is slower than updates for a short period, simulation remains fixed-step and presentation may skip frames rather than change game speed.
-- `engine.scene` registration changes are staged; adds/removes made during `update()`, `draw()`, or `draw_hud()` do not take effect until the next `update()` phase.
+- `engine.scene` registration changes are staged; adds/removes made during `update()`, `draw()`, or `drawHud()` do not take effect until the next `update()` phase.
 
 ## V1 API Surface
 
@@ -277,99 +277,99 @@ The V1 scene runtime hides raw window-handle management in the default workflow.
 
 Raw scene-runtime surface:
 - `clear(real r, real g, real b, real a)`
-- `draw_rectangle(real x, real y, real w, real h, real r, real g, real b, real a)`
-- `draw_rectangle_outline(real x, real y, real w, real h, real line_width, real r, real g, real b, real a)`
-- `draw_line(real x1, real y1, real x2, real y2, real r, real g, real b, real a)`
-- `draw_circle(real x, real y, real radius, real r, real g, real b, real a)`
-- `draw_circle_outline(real x, real y, real radius, real line_width, real r, real g, real b, real a)`
-- `draw_polygon(array points, real r, real g, real b, real a)`
-- `draw_polygon_outline(array points, real line_width, real r, real g, real b, real a)`
-- `draw_text(string text, real x, real y, real size, string horizontal_alignment, string vertical_alignment, real r, real g, real b, real a)`
-- `draw_image(string source, real x, real y, real width, real height, real alpha)`
-- `draw_sprite(string source, real source_x, real source_y, real source_width, real source_height, real x, real y, real width, real height, real alpha)`
-- `key_down(integer keycode) -> boolean`
-- `pointer_world_x() -> real`
-- `pointer_world_y() -> real`
-- `pointer_screen_x() -> real`
-- `pointer_screen_y() -> real`
-- `pointer_is_down() -> boolean`
-- `pointer_was_pressed() -> boolean`
-- `pointer_was_released() -> boolean`
-- `diagnostics_last_frame_interval_milliseconds() -> real`
-- `diagnostics_estimated_frames_per_second() -> real`
-- `diagnostics_last_frame_work_milliseconds() -> real`
-- `diagnostics_last_update_work_milliseconds() -> real`
-- `diagnostics_last_draw_work_milliseconds() -> real`
-- `diagnostics_last_draw_hud_work_milliseconds() -> real`
-- `diagnostics_last_update_steps() -> integer`
-- `audio_can_play_sound() -> boolean`
-- `audio_play_sound(string source, real volume) -> integer`
-- `audio_play_looping_sound(string source, real volume) -> integer`
-- `audio_stop_sound(integer handle)`
-- `audio_set_sound_volume(integer handle, real volume)`
-- `audio_sound_is_playing(integer handle) -> boolean`
-- `audio_stop_all_sounds()`
-- `camera_view_left() -> real`
-- `camera_view_top() -> real`
-- `camera_view_width() -> real`
-- `camera_view_height() -> real`
-- `camera_view_right() -> real`
-- `camera_view_bottom() -> real`
-- `camera_safe_left() -> real`
-- `camera_safe_top() -> real`
-- `camera_safe_width() -> real`
-- `camera_safe_height() -> real`
-- `camera_safe_right() -> real`
-- `camera_safe_bottom() -> real`
-- `screen_width() -> real`
-- `screen_height() -> real`
+- `drawRectangle(real x, real y, real w, real h, real r, real g, real b, real a)`
+- `drawRectangleOutline(real x, real y, real w, real h, real lineWidth, real r, real g, real b, real a)`
+- `drawLine(real x1, real y1, real x2, real y2, real r, real g, real b, real a)`
+- `drawCircle(real x, real y, real radius, real r, real g, real b, real a)`
+- `drawCircleOutline(real x, real y, real radius, real lineWidth, real r, real g, real b, real a)`
+- `drawPolygon(array points, real r, real g, real b, real a)`
+- `drawPolygonOutline(array points, real lineWidth, real r, real g, real b, real a)`
+- `drawText(string text, real x, real y, real size, string horizontalAlignment, string verticalAlignment, real r, real g, real b, real a)`
+- `drawImage(string source, real x, real y, real width, real height, real alpha)`
+- `drawSprite(string source, real sourceX, real sourceY, real sourceWidth, real sourceHeight, real x, real y, real width, real height, real alpha)`
+- `inputKeyDown(integer keycode) -> boolean`
+- `inputPointerWorldX() -> real`
+- `inputPointerWorldY() -> real`
+- `inputPointerScreenX() -> real`
+- `inputPointerScreenY() -> real`
+- `inputPointerIsDown() -> boolean`
+- `inputPointerWasPressed() -> boolean`
+- `inputPointerWasReleased() -> boolean`
+- `diagnosticsLastFrameIntervalMilliseconds() -> real`
+- `diagnosticsEstimatedFramesPerSecond() -> real`
+- `diagnosticsLastFrameWorkMilliseconds() -> real`
+- `diagnosticsLastUpdateWorkMilliseconds() -> real`
+- `diagnosticsLastDrawWorkMilliseconds() -> real`
+- `diagnosticsLastDrawHudWorkMilliseconds() -> real`
+- `diagnosticsLastUpdateSteps() -> integer`
+- `audioCanPlaySound() -> boolean`
+- `audioPlaySound(string source, real volume) -> integer`
+- `audioPlayLoopingSound(string source, real volume) -> integer`
+- `audioStopSound(integer handle)`
+- `audioSetSoundVolume(integer handle, real volume)`
+- `audioSoundIsPlaying(integer handle) -> boolean`
+- `audioStopAllSounds()`
+- `cameraViewLeft() -> real`
+- `cameraViewTop() -> real`
+- `cameraViewWidth() -> real`
+- `cameraViewHeight() -> real`
+- `cameraViewRight() -> real`
+- `cameraViewBottom() -> real`
+- `cameraSafeLeft() -> real`
+- `cameraSafeTop() -> real`
+- `cameraSafeWidth() -> real`
+- `cameraSafeHeight() -> real`
+- `cameraSafeRight() -> real`
+- `cameraSafeBottom() -> real`
+- `screenWidth() -> real`
+- `screenHeight() -> real`
 
 Current wrapper layer:
 - `engine.colors`
   - `rgb(byte red, byte green, byte blue) -> Color`
   - `rgba(real red, real green, real blue, real alpha) -> Color`
 - `engine.drawing`
-  - `clear_screen(Color color)`
+  - `clearScreen(Color color)`
   - `line(...)`
   - `rectangle(...)`
-  - `rectangle_outline(...)`
+  - `rectangleOutline(...)`
   - `circle(...)`
-  - `circle_outline(...)`
+  - `circleOutline(...)`
   - `polygon(...)`
-  - `polygon_outline(...)`
+  - `polygonOutline(...)`
   - `text(...)`
   - `image(...)`
   - `sprite(...)`
 - `engine.input`
-  - `key_is_down(integer keycode) -> boolean`
-  - `pointer_world_x_position() -> real`
-  - `pointer_world_y_position() -> real`
-  - `pointer_screen_x_position() -> real`
-  - `pointer_screen_y_position() -> real`
-  - `pointer_is_down_now() -> boolean`
-  - `pointer_was_pressed_now() -> boolean`
-  - `pointer_was_released_now() -> boolean`
+  - `keyIsDown(integer keycode) -> boolean`
+  - `pointerWorldX() -> real`
+  - `pointerWorldY() -> real`
+  - `pointerScreenX() -> real`
+  - `pointerScreenY() -> real`
+  - `pointerIsDown() -> boolean`
+  - `pointerWasPressed() -> boolean`
+  - `pointerWasReleased() -> boolean`
 - `engine.diagnostics`
-  - `last_frame_interval_milliseconds() -> real`
-  - `estimated_frames_per_second() -> real`
-  - `last_frame_work_milliseconds() -> real`
-  - `last_update_work_milliseconds() -> real`
-  - `last_draw_work_milliseconds() -> real`
-  - `last_draw_hud_work_milliseconds() -> real`
-  - `last_update_steps() -> integer`
+  - `lastFrameIntervalMilliseconds() -> real`
+  - `estimatedFramesPerSecond() -> real`
+  - `lastFrameWorkMilliseconds() -> real`
+  - `lastUpdateWorkMilliseconds() -> real`
+  - `lastDrawWorkMilliseconds() -> real`
+  - `lastDrawHudWorkMilliseconds() -> real`
+  - `lastUpdateSteps() -> integer`
 - `engine.audio`
-  - `can_play_sound() -> boolean`
-  - `play_sound(string source, real volume) -> integer`
-  - `play_looping_sound(string source, real volume) -> integer`
-  - `stop_sound(integer handle)`
-  - `set_sound_volume(integer handle, real volume)`
-  - `sound_is_playing(integer handle) -> boolean`
-  - `stop_all_sounds()`
+  - `canPlaySound() -> boolean`
+  - `playSound(string source, real volume) -> integer`
+  - `playLoopingSound(string source, real volume) -> integer`
+  - `stopSound(integer handle)`
+  - `setSoundVolume(integer handle, real volume)`
+  - `soundIsPlaying(integer handle) -> boolean`
+  - `stopAllSounds()`
 - `engine.viewport`
   - `view_*()`
   - `safe_*()`
-  - `hud_width()`
-  - `hud_height()`
+  - `hudWidth()`
+  - `hudHeight()`
 - `engine.scene`
   - `Startable`, `Updatable`, `WorldDrawable`, `HudDrawable`
   - `Scene`
@@ -381,30 +381,30 @@ Current wrapper layer:
 
 Behavior rules:
 - `clear(...)` clears the full visible browser canvas for the current frame.
-- `draw_rectangle(...)`, `draw_rectangle_outline(...)`, `draw_line(...)`, `draw_circle(...)`, `draw_circle_outline(...)`, `draw_polygon(...)`, `draw_polygon_outline(...)`, `draw_text(...)`, `draw_image(...)`, and `draw_sprite(...)` draw in world coordinates during `draw()`.
-- The same drawing calls use screen-space coordinates during `draw_hud()`.
-- `key_down(...)` returns the current keyboard state without requiring a window handle.
-- `pointer_screen_x()` / `pointer_screen_y()` return HUD/screen-space coordinates from the visible canvas top-left.
-- `pointer_world_x()` / `pointer_world_y()` return coordinates in the current expanded world view, matching `draw()` coordinates.
-- `pointer_is_down()` tracks the primary pointer: left mouse button, primary pen button, or first/primary touch.
-- `pointer_was_pressed()` and `pointer_was_released()` are fixed-update edge states intended for `update()`; a quick tap between updates can make both true for the next update.
+- `drawRectangle(...)`, `drawRectangleOutline(...)`, `drawLine(...)`, `drawCircle(...)`, `drawCircleOutline(...)`, `drawPolygon(...)`, `drawPolygonOutline(...)`, `drawText(...)`, `drawImage(...)`, and `drawSprite(...)` draw in world coordinates during `draw()`.
+- The same drawing calls use screen-space coordinates during `drawHud()`.
+- `inputKeyDown(...)` returns the current keyboard state without requiring a window handle.
+- `inputPointerScreenX()` / `inputPointerScreenY()` return HUD/screen-space coordinates from the visible canvas top-left.
+- `inputPointerWorldX()` / `inputPointerWorldY()` return coordinates in the current expanded world view, matching `draw()` coordinates.
+- `inputPointerIsDown()` tracks the primary pointer: left mouse button, primary pen button, or first/primary touch.
+- `inputPointerWasPressed()` and `inputPointerWasReleased()` are fixed-update edge states intended for `update()`; a quick tap between updates can make both true for the next update.
 - Last known pointer coordinates remain available after release; blur/cancel clears the down state and produces a release edge if needed.
 - Diagnostics helpers return metrics from the last completed presented frame. During the current frame, they intentionally report the previous frame's published values.
-- `last_frame_work_milliseconds()` measures runtime VM work around update/draw/HUD invocation. It does not include browser compositor or GPU presentation time.
+- `lastFrameWorkMilliseconds()` measures runtime VM work around update/draw/HUD invocation. It does not include browser compositor or GPU presentation time.
 - Use `ConsoleApp1/examples/performance_dashboard.code` for relative threshold-finding, and browser devtools Performance for deeper browser/compositor investigation.
 - Audio helpers use static asset paths in the built site folder, return integer handles for playback control, and use browser audio unlock on first key or pointer input.
-- `play_sound(...)` starts overlapping one-shot sounds; `play_looping_sound(...)` starts a loop suitable for background music. Missing or unsupported assets fail non-fatally and report not playing.
+- `playSound(...)` starts overlapping one-shot sounds; `playLoopingSound(...)` starts a loop suitable for background music. Missing or unsupported assets fail non-fatally and report not playing.
 - Audio volume is clamped to `0..1`. Native execution and web execution without an attached scene host return neutral values and perform no playback.
-- `camera_view_*()` exposes the current expanded visible world bounds.
-- `camera_safe_*()` exposes the guaranteed `640x360` safe area bounds.
-- `screen_width()` / `screen_height()` expose the visible HUD/screen-space size.
-- `draw_text(...)` uses alignment strings: horizontal `"left"`, `"center"`, `"right"` and vertical `"top"`, `"middle"`, `"bottom"`.
-- `draw_polygon(...)` / `draw_polygon_outline(...)` take a flat numeric array of alternating `x, y` points.
-- `draw_image(...)` and `draw_sprite(...)` load from static asset paths in the built site folder.
+- `cameraView*()` exposes the current expanded visible world bounds.
+- `cameraSafe*()` exposes the guaranteed `640x360` safe area bounds.
+- `screenWidth()` / `screenHeight()` expose the visible HUD/screen-space size.
+- `drawText(...)` uses alignment strings: horizontal `"left"`, `"center"`, `"right"` and vertical `"top"`, `"middle"`, `"bottom"`.
+- `drawPolygon(...)` / `drawPolygonOutline(...)` take a flat numeric array of alternating `x, y` points.
+- `drawImage(...)` and `drawSprite(...)` load from static asset paths in the built site folder.
 - `rgb(byte, byte, byte)` uses byte channels from `0` to `255`; `byte` and `whole8` are the same type.
 - Future byte-channel `rgba(byte, byte, byte, byte)` should build on the implemented `byte` / `whole8` numeric type surface; current `rgba` still uses real channels commonly from `0` to `1`.
 - Integral `/` is truncating integer division. Use a `real` operand for ratio values, for example `1. / 4` or `1 as real / 4`.
-- Legacy `draw_rect(...)` remains accepted as a temporary compatibility alias, but docs and examples use `draw_rectangle(...)`.
+- `drawRectangle(...)` is the canonical rectangle intrinsic; old source-level abbreviation aliases are not part of the current public API.
 - Peek limiting, culling, and gameplay-specific visibility rules remain developer-authored in user code; the runtime only exposes the bounds needed to implement them.
 
 Out of scope for V1:
@@ -454,11 +454,11 @@ The first implementation milestone is defined by the following conditions:
 - The app fills the browser window.
 - Rendering preserves aspect ratio with a centered `640x360` safe area and hybrid-expanded visible world.
 - Keyboard input works inside `update()`.
-- Primary pointer coordinates and press/release edges work inside `update()` and can be displayed in `draw_hud()`.
-- Last-frame diagnostics can be displayed in `draw_hud()` through `engine.diagnostics` / `Diagnostics`.
+- Primary pointer coordinates and press/release edges work inside `update()` and can be displayed in `drawHud()`.
+- Last-frame diagnostics can be displayed in `drawHud()` through `engine.diagnostics` / `Diagnostics`.
 - Asset-backed one-shot and looping audio can be controlled through `engine.audio` / `Audio`.
-- Rectangle, outline, circle, polygon, text, and image/sprite rendering work inside `draw()` / `draw_hud()`.
-- HUD anchoring works inside `draw_hud()` using `screen_width()` / `screen_height()`.
+- Rectangle, outline, circle, polygon, text, and image/sprite rendering work inside `draw()` / `drawHud()`.
+- HUD anchoring works inside `drawHud()` using `screenWidth()` / `screenHeight()`.
 - The first wrapper layer under `lib/engine/` covers colors, drawing, input, diagnostics, audio, and view queries for scene apps.
 
 Implementation note:
@@ -475,4 +475,3 @@ This document does not define:
 - bytecode or VM opcode changes
 
 Those can evolve later, but they must not violate the runtime contract defined here.
-

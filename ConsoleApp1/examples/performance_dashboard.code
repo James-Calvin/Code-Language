@@ -1,63 +1,63 @@
 object BenchmarkState {
   integer profile;
-  integer load_level;
+  integer loadLevel;
   boolean paused;
-  integer presented_frames;
-  boolean left_was_down;
-  boolean right_was_down;
-  boolean up_was_down;
-  boolean down_was_down;
-  boolean space_was_down;
-  boolean reset_was_down;
+  integer presentedFrames;
+  boolean leftWasDown;
+  boolean rightWasDown;
+  boolean upWasDown;
+  boolean downWasDown;
+  boolean spaceWasDown;
+  boolean resetWasDown;
 
   constructor() {
     profile = 0;
-    load_level = 3;
+    loadLevel = 3;
     paused = false;
-    presented_frames = 0;
-    left_was_down = false;
-    right_was_down = false;
-    up_was_down = false;
-    down_was_down = false;
-    space_was_down = false;
-    reset_was_down = false;
+    presentedFrames = 0;
+    leftWasDown = false;
+    rightWasDown = false;
+    upWasDown = false;
+    downWasDown = false;
+    spaceWasDown = false;
+    resetWasDown = false;
   }
 
-  function reset_samples() {
-    presented_frames = 0;
+  function resetSamples() {
+    presentedFrames = 0;
   }
 }
 
 object RollingMetrics {
   array<real> samples;
-  integer next_index;
+  integer nextIndex;
   integer count;
   real average;
-  real minimum_value;
-  real maximum_value;
+  real minimumValue;
+  real maximumValue;
 
   constructor(integer capacity) {
     samples = new array<real>(capacity);
-    next_index = 0;
+    nextIndex = 0;
     count = 0;
     average = 0;
-    minimum_value = 0;
-    maximum_value = 0;
+    minimumValue = 0;
+    maximumValue = 0;
   }
 
   function reset() {
-    next_index = 0;
+    nextIndex = 0;
     count = 0;
     average = 0;
-    minimum_value = 0;
-    maximum_value = 0;
+    minimumValue = 0;
+    maximumValue = 0;
   }
 
   function add(real value) {
     if value <= 0 then return;
 
-    samples[next_index] = value;
-    next_index = (next_index + 1) % samples.length;
+    samples[nextIndex] = value;
+    nextIndex = (nextIndex + 1) % samples.length;
     if count < samples.length then count += 1;
     recompute();
   }
@@ -65,21 +65,21 @@ object RollingMetrics {
   function recompute() {
     if count == 0 then {
       average = 0;
-      minimum_value = 0;
-      maximum_value = 0;
+      minimumValue = 0;
+      maximumValue = 0;
       return;
     }
 
     real total = 0;
-    minimum_value = samples[0];
-    maximum_value = samples[0];
+    minimumValue = samples[0];
+    maximumValue = samples[0];
 
     integer index = 0;
     while index < count then {
       real value = samples[index];
       total += value;
-      if value < minimum_value then minimum_value = value;
-      if value > maximum_value then maximum_value = value;
+      if value < minimumValue then minimumValue = value;
+      if value > maximumValue then maximumValue = value;
       index += 1;
     }
 
@@ -90,26 +90,26 @@ object RollingMetrics {
 object MovingEntity {
   real x;
   real y;
-  real velocity_x;
-  real velocity_y;
+  real velocityX;
+  real velocityY;
   real size;
   Color color;
 
   constructor(integer index) {
     size = 5 + index % 9;
-    x = Viewport.safe_left() + 8 + (index * 23) % 620;
-    y = Viewport.safe_top() + 8 + (index * 31) % 340;
-    velocity_x = 1 + index % 5;
-    velocity_y = 1 + (index * 2) % 5;
+    x = Viewport.safeLeft() + 8 + (index * 23) % 620;
+    y = Viewport.safeTop() + 8 + (index * 31) % 340;
+    velocityX = 1 + index % 5;
+    velocityY = 1 + (index * 2) % 5;
     color = Colors.rgb((48 + (index * 19) % 160) as byte, (96 + (index * 23) % 128) as byte, (144 + (index * 29) % 96) as byte);
   }
 
   function update() {
-    x += velocity_x;
-    y += velocity_y;
+    x += velocityX;
+    y += velocityY;
 
-    if x < Viewport.safe_left() or x + size > Viewport.safe_right() then velocity_x = 0 - velocity_x;
-    if y < Viewport.safe_top() or y + size > Viewport.safe_bottom() then velocity_y = 0 - velocity_y;
+    if x < Viewport.safeLeft() or x + size > Viewport.safeRight() then velocityX = 0 - velocityX;
+    if y < Viewport.safeTop() or y + size > Viewport.safeBottom() then velocityY = 0 - velocityY;
   }
 
   function draw() {
@@ -128,40 +128,40 @@ object DispatchActor {
   constructor(BenchmarkState state, integer index) {
     this.state = state;
     this.index = index;
-    x = Viewport.safe_left() + 8 + (index * 17) % 620;
-    y = Viewport.safe_top() + 8 + (index * 13) % 340;
+    x = Viewport.safeLeft() + 8 + (index * 17) % 620;
+    y = Viewport.safeTop() + 8 + (index * 13) % 340;
     velocity = 1 + index % 4;
     color = Colors.rgb((64 + (index * 11) % 160) as byte, (80 + (index * 17) % 160) as byte, 255);
   }
 
   implement Updatable.update() {
-    if index >= state.load_level * 40 then return;
+    if index >= state.loadLevel * 40 then return;
     if state.paused then return;
 
     x += velocity;
-    if x > Viewport.safe_right() then x = Viewport.safe_left() - 6;
+    if x > Viewport.safeRight() then x = Viewport.safeLeft() - 6;
   }
 
   implement WorldDrawable.draw() {
-    if index >= state.load_level * 40 then return;
+    if index >= state.loadLevel * 40 then return;
     Draw.circle(x, y, 3 + index % 5, color);
   }
 }
 
 BenchmarkState state;
-RollingMetrics frame_work_metrics;
+RollingMetrics frameWorkMetrics;
 array<MovingEntity> entities;
-array<DispatchActor> dispatch_actors;
-Scene dispatch_scene;
-SceneLoop dispatch_loop;
+array<DispatchActor> dispatchActors;
+Scene dispatchScene;
+SceneLoop dispatchLoop;
 
 function start() {
   state = new BenchmarkState();
-  frame_work_metrics = new RollingMetrics(120);
+  frameWorkMetrics = new RollingMetrics(120);
   entities = new array<MovingEntity>(0);
-  dispatch_actors = new array<DispatchActor>(0);
-  dispatch_scene = new Scene();
-  dispatch_loop = new SceneLoop(dispatch_scene);
+  dispatchActors = new array<DispatchActor>(0);
+  dispatchScene = new Scene();
+  dispatchLoop = new SceneLoop(dispatchScene);
 
   integer index = 0;
   while index < 1000 then {
@@ -172,137 +172,137 @@ function start() {
   index = 0;
   while index < 400 then {
     DispatchActor actor = new DispatchActor(state, index);
-    dispatch_actors.append(actor);
-    dispatch_scene.add_updatable(actor);
-    dispatch_scene.add_world_drawable(actor, index % 8);
+    dispatchActors.append(actor);
+    dispatchScene.addUpdatable(actor);
+    dispatchScene.addWorldDrawable(actor, index % 8);
     index += 1;
   }
 
-  dispatch_loop.start();
+  dispatchLoop.start();
 }
 
 function update() {
-  handle_controls();
+  handleControls();
   if state.paused then return;
 
-  if state.profile == 1 then update_entities();
-  if state.profile == 2 then dispatch_loop.update();
+  if state.profile == 1 then updateEntities();
+  if state.profile == 2 then dispatchLoop.update();
 }
 
 function draw() {
-  Draw.clear_screen(Colors.rgb(5, 8, 14));
-  Draw.rectangle(Viewport.safe_left(), Viewport.safe_top(), Viewport.safe_width(), Viewport.safe_height(), Colors.rgb(10, 16, 28));
-  Draw.rectangle_outline(Viewport.safe_left(), Viewport.safe_top(), Viewport.safe_width(), Viewport.safe_height(), 2, Colors.rgba(1, 1, 1, 1. / 4));
+  Draw.clearScreen(Colors.rgb(5, 8, 14));
+  Draw.rectangle(Viewport.safeLeft(), Viewport.safeTop(), Viewport.safeWidth(), Viewport.safeHeight(), Colors.rgb(10, 16, 28));
+  Draw.rectangleOutline(Viewport.safeLeft(), Viewport.safeTop(), Viewport.safeWidth(), Viewport.safeHeight(), 2, Colors.rgba(1, 1, 1, 1. / 4));
 
-  if state.profile == 0 then draw_primitive_profile();
-  if state.profile == 1 then draw_entity_profile();
-  if state.profile == 2 then dispatch_loop.draw();
+  if state.profile == 0 then drawPrimitiveProfile();
+  if state.profile == 1 then drawEntityProfile();
+  if state.profile == 2 then dispatchLoop.draw();
 }
 
-function draw_hud() {
-  state.presented_frames += 1;
-  if state.presented_frames > 30 then frame_work_metrics.add(Diagnostics.last_frame_work_milliseconds());
+function drawHud() {
+  state.presentedFrames += 1;
+  if state.presentedFrames > 30 then frameWorkMetrics.add(Diagnostics.lastFrameWorkMilliseconds());
 
   real x = 16;
   real y = 14;
-  Color text_color = Colors.rgb(238, 247, 255);
-  Color dim_color = Colors.rgb(155, 174, 199);
-  Color accent_color = Colors.rgb(112, 207, 255);
+  Color textColor = Colors.rgb(238, 247, 255);
+  Color dimColor = Colors.rgb(155, 174, 199);
+  Color accentColor = Colors.rgb(112, 207, 255);
 
-  Draw.text("Code Performance Dashboard", x, y, 18, "left", "top", text_color);
+  Draw.text("Code Performance Dashboard", x, y, 18, "left", "top", textColor);
   y += 24;
-  Draw.text("Profile: {profile_name()} | Load: {state.load_level} | Paused: {state.paused}", x, y, 14, "left", "top", accent_color);
+  Draw.text("Profile: {profileName()} | Load: {state.loadLevel} | Paused: {state.paused}", x, y, 14, "left", "top", accentColor);
   y += 20;
-  Draw.text("Controls: Left/Right profile, Up/Down load, Space pause, R reset samples", x, y, 13, "left", "top", dim_color);
+  Draw.text("Controls: Left/Right profile, Up/Down load, Space pause, R reset samples", x, y, 13, "left", "top", dimColor);
   y += 28;
 
-  Draw.text("Workload draw calls: {estimated_draw_calls()} | Update steps last frame: {Diagnostics.last_update_steps()}", x, y, 13, "left", "top", text_color);
+  Draw.text("Workload draw calls: {estimatedDrawCalls()} | Update steps last frame: {Diagnostics.lastUpdateSteps()}", x, y, 13, "left", "top", textColor);
   y += 20;
-  Draw.text("Frame interval ms: {Diagnostics.last_frame_interval_milliseconds()} | Estimated FPS: {Diagnostics.estimated_frames_per_second()}", x, y, 13, "left", "top", text_color);
+  Draw.text("Frame interval ms: {Diagnostics.lastFrameIntervalMilliseconds()} | Estimated FPS: {Diagnostics.estimatedFramesPerSecond()}", x, y, 13, "left", "top", textColor);
   y += 20;
-  Draw.text("Frame work ms: {Diagnostics.last_frame_work_milliseconds()} | avg {frame_work_metrics.average} | min {frame_work_metrics.minimum_value} | max {frame_work_metrics.maximum_value}", x, y, 13, "left", "top", text_color);
+  Draw.text("Frame work ms: {Diagnostics.lastFrameWorkMilliseconds()} | avg {frameWorkMetrics.average} | min {frameWorkMetrics.minimumValue} | max {frameWorkMetrics.maximumValue}", x, y, 13, "left", "top", textColor);
   y += 20;
-  Draw.text("Update ms: {Diagnostics.last_update_work_milliseconds()} | Draw ms: {Diagnostics.last_draw_work_milliseconds()} | HUD ms: {Diagnostics.last_draw_hud_work_milliseconds()}", x, y, 13, "left", "top", text_color);
+  Draw.text("Update ms: {Diagnostics.lastUpdateWorkMilliseconds()} | Draw ms: {Diagnostics.lastDrawWorkMilliseconds()} | HUD ms: {Diagnostics.lastDrawHudWorkMilliseconds()}", x, y, 13, "left", "top", textColor);
 
-  if state.presented_frames <= 30 then {
-    Draw.text("Warming up samples...", Viewport.hud_width() - 16, 16, 14, "right", "top", Colors.rgb(255, 223, 112));
+  if state.presentedFrames <= 30 then {
+    Draw.text("Warming up samples...", Viewport.hudWidth() - 16, 16, 14, "right", "top", Colors.rgb(255, 223, 112));
   }
 }
 
-function handle_controls() {
-  boolean left_now = Input.key_is_down(37);
-  boolean right_now = Input.key_is_down(39);
-  boolean up_now = Input.key_is_down(38);
-  boolean down_now = Input.key_is_down(40);
-  boolean space_now = Input.key_is_down(32);
-  boolean reset_now = Input.key_is_down(82);
+function handleControls() {
+  boolean leftNow = Input.keyIsDown(37);
+  boolean rightNow = Input.keyIsDown(39);
+  boolean upNow = Input.keyIsDown(38);
+  boolean downNow = Input.keyIsDown(40);
+  boolean spaceNow = Input.keyIsDown(32);
+  boolean resetNow = Input.keyIsDown(82);
 
-  if left_now and not state.left_was_down then {
+  if leftNow and not state.leftWasDown then {
     state.profile -= 1;
     if state.profile < 0 then state.profile = 2;
-    reset_samples();
+    resetSamples();
   }
 
-  if right_now and not state.right_was_down then {
+  if rightNow and not state.rightWasDown then {
     state.profile += 1;
     if state.profile > 2 then state.profile = 0;
-    reset_samples();
+    resetSamples();
   }
 
-  if up_now and not state.up_was_down then {
-    state.load_level += 1;
-    if state.load_level > 10 then state.load_level = 10;
-    reset_samples();
+  if upNow and not state.upWasDown then {
+    state.loadLevel += 1;
+    if state.loadLevel > 10 then state.loadLevel = 10;
+    resetSamples();
   }
 
-  if down_now and not state.down_was_down then {
-    state.load_level -= 1;
-    if state.load_level < 1 then state.load_level = 1;
-    reset_samples();
+  if downNow and not state.downWasDown then {
+    state.loadLevel -= 1;
+    if state.loadLevel < 1 then state.loadLevel = 1;
+    resetSamples();
   }
 
-  if space_now and not state.space_was_down then state.paused = not state.paused;
-  if reset_now and not state.reset_was_down then reset_samples();
+  if spaceNow and not state.spaceWasDown then state.paused = not state.paused;
+  if resetNow and not state.resetWasDown then resetSamples();
 
-  state.left_was_down = left_now;
-  state.right_was_down = right_now;
-  state.up_was_down = up_now;
-  state.down_was_down = down_now;
-  state.space_was_down = space_now;
-  state.reset_was_down = reset_now;
+  state.leftWasDown = leftNow;
+  state.rightWasDown = rightNow;
+  state.upWasDown = upNow;
+  state.downWasDown = downNow;
+  state.spaceWasDown = spaceNow;
+  state.resetWasDown = resetNow;
 }
 
-function reset_samples() {
-  state.reset_samples();
-  frame_work_metrics.reset();
+function resetSamples() {
+  state.resetSamples();
+  frameWorkMetrics.reset();
 }
 
-function<string> profile_name() {
+function<string> profileName() {
   if state.profile == 0 then return "Primitive rendering";
   if state.profile == 1 then return "Entity update and draw";
   return "Scene dispatch";
 }
 
-function<integer> primitive_count() {
-  return state.load_level * 80;
+function<integer> primitiveCount() {
+  return state.loadLevel * 80;
 }
 
-function<integer> entity_count() {
-  return state.load_level * 90;
+function<integer> entityCount() {
+  return state.loadLevel * 90;
 }
 
-function<integer> active_dispatch_count() {
-  return state.load_level * 40;
+function<integer> activeDispatchCount() {
+  return state.loadLevel * 40;
 }
 
-function<integer> estimated_draw_calls() {
-  if state.profile == 0 then return primitive_count() * 2;
-  if state.profile == 1 then return entity_count();
-  return active_dispatch_count();
+function<integer> estimatedDrawCalls() {
+  if state.profile == 0 then return primitiveCount() * 2;
+  if state.profile == 1 then return entityCount();
+  return activeDispatchCount();
 }
 
-function update_entities() {
-  integer count = entity_count();
+function updateEntities() {
+  integer count = entityCount();
   integer index = 0;
   while index < count then {
     entities[index].update();
@@ -310,8 +310,8 @@ function update_entities() {
   }
 }
 
-function draw_entity_profile() {
-  integer count = entity_count();
+function drawEntityProfile() {
+  integer count = entityCount();
   integer index = 0;
   while index < count then {
     entities[index].draw();
@@ -319,12 +319,12 @@ function draw_entity_profile() {
   }
 }
 
-function draw_primitive_profile() {
-  integer count = primitive_count();
+function drawPrimitiveProfile() {
+  integer count = primitiveCount();
   integer index = 0;
   while index < count then {
-    real x = Viewport.safe_left() + 8 + (index * 19) % 624;
-    real y = Viewport.safe_top() + 8 + (index * 29) % 344;
+    real x = Viewport.safeLeft() + 8 + (index * 19) % 624;
+    real y = Viewport.safeTop() + 8 + (index * 29) % 344;
     Color color = Colors.rgb((64 + (index * 7) % 160) as byte, (96 + (index * 13) % 128) as byte, (128 + (index * 17) % 96) as byte);
 
     if index % 4 == 0 then {
@@ -332,13 +332,13 @@ function draw_primitive_profile() {
       Draw.line(x - 6, y - 6, x + 18, y + 18, Colors.rgba(1, 1, 1, 1. / 5));
     } else if index % 4 == 1 then {
       Draw.circle(x, y, 3 + index % 8, color);
-      Draw.circle_outline(x, y, 5 + index % 10, 1, Colors.rgba(1, 1, 1, 1. / 4));
+      Draw.circleOutline(x, y, 5 + index % 10, 1, Colors.rgba(1, 1, 1, 1. / 4));
     } else if index % 4 == 2 then {
       array<real> points = {x, y - 7, x + 8, y, x, y + 7, x - 8, y};
       Draw.polygon(points, color);
-      Draw.polygon_outline(points, 1, Colors.rgba(1, 1, 1, 1. / 4));
+      Draw.polygonOutline(points, 1, Colors.rgba(1, 1, 1, 1. / 4));
     } else {
-      Draw.rectangle_outline(x, y, 12, 12, 1, color);
+      Draw.rectangleOutline(x, y, 12, 12, 1, color);
       if index % 24 == 3 then Draw.text("{index}", x, y, 10, "left", "top", color);
     }
 

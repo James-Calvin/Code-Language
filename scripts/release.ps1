@@ -65,6 +65,20 @@ foreach ($runtime in $Runtimes) {
         throw "Publish failed for runtime '$runtime'."
     }
 
+    $requiredSidecarFiles = @(
+        "lib/engine/colors.code",
+        "lib/engine/drawing.code",
+        "lib/engine/input.code",
+        "lib/engine/viewport.code",
+        "web-runtime/code-vm-web.js"
+    )
+    foreach ($requiredSidecarFile in $requiredSidecarFiles) {
+        $requiredPath = Join-Path $publishDir $requiredSidecarFile
+        if (-not (Test-Path $requiredPath)) {
+            throw "Publish output for runtime '$runtime' is missing required sidecar file '$requiredSidecarFile'."
+        }
+    }
+
     Compress-Archive -Path (Join-Path $publishDir "*") -DestinationPath $zipPath
 
     $hash = Get-FileHash -Algorithm SHA256 -Path $zipPath

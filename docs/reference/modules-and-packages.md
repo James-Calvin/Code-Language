@@ -75,9 +75,11 @@ Common mistakes:
 String-path imports search:
 
 1. The importing file's directory.
-2. Discovered ancestor `lib/` folders while walking upward.
+2. The current project root `lib/` folder.
+3. The installed compiler folder's bundled `lib/` folder.
+4. Discovered ancestor `lib/` folders while walking upward from the importing file.
 
-This is why engine wrappers can be imported from the repo root `lib/engine` folder:
+This is why engine wrappers work both from the repo root and from an installed release:
 
 ```code
 import { rgb } from "engine/colors.code";
@@ -86,6 +88,7 @@ import { rgb } from "engine/colors.code";
 Common mistakes:
 
 - Import paths are source file paths ending in `.code`.
+- Manual release installs must keep the compiler executable beside the bundled `lib/` folder.
 - Missing exports include import-chain diagnostics to help locate the failing dependency.
 
 ## Visibility

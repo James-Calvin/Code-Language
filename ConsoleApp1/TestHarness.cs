@@ -3517,6 +3517,55 @@ export object MainScene {
 
         try
         {
+            string tempRoot = Path.Combine(Path.GetTempPath(), "code-installed-lib-web-build-" + Guid.NewGuid().ToString("N"));
+            string projectDir = Path.Combine(tempRoot, "project");
+            string workDir = Path.Combine(tempRoot, "work");
+            string oldCurrentDirectory = Directory.GetCurrentDirectory();
+            Directory.CreateDirectory(projectDir);
+            Directory.CreateDirectory(workDir);
+            try
+            {
+                string entryPath = Path.Combine(projectDir, "source.code");
+                File.WriteAllText(
+                    entryPath,
+@"function start() {
+}
+
+function update() {
+}
+
+function draw() {
+  Draw.clearScreen(Colors.rgb(0, 0, 0));
+}");
+
+                Directory.SetCurrentDirectory(workDir);
+                var result = WebBuildPipeline.Build(entryPath, Path.Combine(workDir, "site"));
+
+                if (!File.Exists(result.IndexHtmlPath))
+                {
+                    failures++;
+                    Console.WriteLine("[FAIL] web-build-installed-compiler-bundled-lib-resolution: missing index.html");
+                }
+                else
+                {
+                    Console.WriteLine("[PASS] web-build-installed-compiler-bundled-lib-resolution");
+                }
+            }
+            finally
+            {
+                Directory.SetCurrentDirectory(oldCurrentDirectory);
+                try { Directory.Delete(tempRoot, recursive: true); }
+                catch { }
+            }
+        }
+        catch (Exception ex)
+        {
+            failures++;
+            Console.WriteLine($"[FAIL] web-build-installed-compiler-bundled-lib-resolution: threw {ex.GetType().Name} - {ex.Message}");
+        }
+
+        try
+        {
             var outputs = BuildWebApp(
                 new Dictionary<string, string>
                 {
@@ -3556,6 +3605,25 @@ export object MainScene {
             failures++;
             Console.WriteLine($"[FAIL] web-build-explicit-canonical-engine-namespace-imports: threw {ex.GetType().Name} - {ex.Message}");
         }
+
+        ExpectWebBuildCompilerError(
+            "web-build-missing-engine-library-diagnostic",
+            new Dictionary<string, string>
+            {
+                ["main.code"] =
+@"import everything as Missing from ""engine/not_there.code"";
+
+function start() {
+}
+
+function update() {
+}
+
+function draw() {
+}"
+            },
+            "main.code",
+            "bundled compiler library folder");
 
         ExpectWebBuildCompilerError(
             "web-build-requires-entry-shape",

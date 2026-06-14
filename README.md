@@ -24,7 +24,7 @@ macOS/Linux:
 curl -fsSL https://raw.githubusercontent.com/James-Calvin/Code-Language/master/install.sh | sh
 ```
 
-Manual downloads are available from the [GitHub Releases page](https://github.com/James-Calvin/Code-Language/releases). Release zips include the compiler executable, bundled `lib/` engine modules, and the browser runtime needed for web builds. Use the release `SHA256SUMS.txt` file to verify manual downloads.
+Manual downloads are available from the [GitHub Releases page](https://github.com/James-Calvin/Code-Language/releases). Release zips include the compiler executable plus sidecar `lib/` engine modules and `web-runtime/` browser files needed for web builds. Extract the whole folder and put that folder on `PATH`; do not move only the executable. Use the release `SHA256SUMS.txt` file to verify manual downloads.
 
 ## Build A Web App
 

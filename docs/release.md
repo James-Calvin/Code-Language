@@ -15,7 +15,7 @@ Manual install:
 
 1. Download the matching zip from `https://github.com/James-Calvin/Code-Language/releases`.
 2. Verify the zip against `SHA256SUMS.txt`.
-3. Extract it and put the extracted folder on `PATH`.
+3. Extract the whole folder and put the extracted folder on `PATH`; keep the compiler executable beside the bundled `lib/` and `web-runtime/` folders.
 
 Package managers are follow-up work after the alpha CLI stabilizes. Preferred order: winget, Homebrew tap, Scoop, optional .NET global tool.
 
@@ -52,20 +52,25 @@ To build a subset:
 
 ## Smoke Test A Release Folder
 
-From inside an extracted release folder:
+From the repository root, with an extracted release folder outside the project being tested:
 
 ```powershell
-./compiler --version
-./compiler --help
-./compiler ../../../../ConsoleApp1/examples/shape_dodge.code -o ../../../../.tmp/release-smoke/web
-./compiler --native ../../../../ConsoleApp1/examples/arithmetic.code
+$release = Resolve-Path artifacts/release/code-compiler-win-x64
+$compiler = Join-Path $release "compiler.exe"
+New-Item -ItemType Directory -Force .tmp/release-smoke | Out-Null
+Push-Location .tmp/release-smoke
+& $compiler --version
+& $compiler --help
+& $compiler ../../ConsoleApp1/examples/shape_dodge.code -o web
+& $compiler --native ../../ConsoleApp1/examples/arithmetic.code
+Pop-Location
 ```
 
 Checks:
 
 - `--help` does not list maintainer-only flags such as `--run-tests`.
 - Web build output contains `index.html`.
-- Web build succeeds from the published folder, proving bundled `lib/` and `web-runtime/` are present.
+- Web build succeeds from a different working directory, proving imports can resolve the bundled `lib/` and `web-runtime/` beside the installed compiler.
 
 ## GitHub Release Checklist
 

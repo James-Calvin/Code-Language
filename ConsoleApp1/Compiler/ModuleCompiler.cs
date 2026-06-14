@@ -1735,6 +1735,7 @@ static class ModuleCompiler
                 string importerDir = Path.GetDirectoryName(importerPath) ?? _projectRoot;
                 candidates.Add(Path.GetFullPath(Path.Combine(importerDir, normalized)));
                 candidates.Add(Path.GetFullPath(Path.Combine(_projectRoot, "lib", normalized)));
+                candidates.Add(Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "lib", normalized)));
 
                 string? cursor = importerDir;
                 while (!string.IsNullOrEmpty(cursor))
@@ -1748,6 +1749,17 @@ static class ModuleCompiler
             {
                 if (File.Exists(candidate))
                     return candidate;
+            }
+
+            string normalizedForDiagnostic = normalized.Replace('\\', '/');
+            if (!Path.IsPathRooted(normalized) &&
+                normalizedForDiagnostic.StartsWith("engine/", StringComparison.OrdinalIgnoreCase))
+            {
+                string bundledLibPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "lib"));
+                throw new CompilerException(
+                    $"Could not resolve engine library import '{sourcePath}'. Checked project-local lib folders and bundled compiler library folder '{bundledLibPath}'. Reinstall or extract the full compiler release folder so 'lib/' exists next to the compiler executable.",
+                    sourceToken.Line,
+                    sourceToken.Column);
             }
 
             throw new CompilerException(

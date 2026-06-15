@@ -10,6 +10,8 @@ sealed class TypeChecker
     private readonly Dictionary<string, EnumSymbol> _enums = new(StringComparer.Ordinal);
     private readonly Dictionary<string, ObjectSymbol> _objects = new(StringComparer.Ordinal);
     private readonly Dictionary<string, InterfaceSymbol> _interfaces = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, Dictionary<string, GlobalSymbol>> _globalsByModule = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _assignedGlobals = new(StringComparer.Ordinal);
     private readonly HashSet<string> _interfaceObjectPairs = new(StringComparer.Ordinal);
     private readonly Dictionary<string, HashSet<string>> _interfaceMethodImplementers = new(StringComparer.Ordinal);
     private TypeRef? _currentReturnTypeRef;
@@ -17,6 +19,8 @@ sealed class TypeChecker
     private ObjectSymbol? _currentObjectSymbol;
     private TypeRef? _currentObjectTypeRef;
     private string? _currentAccessPackageName;
+    private string? _currentModulePath;
+    private bool _checkingGlobalInitializer;
     private bool _allowImplicitThisLookup = true;
     private bool _checkingConstructorBody;
     private int _loopDepth;
@@ -87,6 +91,35 @@ sealed class TypeChecker
             _interfaces[iface.Name.Lexeme] = new InterfaceSymbol(
                 iface.Name,
                 new Dictionary<string, InterfaceMethodSignature>(StringComparer.Ordinal));
+        }
+
+        // Collect module globals after type names so global type annotations can reference user-defined types.
+        foreach (var stmt in statements)
+        {
+            if (stmt is not VarDecl variable)
+                continue;
+
+            var moduleKey = ModuleKey(variable.OriginModulePath);
+            if (!_globalsByModule.TryGetValue(moduleKey, out var moduleGlobals))
+            {
+                moduleGlobals = new Dictionary<string, GlobalSymbol>(StringComparer.Ordinal);
+                _globalsByModule[moduleKey] = moduleGlobals;
+            }
+
+            if (moduleGlobals.ContainsKey(variable.Name.Lexeme))
+                throw new CompilerException($"Global '{variable.Name.Lexeme}' already defined", variable.Name.Line, variable.Name.Column);
+
+            ValidateTypeRef(variable.Type);
+            var globalType = MapType(variable.Type);
+            if (globalType == TypeSymbol.Void)
+                throw new CompilerException("Variables cannot be declared with type 'void'", variable.Name.Line, variable.Name.Column);
+
+            moduleGlobals[variable.Name.Lexeme] = new GlobalSymbol(
+                variable.Name,
+                globalType,
+                variable.Type,
+                variable.IsConstant,
+                moduleKey);
         }
 
         // Validate enum member declarations.
@@ -346,9 +379,7 @@ sealed class TypeChecker
             CheckObjectMethods(obj);
         }
 
-        var global = new TypeEnvironment();
-
-        // Type-check top-level statements
+        // Type-check top-level statements. Module-scope variables are globals, not script locals.
         foreach (var stmt in statements)
         {
             if (stmt is FunctionDecl fn)
@@ -362,11 +393,45 @@ sealed class TypeChecker
             else
             {
                 var previousAccessPackageName = _currentAccessPackageName;
+                var previousModulePath = _currentModulePath;
                 _currentAccessPackageName = stmt.OriginPackageName;
-                CheckStmt(stmt, global, currentReturn: null);
+                _currentModulePath = stmt.OriginModulePath;
+                if (stmt is VarDecl globalVar)
+                    CheckGlobalVarDecl(globalVar);
+                else
+                    CheckStmt(stmt, new TypeEnvironment(), currentReturn: null);
                 _currentAccessPackageName = previousAccessPackageName;
+                _currentModulePath = previousModulePath;
             }
         }
+    }
+
+    private void CheckGlobalVarDecl(VarDecl variable)
+    {
+        var global = ResolveGlobalInModule(variable.OriginModulePath, variable.Name);
+        bool hasInit = variable.Initializer is not null;
+        if (variable.IsConstant && !hasInit)
+            throw new CompilerException($"Constant '{variable.Name.Lexeme}' must be initialized", variable.Name.Line, variable.Name.Column);
+
+        if (variable.Initializer is not null)
+        {
+            bool previousCheckingGlobalInitializer = _checkingGlobalInitializer;
+            _checkingGlobalInitializer = true;
+            try
+            {
+                var env = new TypeEnvironment();
+                var init = CheckExpr(variable.Initializer, env, currentReturn: null);
+                var initRef = ResolveExprTypeRef(variable.Initializer, env);
+                RequireAssignable(global.Type, global.TypeRef, init, initRef, variable.Type.Line, variable.Type.Column, "Initializer type mismatch", variable.Initializer);
+            }
+            finally
+            {
+                _checkingGlobalInitializer = previousCheckingGlobalInitializer;
+            }
+        }
+
+        if (hasInit || global.Type == TypeSymbol.Optional)
+            _assignedGlobals.Add(GlobalKey(global.ModuleKey, variable.Name.Lexeme));
     }
 
     private void CheckFunction(FunctionDecl fn)
@@ -376,8 +441,10 @@ sealed class TypeChecker
         var retType = MapType(returnTypeRef);
         var previousReturnRef = _currentReturnTypeRef;
         var previousAccessPackageName = _currentAccessPackageName;
+        var previousModulePath = _currentModulePath;
         _currentReturnTypeRef = returnTypeRef;
         _currentAccessPackageName = fn.OriginPackageName;
+        _currentModulePath = fn.OriginModulePath;
         // params occupy env
         for (int i = 0; i < fn.Parameters.Count; i++)
         {
@@ -388,6 +455,7 @@ sealed class TypeChecker
         bool allPathsReturn = CheckStmt(fn.Body, env, retType);
         _currentReturnTypeRef = previousReturnRef;
         _currentAccessPackageName = previousAccessPackageName;
+        _currentModulePath = previousModulePath;
         if (retType != TypeSymbol.Void && !allPathsReturn)
             throw new CompilerException($"Function '{fn.Name.Lexeme}' may not return a value on all paths", fn.Name.Line, fn.Name.Column);
     }
@@ -400,10 +468,12 @@ sealed class TypeChecker
         var previousObjectSymbol = _currentObjectSymbol;
         var previousObjectTypeRef = _currentObjectTypeRef;
         var previousAccessPackageName = _currentAccessPackageName;
+        var previousModulePath = _currentModulePath;
         var previousAllowImplicitThisLookup = _allowImplicitThisLookup;
         _currentObjectSymbol = symbol;
         _currentObjectTypeRef = new TypeRef(obj.Name.Lexeme, null, obj.Name.Line, obj.Name.Column);
         _currentAccessPackageName = obj.OriginPackageName;
+        _currentModulePath = obj.OriginModulePath;
         _allowImplicitThisLookup = false;
 
         try
@@ -432,6 +502,7 @@ sealed class TypeChecker
             _currentObjectSymbol = previousObjectSymbol;
             _currentObjectTypeRef = previousObjectTypeRef;
             _currentAccessPackageName = previousAccessPackageName;
+            _currentModulePath = previousModulePath;
             _allowImplicitThisLookup = previousAllowImplicitThisLookup;
         }
     }
@@ -444,10 +515,12 @@ sealed class TypeChecker
         var previousObjectSymbol = _currentObjectSymbol;
         var previousObjectTypeRef = _currentObjectTypeRef;
         var previousAccessPackageName = _currentAccessPackageName;
+        var previousModulePath = _currentModulePath;
         var previousCheckingConstructorBody = _checkingConstructorBody;
         _currentObjectSymbol = symbol;
         _currentObjectTypeRef = new TypeRef(obj.Name.Lexeme, null, obj.Name.Line, obj.Name.Column);
         _currentAccessPackageName = obj.OriginPackageName;
+        _currentModulePath = obj.OriginModulePath;
 
         try
         {
@@ -485,6 +558,7 @@ sealed class TypeChecker
             _currentObjectSymbol = previousObjectSymbol;
             _currentObjectTypeRef = previousObjectTypeRef;
             _currentAccessPackageName = previousAccessPackageName;
+            _currentModulePath = previousModulePath;
             _checkingConstructorBody = previousCheckingConstructorBody;
         }
     }
@@ -497,9 +571,11 @@ sealed class TypeChecker
         var previousObjectSymbol = _currentObjectSymbol;
         var previousObjectTypeRef = _currentObjectTypeRef;
         var previousAccessPackageName = _currentAccessPackageName;
+        var previousModulePath = _currentModulePath;
         _currentObjectSymbol = symbol;
         _currentObjectTypeRef = new TypeRef(obj.Name.Lexeme, null, obj.Name.Line, obj.Name.Column);
         _currentAccessPackageName = obj.OriginPackageName;
+        _currentModulePath = obj.OriginModulePath;
 
         try
         {
@@ -529,6 +605,7 @@ sealed class TypeChecker
             _currentObjectSymbol = previousObjectSymbol;
             _currentObjectTypeRef = previousObjectTypeRef;
             _currentAccessPackageName = previousAccessPackageName;
+            _currentModulePath = previousModulePath;
         }
     }
 
@@ -719,6 +796,63 @@ sealed class TypeChecker
 
         return _currentObjectSymbol.Fields.TryGetValue(name.Lexeme, out field!);
     }
+
+    private bool TryResolveSameModuleGlobal(Token name, out GlobalSymbol global)
+    {
+        global = default!;
+        string moduleKey = ModuleKey(_currentModulePath);
+        if (!_globalsByModule.TryGetValue(moduleKey, out var moduleGlobals) ||
+            !moduleGlobals.TryGetValue(name.Lexeme, out var resolved))
+        {
+            return false;
+        }
+
+        string globalKey = GlobalKey(moduleKey, name.Lexeme);
+        if (_checkingGlobalInitializer && !_assignedGlobals.Contains(globalKey))
+            throw new CompilerException($"Variable '{name.Lexeme}' is used before being assigned", name.Line, name.Column);
+
+        global = resolved;
+        return true;
+    }
+
+    private GlobalSymbol ResolveGlobalInModule(string? modulePath, Token name)
+    {
+        string moduleKey = ModuleKey(modulePath);
+        if (_globalsByModule.TryGetValue(moduleKey, out var moduleGlobals) &&
+            moduleGlobals.TryGetValue(name.Lexeme, out var global))
+        {
+            return global;
+        }
+
+        throw new CompilerException($"Undefined variable '{name.Lexeme}'", name.Line, name.Column);
+    }
+
+    private static bool TryResolveBuiltInConstant(Token name, out TypeRef typeRef)
+    {
+        if (IsBuiltInConstantName(name.Lexeme))
+        {
+            typeRef = new TypeRef("real", null, name.Line, name.Column);
+            return true;
+        }
+
+        typeRef = default!;
+        return false;
+    }
+
+    private static bool IsBuiltInConstantName(string name) =>
+        name is "pi" or "tau";
+
+    private static void EnsureCanAssignGlobal(GlobalSymbol global, Token name)
+    {
+        if (global.IsConstant)
+            throw new CompilerException($"Cannot assign to constant '{name.Lexeme}'", name.Line, name.Column);
+    }
+
+    private static string ModuleKey(string? modulePath) =>
+        string.IsNullOrWhiteSpace(modulePath) ? "<source>" : modulePath;
+
+    private static string GlobalKey(string moduleKey, string name) =>
+        $"{moduleKey}\u001F{name}";
 
     private void EnsureCanAssignField(FieldSignature field, Token name)
     {
@@ -1231,12 +1365,34 @@ sealed class TypeChecker
                 if (env.TryLookupForRead(v.Name, out var localType))
                 {
                     v.ResolvedImplicitFieldTypeRef = null;
+                    v.ResolvedGlobalTypeRef = null;
+                    v.ResolvedGlobalKey = null;
+                    v.ResolvedBuiltInConstant = false;
                     return localType;
                 }
                 if (TryResolveImplicitField(v.Name, env, out var fieldType, out var fieldTypeRef))
                 {
                     v.ResolvedImplicitFieldTypeRef = fieldTypeRef;
+                    v.ResolvedGlobalTypeRef = null;
+                    v.ResolvedGlobalKey = null;
+                    v.ResolvedBuiltInConstant = false;
                     return fieldType;
+                }
+                if (TryResolveSameModuleGlobal(v.Name, out var global))
+                {
+                    v.ResolvedImplicitFieldTypeRef = null;
+                    v.ResolvedGlobalTypeRef = global.TypeRef;
+                    v.ResolvedGlobalKey = GlobalKey(global.ModuleKey, global.Name.Lexeme);
+                    v.ResolvedBuiltInConstant = false;
+                    return global.Type;
+                }
+                if (TryResolveBuiltInConstant(v.Name, out var builtInTypeRef))
+                {
+                    v.ResolvedImplicitFieldTypeRef = null;
+                    v.ResolvedGlobalTypeRef = builtInTypeRef;
+                    v.ResolvedGlobalKey = null;
+                    v.ResolvedBuiltInConstant = true;
+                    return TypeSymbol.Real;
                 }
                 throw new CompilerException($"Undefined variable '{v.Name.Lexeme}'", v.Name.Line, v.Name.Column);
             case Assign a:
@@ -1247,6 +1403,8 @@ sealed class TypeChecker
                 if (env.TryLookupForReadOrWrite(a.Name, out var lhsType, requireAssigned: false))
                 {
                     a.ResolvedImplicitFieldTypeRef = null;
+                    a.ResolvedGlobalTypeRef = null;
+                    a.ResolvedGlobalKey = null;
                     env.EnsureCanAssign(a.Name);
                     var lhsTypeRef = env.TryGetDeclaredType(a.Name);
                     RequireAssignable(lhsType, lhsTypeRef, rhs, rhsTypeRef, a.Name.Line, a.Name.Column, "Assignment type mismatch", a.Value);
@@ -1259,9 +1417,25 @@ sealed class TypeChecker
                     if (TryResolveImplicitFieldSignature(a.Name, env, out var implicitField))
                         EnsureCanAssignField(implicitField, a.Name);
                     a.ResolvedImplicitFieldTypeRef = implicitFieldTypeRef;
+                    a.ResolvedGlobalTypeRef = null;
+                    a.ResolvedGlobalKey = null;
                     RequireAssignable(implicitFieldType, implicitFieldTypeRef, rhs, rhsTypeRef, a.Name.Line, a.Name.Column, "Assignment type mismatch", a.Value);
                     return implicitFieldType;
                 }
+
+                if (TryResolveSameModuleGlobal(a.Name, out var globalSymbol))
+                {
+                    EnsureCanAssignGlobal(globalSymbol, a.Name);
+                    a.ResolvedImplicitFieldTypeRef = null;
+                    a.ResolvedGlobalTypeRef = globalSymbol.TypeRef;
+                    a.ResolvedGlobalKey = GlobalKey(globalSymbol.ModuleKey, globalSymbol.Name.Lexeme);
+                    RequireAssignable(globalSymbol.Type, globalSymbol.TypeRef, rhs, rhsTypeRef, a.Name.Line, a.Name.Column, "Assignment type mismatch", a.Value);
+                    _assignedGlobals.Add(a.ResolvedGlobalKey);
+                    return globalSymbol.Type;
+                }
+
+                if (IsBuiltInConstantName(a.Name.Lexeme))
+                    throw new CompilerException($"Cannot assign to constant '{a.Name.Lexeme}'", a.Name.Line, a.Name.Column);
 
                 throw new CompilerException($"Undefined variable '{a.Name.Lexeme}'", a.Name.Line, a.Name.Column);
             }
@@ -2376,6 +2550,10 @@ sealed class TypeChecker
             case Variable v:
                 if (v.ResolvedImplicitFieldTypeRef is not null)
                     return v.ResolvedImplicitFieldTypeRef;
+                if (v.ResolvedGlobalTypeRef is not null)
+                    return v.ResolvedGlobalTypeRef;
+                if (v.ResolvedBuiltInConstant)
+                    return new TypeRef("real", null, v.Name.Line, v.Name.Column);
                 if (env.TryGetDeclaredType(v.Name, out var declaredType))
                     return declaredType;
                 return null;
@@ -2439,6 +2617,9 @@ sealed class TypeChecker
                 if (env.TryLookupForRead(variable.Name, out var variableType))
                 {
                     variable.ResolvedImplicitFieldTypeRef = null;
+                    variable.ResolvedGlobalTypeRef = null;
+                    variable.ResolvedGlobalKey = null;
+                    variable.ResolvedBuiltInConstant = false;
                     env.EnsureCanAssign(variable.Name);
                     return (variableType, env.TryGetDeclaredType(variable.Name), variable.Name);
                 }
@@ -2448,8 +2629,25 @@ sealed class TypeChecker
                     if (TryResolveImplicitFieldSignature(variable.Name, env, out var implicitField))
                         EnsureCanAssignField(implicitField, variable.Name);
                     variable.ResolvedImplicitFieldTypeRef = implicitFieldTypeRef;
+                    variable.ResolvedGlobalTypeRef = null;
+                    variable.ResolvedGlobalKey = null;
+                    variable.ResolvedBuiltInConstant = false;
                     return (implicitFieldType, implicitFieldTypeRef, variable.Name);
                 }
+
+                if (TryResolveSameModuleGlobal(variable.Name, out var global))
+                {
+                    EnsureCanAssignGlobal(global, variable.Name);
+                    variable.ResolvedImplicitFieldTypeRef = null;
+                    variable.ResolvedGlobalTypeRef = global.TypeRef;
+                    variable.ResolvedGlobalKey = GlobalKey(global.ModuleKey, global.Name.Lexeme);
+                    variable.ResolvedBuiltInConstant = false;
+                    _assignedGlobals.Add(variable.ResolvedGlobalKey);
+                    return (global.Type, global.TypeRef, variable.Name);
+                }
+
+                if (IsBuiltInConstantName(variable.Name.Lexeme))
+                    throw new CompilerException($"Cannot assign to constant '{variable.Name.Lexeme}'", variable.Name.Line, variable.Name.Column);
 
                 throw new CompilerException($"Undefined variable '{variable.Name.Lexeme}'", variable.Name.Line, variable.Name.Column);
             case FieldAccessExpr fieldAccess:
@@ -3046,6 +3244,12 @@ sealed class TypeChecker
         TypeRef TypeRef,
         DeclarationVisibility Visibility,
         bool IsConstant);
+    private sealed record GlobalSymbol(
+        Token Name,
+        TypeSymbol Type,
+        TypeRef TypeRef,
+        bool IsConstant,
+        string ModuleKey);
     private sealed record ConstructorSignature(
         Token Keyword,
         IList<TypeSymbol> Params,

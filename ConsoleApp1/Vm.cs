@@ -85,6 +85,8 @@ enum OpCode : byte
     CastReal = 0x48,
     PushWideInteger = 0x4A,
     CheckedSizedNumericCast = 0x4B,
+    LoadGlobal = 0x4C,
+    StoreGlobal = 0x4D,
     Halt = 0xFF
 }
 
@@ -99,6 +101,7 @@ sealed class Vm
     private readonly byte[] _code;
     private readonly Stack<object> _stack = new();
     private object[] _locals;
+    private object[] _globals;
     private int _ip;
     private readonly TextWriter _output;
     private readonly TextReader _input;
@@ -124,6 +127,7 @@ sealed class Vm
         _ip = BytecodeFormat.HeaderSize;
         _codeEnd = BytecodeFormat.HeaderSize + header.CodeSize;
         _locals = new object[initialLocals];
+        _globals = new object[8];
         _output = output ?? Console.Out;
         _input = input ?? Console.In;
         _hostTarget = hostTarget;
@@ -278,6 +282,21 @@ sealed class Vm
                     int slot = ReadIntOperand();
                     var value = _stack.Pop();
                     WriteLocal(slot, value);
+                    break;
+                }
+
+                case OpCode.LoadGlobal:
+                {
+                    int slot = ReadIntOperand();
+                    _stack.Push(ReadGlobal(slot));
+                    break;
+                }
+
+                case OpCode.StoreGlobal:
+                {
+                    int slot = ReadIntOperand();
+                    var value = _stack.Pop();
+                    WriteGlobal(slot, value);
                     break;
                 }
 
@@ -1344,6 +1363,16 @@ sealed class Vm
         }
     }
 
+    private void EnsureGlobals(int index)
+    {
+        if (index < 0)
+            ThrowRuntime($"Negative global index {index}");
+        if (index >= _globals.Length)
+        {
+            Array.Resize(ref _globals, Math.Max(index + 1, _globals.Length * 2));
+        }
+    }
+
     private object ReadLocal(int index)
     {
         EnsureLocals(index);
@@ -1354,6 +1383,18 @@ sealed class Vm
     {
         EnsureLocals(index);
         _locals[index] = value;
+    }
+
+    private object ReadGlobal(int index)
+    {
+        EnsureGlobals(index);
+        return _globals[index];
+    }
+
+    private void WriteGlobal(int index, object value)
+    {
+        EnsureGlobals(index);
+        _globals[index] = value;
     }
 
     private (object, object) PopAny2()

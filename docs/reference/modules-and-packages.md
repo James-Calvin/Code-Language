@@ -115,6 +115,7 @@ Behavior:
 - `package` is importable only by modules with the same package name.
 - `private` is module-local.
 - Legacy `export` is accepted as an alias for public top-level declarations.
+- Module-scope variables and constants are same-module globals only in V1. They are not imported or exported as public module API yet.
 
 ## Package Manifest
 

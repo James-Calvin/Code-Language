@@ -26,6 +26,8 @@ static class Disassembler
                 case OpCode.JumpIfNotZero:
                 case OpCode.Load:
                 case OpCode.Store:
+                case OpCode.LoadGlobal:
+                case OpCode.StoreGlobal:
                 case OpCode.Call:
                 case OpCode.NewArray:
                     if (ip + 4 > codeEnd) throw new InvalidOperationException("Truncated operand");

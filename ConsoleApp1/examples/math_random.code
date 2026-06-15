@@ -7,6 +7,7 @@ print(sign(3));
 print(lerp(10, 20, 1. / 4));
 print(sine(0));
 print(cosine(0));
+print(tau == pi * 2.);
 
 real value = random();
 print(value >= 0 and value < 1);

@@ -86,6 +86,9 @@ Rules:
 - `draw()` runs once per presented frame.
 - `drawHud()` runs after `draw()` when present.
 - Inferred top-level lifecycle entry is a web-build entry-module feature.
+- Top-level state declarations in inferred entries remain same-module globals with persistent VM storage.
+- Top-level helper functions remain top-level functions and can share those globals with lifecycle functions and object methods.
+- The compiler still synthesizes an internal `MainScene` so the browser runtime contract is unchanged.
 - Web app modules infer engine imports from usage.
 - `Draw`, `Input`, `Viewport`, `Colors`, `Diagnostics`, and `Audio` are implied namespaces.
 - `Color`, `Scene`, `SceneLoop`, `Startable`, `Updatable`, `WorldDrawable`, and `HudDrawable` are available without explicit imports.

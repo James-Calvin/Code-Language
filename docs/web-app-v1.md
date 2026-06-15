@@ -1,6 +1,6 @@
 # Web App Runtime V1 Contract
 
-Last updated: 2026-05-05
+Last updated: 2026-06-14
 Status: implemented in a first working slice; broader engine/runtime expansion is still in progress
 
 ## Purpose
@@ -62,8 +62,9 @@ Supported entry shapes:
   - `MainScene` has a zero-argument constructor.
 - Inferred top-level lifecycle entry:
   - The web app entry module declares top-level `start()`, `update()`, and `draw()` functions, with optional `drawHud()`.
-  - Top-level state declarations become fields on a synthesized internal `MainScene`.
-  - Top-level helper functions become methods on that synthesized internal `MainScene`.
+  - Top-level state declarations remain module globals with persistent VM storage.
+  - Top-level helper functions remain top-level functions and can share same-module globals with lifecycle functions and object methods.
+  - The compiler synthesizes an internal `MainScene` with lifecycle methods so the browser runtime contract stays unchanged.
   - Top-level executable statements are rejected in this entry shape.
   - Web app modules receive usage-based implied engine imports.
   - `Draw`, `Input`, `Viewport`, `Colors`, `Diagnostics`, and `Audio` are available as implied namespaces.
@@ -102,7 +103,7 @@ Scene composition:
 
 Current app-profile direction:
 - Explicit `MainScene` remains valid.
-- The first inferred profile slice is implemented for web entry modules with top-level `start()`, `update()`, `draw()`, and optional `drawHud()`, and it shares the same implied engine-import surface used by other web-app modules.
+- The first inferred profile slice is implemented for web entry modules with top-level `start()`, `update()`, `draw()`, and optional `drawHud()`. Top-level state remains same-module global storage, and the profile shares the same implied engine-import surface used by other web-app modules.
 - The longer-term target is to carry that authoring shape toward broader target-agnostic reuse so future native graphical targets can run the same Code source.
 
 Important implementation note:

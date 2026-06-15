@@ -69,6 +69,8 @@ sealed class BytecodeBuilder
     public BytecodeBuilder JumpIfNotZero(string label) => AddJump(OpCode.JumpIfNotZero, label);
     public BytecodeBuilder Load(int slot) => AddSlot(OpCode.Load, slot);
     public BytecodeBuilder Store(int slot) => AddSlot(OpCode.Store, slot);
+    public BytecodeBuilder LoadGlobal(int slot) => AddSlot(OpCode.LoadGlobal, slot);
+    public BytecodeBuilder StoreGlobal(int slot) => AddSlot(OpCode.StoreGlobal, slot);
     public BytecodeBuilder Eq() { RecordDebug(); _bytes.Add((byte)OpCode.Eq); return this; }
     public BytecodeBuilder Lt() { RecordDebug(); _bytes.Add((byte)OpCode.Lt); return this; }
     public BytecodeBuilder Gt() { RecordDebug(); _bytes.Add((byte)OpCode.Gt); return this; }

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Text.RegularExpressions;
 
@@ -117,7 +118,14 @@ internal static class TestHarness
                 .PushReal(3.8).CheckedSizedNumericCast(SizedNumericKind.Integer8).Print()
                 .PushReal(1.25).CheckedSizedNumericCast(SizedNumericKind.Real32).Print()
                 .Halt().ToArray(),
-                "4294967295" + nl + "255" + nl + "3" + nl + "1.25" + nl)
+                "4294967295" + nl + "255" + nl + "3" + nl + "1.25" + nl),
+
+            ("global-bytecode", BytecodeBuilder.New()
+                .PushInt(41).StoreGlobal(0)
+                .LoadGlobal(0).PushInt(1).Add().StoreGlobal(0)
+                .LoadGlobal(0).Print()
+                .Halt().ToArray(),
+                "42" + nl)
         };
 
         int failures = 0;
@@ -583,7 +591,60 @@ holder.getItems()[holder.nextIndex()] *= 2;
 print(holder.box.count);
 print(holder.items[0]);
 print(holder.calls);", "5\n6\n3\n"),
-            ("constant-ok", @"constant real PI = 3; print(PI);", "3\n")
+            ("constant-ok", @"constant real circleValue = 3; print(circleValue);", "3\n")
+            ,
+            ("same-module-globals-and-built-in-constants",
+@"constant real scale = tau;
+integer counter = 1;
+
+object Thing {
+  real angle = scale;
+
+  constructor() {
+  }
+
+  function update() {
+    counter += 1;
+  }
+
+  function printValues() {
+    print(angle);
+    print(pi);
+  }
+}
+
+function bump() {
+  counter++;
+}
+
+Thing thing = new Thing();
+thing.update();
+bump();
+thing.printValues();
+print(counter);", "6.283185307179586\n3.141592653589793\n3\n")
+            ,
+            ("global-shadowing-rules",
+@"integer speed = 2;
+
+object Player {
+  integer speed;
+
+  constructor() {
+    speed = 5;
+  }
+
+  function printSpeed(integer speed) {
+    print(speed);
+    integer pi = 7;
+    print(pi);
+    print(this.speed);
+  }
+}
+
+Player player = new Player();
+player.printSpeed(11);
+print(speed);
+print(pi);", "11\n7\n5\n2\n3.141592653589793\n")
             ,
             ("time-intrinsics",
 @"print(unixMilliseconds() > 0);
@@ -1388,6 +1449,35 @@ public object Box {
                 },
                 "main.code",
                 "8\n5\n"
+            ),
+            (
+                "module-object-uses-own-module-global",
+                new Dictionary<string, string>
+                {
+                    ["main.code"] =
+@"import Counter from ""counter.code"";
+Counter counter = new Counter();
+counter.step();
+counter.step();
+print(counter.read());",
+                    ["counter.code"] =
+@"integer shared = 10;
+
+export object Counter {
+  constructor() {
+  }
+
+  function step() {
+    shared += 1;
+  }
+
+  function<integer> read() {
+    return shared;
+  }
+}",
+                },
+                "main.code",
+                "12\n"
             ),
             (
                 "module-grouped-imports",
@@ -2219,8 +2309,22 @@ print(w.read());", "no matching method overload"),
 Walker w = new Walker();
 print(w.read());", "Undefined variable"),
             ("constant-reassign",
-@"constant integer PI = 3;
-PI = 4;", "Cannot assign to constant 'PI'"),
+@"constant integer maxLives = 3;
+maxLives = 4;", "Cannot assign to constant 'maxLives'"),
+            ("global-constant-compound-reassign",
+@"constant integer limit = 3;
+function bump() {
+  limit += 1;
+}
+bump();", "Cannot assign to constant 'limit'"),
+            ("global-constant-postfix-reassign",
+@"constant integer limit = 3;
+function bump() {
+  limit++;
+}
+bump();", "Cannot assign to constant 'limit'"),
+            ("built-in-constant-reassign",
+@"pi = 4.;", "Cannot assign to constant 'pi'"),
             ("constant-missing-init", @"constant integer value;", "must be initialized"),
             ("time-intrinsic-arity", @"print(unixMilliseconds(1));", "expects 0 args"),
             ("math-intrinsic-arity", @"print(minimum(1));", "expects 2 args"),
@@ -2591,6 +2695,25 @@ package function<integer> helper(integer value) { return value + 1; }",
                 },
                 "main.code",
                 "require a preceding package declaration"
+            ),
+            (
+                "module-global-not-visible-cross-module",
+                new Dictionary<string, string>
+                {
+                    ["main.code"] =
+@"import Helper from ""helper.code"";
+Helper helper = new Helper();
+print(shared);",
+                    ["helper.code"] =
+@"integer shared = 4;
+
+export object Helper {
+  constructor() {
+  }
+}",
+                },
+                "main.code",
+                "Undefined variable 'shared'"
             ),
             (
                 "module-member-package-field-cross-package",
@@ -3340,6 +3463,68 @@ function drawHud() {
         {
             failures++;
             Console.WriteLine($"[FAIL] web-build-scene-runtime: threw {ex.GetType().Name} - {ex.Message}");
+        }
+
+        try
+        {
+            var outputs = BuildWebApp(
+                new Dictionary<string, string>
+                {
+                    ["main.code"] =
+@"array<Boid> boids;
+constant integer count = 2;
+constant real twoPi = tau;
+
+function start() {
+  boids = new array<Boid>(count);
+  foreach index in count then {
+    boids[index] = new Boid(index * 10, random() * twoPi);
+  }
+}
+
+function update() {
+  foreach boid in boids then boid.update();
+}
+
+function draw() {
+  Draw.clearScreen(Colors.rgb(0, 0, 0));
+  foreach boid in boids then boid.draw();
+}
+
+object Boid {
+  real x;
+  real angle = twoPi;
+
+  constructor(real startX, real startAngle) {
+    x = startX;
+    angle = startAngle;
+  }
+
+  function update() {
+    angle += 0.01;
+  }
+
+  function draw() {
+    Draw.circle(x, 20, 4, Colors.rgb(0, 128, 233));
+  }
+}"
+                },
+                "main.code");
+
+            if (!outputs.IndexHtml.Contains("\"typeName\": \"MainScene\"", StringComparison.Ordinal))
+            {
+                failures++;
+                Console.WriteLine("[FAIL] web-build-inferred-profile-global-state: generated metadata did not include MainScene");
+            }
+            else
+            {
+                Console.WriteLine("[PASS] web-build-inferred-profile-global-state");
+            }
+        }
+        catch (Exception ex)
+        {
+            failures++;
+            Console.WriteLine($"[FAIL] web-build-inferred-profile-global-state: threw {ex.GetType().Name} - {ex.Message}");
         }
 
         try
@@ -4408,6 +4593,17 @@ print(quick);";
         {
             string runtimePath = Path.Combine(Directory.GetCurrentDirectory(), "web-runtime", "code-vm-web.js");
             string runtimeText = File.ReadAllText(runtimePath);
+
+            var versionMatch = Regex.Match(
+                runtimeText,
+                @"const\s+BYTECODE_VERSION\s*=\s*(?<version>\d+)\s*;",
+                RegexOptions.CultureInvariant);
+            if (!versionMatch.Success)
+                throw new Exception("Could not find BYTECODE_VERSION in web runtime.");
+
+            byte jsBytecodeVersion = Convert.ToByte(versionMatch.Groups["version"].Value, CultureInfo.InvariantCulture);
+            if (jsBytecodeVersion != BytecodeFormat.Version)
+                throw new Exception($"Web runtime bytecode version {jsBytecodeVersion} does not match native version {BytecodeFormat.Version}.");
 
             var opcodeBlockMatch = Regex.Match(
                 runtimeText,

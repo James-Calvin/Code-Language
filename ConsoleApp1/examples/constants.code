@@ -1,4 +1,4 @@
 // Negative example: expected compile error because constants are immutable after initialization.
 
-constant integer PI = 3;
-PI = 4; // Expect compile error
+constant integer maxLives = 3;
+maxLives = 4; // Expect compile error

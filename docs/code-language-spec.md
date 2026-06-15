@@ -1,7 +1,7 @@
 # Code Language Specification (Living Draft)
 
 Version: 1.0
-Last updated: 2026-04-14
+Last updated: 2026-06-14
 
 ## 1. Goals and Design
 - `Code` is a code-first language for building 2D interactive applications that target the web first.
@@ -54,6 +54,7 @@ function main(string[] arguments) {
 - Type annotations are required.
 - No implicit omission of variable types.
 - Local variables may be declared without initializer, but must be definitely assigned before first read.
+- Module-scope variables and constants are persistent same-module globals. Functions, object/record field initializers, constructors, and methods in the same module may read them; mutable globals may also be assigned from same-module code.
 - Primitive numeric families:
   - `integer`: signed integer
   - `whole`: unsigned integer
@@ -99,6 +100,30 @@ byte colorChannel = 255;
 constant integer maxRetries = 3;
 boolean flag = false;
 ```
+
+Same-module globals:
+
+```code
+constant real turn = tau;
+integer updates = 0;
+
+object Spinner {
+  real angle = turn / 4.;
+
+  function update() {
+    updates++;
+    angle += pi / 60.;
+  }
+}
+```
+
+Name resolution order for a bare identifier is:
+1. locals, parameters, and block variables
+2. implicit `this` fields inside object/record constructors and methods
+3. same-module globals
+4. built-in constants such as `pi` and `tau`
+
+Global variables and constants are not imported or exported as public module API in the current implementation.
 
 Definite assignment examples:
 
@@ -350,6 +375,9 @@ if not isReady then {
   - `sine(real angle) -> real`
   - `cosine(real angle) -> real`
   - `random() -> real`
+- Built-in read-only real constants:
+  - `pi`
+  - `tau`
 
 ## 8. Collections (Observed)
 - Generic array type syntax: `array<Type>`.
@@ -424,7 +452,7 @@ print(turns.dequeue());
   - during constructor execution.
 - Field defaults use `Type name = expression;` inside object or record bodies.
 - Field default expressions are evaluated for each new instance before the constructor body runs.
-- Field default expressions do not have access to constructor parameters, `this`, or implicit field lookup; use a constructor for dependent initialization.
+- Field default expressions may read same-module globals and built-in constants, but they do not have access to constructor parameters, `this`, sibling fields, or implicit field lookup; use a constructor for dependent field initialization.
 - Current constructor rules (implemented):
   - If an object or record has fields without defaults, it must declare at least one constructor.
   - Objects or records whose fields all have defaults may omit constructors and still be constructed with `new Type()`.
@@ -435,7 +463,8 @@ print(turns.dequeue());
   - Methods are lowered to hidden callable bodies with implicit `this` as the first argument.
   - Method resolution uses object type + method name + parameter-type signature with best-match conversion scoring.
   - Methods may use either `function<ReturnType> name(...)` or implicit-void `function name(...)`.
-  - Inside constructors and methods, unshadowed bare field names resolve to the current object (`field` -> `this.field`), and bare method calls resolve to the current object before top-level/intrinsic functions.
+- Inside constructors and methods, unshadowed bare field names resolve to the current object (`field` -> `this.field`), and bare method calls resolve to the current object before top-level/intrinsic functions.
+- If a bare name inside a constructor or method is not local and does not match an implicit `this` field, same-module globals are considered next. This allows object and record code to read shared module constants such as `pi`, `tau`, or app-level configuration without passing them through every constructor.
 - Reserved field names (currently disallowed): `length`, `hasValue`, `value`, `or`.
 - `object` instances are passed by reference.
 - `record` values are copied on assignment, parameter passing, returns, and insertion into arrays/collections.
@@ -660,6 +689,7 @@ if x > 3 then panic("x too large");
 ## 14. Compiler Behavior (current implementation)
 - Definite assignment is enforced: a local must be assigned before first read; parameters and `foreach` loop variables are treated as assigned.
 - Constants are immutable after initialization (`constant Type name = value;`).
+- Module-scope variables and constants use persistent VM global storage. Same-module code may read mutable or constant globals, may mutate mutable globals, and may not mutate constants. Global initializers run in source order before function or scene entry execution.
 - Compile-time constant folding for literal arithmetic (`+`, `-`, `*`) and string literal concatenation reduces runtime work without changing semantics.
 - Runtime errors include line/column mapping and a bytecode call stack derived from embedded debug info in the compiled `.bytecode` file.
 - Type syntax is parsed through structured type references (`TypeRef`) including generic forms; named object types resolve through the object symbol table.
@@ -710,6 +740,10 @@ if x > 3 then panic("x too large");
   - `cosine(real angle) -> real`
   - `random() -> real`
   - These currently lower through host ABI symbols (`std.math.*`) rather than dedicated language-level stdlib modules.
+- Built-in math constants (current baseline):
+  - `pi -> real`
+  - `tau -> real`
+  - These lower as read-only built-in constants, not host calls.
 - Print lowering (current baseline):
   - `print(expr);` lowers through host ABI symbol `standard.input_output.print`.
   - VM host binding mismatch (missing symbol/arity) raises `HostBindingError` at runtime.
@@ -725,7 +759,8 @@ if x > 3 then panic("x too large");
   - The current repo ships a wrapper layer in `lib/engine/` over those scene/runtime intrinsics: canonical modules `engine.colors`, `engine.drawing`, `engine.input`, `engine.viewport`, `engine.diagnostics`, `engine.audio`, and `engine.scene`, with compatibility re-export modules `engine.view` and `engine.loop`.
   - Note: high-range timing values may eventually need dedicated 64-bit numeric/value support for full precision guarantees.
 - Object and record construction and field access lower to dedicated VM opcodes (`NEW_OBJECT`, `NEW_RECORD`, `GET_FIELD`, `SET_FIELD`).
-- Real literals, wide integer literals, and numeric casts lower to dedicated VM opcodes (`PUSH_REAL`, `PUSH_WIDE_INTEGER`, `CAST_INTEGER`, `CAST_WHOLE`, `CAST_REAL`, `CHECKED_SIZED_NUMERIC_CAST`); enum casts remain integer-backed.
+- Real literals, built-in real constants, wide integer literals, and numeric casts lower to dedicated VM opcodes (`PUSH_REAL`, `PUSH_WIDE_INTEGER`, `CAST_INTEGER`, `CAST_WHOLE`, `CAST_REAL`, `CHECKED_SIZED_NUMERIC_CAST`); enum casts remain integer-backed.
+- Module-scope globals lower to `LOAD_GLOBAL` / `STORE_GLOBAL` storage slots.
 - Arrays: literals `{...}` create arrays; typed declarations `array<integer> xs = {1,2,3};`; dynamic `new array<integer>(n)` requires a size; `xs.length` yields length; `xs.append(value)` and `xs.removeAt(index)` grow/shrink arrays; `foreach` iterates arrays by element.
 - Built-in collections: `map`, `set`, `queue`, and `stack` lower to dedicated VM opcodes; `.length` also covers those collection types.
 - Recoverable fallible values lower to dedicated VM opcodes (`FALLIBLE_SUCCESS`, `FALLIBLE_ERROR`, `FALLIBLE_IS_ERROR`, `FALLIBLE_VALUE`, `FALLIBLE_ERROR_CODE`, `FALLIBLE_ERROR_MESSAGE`); `panic(...)` still lowers to `THROW_ERROR`.

@@ -27,6 +27,7 @@ Common mistakes:
 
 - Semicolons are required after declarations, expressions, `print`, `return`, `panic`, and `yield`.
 - Top-level code runs without `main`; add `main` only when you need command-line arguments.
+- Top-level variable and constant declarations are same-module globals. Functions and object/record code in the same file can read them by bare name.
 
 ## Comments
 
@@ -43,8 +44,8 @@ Block comments can span lines.
 Identifiers start with a letter or `_`, then may contain letters, digits, and `_`.
 
 ```code
-integer player_score = 5;
-integer _temporary2 = player_score + 1;
+integer playerScore = 5;
+integer temporary2 = playerScore + 1;
 ```
 
 Do not use language keywords as names. Current keywords include:
@@ -70,16 +71,31 @@ count = count + 1;
 Constant:
 
 ```code
-constant integer max_lives = 3;
+constant integer maxLives = 3;
 ```
 
 Constants must be initialized and cannot be reassigned.
 
+Module globals:
+
+```code
+constant real turn = tau;
+integer updateCount = 0;
+
+function update() {
+  updateCount++;
+  print(turn);
+}
+```
+
+Bare-name resolution checks locals and parameters first, then implicit `this` fields inside object/record bodies, then same-module globals, then built-in constants such as `pi` and `tau`.
+
 Common mistakes:
 
 - `constant integer max;` is rejected because constants must have initializers.
-- `max_lives = 4;` is rejected because constants are immutable.
+- `maxLives = 4;` is rejected because constants are immutable.
 - A local without an initializer must be assigned before first read.
+- Same-module globals are not imported or exported as public module API yet.
 
 ## Literals
 

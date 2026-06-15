@@ -1,6 +1,6 @@
 # Release Process
 
-Current release target: `0.1.0-alpha.1`.
+Current release target: `0.1.0-alpha.4`.
 
 This is a maintainer-facing document. User install and quickstart instructions live in the README.
 
@@ -78,7 +78,7 @@ Checks:
 2. Run the build and full test harness.
 3. Run `./scripts/release.ps1`.
 4. Smoke test at least the Windows zip locally.
-5. Commit and tag, for example `v0.1.0-alpha.1`.
+5. Commit and tag, for example `v0.1.0-alpha.3`.
 6. Create a GitHub prerelease.
 7. Upload all `code-compiler-*.zip` files and `SHA256SUMS.txt`.
 8. Test `install.ps1` from the GitHub release before announcing.

@@ -1,5 +1,5 @@
 const BYTECODE_MAGIC = "CODE";
-const BYTECODE_VERSION = 8;
+const BYTECODE_VERSION = 9;
 const HEADER_SIZE = 13;
 const DEBUG_ENTRY_SIZE = 12;
 
@@ -81,6 +81,8 @@ const OpCode = {
   CastReal: 0x48,
   PushWideInteger: 0x4a,
   CheckedSizedNumericCast: 0x4b,
+  LoadGlobal: 0x4c,
+  StoreGlobal: 0x4d,
   Halt: 0xff
 };
 
@@ -1510,6 +1512,7 @@ export class WebVm {
 
     this.stack = [];
     this.locals = new Array(Math.max(8, options.initialLocals || 8)).fill(0);
+    this.globals = new Array(8).fill(0);
     this.callStack = [];
     this.interfaceDispatchCache = new Map();
     this.nextWindowHandle = 1;
@@ -2211,6 +2214,21 @@ export class WebVm {
           break;
         }
 
+        case OpCode.LoadGlobal: {
+          const slot = this.readIntOperand();
+          this.ensureGlobals(slot);
+          this.stack.push(this.globals[slot]);
+          break;
+        }
+
+        case OpCode.StoreGlobal: {
+          const slot = this.readIntOperand();
+          this.ensureStack(1);
+          this.ensureGlobals(slot);
+          this.globals[slot] = this.stack.pop();
+          break;
+        }
+
         case OpCode.Eq: {
           const [left, right] = this.popAny2();
           this.stack.push(valueEquals(left, right) ? 1 : 0);
@@ -2854,6 +2872,15 @@ export class WebVm {
     }
     while (index >= this.locals.length) {
       this.locals.push(0);
+    }
+  }
+
+  ensureGlobals(index) {
+    if (index < 0) {
+      this.throwRuntime(`Negative global index ${index}`);
+    }
+    while (index >= this.globals.length) {
+      this.globals.push(0);
     }
   }
 

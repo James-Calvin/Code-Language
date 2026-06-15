@@ -1,9 +1,9 @@
 # Bytecode Specification (draft)
 
-Version: 0.13 (2026-04-14)
+Version: 0.14 (2026-06-14)
 
 ## File format
-- Header: `CODE` ASCII (4 bytes) + version byte (`0x08`) + int32 `codeSize` + int32 `debugCount`.
+- Header: `CODE` ASCII (4 bytes) + version byte (`0x09`) + int32 `codeSize` + int32 `debugCount`.
 - Encoding: little-endian integers and IEEE-754 `real` operands.
 - Layout: header, then `codeSize` bytes of opcodes/operands, followed by `debugCount` debug entries (`ip`, `line`, `column`; each int32).
 - Produced files should use the `.bytecode` extension.
@@ -107,6 +107,8 @@ Version: 0.13 (2026-04-14)
 | 0x49 | `INT_DIV` | - | -1 | Pop integral `a`, `b`; push `a / b` truncated toward zero; throws on divide-by-zero |
 | 0x4A | `PUSH_WIDE_INTEGER` | int64 | +1 | Push integer literal values outside signed int32 but within the V1 supported integer-literal range |
 | 0x4B | `CHECKED_SIZED_NUMERIC_CAST` | byte kind | 0 | Pop numeric value, coerce/range-check for a sized numeric storage target, push checked value |
+| 0x4C | `LOAD_GLOBAL` | int32 slot | +1 | Push module-global storage slot value |
+| 0x4D | `STORE_GLOBAL` | int32 slot | -1 | Pop value into module-global storage slot |
 | 0xFF | `HALT` | - | 0 | Stop execution |
 
 ## Planned additions
@@ -117,20 +119,20 @@ Version: 0.13 (2026-04-14)
 ## Notes
 - Integer operands are 4-byte little-endian offsets or indices; `PUSH_REAL` uses one 8-byte little-endian IEEE-754 operand; `PUSH_WIDE_INTEGER` uses one 8-byte little-endian signed integer operand.
 - Comparisons return `1.0` for true and `0.0` for false; logical `and` / `or` short-circuit in codegen.
-- Locals grow dynamically when `STORE` / `LOAD` targets exceed current length; functions track max locals for `CALL` frame sizing.
+- Locals grow dynamically when `STORE` / `LOAD` targets exceed current length; functions track max locals for `CALL` frame sizing. Module globals use separate deterministic slots addressed by `LOAD_GLOBAL` / `STORE_GLOBAL`.
 - Debug entries map instruction-pointer offsets back to source line/column for runtime stack traces.
 - Arrays are VM-managed lists. `NEW_ARRAY` pops pre-pushed elements, `NEW_ARRAY_N` allocates default-filled arrays, `ARRAY_GET` / `ARRAY_SET` index them, and `ARRAY_APPEND` / `ARRAY_removeAt` mutate them in place.
 - `ARRAY_LENGTH` also reports the size of VM-managed `map`, `set`, `queue`, and `stack` values.
 - Maps and sets use VM-managed keyed containers. `MAP_GET` throws on missing keys. `MAP_CONTAINS` / `SET_CONTAINS` return `1` or `0`. Remove operations are no-ops when the entry is absent.
 - Queues and stacks use VM-managed containers with empty-checking on `QUEUE_DEQUEUE` / `QUEUE_PEEK` / `STACK_POP` / `STACK_PEEK`.
 - Fallible values are VM-managed success/error wrappers used by user-facing `fallible<Value, ErrorCode>` recoverable errors. The one-argument source shorthand `fallible<Value>` normalizes to integer-coded fallible values before bytecode emission, and message-only source errors lower as code `0` plus message. `panic(...)` remains separate and lowers to `THROW_ERROR`.
-- Decimal-point source literals lower to `PUSH_REAL`; wide integer source literals lower to `PUSH_WIDE_INTEGER`; integral `/` lowers to `INT_DIV`, while real division lowers to `DIV`; explicit unsized numeric casts lower to `CAST_INTEGER`, `CAST_WHOLE`, or `CAST_REAL`; sized numeric casts and sized storage boundaries lower to `CHECKED_SIZED_NUMERIC_CAST`. Enum-to-integer and integer-to-enum casts remain integer-backed and do not require separate bytecode.
+- Decimal-point source literals lower to `PUSH_REAL`; built-in real constants `pi` and `tau` also lower to `PUSH_REAL`; wide integer source literals lower to `PUSH_WIDE_INTEGER`; integral `/` lowers to `INT_DIV`, while real division lowers to `DIV`; explicit unsized numeric casts lower to `CAST_INTEGER`, `CAST_WHOLE`, or `CAST_REAL`; sized numeric casts and sized storage boundaries lower to `CHECKED_SIZED_NUMERIC_CAST`. Enum-to-integer and integer-to-enum casts remain integer-backed and do not require separate bytecode.
 - Sized numeric kind operands for `CHECKED_SIZED_NUMERIC_CAST`: `1=integer8`, `2=integer16`, `3=integer32`, `4=whole8` / `byte`, `5=whole16`, `6=whole32`, `7=real32`. `real64` is source-normalized to `real` and does not need a checked sized cast.
 - Objects and records are stored as VM-managed instances with a type name and field dictionary; field access is name-based via `GET_FIELD` / `SET_FIELD`. `NEW_OBJECT` creates reference-identity objects; `NEW_RECORD` creates value-semantic record instances used by record construction and record cloning.
 - Object methods currently lower to regular `CALL` sites with implicit `this` prepended to explicit arguments; overload choice is resolved at compile time.
 - Interface declarations and `implement` mappings remain compile-time metadata; interface-typed calls lower to `INTERFACE_CALL` dispatch tables that map runtime type names to method targets.
 - VM caches decoded `INTERFACE_CALL` tables by call-site IP to avoid reparsing dispatch metadata on hot paths.
-- Module imports/exports/package declarations are compile-time only; the linker flattens a module graph into one bytecode unit before VM execution.
+- Module imports/exports/package declarations are compile-time only; the linker flattens a module graph into one bytecode unit before VM execution. Module-scope variables and constants lower to global slots and are visible only to same-module code in V1.
 - Package lockfile resolution may reference either manifest paths or `.codelib` artifacts; when a valid artifact exists for target/version, resolver prefers `.codelib`.
 - Current compiler lowering routes host-facing language features through `HOST_CALL` symbols:
   - print/time/math: `standard.input_output.print`, `std.time.*`, `std.math.*`

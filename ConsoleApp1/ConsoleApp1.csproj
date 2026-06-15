@@ -5,10 +5,10 @@
     <TargetFramework>net9.0</TargetFramework>
     <AssemblyName>compiler</AssemblyName>
     <RootNamespace>ConsoleApp1</RootNamespace>
-    <Version>0.1.0-alpha.1</Version>
+    <Version>0.1.0-alpha.4</Version>
     <AssemblyVersion>0.1.0.0</AssemblyVersion>
     <FileVersion>0.1.0.0</FileVersion>
-    <InformationalVersion>0.1.0-alpha.1</InformationalVersion>
+    <InformationalVersion>0.1.0-alpha.4</InformationalVersion>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>

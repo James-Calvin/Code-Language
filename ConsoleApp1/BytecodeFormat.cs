@@ -7,7 +7,7 @@ namespace ConsoleApp1;
 static class BytecodeFormat
 {
     public const string MagicText = "CODE";
-    public const byte Version = 8;
+    public const byte Version = 9;
 
     // magic (4) + version (1) + codeSize (4) + debugCount (4)
     public const int HeaderSize = 4 + 1 + 4 + 4;

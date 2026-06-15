@@ -284,5 +284,5 @@ This order gets library system + target model stable before engine work starts.
    - Exit criteria: the runtime contract is reflected in engine-facing modules rather than only raw host ABI symbols.
 
 5. **Graphical app profile**
-   - Implemented first slice: web entry modules may now use top-level lifecycle authoring with a synthesized `MainScene`, and all web-app modules infer canonical engine imports from usage.
+   - Implemented first slice: web entry modules may now use top-level lifecycle authoring backed by same-module global state and a synthesized `MainScene`, and all web-app modules infer canonical engine imports from usage.
    - Next step: keep the current web-entry slice stable while carrying the same authoring model toward broader target-agnostic reuse.

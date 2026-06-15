@@ -209,7 +209,11 @@ sealed class Variable : Expr
 {
     public Token Name { get; }
     public TypeRef? ResolvedImplicitFieldTypeRef { get; set; }
+    public TypeRef? ResolvedGlobalTypeRef { get; set; }
+    public string? ResolvedGlobalKey { get; set; }
+    public bool ResolvedBuiltInConstant { get; set; }
     public bool ResolvesToImplicitField => ResolvedImplicitFieldTypeRef is not null;
+    public bool ResolvesToGlobal => ResolvedGlobalKey is not null;
     public Variable(Token name) { Name = name; }
 }
 
@@ -218,7 +222,10 @@ sealed class Assign : Expr
     public Token Name { get; }
     public Expr Value { get; }
     public TypeRef? ResolvedImplicitFieldTypeRef { get; set; }
+    public TypeRef? ResolvedGlobalTypeRef { get; set; }
+    public string? ResolvedGlobalKey { get; set; }
     public bool ResolvesToImplicitField => ResolvedImplicitFieldTypeRef is not null;
+    public bool ResolvesToGlobal => ResolvedGlobalKey is not null;
     public Assign(Token name, Expr value) { Name = name; Value = value; }
 }
 

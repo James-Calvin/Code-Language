@@ -1524,9 +1524,7 @@ static class ModuleCompiler
         private static IList<Stmt> LowerGraphicalAppEntryModule(IList<Stmt> statements, GraphicalAppProfileAnalysis graphicalAppProfile)
         {
             var lowered = new List<Stmt>(statements.Count + 1);
-            var fields = new List<FieldDecl>();
             var methods = new List<MethodDecl>();
-            var constructorStatements = new List<Stmt>();
             Token? sceneToken = null;
 
             for (int i = 0; i < statements.Count; i++)
@@ -1534,23 +1532,15 @@ static class ModuleCompiler
                 switch (statements[i])
                 {
                     case VarDecl variable:
-                    {
                         sceneToken ??= variable.Name;
-                        fields.Add(new FieldDecl(variable.Type, variable.Name, null, DeclarationVisibility.Public, variable.IsConstant));
-                        Expr initializer = variable.Initializer ?? new DefaultValueExpr(variable.Type, variable.Name.Line, variable.Name.Column);
-                        constructorStatements.Add(new ExprStmt(new Assign(variable.Name, initializer)));
-                        if (variable.IsConstant && variable.Initializer is null)
-                        {
-                            throw new CompilerException(
-                                $"Constant '{variable.Name.Lexeme}' must be initialized",
-                                variable.Name.Line,
-                                variable.Name.Column);
-                        }
+                        lowered.Add(variable);
                         break;
-                    }
                     case FunctionDecl function:
                         sceneToken ??= function.Name;
-                        methods.Add(new MethodDecl(function.Name, function.ReturnType, function.Parameters, function.Body));
+                        if (IsGraphicalLifecycleName(function.Name.Lexeme))
+                            methods.Add(new MethodDecl(function.Name, function.ReturnType, function.Parameters, function.Body));
+                        else
+                            lowered.Add(function);
                         break;
                     case ObjectDecl:
                     case InterfaceDecl:
@@ -1564,10 +1554,13 @@ static class ModuleCompiler
             sceneToken ??= graphicalAppProfile.TriggerToken;
             var mainSceneName = new Token(TokenType.Identifier, "MainScene", null, sceneToken.Line, sceneToken.Column);
             var constructorKeyword = new Token(TokenType.Constructor, "constructor", null, sceneToken.Line, sceneToken.Column);
-            var constructor = new ConstructorDecl(constructorKeyword, [], new Block(constructorStatements));
-            lowered.Add(new ObjectDecl(mainSceneName, isRecord: false, fields, [constructor], methods));
+            var constructor = new ConstructorDecl(constructorKeyword, [], new Block([]));
+            lowered.Add(new ObjectDecl(mainSceneName, isRecord: false, [], [constructor], methods));
             return lowered;
         }
+
+        private static bool IsGraphicalLifecycleName(string name) =>
+            name is "start" or "update" or "draw" or "drawHud";
 
         private ModuleInfo ParseModule(string modulePath)
         {

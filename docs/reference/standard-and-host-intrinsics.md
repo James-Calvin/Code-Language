@@ -54,6 +54,13 @@ Common mistakes:
 
 ## Math and Randomness
 
+Built-in constants:
+
+| Constant | Type | Value |
+| --- | --- | --- |
+| `pi` | `real` | Circle constant pi |
+| `tau` | `real` | `2 * pi` |
+
 | Function | Inputs | Returns |
 | --- | --- | --- |
 | `minimum(left, right)` | `real`, `real` | `real` |
@@ -74,6 +81,7 @@ print(absolute(-3));
 print(sign(-3));
 print(lerp(10, 20, 1. / 4));
 print(cosine(0));
+print(tau == pi * 2.);
 ```
 
 Output:
@@ -85,6 +93,7 @@ Output:
 -1
 12.5
 1
+1
 ```
 
 Common mistakes:
@@ -92,6 +101,7 @@ Common mistakes:
 - Angles for `sine` and `cosine` use the runtime math convention, not degrees.
 - `random()` returns a real value from 0 inclusive to 1 exclusive.
 - Integral `/` is truncating integer division. Use a `real` operand for real division, for example `1. / 4`.
+- `pi` and `tau` are read-only built-in constants. A same-module declaration named `pi` or `tau` shadows the built-in in that scope.
 
 ## Native Input
 

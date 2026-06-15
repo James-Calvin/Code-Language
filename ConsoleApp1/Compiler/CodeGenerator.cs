@@ -76,6 +76,8 @@ sealed class CodeGenerator
     private readonly HashSet<string> _objectNames = new(StringComparer.Ordinal);
     private readonly HashSet<string> _recordNames = new(StringComparer.Ordinal);
     private readonly HashSet<string> _interfaceNames = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, int> _globalSlots = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, TypeRef> _globalDeclaredTypes = new(StringComparer.Ordinal);
     private readonly Dictionary<string, Dictionary<string, TypeRef>> _objectFieldTypes = new(StringComparer.Ordinal);
     private readonly Dictionary<string, IReadOnlyList<FieldDecl>> _objectFieldDefaults = new(StringComparer.Ordinal);
     private readonly Dictionary<string, List<InterfaceDispatchTarget>> _interfaceDispatch = new(StringComparer.Ordinal);
@@ -154,6 +156,13 @@ sealed class CodeGenerator
                 _interfaceMethodParamTypes[InterfaceDispatchKey(iface.Name.Lexeme, ifaceMethodKey)] = method.Parameters.Select(p => p.Type!).ToList();
             }
         }
+
+        foreach (var stmt in topLevel)
+        {
+            if (stmt is VarDecl variable)
+                RegisterGlobal(variable);
+        }
+
         BuildInterfaceDispatch(implementDecls);
 
         // Emit object methods/constructors before normal functions.
@@ -178,7 +187,10 @@ sealed class CodeGenerator
         PushScope();
         foreach (var stmt in topLevel)
         {
-            Emit(stmt);
+            if (stmt is VarDecl variable && TryGetGlobalSlot(variable, out _))
+                EmitGlobalDeclaration(variable);
+            else
+                Emit(stmt);
         }
         _builder.Halt();
         PopScope();
@@ -685,6 +697,14 @@ sealed class CodeGenerator
                     EmitCurrentObject();
                     _builder.GetField(v.Name.Lexeme);
                 }
+                else if (v.ResolvesToGlobal)
+                {
+                    _builder.LoadGlobal(GetGlobalSlot(v.ResolvedGlobalKey!));
+                }
+                else if (v.ResolvedBuiltInConstant)
+                {
+                    _builder.PushReal(BuiltInConstantValue(v.Name.Lexeme));
+                }
                 else
                 {
                     _builder.Load(GetSlot(v.Name));
@@ -701,6 +721,13 @@ sealed class CodeGenerator
                     EmitStorageBoundaryCheck(a.ResolvedImplicitFieldTypeRef);
                     _builder.SetField(a.Name.Lexeme);
                     _builder.Pop();
+                }
+                else if (a.ResolvesToGlobal)
+                {
+                    Emit(a.Value);
+                    EmitCloneForSourceExprIfNeeded(a.Value);
+                    EmitStorageBoundaryCheck(a.ResolvedGlobalTypeRef);
+                    _builder.StoreGlobal(GetGlobalSlot(a.ResolvedGlobalKey!));
                 }
                 else
                 {
@@ -864,6 +891,36 @@ sealed class CodeGenerator
             default:
                 throw new NotSupportedException($"Unhandled expression type {expr.GetType().Name}");
         }
+    }
+
+    private void RegisterGlobal(VarDecl variable)
+    {
+        string key = GlobalKey(variable.OriginModulePath, variable.Name.Lexeme);
+        if (_globalSlots.ContainsKey(key))
+            return;
+        _globalSlots[key] = _globalSlots.Count;
+        _globalDeclaredTypes[key] = variable.Type;
+    }
+
+    private bool TryGetGlobalSlot(VarDecl variable, out int slot) =>
+        _globalSlots.TryGetValue(GlobalKey(variable.OriginModulePath, variable.Name.Lexeme), out slot);
+
+    private void EmitGlobalDeclaration(VarDecl variable)
+    {
+        SetLoc(variable.Name);
+        int slot = _globalSlots[GlobalKey(variable.OriginModulePath, variable.Name.Lexeme)];
+        if (variable.Initializer is not null)
+        {
+            Emit(variable.Initializer);
+            EmitCloneForSourceExprIfNeeded(variable.Initializer);
+            EmitStorageBoundaryCheck(variable.Type);
+        }
+        else
+        {
+            EmitDefaultValue(variable.Type);
+            EmitStorageBoundaryCheck(variable.Type);
+        }
+        _builder.StoreGlobal(slot);
     }
 
     private void EmitDefaultValue(TypeRef type)
@@ -1046,6 +1103,23 @@ sealed class CodeGenerator
         return slot;
     }
 
+    private int GetGlobalSlot(string key)
+    {
+        if (!_globalSlots.TryGetValue(key, out var slot))
+            throw new InvalidOperationException($"Undefined global '{key}'");
+        return slot;
+    }
+
+    private static double BuiltInConstantValue(string name) => name switch
+    {
+        "pi" => Math.PI,
+        "tau" => Math.PI * 2.0,
+        _ => throw new InvalidOperationException($"Unknown built-in constant '{name}'.")
+    };
+
+    private static string GlobalKey(string? modulePath, string name) =>
+        $"{(string.IsNullOrWhiteSpace(modulePath) ? "<source>" : modulePath)}\u001F{name}";
+
     private static string TypeRefKey(TypeRef t)
     {
         t = t.NormalizeBuiltInShorthands();
@@ -1152,6 +1226,10 @@ sealed class CodeGenerator
             case Variable v:
                 if (v.ResolvedImplicitFieldTypeRef is not null)
                     return v.ResolvedImplicitFieldTypeRef;
+                if (v.ResolvedGlobalTypeRef is not null)
+                    return v.ResolvedGlobalTypeRef;
+                if (v.ResolvedBuiltInConstant)
+                    return new TypeRef("real", null, v.Name.Line, v.Name.Column);
                 return _localDeclaredTypes.TryGetValue(v.Name.Lexeme, out var t) ? t : null;
             case NewObjectExpr no:
                 return new TypeRef(no.TypeName.Lexeme, null, no.TypeName.Line, no.TypeName.Column);
@@ -1260,6 +1338,16 @@ sealed class CodeGenerator
                     _builder.SetField(variable.Name.Lexeme);
                     ReleaseTemp(valueSlot);
                     ReleaseTemp(objectSlot);
+                }
+                else if (variable.ResolvesToGlobal)
+                {
+                    int slot = GetGlobalSlot(variable.ResolvedGlobalKey!);
+                    _builder.LoadGlobal(slot);
+                    Emit(expr.Value);
+                    EmitBinaryOperator(expr.Operator, variable, expr.Value);
+                    EmitStorageBoundaryCheck(variable.ResolvedGlobalTypeRef);
+                    _builder.Dup();
+                    _builder.StoreGlobal(slot);
                 }
                 else
                 {

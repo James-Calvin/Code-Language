@@ -226,6 +226,7 @@ API:
 | `lastDrawWorkMilliseconds()` | `real` |
 | `lastDrawHudWorkMilliseconds()` | `real` |
 | `lastUpdateSteps()` | `integer` |
+| `lastDroppedUpdateSteps()` | `integer` |
 
 Example:
 
@@ -235,7 +236,9 @@ function drawHud() {
 }
 ```
 
-Diagnostics are last-completed-frame values. They measure Code VM/runtime work around update, draw, and HUD invocation. They do not include browser compositor or GPU presentation time. Native execution and web execution without an attached scene host return neutral zero values.
+Diagnostics are last-completed-frame values. They measure Code VM/runtime work around update, draw, and HUD invocation. They do not include browser compositor or GPU presentation time. Native execution and web execution without an attached scene host return neutral zero values. Fixed-update catch-up is capped at five steps per animation frame; `lastDroppedUpdateSteps()` reports discarded excess whole steps.
+
+Append `?code-profile=1` to a generated app URL for VM-level profiling. In browser developer tools, `CodeRuntime.profile.report()` prints tables and `CodeRuntime.profile.json()` returns exportable JSON. Profiling is opt-in because instruction and timing accounting adds runtime cost.
 
 For a benchmark app, build `ConsoleApp1/examples/performance_dashboard.code`. Use it for relative comparisons and threshold-finding. Record browser, device, display refresh rate, and viewport size when comparing results. Use browser devtools Performance for deeper compositor/GPU analysis.
 
@@ -414,6 +417,7 @@ diagnosticsLastUpdateWorkMilliseconds
 diagnosticsLastDrawWorkMilliseconds
 diagnosticsLastDrawHudWorkMilliseconds
 diagnosticsLastUpdateSteps
+diagnosticsLastDroppedUpdateSteps
 audioCanPlaySound
 audioPlaySound
 audioPlayLoopingSound

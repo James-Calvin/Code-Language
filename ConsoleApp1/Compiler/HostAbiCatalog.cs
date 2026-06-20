@@ -81,6 +81,7 @@ static class HostAbiCatalog
             ["std.math.lerp"] = new HostAbiSymbol("std.math.lerp", 3, "std.math", HostAbiTargets.All),
             ["std.math.sine"] = new HostAbiSymbol("std.math.sine", 1, "std.math", HostAbiTargets.All),
             ["std.math.cosine"] = new HostAbiSymbol("std.math.cosine", 1, "std.math", HostAbiTargets.All),
+            ["std.math.square_root"] = new HostAbiSymbol("std.math.square_root", 1, "std.math", HostAbiTargets.All),
             ["std.math.random"] = new HostAbiSymbol("std.math.random", 0, "std.math", HostAbiTargets.All),
 
             ["engine.window.create"] = new HostAbiSymbol("engine.window.create", 3, "engine.window", HostAbiTargets.All),
@@ -134,6 +135,7 @@ static class HostAbiCatalog
             ["engine.diagnostics.last_draw_work_milliseconds_scene"] = new HostAbiSymbol("engine.diagnostics.last_draw_work_milliseconds_scene", 0, "engine.diagnostics", HostAbiTargets.All),
             ["engine.diagnostics.last_draw_hud_work_milliseconds_scene"] = new HostAbiSymbol("engine.diagnostics.last_draw_hud_work_milliseconds_scene", 0, "engine.diagnostics", HostAbiTargets.All),
             ["engine.diagnostics.last_update_steps_scene"] = new HostAbiSymbol("engine.diagnostics.last_update_steps_scene", 0, "engine.diagnostics", HostAbiTargets.All),
+            ["engine.diagnostics.last_dropped_update_steps_scene"] = new HostAbiSymbol("engine.diagnostics.last_dropped_update_steps_scene", 0, "engine.diagnostics", HostAbiTargets.All),
 
             ["engine.audio.can_play_sound_scene"] = new HostAbiSymbol("engine.audio.can_play_sound_scene", 0, "engine.audio", HostAbiTargets.All),
             ["engine.audio.play_sound_scene"] = new HostAbiSymbol("engine.audio.play_sound_scene", 2, "engine.audio", HostAbiTargets.All),
@@ -189,6 +191,7 @@ static class HostAbiCatalog
             ["lerp"] = Sig("lerp", "std.math.lerp", TypeSymbol.Real, "real", (TypeSymbol.Real, "real"), (TypeSymbol.Real, "real"), (TypeSymbol.Real, "real")),
             ["sine"] = Sig("sine", "std.math.sine", TypeSymbol.Real, "real", (TypeSymbol.Real, "real")),
             ["cosine"] = Sig("cosine", "std.math.cosine", TypeSymbol.Real, "real", (TypeSymbol.Real, "real")),
+            ["squareRoot"] = Sig("squareRoot", "std.math.square_root", TypeSymbol.Real, "real", (TypeSymbol.Real, "real")),
             ["random"] = Sig("random", "std.math.random", TypeSymbol.Real, "real"),
 
             ["windowCreate"] = Sig(
@@ -438,6 +441,11 @@ static class HostAbiCatalog
             ["diagnosticsLastUpdateSteps"] = Sig(
                 "diagnosticsLastUpdateSteps",
                 "engine.diagnostics.last_update_steps_scene",
+                TypeSymbol.Integer,
+                "integer"),
+            ["diagnosticsLastDroppedUpdateSteps"] = Sig(
+                "diagnosticsLastDroppedUpdateSteps",
+                "engine.diagnostics.last_dropped_update_steps_scene",
                 TypeSymbol.Integer,
                 "integer"),
             ["audioCanPlaySound"] = Sig(

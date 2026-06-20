@@ -1,0 +1,49 @@
+object Body {
+  real x;
+  real y;
+  real radius;
+
+  constructor(integer index) {
+    x = (index * 17) % 500;
+    y = (index * 29) % 300;
+    radius = 4 + index % 5;
+  }
+}
+
+constant integer BODY_COUNT = 160;
+constant integer SUBSTEPS = 8;
+array<Body> bodies = new array<Body>(BODY_COUNT);
+
+integer index = 0;
+while index < BODY_COUNT then {
+  bodies[index] = new Body(index);
+  index += 1;
+}
+
+integer substep = 0;
+while substep < SUBSTEPS then {
+  index = 0;
+  while index < BODY_COUNT then {
+    integer otherIndex = index + 1;
+    while otherIndex < BODY_COUNT then {
+      Body left = bodies[index];
+      Body right = bodies[otherIndex];
+      real dx = right.x - left.x;
+      real dy = right.y - left.y;
+      real distance = squareRoot(dx * dx + dy * dy);
+      real minimumDistance = left.radius + right.radius;
+      if distance > 0 and distance < minimumDistance then {
+        real overlapScale = (minimumDistance - distance) / distance / 2;
+        left.x -= dx * overlapScale;
+        left.y -= dy * overlapScale;
+        right.x += dx * overlapScale;
+        right.y += dy * overlapScale;
+      }
+      otherIndex += 1;
+    }
+    index += 1;
+  }
+  substep += 1;
+}
+
+print(bodies[0].x >= 0);

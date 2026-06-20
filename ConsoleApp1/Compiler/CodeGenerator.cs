@@ -46,11 +46,13 @@ sealed class CodeGenerationResult
 {
     public byte[] Bytecode { get; }
     public WebSceneMetadata? WebScene { get; }
+    public IReadOnlyDictionary<int, string> CallableNames { get; }
 
-    public CodeGenerationResult(byte[] bytecode, WebSceneMetadata? webScene)
+    public CodeGenerationResult(byte[] bytecode, WebSceneMetadata? webScene, IReadOnlyDictionary<int, string> callableNames)
     {
         Bytecode = bytecode;
         WebScene = webScene;
+        CallableNames = callableNames;
     }
 }
 
@@ -67,6 +69,7 @@ sealed class CodeGenerator
     private readonly List<int> _freeTemps = new();
     private readonly HashSet<int> _freeTempSet = new();
     private readonly Dictionary<string, (string Label, int ParamCount, int LocalCount)> _functions = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string> _callableDisplayNamesByLabel = new(StringComparer.Ordinal);
     private readonly Dictionary<string, TypeRef> _functionReturnTypes = new(StringComparer.Ordinal);
     private readonly Dictionary<string, IReadOnlyList<TypeRef>> _functionParamTypes = new(StringComparer.Ordinal);
     private readonly Dictionary<string, (string Label, int ParamCount, int LocalCount)> _constructors = new(StringComparer.Ordinal);
@@ -115,6 +118,7 @@ sealed class CodeGenerator
         {
             string label = $"fn_{fn.Name.Lexeme}";
             _functions[fn.Name.Lexeme] = (label, fn.Parameters.Count, 0);
+            _callableDisplayNamesByLabel[label] = fn.Name.Lexeme;
             _functionReturnTypes[fn.Name.Lexeme] = fn.ReturnType ?? BuildImplicitVoidTypeRef(fn.Name);
             _functionParamTypes[fn.Name.Lexeme] = fn.Parameters.Select(p => p.Type!).ToList();
         }
@@ -137,6 +141,7 @@ sealed class CodeGenerator
                 string key = ConstructorKey(obj.Name.Lexeme, ctor.Parameters);
                 string label = $"ctor_{obj.Name.Lexeme}_{_constructors.Count}";
                 _constructors[key] = (label, ctor.Parameters.Count + 1, 0); // +1 for implicit this
+                _callableDisplayNamesByLabel[label] = $"{obj.Name.Lexeme}.constructor";
                 _constructorParamTypes[key] = ctor.Parameters.Select(p => p.Type!).ToList();
             }
             foreach (var method in obj.Methods)
@@ -144,6 +149,7 @@ sealed class CodeGenerator
                 string key = MethodKey(obj.Name.Lexeme, method.Name.Lexeme, method.Parameters);
                 string label = $"m_{obj.Name.Lexeme}_{method.Name.Lexeme}_{_methods.Count}";
                 _methods[key] = (label, method.Parameters.Count + 1, 0); // +1 for implicit this
+                _callableDisplayNamesByLabel[label] = $"{obj.Name.Lexeme}.{method.Name.Lexeme}";
                 _methodParamTypes[key] = method.Parameters.Select(p => p.Type!).ToList();
             }
         }
@@ -196,7 +202,13 @@ sealed class CodeGenerator
         PopScope();
 
         byte[] bytecode = _builder.ToArray();
-        return new CodeGenerationResult(bytecode, TryBuildWebSceneMetadata(objectDecls));
+        var callableNames = new Dictionary<int, string>();
+        foreach (var entry in _callableDisplayNamesByLabel)
+        {
+            if (_builder.TryGetLabelAddress(entry.Key, out int address))
+                callableNames[address] = entry.Value;
+        }
+        return new CodeGenerationResult(bytecode, TryBuildWebSceneMetadata(objectDecls), callableNames);
     }
 
     private void SetLoc(Token token) => _builder.SetDebugLocation(token.Line, token.Column);

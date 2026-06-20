@@ -28,6 +28,7 @@ Current VM data-structure support:
 - `std.math.lerp`
 - `std.math.sine`
 - `std.math.cosine`
+- `std.math.square_root`
 - `std.math.random`
 
 Native-only host calls are present with explicit runtime diagnostics:
@@ -68,6 +69,7 @@ Current generated scene-runtime bindings also support:
 - `engine.diagnostics.last_draw_work_milliseconds_scene`
 - `engine.diagnostics.last_draw_hud_work_milliseconds_scene`
 - `engine.diagnostics.last_update_steps_scene`
+- `engine.diagnostics.last_dropped_update_steps_scene`
 - `engine.audio.can_play_sound_scene`
 - `engine.audio.play_sound_scene`
 - `engine.audio.play_looping_sound_scene`
@@ -92,9 +94,11 @@ The generated web app path is now the main workflow for browser apps.
 - Current generated runtime behavior: full-bleed browser canvas, centered `640x360` safe area, hybrid-expanded world framing, optional `drawHud()` for screen-edge HUD work, scene primitives for rectangles, outlines, lines, circles, polygons, text, images, and sprites, keyboard and primary pointer input, asset-backed one-shot/looping audio, last-completed-frame diagnostics, copied `assets/` content in the generated site output when present, app-key scroll prevention, canvas touch gesture suppression, and normal `print` output routed to the browser console.
 - Audio uses `HTMLAudioElement`, lazy asset paths, integer playback handles, volume clamping, and browser audio unlock on first key or pointer input. It is not a full mixer yet.
 - Diagnostics measure runtime/VM work around update, draw, and HUD invocation. They do not include browser compositor or GPU presentation time.
+- The fixed-step loop runs at most five catch-up updates per animation frame and reports dropped excess steps, preventing an overloaded app from entering an unbounded update spiral.
+- Generated apps enable the opt-in VM profiler with `?code-profile=1`; `CodeRuntime.profile.report()` prints instruction, function, host-call, allocation, and stack metrics, while `.json()` returns exportable JSON.
 - Generated web builds embed bytecode in `index.html` by default. Maintainer builds can use `--emit-web-bytecode` to also write `app.bytecode` for debugging or inspection.
 - The repo also ships a wrapper layer in `lib/engine/` so scene apps can import canonical modules `engine.colors`, `engine.drawing`, `engine.input`, `engine.viewport`, `engine.diagnostics`, `engine.audio`, and `engine.scene` instead of relying on the raw helper surface. `engine.view` and `engine.loop` remain as compatibility re-exports.
-- The generated runtime is currently JavaScript, not Wasm. Wasm remains a future option if performance or parity data justifies the extra build complexity.
+- The generated runtime is currently an optimized JavaScript VM with decoded operand/call-site caches and slot-backed object fields. Wasm remains gated on bytecode parity and a measured 2x improvement over this baseline.
 
 ## Harness quick start
 1. Compile a program for web:

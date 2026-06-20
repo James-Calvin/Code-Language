@@ -1049,6 +1049,7 @@ sealed class Vm
         });
         _hostBindings["std.math.sine"] = new HostBinding(1, args => Math.Sin(ToDouble(args[0])));
         _hostBindings["std.math.cosine"] = new HostBinding(1, args => Math.Cos(ToDouble(args[0])));
+        _hostBindings["std.math.square_root"] = new HostBinding(1, args => Math.Sqrt(ToDouble(args[0])));
         _hostBindings["std.math.random"] = new HostBinding(0, _ => Random.Shared.NextDouble());
 
         _hostBindings["engine.window.create"] = new HostBinding(3, _ => _nextWindowHandle++);
@@ -1101,6 +1102,7 @@ sealed class Vm
         _hostBindings["engine.diagnostics.last_draw_work_milliseconds_scene"] = new HostBinding(0, _ => 0.0);
         _hostBindings["engine.diagnostics.last_draw_hud_work_milliseconds_scene"] = new HostBinding(0, _ => 0.0);
         _hostBindings["engine.diagnostics.last_update_steps_scene"] = new HostBinding(0, _ => 0);
+        _hostBindings["engine.diagnostics.last_dropped_update_steps_scene"] = new HostBinding(0, _ => 0);
 
         _hostBindings["engine.audio.can_play_sound_scene"] = new HostBinding(0, _ => 0);
         _hostBindings["engine.audio.play_sound_scene"] = new HostBinding(2, _ => 0);

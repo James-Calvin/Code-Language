@@ -374,6 +374,7 @@ if not isReady then {
   - `lerp(real start, real end, real amount) -> real`
   - `sine(real angle) -> real`
   - `cosine(real angle) -> real`
+  - `squareRoot(real value) -> real`
   - `random() -> real`
 - Built-in read-only real constants:
   - `pi`
@@ -738,6 +739,7 @@ if x > 3 then panic("x too large");
   - `lerp(real start, real end, real amount) -> real`
   - `sine(real angle) -> real`
   - `cosine(real angle) -> real`
+  - `squareRoot(real value) -> real`
   - `random() -> real`
   - These currently lower through host ABI symbols (`std.math.*`) rather than dedicated language-level stdlib modules.
 - Built-in math constants (current baseline):

@@ -70,6 +70,7 @@ internal static class WebBuildPipeline
         string html = BuildIndexHtml(
             manifest?.Name ?? Path.GetFileNameWithoutExtension(fullSourcePath),
             result.WebScene,
+            result.CallableNames,
             Convert.ToBase64String(result.Bytecode),
             runtimeScript);
 
@@ -165,6 +166,7 @@ internal static class WebBuildPipeline
     private static string BuildIndexHtml(
         string title,
         WebSceneMetadata webScene,
+        IReadOnlyDictionary<int, string> callableNames,
         string bytecodeBase64,
         string runtimeScript)
     {
@@ -176,6 +178,7 @@ internal static class WebBuildPipeline
             title = pageTitle,
             virtualWidth = VirtualWidth,
             virtualHeight = VirtualHeight,
+            callableNames,
             scene = new
             {
                 typeName = webScene.SceneTypeName,
@@ -217,10 +220,24 @@ runtime.attach(document.body);
 
 try {
   const bytecode = decodeBase64Bytes(APP_BYTECODE_BASE64);
+  const profileEnabled = new URLSearchParams(window.location.search).get("code-profile") === "1";
   const vm = new WebVm(bytecode, {
     output: line => console.log(line),
-    sceneHost: runtime
+    sceneHost: runtime,
+    functionNames: APP_METADATA.callableNames,
+    profileEnabled
   });
+  window.CodeRuntime = {
+    vm,
+    runtime,
+    profile: {
+      start: () => vm.profiler.start(),
+      stop: () => vm.profiler.stop(),
+      reset: () => vm.profiler.reset(),
+      report: () => vm.profiler.print(),
+      json: () => JSON.stringify(vm.profiler.report(), null, 2)
+    }
+  };
   runtime.runScene(vm, APP_METADATA.scene);
 } catch (error) {
   runtime.showFatal(error);

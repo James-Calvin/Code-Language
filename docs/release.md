@@ -1,6 +1,6 @@
 # Release Process
 
-Current release target: `0.1.0-alpha.4`.
+Current release target: `0.1.0-alpha.5`.
 
 This is a maintainer-facing document. User install and quickstart instructions live in the README.
 
@@ -26,7 +26,14 @@ From the repository root:
 ```powershell
 dotnet build ConsoleApp1.sln -c Release
 dotnet run --project ConsoleApp1/ConsoleApp1.csproj -c Release -- --run-tests
+node scripts/benchmark-runtime.mjs
+node scripts/test-web-vm.mjs
 ```
+
+`--run-tests` includes the arithmetic, boolean, string, loop, and panic fuzz
+suites. Runtime changes also pass executable C#/JavaScript VM conformance, the
+profiler smoke checks embedded in the benchmark runner, and record benchmark
+results before release.
 
 ## Create Release Artifacts
 

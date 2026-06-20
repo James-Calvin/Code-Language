@@ -131,7 +131,7 @@ Host calls are explicit, capability-scoped bindings provided by the runtime host
 
 ### 2.6 Backend policy (WebGPU compatibility)
 - Current JS web runtime does **not** block a WebGPU future; it is a bootstrap runtime for ABI bring-up.
-- Current JS web runtime also does **not** block a future Wasm VM/runtime path; keep JS as the default until measured performance, native/web VM parity, or startup-size data justifies the added toolchain complexity.
+- Current JS web runtime also does **not** block a future Wasm VM/runtime path. The optimized JS VM remains the default until a Wasm implementation has full parity and demonstrates at least a 2x improvement on the deterministic runtime benchmarks.
 - The long-term design keeps `engine.*` APIs backend-agnostic and maps them per target/backend.
 - Web target backend preference:
   1) WebGPU when available,

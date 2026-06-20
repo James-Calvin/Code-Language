@@ -24,19 +24,22 @@ sealed class ModuleCompileResult
     public CompileTarget Target { get; }
     public IReadOnlyList<string> RequiredCapabilities { get; }
     public WebSceneMetadata? WebScene { get; }
+    public IReadOnlyDictionary<int, string> CallableNames { get; }
 
     public ModuleCompileResult(
         byte[] bytecode,
         ModuleGraph graph,
         CompileTarget target,
         IReadOnlyList<string> requiredCapabilities,
-        WebSceneMetadata? webScene)
+        WebSceneMetadata? webScene,
+        IReadOnlyDictionary<int, string> callableNames)
     {
         Bytecode = bytecode;
         Graph = graph;
         Target = target;
         RequiredCapabilities = requiredCapabilities;
         WebScene = webScene;
+        CallableNames = callableNames;
     }
 }
 
@@ -304,7 +307,8 @@ static class ModuleCompiler
             linkResult.Graph,
             compileOptions.Target,
             linkResult.RequiredCapabilities,
-            generated.WebScene);
+            generated.WebScene,
+            generated.CallableNames);
     }
 
     private static void WriteLibraryArtifact(

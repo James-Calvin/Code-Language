@@ -216,7 +216,7 @@ function drawHud() {
   Draw.text("Controls: Left/Right profile, Up/Down load, Space pause, R reset samples", x, y, 13, "left", "top", dimColor);
   y += 28;
 
-  Draw.text("Workload draw calls: {estimatedDrawCalls()} | Update steps last frame: {Diagnostics.lastUpdateSteps()}", x, y, 13, "left", "top", textColor);
+  Draw.text("Workload draw calls: {estimatedDrawCalls()} | Update steps: {Diagnostics.lastUpdateSteps()} | Dropped: {Diagnostics.lastDroppedUpdateSteps()}", x, y, 13, "left", "top", textColor);
   y += 20;
   Draw.text("Frame interval ms: {Diagnostics.lastFrameIntervalMilliseconds()} | Estimated FPS: {Diagnostics.estimatedFramesPerSecond()}", x, y, 13, "left", "top", textColor);
   y += 20;

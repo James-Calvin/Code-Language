@@ -1551,6 +1551,7 @@ print(Diagnostics.lastUpdateWorkMilliseconds());
 print(Diagnostics.lastDrawWorkMilliseconds());
 print(Diagnostics.lastDrawHudWorkMilliseconds());
 print(Diagnostics.lastUpdateSteps());
+print(Diagnostics.lastDroppedUpdateSteps());
 print(Audio.canPlaySound());
 print(Audio.playSound(""assets/click.wav"", 1));
 print(Audio.playLoopingSound(""assets/loop.wav"", 1));
@@ -1561,7 +1562,7 @@ Audio.stopAllSounds();",
                     ["assets/test.svg"] = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\"></svg>",
                 },
                 "main.code",
-                "640\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0\n"
+                "640\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0\n"
             ),
             (
                 "module-scene-canonical-import",
@@ -3439,6 +3440,11 @@ function drawHud() {
                 outputs.IndexHtml.Contains("pointerdown", StringComparison.Ordinal) &&
                 outputs.IndexHtml.Contains("engine.input.pointer_world_x_scene", StringComparison.Ordinal) &&
                 outputs.IndexHtml.Contains("engine.diagnostics.last_frame_work_milliseconds_scene", StringComparison.Ordinal) &&
+                outputs.IndexHtml.Contains("engine.diagnostics.last_dropped_update_steps_scene", StringComparison.Ordinal) &&
+                outputs.IndexHtml.Contains("window.CodeRuntime", StringComparison.Ordinal) &&
+                outputs.IndexHtml.Contains("code-profile", StringComparison.Ordinal) &&
+                outputs.IndexHtml.Contains("\"callableNames\":", StringComparison.Ordinal) &&
+                outputs.IndexHtml.Contains("MainScene.update", StringComparison.Ordinal) &&
                 outputs.IndexHtml.Contains("engine.audio.can_play_sound_scene", StringComparison.Ordinal) &&
                 outputs.IndexHtml.Contains("publishDiagnostics(", StringComparison.Ordinal) &&
                 outputs.IndexHtml.Contains("beginFixedUpdateStep()", StringComparison.Ordinal) &&
@@ -4350,6 +4356,7 @@ print(sign(3));
 print(lerp(10, 20, 1. / 4));
 print(sine(0));
 print(cosine(0));
+print(squareRoot(81));
 real value = random();
 print(value >= 0 and value < 1);";
 
@@ -4357,7 +4364,7 @@ print(value >= 0 and value < 1);";
         {
             string nativeOutput = Normalize(CompileAndRun(mathSource, Compiler.CompileTarget.VmNative, VmHostTarget.Native));
             string webOutput = Normalize(CompileAndRun(mathSource, Compiler.CompileTarget.VmWeb, VmHostTarget.Web));
-            const string expected = "4\n9\n3\n-1\n0\n1\n12.5\n0\n1\n1\n";
+            const string expected = "4\n9\n3\n-1\n0\n1\n12.5\n0\n1\n9\n1\n";
             if (!string.Equals(nativeOutput, expected, StringComparison.Ordinal))
             {
                 failures++;
@@ -4435,6 +4442,7 @@ gfxDrawRectangle(window, 1, 2, 3, 4, 1, 0, 0, 1);
 windowPresent(window);
 print(diagnosticsLastFrameIntervalMilliseconds());
 print(diagnosticsLastUpdateSteps());
+print(diagnosticsLastDroppedUpdateSteps());
 print(audioCanPlaySound());
 print(audioPlaySound(""assets/click.wav"", 1));
 print(audioPlayLoopingSound(""assets/loop.wav"", 1));
@@ -4667,6 +4675,7 @@ print(quick);";
                 "std.math.lerp",
                 "std.math.sine",
                 "std.math.cosine",
+                "std.math.square_root",
                 "std.math.random"
             };
 
@@ -4736,6 +4745,7 @@ print(quick);";
                 "engine.diagnostics.last_draw_work_milliseconds_scene",
                 "engine.diagnostics.last_draw_hud_work_milliseconds_scene",
                 "engine.diagnostics.last_update_steps_scene"
+                ,"engine.diagnostics.last_dropped_update_steps_scene"
             };
 
             foreach (string symbol in requiredSymbols)
@@ -4749,6 +4759,8 @@ print(quick);";
                 runtimeText.Contains("publishDiagnostics(", StringComparison.Ordinal) &&
                 runtimeText.Contains("lastFrameWorkMilliseconds()", StringComparison.Ordinal) &&
                 runtimeText.Contains("lastUpdateSteps()", StringComparison.Ordinal) &&
+                runtimeText.Contains("lastDroppedUpdateSteps()", StringComparison.Ordinal) &&
+                runtimeText.Contains("maxUpdateStepsPerFrame = 5", StringComparison.Ordinal) &&
                 runtimeText.Contains("performance.now() - frameWorkStartMs", StringComparison.Ordinal);
             if (!hasDiagnosticsRuntime)
                 throw new Exception("Web runtime is missing frame diagnostics measurement support.");

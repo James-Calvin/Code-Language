@@ -70,6 +70,7 @@ Built-in constants:
 | `lerp(start, end, amount)` | `real`, `real`, `real` | `real` |
 | `sine(angle)` | `real` | `real` |
 | `cosine(angle)` | `real` | `real` |
+| `squareRoot(value)` | `real` | `real` |
 | `random()` | none | `real` in `[0, 1)` |
 
 Example:
@@ -81,6 +82,7 @@ print(absolute(-3));
 print(sign(-3));
 print(lerp(10, 20, 1. / 4));
 print(cosine(0));
+print(squareRoot(81));
 print(tau == pi * 2.);
 ```
 

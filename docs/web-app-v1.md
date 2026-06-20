@@ -303,6 +303,7 @@ Raw scene-runtime surface:
 - `diagnosticsLastDrawWorkMilliseconds() -> real`
 - `diagnosticsLastDrawHudWorkMilliseconds() -> real`
 - `diagnosticsLastUpdateSteps() -> integer`
+- `diagnosticsLastDroppedUpdateSteps() -> integer`
 - `audioCanPlaySound() -> boolean`
 - `audioPlaySound(string source, real volume) -> integer`
 - `audioPlayLoopingSound(string source, real volume) -> integer`
@@ -358,6 +359,7 @@ Current wrapper layer:
   - `lastDrawWorkMilliseconds() -> real`
   - `lastDrawHudWorkMilliseconds() -> real`
   - `lastUpdateSteps() -> integer`
+  - `lastDroppedUpdateSteps() -> integer`
 - `engine.audio`
   - `canPlaySound() -> boolean`
   - `playSound(string source, real volume) -> integer`
@@ -392,6 +394,8 @@ Behavior rules:
 - Last known pointer coordinates remain available after release; blur/cancel clears the down state and produces a release edge if needed.
 - Diagnostics helpers return metrics from the last completed presented frame. During the current frame, they intentionally report the previous frame's published values.
 - `lastFrameWorkMilliseconds()` measures runtime VM work around update/draw/HUD invocation. It does not include browser compositor or GPU presentation time.
+- Fixed updates are capped at five per animation frame. Excess accumulated whole steps are discarded and exposed through `lastDroppedUpdateSteps()` to prevent an update spiral.
+- Generated apps support opt-in VM profiling with `?code-profile=1` and `CodeRuntime.profile.start()`, `stop()`, `reset()`, `report()`, and `json()`.
 - Use `ConsoleApp1/examples/performance_dashboard.code` for relative threshold-finding, and browser devtools Performance for deeper browser/compositor investigation.
 - Audio helpers use static asset paths in the built site folder, return integer handles for playback control, and use browser audio unlock on first key or pointer input.
 - `playSound(...)` starts overlapping one-shot sounds; `playLoopingSound(...)` starts a loop suitable for background music. Missing or unsupported assets fail non-fatally and report not playing.
@@ -429,7 +433,7 @@ Current implementation output:
 - The runtime loader is currently inlined into `index.html`.
 - The compiled bytecode is embedded in `index.html` so direct opening does not require a fetch of `app.bytecode`.
 - `app.bytecode` is emitted only when the maintainer/debug flag `--emit-web-bytecode` is passed.
-- The browser VM/runtime is currently JavaScript. Wasm is deferred until measured performance or parity work justifies the extra build/tooling complexity.
+- The browser VM/runtime is currently JavaScript with decoded operand/call-site caches and slot-backed object fields. A Wasm replacement remains gated on full parity and at least a 2x benchmark improvement over the optimized JavaScript baseline.
 
 Required behavior:
 - Opening the generated `index.html` runs the app directly.

@@ -86,6 +86,9 @@ const OpCode = {
   Halt: 0xff
 };
 
+const OpCodeNames = Object.fromEntries(
+  Object.entries(OpCode).map(([name, value]) => [value, name]));
+
 const SizedNumericKind = {
   Integer8: 1,
   Integer16: 2,
@@ -190,6 +193,139 @@ function readHeader(bytes) {
   return { codeEnd, debugMap, view };
 }
 
+class RuntimeProfiler {
+  constructor(vm, enabled = false) {
+    this.vm = vm;
+    this.enabled = enabled;
+    this.reset();
+  }
+
+  start() {
+    this.reset();
+    this.enabled = true;
+    this.startedAtMs = performance.now();
+    return this;
+  }
+
+  stop() {
+    if (this.enabled) {
+      this.elapsedMs += performance.now() - this.startedAtMs;
+      this.enabled = false;
+    }
+    return this.report();
+  }
+
+  reset() {
+    this.startedAtMs = performance.now();
+    this.elapsedMs = 0;
+    this.instructionCount = 0;
+    this.opcodeCounts = new Uint32Array(256);
+    this.functionStats = new Map();
+    this.functionFrames = [];
+    this.hostStats = new Map();
+    this.allocations = { objects: 0, arrays: 0, callFrames: 0 };
+    this.maxStackDepth = 0;
+    this.maxCallDepth = 0;
+    return this;
+  }
+
+  instruction(op) {
+    if (!this.enabled) return;
+    this.instructionCount += 1;
+    this.opcodeCounts[op] += 1;
+    this.maxStackDepth = Math.max(this.maxStackDepth, this.vm.stack.length);
+    this.maxCallDepth = Math.max(this.maxCallDepth, this.vm.callStack.length);
+  }
+
+  allocate(kind) {
+    if (this.enabled) this.allocations[kind] += 1;
+  }
+
+  enterFunction(targetIp) {
+    if (!this.enabled) return;
+    this.functionFrames.push({ targetIp, startedAtMs: performance.now(), childMs: 0 });
+  }
+
+  leaveFunction() {
+    if (!this.enabled || this.functionFrames.length === 0) return;
+    const frame = this.functionFrames.pop();
+    const inclusiveMs = performance.now() - frame.startedAtMs;
+    const stat = this.functionStats.get(frame.targetIp) ?? { calls: 0, inclusiveMs: 0, selfMs: 0 };
+    stat.calls += 1;
+    stat.inclusiveMs += inclusiveMs;
+    stat.selfMs += inclusiveMs - frame.childMs;
+    this.functionStats.set(frame.targetIp, stat);
+    const parent = this.functionFrames[this.functionFrames.length - 1];
+    if (parent) parent.childMs += inclusiveMs;
+  }
+
+  measureHost(symbol, handler) {
+    if (!this.enabled) return handler();
+    const startedAtMs = performance.now();
+    try {
+      return handler();
+    } finally {
+      const stat = this.hostStats.get(symbol) ?? { calls: 0, milliseconds: 0 };
+      stat.calls += 1;
+      stat.milliseconds += performance.now() - startedAtMs;
+      this.hostStats.set(symbol, stat);
+    }
+  }
+
+  sourceLabel(ip) {
+    const name = this.vm.functionNames.get(ip);
+    const exact = this.vm.debugMap.get(ip);
+    if (exact) return `${name ?? `ip ${ip}`} (${exact.line}:${exact.column})`;
+    let nearestIp = -1;
+    let nearest = null;
+    for (const [candidateIp, location] of this.vm.debugMap) {
+      if (candidateIp <= ip && candidateIp > nearestIp) {
+        nearestIp = candidateIp;
+        nearest = location;
+      }
+    }
+    return nearest ? `${name ?? `ip ${ip}`} (${nearest.line}:${nearest.column})` : (name ?? `ip ${ip}`);
+  }
+
+  report() {
+    const liveElapsedMs = this.enabled ? performance.now() - this.startedAtMs : 0;
+    const opcodes = [];
+    for (let op = 0; op < this.opcodeCounts.length; op += 1) {
+      if (this.opcodeCounts[op] > 0) {
+        opcodes.push({ opcode: OpCodeNames[op] ?? `0x${op.toString(16)}`, count: this.opcodeCounts[op] });
+      }
+    }
+    opcodes.sort((a, b) => b.count - a.count);
+    const functions = [...this.functionStats.entries()].map(([ip, stat]) => ({
+      function: this.sourceLabel(ip), ...stat
+    })).sort((a, b) => b.inclusiveMs - a.inclusiveMs);
+    const hostCalls = [...this.hostStats.entries()].map(([symbol, stat]) => ({
+      symbol, ...stat
+    })).sort((a, b) => b.milliseconds - a.milliseconds);
+    return {
+      enabled: this.enabled,
+      elapsedMs: this.elapsedMs + liveElapsedMs,
+      instructionCount: this.instructionCount,
+      instructionsPerMillisecond: this.instructionCount / Math.max(0.001, this.elapsedMs + liveElapsedMs),
+      opcodes,
+      functions,
+      hostCalls,
+      allocations: { ...this.allocations },
+      maxStackDepth: this.maxStackDepth,
+      maxCallDepth: this.maxCallDepth
+    };
+  }
+
+  print() {
+    const report = this.report();
+    console.log("Code runtime profile", report);
+    console.table(report.opcodes);
+    console.table(report.functions);
+    console.table(report.hostCalls);
+    return report;
+  }
+}
+
 export class VmRuntimeError extends Error {
   constructor(message, payload) {
     super(message);
@@ -240,7 +376,7 @@ function isVmStack(value) {
 }
 
 function isVmObject(value) {
-  return value && typeof value === "object" && value.__vmObject === true && value.fields instanceof Map;
+  return value && typeof value === "object" && value.__vmObject === true && Array.isArray(value.fields);
 }
 
 function isVmMap(value) {
@@ -255,8 +391,26 @@ function isVmFallible(value) {
   return value && typeof value === "object" && value.__vmFallible === true;
 }
 
-function createVmObject(typeName, isRecord = false) {
-  return { __vmObject: true, typeName, isRecord, fields: new Map() };
+function createVmObject(typeName, isRecord = false, layout = null) {
+  const resolvedLayout = layout ?? { slots: new Map(), names: [] };
+  return {
+    __vmObject: true,
+    typeName,
+    isRecord,
+    layout: resolvedLayout,
+    fields: [],
+    initializedFields: new Set()
+  };
+}
+
+function resolveVmFieldSlot(target, fieldName, createIfMissing) {
+  let slot = target.layout.slots.get(fieldName);
+  if (slot === undefined && createIfMissing) {
+    slot = target.layout.names.length;
+    target.layout.slots.set(fieldName, slot);
+    target.layout.names.push(fieldName);
+  }
+  return slot;
 }
 
 function createVmMap() {
@@ -306,15 +460,17 @@ function valueEquals(left, right) {
       if (!left.isRecord || !right.isRecord) {
         return false;
       }
-      if (left.typeName !== right.typeName || left.fields.size !== right.fields.size) {
+      if (left.typeName !== right.typeName || left.initializedFields.size !== right.initializedFields.size) {
         return false;
       }
 
-      for (const [fieldName, leftValue] of left.fields.entries()) {
-        if (!right.fields.has(fieldName)) {
+      for (const slot of left.initializedFields) {
+        const fieldName = left.layout.names[slot];
+        const rightSlot = resolveVmFieldSlot(right, fieldName, false);
+        if (rightSlot === undefined || !right.initializedFields.has(rightSlot)) {
           return false;
         }
-        if (!valueEquals(leftValue, right.fields.get(fieldName))) {
+        if (!valueEquals(left.fields[slot], right.fields[rightSlot])) {
           return false;
         }
       }
@@ -358,10 +514,11 @@ function valueHash(value) {
     }
 
     let hash = combineHash(2166136261, stringHash(`record:${value.typeName}`));
-    const fieldNames = Array.from(value.fields.keys()).sort();
+    const fieldNames = Array.from(value.initializedFields, slot => value.layout.names[slot]).sort();
     for (const fieldName of fieldNames) {
+      const slot = resolveVmFieldSlot(value, fieldName, false);
       hash = combineHash(hash, stringHash(fieldName));
-      hash = combineHash(hash, valueHash(value.fields.get(fieldName)));
+      hash = combineHash(hash, valueHash(value.fields[slot]));
     }
     return hash;
   }
@@ -583,6 +740,8 @@ export class CanvasSceneRuntime {
     this.lastDrawWorkMs = 0;
     this.lastDrawHudWorkMs = 0;
     this.lastUpdateStepsCount = 0;
+    this.lastDroppedUpdateStepsCount = 0;
+    this.maxUpdateStepsPerFrame = 5;
     this.appControlKeyCodes = new Set([32, 33, 34, 35, 36, 37, 38, 39, 40]);
     this.canvas = null;
     this.ctx = null;
@@ -1167,13 +1326,18 @@ export class CanvasSceneRuntime {
     return this.lastUpdateStepsCount;
   }
 
-  publishDiagnostics(frameIntervalMs, frameWorkMs, updateWorkMs, drawWorkMs, drawHudWorkMs, updateSteps) {
+  lastDroppedUpdateSteps() {
+    return this.lastDroppedUpdateStepsCount;
+  }
+
+  publishDiagnostics(frameIntervalMs, frameWorkMs, updateWorkMs, drawWorkMs, drawHudWorkMs, updateSteps, droppedUpdateSteps = 0) {
     this.lastFrameIntervalMs = frameIntervalMs;
     this.lastFrameWorkMs = frameWorkMs;
     this.lastUpdateWorkMs = updateWorkMs;
     this.lastDrawWorkMs = drawWorkMs;
     this.lastDrawHudWorkMs = drawHudWorkMs;
     this.lastUpdateStepsCount = updateSteps;
+    this.lastDroppedUpdateStepsCount = droppedUpdateSteps;
   }
 
   setDrawSpace(space) {
@@ -1461,17 +1625,22 @@ export class CanvasSceneRuntime {
       const frameWorkStartMs = performance.now();
       let updateWorkMs = 0;
       let updateSteps = 0;
+      let droppedUpdateSteps = 0;
       let drawWorkMs = 0;
       let drawHudWorkMs = 0;
 
       this.setDrawSpace("world");
-      while (this.accumulatorMs >= this.stepMs) {
+      while (this.accumulatorMs >= this.stepMs && updateSteps < this.maxUpdateStepsPerFrame) {
         this.beginFixedUpdateStep();
         const updateStartMs = performance.now();
         this.vm.invokeVoid(this.sceneInfo.update.targetIp, this.sceneInfo.update.frameSize, [this.sceneObject]);
         updateWorkMs += performance.now() - updateStartMs;
         updateSteps += 1;
         this.accumulatorMs -= this.stepMs;
+      }
+      if (this.accumulatorMs >= this.stepMs) {
+        droppedUpdateSteps = Math.floor(this.accumulatorMs / this.stepMs);
+        this.accumulatorMs %= this.stepMs;
       }
 
       this.setDrawSpace("world");
@@ -1491,7 +1660,8 @@ export class CanvasSceneRuntime {
         updateWorkMs,
         drawWorkMs,
         drawHudWorkMs,
-        updateSteps);
+        updateSteps,
+        droppedUpdateSteps);
       this.frameHandle = requestAnimationFrame(this.tick);
     } catch (error) {
       this.stop();
@@ -1515,6 +1685,10 @@ export class WebVm {
     this.globals = new Array(8).fill(0);
     this.callStack = [];
     this.interfaceDispatchCache = new Map();
+    this.stringOperandCache = new Map();
+    this.hostCallCache = new Map();
+    this.fieldAccessCache = new Map();
+    this.typeLayouts = new Map();
     this.nextWindowHandle = 1;
 
     this.output = typeof options.output === "function" ? options.output : line => console.log(line);
@@ -1522,6 +1696,10 @@ export class WebVm {
     this.monoOriginMs = performance.now();
     this.hostBindings = new Map();
     this.sceneHost = options.sceneHost ?? null;
+    this.functionNames = new Map(
+      Object.entries(options.functionNames ?? {}).map(([ip, name]) => [Number(ip), String(name)]));
+    this.profiler = new RuntimeProfiler(this, options.profileEnabled === true);
+    if (this.profiler.enabled) this.profiler.start();
 
     this.initializeHostBindings();
   }
@@ -1618,6 +1796,13 @@ export class WebVm {
     this.hostBindings.set("std.math.cosine", {
       arity: 1,
       handler: args => Math.cos(
+        toNumber(args[0], message => this.throwRuntime(message))
+      )
+    });
+
+    this.hostBindings.set("std.math.square_root", {
+      arity: 1,
+      handler: args => Math.sqrt(
         toNumber(args[0], message => this.throwRuntime(message))
       )
     });
@@ -1767,6 +1952,10 @@ export class WebVm {
     this.hostBindings.set("engine.diagnostics.last_update_steps_scene", {
       arity: 0,
       handler: () => this.sceneHost ? this.sceneHost.lastUpdateSteps() : 0
+    });
+    this.hostBindings.set("engine.diagnostics.last_dropped_update_steps_scene", {
+      arity: 0,
+      handler: () => this.sceneHost ? this.sceneHost.lastDroppedUpdateSteps() : 0
     });
     this.hostBindings.set("engine.audio.can_play_sound_scene", {
       arity: 0,
@@ -2026,11 +2215,20 @@ export class WebVm {
   }
 
   createObject(typeName) {
-    return createVmObject(typeName, false);
+    return createVmObject(typeName, false, this.getTypeLayout(typeName));
   }
 
   createRecord(typeName) {
-    return createVmObject(typeName, true);
+    return createVmObject(typeName, true, this.getTypeLayout(typeName));
+  }
+
+  getTypeLayout(typeName) {
+    let layout = this.typeLayouts.get(typeName);
+    if (!layout) {
+      layout = { slots: new Map(), names: [] };
+      this.typeLayouts.set(typeName, layout);
+    }
+    return layout;
   }
 
   invokeVoid(targetIp, localCount, args = []) {
@@ -2038,19 +2236,25 @@ export class WebVm {
     const savedLocals = this.locals;
     const savedStackDepth = this.stack.length;
     const savedCallStackDepth = this.callStack.length;
+    const savedProfileDepth = this.profiler.functionFrames.length;
 
     const frameSize = Math.max(localCount || 0, args.length, 1);
     const locals = new Array(frameSize).fill(0);
+    this.profiler.allocate("callFrames");
     for (let i = 0; i < args.length; i += 1) {
       locals[i] = args[i];
     }
 
     this.locals = locals;
     this.ip = targetIp;
+    this.profiler.enterFunction(targetIp);
 
     try {
       this.run();
     } finally {
+      while (this.profiler.functionFrames.length > savedProfileDepth) {
+        this.profiler.leaveFunction();
+      }
       this.locals = savedLocals;
       this.ip = savedIp;
       this.stack.length = savedStackDepth;
@@ -2079,6 +2283,8 @@ export class WebVm {
 
       const op = this.bytes[this.ip];
       this.ip += 1;
+      const instructionIp = this.ip - 1;
+      if (this.profiler.enabled) this.profiler.instruction(op);
 
       switch (op) {
         case OpCode.PushConst:
@@ -2249,6 +2455,7 @@ export class WebVm {
           const argCount = this.readIntOperand();
           const localCount = this.readIntOperand();
           const newLocals = new Array(Math.max(localCount, argCount)).fill(0);
+          this.profiler.allocate("callFrames");
           for (let i = argCount - 1; i >= 0; i -= 1) {
             this.ensureStack(1);
             newLocals[i] = this.stack.pop();
@@ -2256,12 +2463,14 @@ export class WebVm {
           this.callStack.push({ returnIp: this.ip, callIp, locals: this.locals });
           this.locals = newLocals;
           this.ip = target;
+          this.profiler.enterFunction(target);
           break;
         }
 
         case OpCode.Ret: {
           this.ensureStack(1);
           const retVal = this.stack.pop();
+          this.profiler.leaveFunction();
           if (this.callStack.length === 0) {
             return;
           }
@@ -2276,6 +2485,7 @@ export class WebVm {
           const count = this.readIntOperand();
           this.ensureStack(count);
           const items = new Array(count);
+          this.profiler.allocate("arrays");
           for (let i = count - 1; i >= 0; i -= 1) {
             items[i] = this.stack.pop();
           }
@@ -2535,6 +2745,7 @@ export class WebVm {
           if (size < 0) {
             this.throwRuntime("Array size must be non-negative");
           }
+          this.profiler.allocate("arrays");
           this.stack.push(new Array(size).fill(0));
           break;
         }
@@ -2649,13 +2860,15 @@ export class WebVm {
 
         case OpCode.NewObject: {
           const typeName = this.readStringOperand();
-          this.stack.push(createVmObject(typeName, false));
+          this.profiler.allocate("objects");
+          this.stack.push(this.createObject(typeName));
           break;
         }
 
         case OpCode.NewRecord: {
           const typeName = this.readStringOperand();
-          this.stack.push(createVmObject(typeName, true));
+          this.profiler.allocate("objects");
+          this.stack.push(this.createRecord(typeName));
           break;
         }
 
@@ -2666,10 +2879,15 @@ export class WebVm {
           if (!isVmObject(target)) {
             this.throwRuntime("GetField expects object");
           }
-          if (!target.fields.has(fieldName)) {
+          let slot = this.fieldAccessCache.get(instructionIp);
+          if (slot === undefined) {
+            slot = resolveVmFieldSlot(target, fieldName, false);
+            if (slot !== undefined) this.fieldAccessCache.set(instructionIp, slot);
+          }
+          if (slot === undefined || !target.initializedFields.has(slot)) {
             this.throwRuntime(`Field '${fieldName}' is not initialized on object '${target.typeName}'`);
           }
-          this.stack.push(target.fields.get(fieldName));
+          this.stack.push(target.fields[slot]);
           break;
         }
 
@@ -2681,7 +2899,13 @@ export class WebVm {
           if (!isVmObject(target)) {
             this.throwRuntime("SetField expects object");
           }
-          target.fields.set(fieldName, value);
+          let slot = this.fieldAccessCache.get(instructionIp);
+          if (slot === undefined) {
+            slot = resolveVmFieldSlot(target, fieldName, true);
+            this.fieldAccessCache.set(instructionIp, slot);
+          }
+          target.fields[slot] = value;
+          target.initializedFields.add(slot);
           this.stack.push(value);
           break;
         }
@@ -2730,8 +2954,10 @@ export class WebVm {
           }
 
           this.callStack.push({ returnIp: this.ip, callIp, locals: this.locals });
+          this.profiler.allocate("callFrames");
           this.locals = newLocals;
           this.ip = entry.targetIp;
+          this.profiler.enterFunction(entry.targetIp);
           break;
         }
 
@@ -2763,9 +2989,16 @@ export class WebVm {
           break;
 
         case OpCode.HostCall: {
-          const symbol = this.readStringOperand();
-          const argCount = this.readIntOperand();
-          const binding = this.hostBindings.get(symbol);
+          let callSite = this.hostCallCache.get(instructionIp);
+          if (!callSite) {
+            const symbol = this.readStringOperand();
+            const argCount = this.readIntOperand();
+            callSite = { symbol, argCount, binding: this.hostBindings.get(symbol), nextIp: this.ip };
+            this.hostCallCache.set(instructionIp, callSite);
+          } else {
+            this.ip = callSite.nextIp;
+          }
+          const { symbol, argCount, binding } = callSite;
           if (!binding) {
             this.throwRuntime(`Missing host binding '${symbol}'`, "HostBindingError");
           }
@@ -2782,7 +3015,9 @@ export class WebVm {
             args[i] = this.stack.pop();
           }
 
-          const result = binding.handler(args);
+          const result = this.profiler.enabled
+            ? this.profiler.measureHost(symbol, () => binding.handler(args))
+            : binding.handler(args);
           this.stack.push(result ?? 0);
           break;
         }
@@ -2920,10 +3155,17 @@ export class WebVm {
   }
 
   readStringOperand() {
+    const operandIp = this.ip;
+    const cached = this.stringOperandCache.get(operandIp);
+    if (cached) {
+      this.ip = cached.nextIp;
+      return cached.value;
+    }
     const length = this.readIntOperand();
     this.ensureBytes(length);
     const value = Utf8Decoder.decode(this.bytes.subarray(this.ip, this.ip + length));
     this.ip += length;
+    this.stringOperandCache.set(operandIp, { value, nextIp: this.ip });
     return value;
   }
 

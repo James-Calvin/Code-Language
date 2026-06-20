@@ -1,0 +1,17 @@
+object Sample {
+  real amount;
+
+  constructor(real initialValue) {
+    amount = initialValue;
+  }
+
+  function scale(real amount) {
+    this.amount *= amount;
+  }
+}
+
+Sample sample = new Sample(squareRoot(81));
+sample.scale(2);
+array<Sample> samples = {sample};
+print(samples[0].amount);
+print(diagnosticsLastDroppedUpdateSteps());

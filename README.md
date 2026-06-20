@@ -91,6 +91,22 @@ Implemented today:
 
 See the [language reference](docs/reference/README.md), [naming and style guide](docs/reference/naming-and-style.md), [web app runtime contract](docs/web-app-v1.md), and [example catalog](docs/example-catalog.md) for the implementation-truth docs.
 
+## Runtime profiling and benchmarks
+
+Append `?code-profile=1` to a generated app URL to collect VM instruction,
+function, host-call, allocation, and stack metrics. In browser developer tools,
+use `CodeRuntime.profile.report()` for console tables or
+`CodeRuntime.profile.json()` for exportable JSON. Profiling is disabled by
+default.
+
+Maintainers run deterministic release-mode VM benchmarks with:
+
+```powershell
+node scripts/benchmark-runtime.mjs
+```
+
+See [benchmarks/README.md](benchmarks/README.md) for baseline comparison rules.
+
 ## For Maintainers
 
 Maintainer build, test, and release commands live in [docs/release.md](docs/release.md).

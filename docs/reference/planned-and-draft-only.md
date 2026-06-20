@@ -39,7 +39,7 @@ Use [Example Catalog](../example-catalog.md) and the current compiler as the tru
 | Real browser-backed implementations for remaining raw window-handle engine stubs | Planned or wrapper-directed. Scene-runtime drawing/input are the current default. |
 | Capability query and fallback APIs | Planned design requirement. |
 | `engine.gpu`, WebGPU backend, native GPU parity | Roadmap item. |
-| Wasm-hosted VM/runtime | Deferred until performance, parity, or startup-size data justifies it. |
+| Wasm-hosted VM/runtime | Requires full parity and a measured 2x improvement over the optimized JavaScript VM before it replaces the generated-app runtime. |
 
 ## Current Recommendation
 

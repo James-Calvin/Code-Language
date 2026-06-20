@@ -1,0 +1,30 @@
+object Counter {
+  real total;
+
+  constructor(real initialValue) {
+    this.total = initialValue;
+  }
+
+  function add(real amount) {
+    total += amount;
+  }
+}
+
+function<real> mix(real left, real right) {
+  return (left * 1.000001) + (right / 3.000001);
+}
+
+constant integer ITERATIONS = 100000;
+array<real> values = new array<real>(256);
+Counter counter = new Counter(0);
+
+integer index = 0;
+while index < ITERATIONS then {
+  integer slot = index % values.length;
+  real value = mix(index, values[slot]);
+  values[slot] = value;
+  counter.add(value / 1000000);
+  index += 1;
+}
+
+print(counter.total > 0);

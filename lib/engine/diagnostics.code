@@ -27,3 +27,7 @@ export function<real> lastDrawHudWorkMilliseconds() {
 export function<integer> lastUpdateSteps() {
   return diagnosticsLastUpdateSteps();
 }
+
+export function<integer> lastDroppedUpdateSteps() {
+  return diagnosticsLastDroppedUpdateSteps();
+}

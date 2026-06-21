@@ -155,6 +155,8 @@ internal static class TestHarness
             }
         }
 
+        failures += RunBytecodeV10Tests();
+
         if (failures > 0)
         {
             Console.WriteLine($"Tests failed: {failures}");
@@ -182,6 +184,65 @@ internal static class TestHarness
 
     private static string Escape(string value) =>
         value.Replace("\r", "\\r").Replace("\n", "\\n");
+
+    private static int RunBytecodeV10Tests()
+    {
+        int failures = 0;
+        byte[] valid = BytecodeBuilder.New().PushString("pooled").Print().Halt().ToArray();
+
+        failures += ExpectBytecodeFailure("bytecode-v9-rejected", Mutate(valid, bytes => bytes[4] = 9), "Unsupported bytecode version 9");
+        failures += ExpectBytecodeFailure("bytecode-v10-truncated-metadata", valid[..^1], "metadata size is invalid");
+        failures += ExpectBytecodeFailure("bytecode-v10-missing-metadata-magic", Mutate(valid, bytes =>
+        {
+            var header = BytecodeFormat.ReadHeader(bytes);
+            bytes[BytecodeFormat.GetMetadataOffset(header)] = (byte)'X';
+        }), "metadata magic is missing");
+        failures += ExpectBytecodeFailure("bytecode-v10-invalid-string-id", Mutate(valid, bytes =>
+        {
+            BitConverter.GetBytes(int.MaxValue).CopyTo(bytes, BytecodeFormat.HeaderSize + 1);
+        }), "string index");
+
+        try
+        {
+            string text = Disassembler.Disassemble(valid);
+            if (!text.Contains("#0 \"pooled\"", StringComparison.Ordinal)) throw new Exception("pooled string was not resolved");
+            Console.WriteLine("[PASS] bytecode-v10-disassembler-metadata");
+        }
+        catch (Exception ex)
+        {
+            failures++;
+            Console.WriteLine($"[FAIL] bytecode-v10-disassembler-metadata: {ex.Message}");
+        }
+        return failures;
+    }
+
+    private static byte[] Mutate(byte[] source, Action<byte[]> mutation)
+    {
+        byte[] copy = (byte[])source.Clone();
+        mutation(copy);
+        return copy;
+    }
+
+    private static int ExpectBytecodeFailure(string name, byte[] bytes, string expected)
+    {
+        try
+        {
+            using var writer = new StringWriter();
+            new Vm(bytes, writer).Run();
+            Console.WriteLine($"[FAIL] {name}: expected failure");
+            return 1;
+        }
+        catch (Exception ex) when (ex.Message.Contains(expected, StringComparison.OrdinalIgnoreCase))
+        {
+            Console.WriteLine($"[PASS] {name}");
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[FAIL] {name}: expected '{expected}', got '{ex.Message}'");
+            return 1;
+        }
+    }
 
     private static int RunCompilerIntegrationTests()
     {
@@ -3432,7 +3493,9 @@ function drawHud() {
                 outputs.IndexHtml.Contains("CanvasSceneRuntime", StringComparison.Ordinal) &&
                 outputs.IndexHtml.Contains("APP_METADATA", StringComparison.Ordinal) &&
                 outputs.IndexHtml.Contains("APP_BYTECODE_BASE64", StringComparison.Ordinal) &&
-                outputs.IndexHtml.Contains("output: line => console.log(line)", StringComparison.Ordinal) &&
+                outputs.IndexHtml.Contains("CODE_WORKER_SOURCE", StringComparison.Ordinal) &&
+                outputs.IndexHtml.Contains("new WorkerCodeRuntimeController", StringComparison.Ordinal) &&
+                outputs.IndexHtml.Contains("new Worker(this.workerUrl", StringComparison.Ordinal) &&
                 !outputs.IndexHtml.Contains("output: line => runtime.appendOutput(line)", StringComparison.Ordinal) &&
                 outputs.IndexHtml.Contains("this.appControlKeyCodes = new Set([32, 33, 34, 35, 36, 37, 38, 39, 40])", StringComparison.Ordinal) &&
                 outputs.IndexHtml.Contains("event.preventDefault()", StringComparison.Ordinal) &&
@@ -3443,8 +3506,7 @@ function drawHud() {
                 outputs.IndexHtml.Contains("engine.diagnostics.last_dropped_update_steps_scene", StringComparison.Ordinal) &&
                 outputs.IndexHtml.Contains("window.CodeRuntime", StringComparison.Ordinal) &&
                 outputs.IndexHtml.Contains("code-profile", StringComparison.Ordinal) &&
-                outputs.IndexHtml.Contains("\"callableNames\":", StringComparison.Ordinal) &&
-                outputs.IndexHtml.Contains("MainScene.update", StringComparison.Ordinal) &&
+                !outputs.IndexHtml.Contains("\"callableNames\":", StringComparison.Ordinal) &&
                 outputs.IndexHtml.Contains("engine.audio.can_play_sound_scene", StringComparison.Ordinal) &&
                 outputs.IndexHtml.Contains("publishDiagnostics(", StringComparison.Ordinal) &&
                 outputs.IndexHtml.Contains("beginFixedUpdateStep()", StringComparison.Ordinal) &&
@@ -3616,7 +3678,7 @@ export object MainScene {
                 outputs.BytecodeExists &&
                 outputs.BytecodeLength > 0 &&
                 outputs.IndexHtml.Contains("APP_BYTECODE_BASE64", StringComparison.Ordinal) &&
-                outputs.IndexHtml.Contains("output: line => console.log(line)", StringComparison.Ordinal);
+                outputs.IndexHtml.Contains("new WorkerCodeRuntimeController", StringComparison.Ordinal);
 
             if (!matched)
             {
@@ -4744,8 +4806,10 @@ print(quick);";
                 "engine.diagnostics.last_update_work_milliseconds_scene",
                 "engine.diagnostics.last_draw_work_milliseconds_scene",
                 "engine.diagnostics.last_draw_hud_work_milliseconds_scene",
-                "engine.diagnostics.last_update_steps_scene"
-                ,"engine.diagnostics.last_dropped_update_steps_scene"
+                "engine.diagnostics.last_update_steps_scene",
+                "engine.diagnostics.last_dropped_update_steps_scene",
+                "engine.diagnostics.last_update_interval_milliseconds_scene",
+                "engine.diagnostics.update_delta_milliseconds_scene"
             };
 
             foreach (string symbol in requiredSymbols)
@@ -4760,6 +4824,8 @@ print(quick);";
                 runtimeText.Contains("lastFrameWorkMilliseconds()", StringComparison.Ordinal) &&
                 runtimeText.Contains("lastUpdateSteps()", StringComparison.Ordinal) &&
                 runtimeText.Contains("lastDroppedUpdateSteps()", StringComparison.Ordinal) &&
+                runtimeText.Contains("lastUpdateIntervalMilliseconds()", StringComparison.Ordinal) &&
+                runtimeText.Contains("updateDeltaMilliseconds()", StringComparison.Ordinal) &&
                 runtimeText.Contains("maxUpdateStepsPerFrame = 5", StringComparison.Ordinal) &&
                 runtimeText.Contains("performance.now() - frameWorkStartMs", StringComparison.Ordinal);
             if (!hasDiagnosticsRuntime)

@@ -1,0 +1,94 @@
+array<SceneBall> sceneBalls;
+constant integer SCENE_BALL_COUNT = 130;
+integer activeSceneBallCount = SCENE_BALL_COUNT;
+real sceneCenterX = 320;
+real sceneCenterY = 180;
+real sceneConstraintRadius = 175;
+
+object SceneBall {
+  real x;
+  real y;
+  real previousX;
+  real previousY;
+  real accelerationX;
+  real accelerationY;
+  real radius;
+
+  constructor(integer index) {
+    x = 35 + (index * 37) % 570;
+    y = 25 + (index * 53) % 310;
+    previousX = x;
+    previousY = y;
+    accelerationX = 0;
+    accelerationY = 0;
+    radius = 5 + index % 5;
+  }
+
+  function updatePosition(real deltaTime) {
+    real velocityX = x - previousX;
+    real velocityY = y - previousY;
+    previousX = x;
+    previousY = y;
+    x += velocityX + accelerationX * deltaTime * deltaTime;
+    y += velocityY + accelerationY * deltaTime * deltaTime;
+    accelerationX = 0;
+    accelerationY = 0;
+  }
+}
+
+function start() {
+  Runtime.setFixedUpdateRate(60);
+  sceneBalls = new array<SceneBall>(SCENE_BALL_COUNT);
+  foreach index in SCENE_BALL_COUNT then sceneBalls[index] = new SceneBall(index);
+}
+
+function constrainSceneBall(SceneBall ball) {
+  real dx = ball.x - sceneCenterX;
+  real dy = ball.y - sceneCenterY;
+  real distance = squareRoot(dx * dx + dy * dy);
+  real maximumDistance = sceneConstraintRadius - ball.radius;
+  if distance > maximumDistance and distance > 0 then {
+    ball.x = sceneCenterX + dx / distance * maximumDistance;
+    ball.y = sceneCenterY + dy / distance * maximumDistance;
+  }
+}
+
+function solveSceneCollision(SceneBall left, SceneBall right) {
+  real dx = right.x - left.x;
+  real dy = right.y - left.y;
+  real distance = squareRoot(dx * dx + dy * dy);
+  real minimumDistance = left.radius + right.radius;
+  if distance > 0 and distance < minimumDistance then {
+    real overlapScale = (minimumDistance - distance) / distance / 2;
+    left.x -= dx * overlapScale;
+    left.y -= dy * overlapScale;
+    right.x += dx * overlapScale;
+    right.y += dy * overlapScale;
+  }
+}
+
+function update() {
+  real deltaTime = Diagnostics.updateDeltaMilliseconds() / 1000;
+  foreach index in activeSceneBallCount then {
+    SceneBall ball = sceneBalls[index];
+    ball.accelerationY += 1600;
+    constrainSceneBall(ball);
+    foreach otherIndex in activeSceneBallCount then {
+      if otherIndex != index then solveSceneCollision(ball, sceneBalls[otherIndex]);
+    }
+    ball.updatePosition(deltaTime);
+  }
+}
+
+function draw() {
+  Draw.clearScreen(Colors.rgb(0, 6, 12));
+  Draw.circle(sceneCenterX, sceneCenterY, sceneConstraintRadius, Colors.rgb(0, 12, 24));
+  foreach index in activeSceneBallCount then {
+    SceneBall ball = sceneBalls[index];
+    Draw.circle(ball.x, ball.y, ball.radius, Colors.rgb(220, 230, 255));
+  }
+}
+
+function drawHud() {
+  Draw.text("130-ball worker regression", 12, 12, 14, "left", "top", Colors.rgb(130, 170, 220));
+}

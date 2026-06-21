@@ -86,6 +86,7 @@ export object MainScene {
   }
 
   function start() {
+    Runtime.setFixedUpdateRate(60);
     scene.addWorldDrawable(backgroundLayer, 0);
     scene.addUpdatable(player);
     scene.addWorldDrawable(player, 10);

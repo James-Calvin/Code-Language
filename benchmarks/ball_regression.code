@@ -1,0 +1,71 @@
+object BenchmarkBall {
+  real x;
+  real y;
+  real previousX;
+  real previousY;
+  real accelerationX;
+  real accelerationY;
+  real radius;
+
+  constructor(integer index) {
+    x = 80 + (index * 37) % 480;
+    y = 40 + (index * 53) % 280;
+    previousX = x;
+    previousY = y;
+    accelerationX = 0;
+    accelerationY = 0;
+    radius = 4 + index % 5;
+  }
+
+  function accelerate(real ax, real ay) {
+    accelerationX += ax;
+    accelerationY += ay;
+  }
+
+  function updatePosition(real deltaTime) {
+    real velocityX = x - previousX;
+    real velocityY = y - previousY;
+    previousX = x;
+    previousY = y;
+    x = x + velocityX + accelerationX * deltaTime * deltaTime;
+    y = y + velocityY + accelerationY * deltaTime * deltaTime;
+    accelerationX = 0;
+    accelerationY = 0;
+  }
+}
+
+function solveCollision(BenchmarkBall ballA, BenchmarkBall ballB) {
+  real dx = ballB.x - ballA.x;
+  real dy = ballB.y - ballA.y;
+  real distance = squareRoot(dx * dx + dy * dy);
+  real minimumDistance = ballA.radius + ballB.radius;
+  if distance > 0 and distance < minimumDistance then {
+    real overlap = minimumDistance - distance;
+    real nx = dx / distance;
+    real ny = dy / distance;
+    ballA.x -= nx * overlap / 2;
+    ballA.y -= ny * overlap / 2;
+    ballB.x += nx * overlap / 2;
+    ballB.y += ny * overlap / 2;
+  }
+}
+
+constant integer BALL_COUNT = 130;
+constant integer UPDATE_COUNT = 4;
+constant real DELTA_TIME = 1 / 60.;
+array<BenchmarkBall> balls = new array<BenchmarkBall>(BALL_COUNT);
+
+foreach index in BALL_COUNT then balls[index] = new BenchmarkBall(index);
+
+foreach updateIndex in UPDATE_COUNT then {
+  foreach index in BALL_COUNT then {
+    BenchmarkBall ball = balls[index];
+    ball.accelerate(0, 1600);
+    foreach otherIndex in BALL_COUNT then {
+      if otherIndex != index then solveCollision(ball, balls[otherIndex]);
+    }
+    ball.updatePosition(DELTA_TIME);
+  }
+}
+
+print(balls[0].x >= 0);

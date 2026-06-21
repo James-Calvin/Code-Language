@@ -8,10 +8,25 @@ object Sample {
   function scale(real amount) {
     this.amount *= amount;
   }
+
+  function<real> runForwardFrameCall() {
+    return forwardFrameCall(amount);
+  }
+}
+
+// Object methods are emitted before top-level function bodies. This guards the
+// deferred CALL frame-size fixup used when a forward callee needs local slots.
+function<real> forwardFrameCall(real seed) {
+  real first = seed + 1;
+  real second = first + 1;
+  real third = second + 1;
+  real fourth = third + 1;
+  return fourth;
 }
 
 Sample sample = new Sample(squareRoot(81));
 sample.scale(2);
 array<Sample> samples = {sample};
 print(samples[0].amount);
+print(sample.runForwardFrameCall());
 print(diagnosticsLastDroppedUpdateSteps());

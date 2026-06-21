@@ -10,6 +10,7 @@ static class Disassembler
     public static string Disassemble(byte[] bytes)
     {
         var header = BytecodeFormat.ReadHeader(bytes);
+        var metadata = BytecodeMetadata.Read(bytes, header);
         var sb = new StringBuilder();
         int ip = BytecodeFormat.HeaderSize;
         int codeEnd = BytecodeFormat.HeaderSize + header.CodeSize;
@@ -66,14 +67,12 @@ static class Disassembler
                     sb.AppendFormat(" explicitArgs={0} entries={1}", explicitArgCount, entryCount);
                     for (int i = 0; i < entryCount; i++)
                     {
-                        if (ip + 4 > codeEnd) throw new InvalidOperationException("Truncated interface dispatch type length");
-                        int typeLen = BitConverter.ToInt32(bytes, ip); ip += 4;
-                        if (ip + typeLen > codeEnd) throw new InvalidOperationException("Truncated interface dispatch type");
-                        string runtimeType = Encoding.UTF8.GetString(bytes, ip, typeLen); ip += typeLen;
-                        if (ip + 8 > codeEnd) throw new InvalidOperationException("Truncated interface dispatch target/locals");
+                        if (ip + 12 > codeEnd) throw new InvalidOperationException("Truncated interface dispatch entry");
+                        int typeId = BitConverter.ToInt32(bytes, ip); ip += 4;
+                        if ((uint)typeId >= (uint)metadata.Types.Count) throw new InvalidOperationException("Interface type ID is out of range");
                         int target = BitConverter.ToInt32(bytes, ip); ip += 4;
                         int locals = BitConverter.ToInt32(bytes, ip); ip += 4;
-                        sb.AppendFormat(" [{0}->{1},locals={2}]", runtimeType, target, locals);
+                        sb.AppendFormat(" [{0}:{1}->{2},locals={3}]", typeId, metadata.Types[typeId].Name, target, locals);
                     }
                     break;
                 case OpCode.Add:
@@ -141,17 +140,29 @@ static class Disassembler
                 case OpCode.GetField:
                 case OpCode.SetField:
                 case OpCode.HostCall:
-                    if (ip + 4 > codeEnd) throw new InvalidOperationException("Truncated string length");
-                    int len = BitConverter.ToInt32(bytes, ip); ip += 4;
-                    if (ip + len > codeEnd) throw new InvalidOperationException("Truncated string data");
-                    string str = Encoding.UTF8.GetString(bytes, ip, len);
-                    ip += len;
-                    sb.AppendFormat(" \"{0}\"", str);
-                    if (op == OpCode.HostCall)
+                    if (ip + 4 > codeEnd) throw new InvalidOperationException("Truncated metadata ID");
+                    int id = BitConverter.ToInt32(bytes, ip); ip += 4;
+                    switch (op)
                     {
-                        if (ip + 4 > codeEnd) throw new InvalidOperationException("Truncated host call arg count");
-                        int argc = BitConverter.ToInt32(bytes, ip); ip += 4;
-                        sb.AppendFormat(" argc={0}", argc);
+                        case OpCode.PushString:
+                            if ((uint)id >= (uint)metadata.Strings.Count) throw new InvalidOperationException("String ID is out of range");
+                            sb.AppendFormat(" #{0} \"{1}\"", id, metadata.Strings[id]);
+                            break;
+                        case OpCode.NewObject:
+                        case OpCode.NewRecord:
+                            if ((uint)id >= (uint)metadata.Types.Count) throw new InvalidOperationException("Type ID is out of range");
+                            sb.AppendFormat(" #{0} {1}", id, metadata.Types[id].Name);
+                            break;
+                        case OpCode.GetField:
+                        case OpCode.SetField:
+                            if ((uint)id >= (uint)metadata.Fields.Count) throw new InvalidOperationException("Field slot is out of range");
+                            sb.AppendFormat(" slot={0} {1}", id, metadata.Fields[id]);
+                            break;
+                        case OpCode.HostCall:
+                            if ((uint)id >= (uint)metadata.HostBindings.Count) throw new InvalidOperationException("Host binding ID is out of range");
+                            var binding = metadata.HostBindings[id];
+                            sb.AppendFormat(" #{0} {1} argc={2}", id, binding.Symbol, binding.Arity);
+                            break;
                     }
                     break;
                 default:

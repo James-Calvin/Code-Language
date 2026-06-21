@@ -571,6 +571,7 @@ static class ModuleCompiler
             new("Viewport", "engine/viewport.code"),
             new("Colors", "engine/colors.code"),
             new("Diagnostics", "engine/diagnostics.code"),
+            new("Runtime", "engine/runtime.code"),
             new("Audio", "engine/audio.code")
         ];
 

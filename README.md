@@ -86,7 +86,7 @@ Implemented today:
 - objects, records, interfaces, arrays, maps, sets, queues, stacks, optionals, and typed recoverable `fallible` errors
 - `if`, `switch`, `while`, `for`, `foreach`, `break`, `continue`, functions, methods, modules, package manifests, lockfiles, and library artifacts
 - web app lifecycle entry through top-level `start()`, `update()`, `draw()`, and optional `drawHud()`
-- engine wrapper modules for colors, drawing, input, viewport, diagnostics, audio, and scene composition
+- engine wrapper modules for colors, drawing, input, viewport, diagnostics, runtime scheduling, audio, and scene composition
 - public naming style uses `PascalCase` for types/namespaces and `camelCase` for functions, methods, fields, locals, constants, and lifecycle hooks
 
 See the [language reference](docs/reference/README.md), [naming and style guide](docs/reference/naming-and-style.md), [web app runtime contract](docs/web-app-v1.md), and [example catalog](docs/example-catalog.md) for the implementation-truth docs.
@@ -95,9 +95,9 @@ See the [language reference](docs/reference/README.md), [naming and style guide]
 
 Append `?code-profile=1` to a generated app URL to collect VM instruction,
 function, host-call, allocation, and stack metrics. In browser developer tools,
-use `CodeRuntime.profile.report()` for console tables or
-`CodeRuntime.profile.json()` for exportable JSON. Profiling is disabled by
-default.
+use `await CodeRuntime.profile.report()` for console tables or
+`await CodeRuntime.profile.json()` for exportable JSON. Worker-backed profiling
+methods return promises. Profiling is disabled by default.
 
 Maintainers run deterministic release-mode VM benchmarks with:
 
@@ -106,6 +106,12 @@ node scripts/benchmark-runtime.mjs
 ```
 
 See [benchmarks/README.md](benchmarks/README.md) for baseline comparison rules.
+
+Generated web apps use bytecode v10 and run the VM, lifecycle methods, and
+updates in a dedicated worker. Fixed 60 Hz updates are the default. Drawing is
+encoded by the worker, replayed on the main-thread canvas, and remains limited
+by browser/display refresh. `Runtime.useContinuousUpdates()` is an explicit
+opt-in for applications designed around measured update deltas.
 
 ## For Maintainers
 

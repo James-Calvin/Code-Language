@@ -1,0 +1,75 @@
+object RegressionBall {
+  real x;
+  real y;
+  real previousX;
+  real previousY;
+  real accelerationY;
+  real radius;
+
+  constructor(integer index) {
+    x = 80 + (index * 37) % 480;
+    y = 40 + (index * 53) % 280;
+    previousX = x;
+    previousY = y;
+    accelerationY = 0;
+    radius = 4 + index % 5;
+  }
+
+  function updatePosition(real deltaTime) {
+    real velocityX = x - previousX;
+    real velocityY = y - previousY;
+    previousX = x;
+    previousY = y;
+    x += velocityX;
+    y += velocityY + accelerationY * deltaTime * deltaTime;
+    accelerationY = 0;
+  }
+}
+
+function solveRegressionCollision(RegressionBall left, RegressionBall right) {
+  real dx = right.x - left.x;
+  real dy = right.y - left.y;
+  real distance = squareRoot(dx * dx + dy * dy);
+  real minimumDistance = left.radius + right.radius;
+  if distance > 0 and distance < minimumDistance then {
+    real scale = (minimumDistance - distance) / distance / 2;
+    left.x -= dx * scale;
+    left.y -= dy * scale;
+    right.x += dx * scale;
+    right.y += dy * scale;
+  }
+}
+
+function<real> runRegressionBalls(integer count, integer updateCount) {
+  array<RegressionBall> balls = new array<RegressionBall>(count);
+  foreach index in count then balls[index] = new RegressionBall(index);
+  foreach updateIndex in updateCount then {
+    foreach index in count then {
+      RegressionBall ball = balls[index];
+      ball.accelerationY += 1600;
+      foreach otherIndex in count then {
+        if otherIndex != index then solveRegressionCollision(ball, balls[otherIndex]);
+      }
+      ball.updatePosition(1 / 60.);
+    }
+  }
+  real checksum = 0;
+  foreach index in count then checksum += balls[index].x + balls[index].y;
+  return checksum;
+}
+
+real zeroChecksum = runRegressionBalls(0, 2);
+real firstHundred = runRegressionBalls(100, 2);
+real secondHundred = runRegressionBalls(100, 2);
+real oneThirty = runRegressionBalls(130, 2);
+
+RegressionBall overlapLeft = new RegressionBall(0);
+RegressionBall overlapRight = new RegressionBall(0);
+real overlapX = overlapLeft.x;
+real overlapY = overlapLeft.y;
+solveRegressionCollision(overlapLeft, overlapRight);
+
+print(zeroChecksum == 0);
+print(firstHundred == secondHundred);
+print(oneThirty > firstHundred);
+print(overlapLeft.x == overlapX and overlapLeft.y == overlapY);

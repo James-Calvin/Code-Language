@@ -67,15 +67,15 @@ Supported entry shapes:
   - The compiler synthesizes an internal `MainScene` with lifecycle methods so the browser runtime contract stays unchanged.
   - Top-level executable statements are rejected in this entry shape.
   - Web app modules receive usage-based implied engine imports.
-  - `Draw`, `Input`, `Viewport`, `Colors`, `Diagnostics`, and `Audio` are available as implied namespaces.
+  - `Draw`, `Input`, `Viewport`, `Colors`, `Diagnostics`, `Runtime`, and `Audio` are available as implied namespaces.
   - Direct `Color`, `Scene`, `SceneLoop`, `Startable`, `Updatable`, `WorldDrawable`, and `HudDrawable` names are also available without explicit imports.
   - Bare engine functions such as `rectangle(...)` are not implied; use namespace style such as `Draw.rectangle(...)` or add an explicit import.
-  - The namespace names `Draw`, `Input`, `Viewport`, `Colors`, `Diagnostics`, and `Audio` are reserved for web-app modules. Redundant explicit imports of those exact canonical namespaces still work.
+  - The namespace names `Draw`, `Input`, `Viewport`, `Colors`, `Diagnostics`, `Runtime`, and `Audio` are reserved for web-app modules. Redundant explicit imports of those exact canonical namespaces still work.
 
 Lifecycle:
 - The runtime instantiates `MainScene` once.
 - The runtime calls `start()` exactly once after scene creation and before the first update.
-- The runtime calls `update()` on a fixed-step simulation loop at 60 updates per second.
+- The runtime calls `update()` at a fixed 60 Hz by default.
 - The runtime calls `draw()` once per presented frame.
 - If present, the runtime calls `drawHud()` once per presented frame after `draw()`.
 
@@ -266,10 +266,11 @@ World vs HUD spaces:
 - HUD size is exposed through `screenWidth()` and `screenHeight()`.
 
 Loop behavior:
-- `update()` runs at a fixed 60 Hz step.
+- `update()` runs at a fixed 60 Hz by default. Fixed updates receive the exact configured timestep through `Diagnostics.updateDeltaMilliseconds()`.
 - `draw()` runs once per presented frame.
 - `drawHud()` runs once per presented frame after `draw()` when present.
-- If rendering is slower than updates for a short period, simulation remains fixed-step and presentation may skip frames rather than change game speed.
+- Fixed mode services one update per worker task, catches up for at most five consecutive turns, and reports discarded excess steps. Continuous mode is explicit opt-in and also services one atomic update per cooperative turn. Rendering remains independently `requestAnimationFrame`-driven.
+- The generated runtime executes the VM and lifecycle methods in a dedicated worker. The worker sends transferable draw command buffers to the main thread, which owns Canvas, DOM input, audio, and visibility.
 - `engine.scene` registration changes are staged; adds/removes made during `update()`, `draw()`, or `drawHud()` do not take effect until the next `update()` phase.
 
 ## V1 API Surface
@@ -304,6 +305,12 @@ Raw scene-runtime surface:
 - `diagnosticsLastDrawHudWorkMilliseconds() -> real`
 - `diagnosticsLastUpdateSteps() -> integer`
 - `diagnosticsLastDroppedUpdateSteps() -> integer`
+- `diagnosticsLastUpdateIntervalMilliseconds() -> real`
+- `diagnosticsUpdateDeltaMilliseconds() -> real`
+- `runtimeUseContinuousUpdates()`
+- `runtimeSetFixedUpdateRate(integer updatesPerSecond)`
+- `runtimeSetMaximumRenderRate(integer framesPerSecond)`
+- `runtimeUseDisplaySynchronizedRendering()`
 - `audioCanPlaySound() -> boolean`
 - `audioPlaySound(string source, real volume) -> integer`
 - `audioPlayLoopingSound(string source, real volume) -> integer`
@@ -360,6 +367,13 @@ Current wrapper layer:
   - `lastDrawHudWorkMilliseconds() -> real`
   - `lastUpdateSteps() -> integer`
   - `lastDroppedUpdateSteps() -> integer`
+  - `lastUpdateIntervalMilliseconds() -> real`
+  - `updateDeltaMilliseconds() -> real`
+- `engine.runtime`
+  - `useContinuousUpdates()`
+  - `setFixedUpdateRate(integer updatesPerSecond)`
+  - `setMaximumRenderRate(integer framesPerSecond)`
+  - `useDisplaySynchronizedRendering()`
 - `engine.audio`
   - `canPlaySound() -> boolean`
   - `playSound(string source, real volume) -> integer`
@@ -392,10 +406,12 @@ Behavior rules:
 - `inputPointerIsDown()` tracks the primary pointer: left mouse button, primary pen button, or first/primary touch.
 - `inputPointerWasPressed()` and `inputPointerWasReleased()` are fixed-update edge states intended for `update()`; a quick tap between updates can make both true for the next update.
 - Last known pointer coordinates remain available after release; blur/cancel clears the down state and produces a release edge if needed.
-- Diagnostics helpers return metrics from the last completed presented frame. During the current frame, they intentionally report the previous frame's published values.
+- Frame and draw diagnostics describe the previous completed draw. During the current draw, they intentionally report the previous published values.
 - `lastFrameWorkMilliseconds()` measures runtime VM work around update/draw/HUD invocation. It does not include browser compositor or GPU presentation time.
-- Fixed updates are capped at five per animation frame. Excess accumulated whole steps are discarded and exposed through `lastDroppedUpdateSteps()` to prevent an update spiral.
-- Generated apps support opt-in VM profiling with `?code-profile=1` and `CodeRuntime.profile.start()`, `stop()`, `reset()`, `report()`, and `json()`.
+- `lastUpdateWorkMilliseconds()` describes one previous completed update and is not cleared by a draw that completed no updates. `lastUpdateSteps()` and dropped-step counts cover updates since the previous completed draw.
+- `lastUpdateIntervalMilliseconds()` is measured wall-clock spacing between update starts. `updateDeltaMilliseconds()` is the integration timestep: exact `1000 / rate` in fixed mode and measured elapsed time in continuous mode. Physics should use the update delta, never the frame interval.
+- Fixed updates are capped after five consecutive catch-up turns. Excess accumulated whole steps are discarded and exposed through `lastDroppedUpdateSteps()` to prevent an update spiral.
+- Generated apps support opt-in VM profiling with `?code-profile=1`. Worker-backed `CodeRuntime.profile.start()`, `stop()`, `reset()`, `report()`, and `json()` return promises.
 - Use `ConsoleApp1/examples/performance_dashboard.code` for relative threshold-finding, and browser devtools Performance for deeper browser/compositor investigation.
 - Audio helpers use static asset paths in the built site folder, return integer handles for playback control, and use browser audio unlock on first key or pointer input.
 - `playSound(...)` starts overlapping one-shot sounds; `playLoopingSound(...)` starts a loop suitable for background music. Missing or unsupported assets fail non-fatally and report not playing.
@@ -433,7 +449,7 @@ Current implementation output:
 - The runtime loader is currently inlined into `index.html`.
 - The compiled bytecode is embedded in `index.html` so direct opening does not require a fetch of `app.bytecode`.
 - `app.bytecode` is emitted only when the maintainer/debug flag `--emit-web-bytecode` is passed.
-- The browser VM/runtime is currently JavaScript with decoded operand/call-site caches and slot-backed object fields. A Wasm replacement remains gated on full parity and at least a 2x benchmark improvement over the optimized JavaScript baseline.
+- The browser VM/runtime is currently worker-hosted JavaScript with decoded instructions, contiguous locals frames, and slot-backed object fields. A Wasm replacement remains gated on full parity, at least a 2x geometric-mean CPU benchmark improvement over this worker baseline, and a material Ball workload gain.
 
 Required behavior:
 - Opening the generated `index.html` runs the app directly.

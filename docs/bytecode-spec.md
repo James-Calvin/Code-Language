@@ -1,11 +1,13 @@
 # Bytecode Specification (draft)
 
-Version: 0.14 (2026-06-14)
+Version: 0.15 (2026-06-20)
 
 ## File format
-- Header: `CODE` ASCII (4 bytes) + version byte (`0x09`) + int32 `codeSize` + int32 `debugCount`.
+- Header: `CODE` ASCII (4 bytes) + version byte (`0x0A`) + int32 `codeSize` + int32 `debugCount`. The header remains 13 bytes.
 - Encoding: little-endian integers and IEEE-754 `real` operands.
-- Layout: header, then `codeSize` bytes of opcodes/operands, followed by `debugCount` debug entries (`ip`, `line`, `column`; each int32).
+- Layout: header, `codeSize` bytes of opcodes/operands, `debugCount` debug entries (`ip`, `line`, `column`; each int32), then a required `META` section.
+- `META` is ASCII `META`, int32 payload size, then ordered tables for pooled UTF-8 strings, global field slots, host bindings (symbol and arity), type layouts (name, record flag, declared field slots), and callables (byte target, frame size, name). Counts, indexes, targets, and exact payload length are validated while loading.
+- Version 9 artifacts are rejected; alpha builds do not provide bytecode backward compatibility.
 - Produced files should use the `.bytecode` extension.
 
 ## Library artifact container (`.codelib`) (baseline)
@@ -27,7 +29,8 @@ Version: 0.14 (2026-06-14)
 ## Stack conventions
 - Operand stack stores numeric values as `int`, `long`, or `double`; most numeric ops coerce to double math, while `INT_DIV` truncates integral division toward zero. Strings, runtime object/record values, and fallible success/error values are boxed.
 - Locals are indexed slots separate from the operand stack; they auto-grow on demand. Functions record a high-water mark for frame size.
-- Call frames: `CALL` creates a new locals array sized by the callee; `RET` restores previous locals and IP, leaving the return value on the operand stack.
+- The web VM predecodes instructions and uses one reusable locals stack with frame base pointers. `RET` restores the caller frame while leaving the return value on the operand stack.
+- `CALL` and `INTERFACE_CALL` frame-size operands are finalized after all callable bodies have been emitted. This is required for forward calls whose parameter count is smaller than their eventual local-slot high-water mark.
 
 ## Opcodes
 | Byte | Name | Operands | Stack effect | Notes |
@@ -51,7 +54,7 @@ Version: 0.14 (2026-06-14)
 | 0x11 | `GT` | - | -1 | Push `1` if `a > b`, else `0` |
 | 0x12 | `CALL` | int32 target, int32 argc, int32 locals | -argc+1 | Pop args, create frame, jump; pushes return value on `RET` |
 | 0x13 | `RET` | - | -1 | Pop return value, restore caller frame, push return value |
-| 0x14 | `PUSH_STRING` | int32 length, UTF-8 bytes | +1 | Push string literal |
+| 0x14 | `PUSH_STRING` | int32 string ID | +1 | Push pooled string literal |
 | 0x15 | `THROW_ERROR` | - | -1 | Pop message, raise `VmError` of type `UserError` |
 | 0x16 | `NEW_ARRAY` | int32 count | -count+1 | Pop N values, preserve order, push array |
 | 0x17 | `ARRAY_LENGTH` | - | 0 | Pop array or built-in collection, push length |
@@ -62,18 +65,18 @@ Version: 0.14 (2026-06-14)
 | 0x1C | `OPTIONAL_VALUE` | - | 0 | Pop optional, push value or throw if none |
 | 0x1D | `OPTIONAL_OR` | - | -1 | Pop fallback, pop optional, push value-or-fallback |
 | 0x1E | `ARRAY_SET` | - | -2 | Pop value, index, array; write element; push value |
-| 0x1F | `NEW_OBJECT` | int32 length, UTF-8 type name | +1 | Create VM object instance |
-| 0x20 | `GET_FIELD` | int32 length, UTF-8 field name | 0 | Pop object, push field value; throws if unset/missing |
-| 0x21 | `SET_FIELD` | int32 length, UTF-8 field name | -1 | Pop value, pop object, assign field, push value |
+| 0x1F | `NEW_OBJECT` | int32 type ID | +1 | Create VM object with compiler-sized field slots |
+| 0x20 | `GET_FIELD` | int32 field slot | 0 | Pop object, push field value; throws if unset/missing |
+| 0x21 | `SET_FIELD` | int32 field slot | -1 | Pop value, pop object, assign field, push value |
 | 0x22 | `GET_TYPE_NAME` | - | 0 | Pop object, push runtime object type name string |
-| 0x23 | `INTERFACE_CALL` | int32 explicitArgCount, int32 entryCount, repeated `(string typeName, int32 target, int32 locals)` | -explicitArgCount-1+1 | Pop args and target object, dispatch by runtime object type |
+| 0x23 | `INTERFACE_CALL` | int32 explicitArgCount, int32 entryCount, repeated `(int32 type ID, int32 target, int32 locals)` | -explicitArgCount-1+1 | Pop args and target object, dispatch by runtime type ID |
 | 0x24 | `MOD` | - | -1 | Pop `a`, `b`; push `a % b`; throws on modulo-by-zero |
 | 0x25 | `TIME_unixMilliseconds` | - | +1 | Push current Unix wall-clock milliseconds |
 | 0x26 | `TIME_unixMicroseconds` | - | +1 | Push current Unix wall-clock microseconds |
 | 0x27 | `TIME_monotonicNanoseconds` | - | +1 | Push process-relative monotonic nanoseconds |
 | 0x28 | `TIME_monotonicTicks` | - | +1 | Push runtime monotonic tick counter |
 | 0x29 | `TIME_monotonicTicksPerSecond` | - | +1 | Push monotonic tick frequency |
-| 0x2A | `HOST_CALL` | string symbol, int32 argc | -argc+1 | Invoke host binding by symbol; pushes one return value |
+| 0x2A | `HOST_CALL` | int32 host binding ID | -argc+1 | Invoke metadata binding; arity comes from the host table |
 | 0x2B | `ARRAY_APPEND` | - | -1 | Pop value, pop array, append element, push `0` |
 | 0x2C | `ARRAY_removeAt` | - | -2+1 | Pop index, pop array, remove element, push `0` |
 | 0x2D | `NEW_MAP` | - | +1 | Push empty map |
@@ -93,7 +96,7 @@ Version: 0.14 (2026-06-14)
 | 0x3B | `STACK_PUSH` | - | -2+1 | Pop value, pop stack, push value, push `0` |
 | 0x3C | `STACK_POP` | - | 0 | Pop stack, push popped value; throws if empty |
 | 0x3D | `STACK_PEEK` | - | 0 | Pop stack, push top value; throws if empty |
-| 0x3E | `NEW_RECORD` | int32 length, UTF-8 type name | +1 | Create VM record value instance |
+| 0x3E | `NEW_RECORD` | int32 type ID | +1 | Create VM record value with compiler-sized field slots |
 | 0x3F | `FALLIBLE_SUCCESS` | - | 0 | Pop success value, push fallible success wrapper |
 | 0x40 | `FALLIBLE_ERROR` | - | -1 | Pop message, pop code, push fallible error wrapper |
 | 0x41 | `FALLIBLE_IS_ERROR` | - | 0 | Pop fallible, push `1` if error else `0` |
@@ -112,7 +115,7 @@ Version: 0.14 (2026-06-14)
 | 0xFF | `HALT` | - | 0 | Stop execution |
 
 ## Planned additions
-- Constant pool for strings and other literals
+- Additional pooled constant kinds
 - Propagation shorthand for recoverable fallible errors
 - Magic header evolution and validation rules
 
@@ -128,10 +131,9 @@ Version: 0.14 (2026-06-14)
 - Fallible values are VM-managed success/error wrappers used by user-facing `fallible<Value, ErrorCode>` recoverable errors. The one-argument source shorthand `fallible<Value>` normalizes to integer-coded fallible values before bytecode emission, and message-only source errors lower as code `0` plus message. `panic(...)` remains separate and lowers to `THROW_ERROR`.
 - Decimal-point source literals lower to `PUSH_REAL`; built-in real constants `pi` and `tau` also lower to `PUSH_REAL`; wide integer source literals lower to `PUSH_WIDE_INTEGER`; integral `/` lowers to `INT_DIV`, while real division lowers to `DIV`; explicit unsized numeric casts lower to `CAST_INTEGER`, `CAST_WHOLE`, or `CAST_REAL`; sized numeric casts and sized storage boundaries lower to `CHECKED_SIZED_NUMERIC_CAST`. Enum-to-integer and integer-to-enum casts remain integer-backed and do not require separate bytecode.
 - Sized numeric kind operands for `CHECKED_SIZED_NUMERIC_CAST`: `1=integer8`, `2=integer16`, `3=integer32`, `4=whole8` / `byte`, `5=whole16`, `6=whole32`, `7=real32`. `real64` is source-normalized to `real` and does not need a checked sized cast.
-- Objects and records are stored as VM-managed instances with a type name and field dictionary; field access is name-based via `GET_FIELD` / `SET_FIELD`. `NEW_OBJECT` creates reference-identity objects; `NEW_RECORD` creates value-semantic record instances used by record construction and record cloning.
+- Objects and records use metadata-defined field arrays plus initialization tracking. `NEW_OBJECT` creates reference-identity objects; `NEW_RECORD` creates value-semantic record instances.
 - Object methods currently lower to regular `CALL` sites with implicit `this` prepended to explicit arguments; overload choice is resolved at compile time.
-- Interface declarations and `implement` mappings remain compile-time metadata; interface-typed calls lower to `INTERFACE_CALL` dispatch tables that map runtime type names to method targets.
-- VM caches decoded `INTERFACE_CALL` tables by call-site IP to avoid reparsing dispatch metadata on hot paths.
+- Interface declarations and `implement` mappings remain compile-time metadata; interface calls dispatch by numeric runtime type ID.
 - Module imports/exports/package declarations are compile-time only; the linker flattens a module graph into one bytecode unit before VM execution. Module-scope variables and constants lower to global slots and are visible only to same-module code in V1.
 - Package lockfile resolution may reference either manifest paths or `.codelib` artifacts; when a valid artifact exists for target/version, resolver prefers `.codelib`.
 - Current compiler lowering routes host-facing language features through `HOST_CALL` symbols:

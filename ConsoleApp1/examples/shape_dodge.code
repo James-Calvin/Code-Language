@@ -286,6 +286,7 @@ ObstacleManager obstacleManager = new ObstacleManager(gameState, player);
 HeadsUpDisplay headsUpDisplay = new HeadsUpDisplay(gameState);
 
 function start() {
+  Runtime.setFixedUpdateRate(60);
   scene.addWorldDrawable(backgroundLayer, 0);
   scene.addUpdatable(player);
   scene.addUpdatable(obstacleManager);

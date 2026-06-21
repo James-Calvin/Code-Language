@@ -1,0 +1,17 @@
+package engine.runtime;
+
+export function useContinuousUpdates() {
+  runtimeUseContinuousUpdates();
+}
+
+export function setFixedUpdateRate(integer updatesPerSecond) {
+  runtimeSetFixedUpdateRate(updatesPerSecond);
+}
+
+export function setMaximumRenderRate(integer framesPerSecond) {
+  runtimeSetMaximumRenderRate(framesPerSecond);
+}
+
+export function useDisplaySynchronizedRendering() {
+  runtimeUseDisplaySynchronizedRendering();
+}

@@ -12,7 +12,17 @@ sealed class BytecodeBuilder
     private readonly List<byte> _bytes = new();
     private readonly Dictionary<string, int> _labels = new(StringComparer.Ordinal);
     private readonly List<(int position, string label)> _fixups = new();
+    private readonly List<(int Position, string Label, int MinimumSize)> _frameSizeFixups = new();
     private readonly List<(int ip, int line, int column)> _debug = new();
+    private readonly List<string> _strings = new();
+    private readonly Dictionary<string, int> _stringIds = new(StringComparer.Ordinal);
+    private readonly List<string> _fields = new();
+    private readonly Dictionary<string, int> _fieldSlots = new(StringComparer.Ordinal);
+    private readonly List<(string Symbol, int Arity)> _hostBindings = new();
+    private readonly Dictionary<string, int> _hostBindingIds = new(StringComparer.Ordinal);
+    private readonly List<(string Name, bool IsRecord, IReadOnlyList<string> Fields)> _types = new();
+    private readonly Dictionary<string, int> _typeIds = new(StringComparer.Ordinal);
+    private readonly List<(string Label, int FrameSize, string Name)> _callables = new();
     private int _currentLine;
     private int _currentColumn;
 
@@ -78,9 +88,7 @@ sealed class BytecodeBuilder
     {
         RecordDebug();
         _bytes.Add((byte)OpCode.PushString);
-        var utf8 = System.Text.Encoding.UTF8.GetBytes(value);
-        _bytes.AddRange(BitConverter.GetBytes(utf8.Length));
-        _bytes.AddRange(utf8);
+        _bytes.AddRange(BitConverter.GetBytes(InternString(value)));
         return this;
     }
     public BytecodeBuilder ThrowError()
@@ -186,8 +194,8 @@ sealed class BytecodeBuilder
     public BytecodeBuilder StackPop() { RecordDebug(); _bytes.Add((byte)OpCode.StackPop); return this; }
     public BytecodeBuilder StackPeek() { RecordDebug(); _bytes.Add((byte)OpCode.StackPeek); return this; }
 
-    public BytecodeBuilder NewObject(string typeName) => AddStringOperand(OpCode.NewObject, typeName);
-    public BytecodeBuilder NewRecord(string typeName) => AddStringOperand(OpCode.NewRecord, typeName);
+    public BytecodeBuilder NewObject(string typeName) => AddTypeOperand(OpCode.NewObject, typeName, false);
+    public BytecodeBuilder NewRecord(string typeName) => AddTypeOperand(OpCode.NewRecord, typeName, true);
     public BytecodeBuilder FallibleSuccess() { RecordDebug(); _bytes.Add((byte)OpCode.FallibleSuccess); return this; }
     public BytecodeBuilder FallibleError() { RecordDebug(); _bytes.Add((byte)OpCode.FallibleError); return this; }
     public BytecodeBuilder FallibleIsError() { RecordDebug(); _bytes.Add((byte)OpCode.FallibleIsError); return this; }
@@ -204,16 +212,13 @@ sealed class BytecodeBuilder
         _bytes.Add((byte)kind);
         return this;
     }
-    public BytecodeBuilder GetField(string fieldName) => AddStringOperand(OpCode.GetField, fieldName);
-    public BytecodeBuilder SetField(string fieldName) => AddStringOperand(OpCode.SetField, fieldName);
+    public BytecodeBuilder GetField(string fieldName) => AddFieldOperand(OpCode.GetField, fieldName);
+    public BytecodeBuilder SetField(string fieldName) => AddFieldOperand(OpCode.SetField, fieldName);
     public BytecodeBuilder HostCall(string symbol, int argCount)
     {
         RecordDebug();
         _bytes.Add((byte)OpCode.HostCall);
-        var utf8 = Encoding.UTF8.GetBytes(symbol);
-        _bytes.AddRange(BitConverter.GetBytes(utf8.Length));
-        _bytes.AddRange(utf8);
-        _bytes.AddRange(BitConverter.GetBytes(argCount));
+        _bytes.AddRange(BitConverter.GetBytes(InternHostBinding(symbol, argCount)));
         return this;
     }
     public BytecodeBuilder TimeUnixMs() { RecordDebug(); _bytes.Add((byte)OpCode.TimeUnixMs); return this; }
@@ -236,13 +241,12 @@ sealed class BytecodeBuilder
         _bytes.AddRange(BitConverter.GetBytes(entries.Count));
         foreach (var entry in entries)
         {
-            var typeBytes = Encoding.UTF8.GetBytes(entry.RuntimeTypeName);
-            _bytes.AddRange(BitConverter.GetBytes(typeBytes.Length));
-            _bytes.AddRange(typeBytes);
+            _bytes.AddRange(BitConverter.GetBytes(InternType(entry.RuntimeTypeName, false)));
 
             int targetPos = _bytes.Count;
             _fixups.Add((targetPos, entry.TargetLabel));
             _bytes.AddRange(new byte[4]); // target placeholder
+            _frameSizeFixups.Add((_bytes.Count, entry.TargetLabel, entry.LocalCount));
             _bytes.AddRange(BitConverter.GetBytes(entry.LocalCount));
         }
         return this;
@@ -255,6 +259,7 @@ sealed class BytecodeBuilder
         _fixups.Add((_bytes.Count, label));
         _bytes.AddRange(new byte[4]); // target placeholder
         _bytes.AddRange(BitConverter.GetBytes(argCount));
+        _frameSizeFixups.Add((_bytes.Count, label, localCount));
         _bytes.AddRange(BitConverter.GetBytes(localCount));
         return this;
     }
@@ -267,6 +272,19 @@ sealed class BytecodeBuilder
     public BytecodeBuilder Halt() { RecordDebug(); _bytes.Add((byte)OpCode.Halt); return this; }
 
     public bool TryGetLabelAddress(string name, out int address) => _labels.TryGetValue(name, out address);
+
+    public void RegisterTypeLayout(string name, bool isRecord, IReadOnlyList<string> fields)
+    {
+        int typeId = InternType(name, isRecord);
+        foreach (string field in fields) InternField(field);
+        _types[typeId] = (name, isRecord, fields.ToArray());
+    }
+
+    public void RegisterCallable(string label, int frameSize, string name)
+    {
+        InternString(name);
+        _callables.Add((label, frameSize, name));
+    }
 
     public byte[] ToArray()
     {
@@ -281,9 +299,18 @@ sealed class BytecodeBuilder
             Array.Copy(bytes, 0, body, position, 4);
         }
 
+        var callableFrameSizes = _callables.ToDictionary(callable => callable.Label, callable => callable.FrameSize, StringComparer.Ordinal);
+        foreach (var (position, label, minimumSize) in _frameSizeFixups)
+        {
+            if (!callableFrameSizes.TryGetValue(label, out int finalSize))
+                finalSize = minimumSize;
+            BitConverter.GetBytes(Math.Max(minimumSize, finalSize)).CopyTo(body, position);
+        }
+
         int codeSize = body.Length;
+        byte[] metadata = BuildMetadata();
         int debugBytes = _debug.Count * BytecodeFormat.DebugEntrySize;
-        var result = new byte[BytecodeFormat.HeaderSize + codeSize + debugBytes];
+        var result = new byte[BytecodeFormat.HeaderSize + codeSize + debugBytes + metadata.Length];
         BytecodeFormat.WriteHeader(result.AsSpan(0, BytecodeFormat.HeaderSize), codeSize, _debug.Count);
         Array.Copy(body, 0, result, BytecodeFormat.HeaderSize, body.Length);
 
@@ -295,6 +322,7 @@ sealed class BytecodeBuilder
             BitConverter.GetBytes(entry.column).CopyTo(result, offset + 8);
             offset += BytecodeFormat.DebugEntrySize;
         }
+        Array.Copy(metadata, 0, result, offset, metadata.Length);
         return result;
     }
 
@@ -316,13 +344,106 @@ sealed class BytecodeBuilder
         return this;
     }
 
-    private BytecodeBuilder AddStringOperand(OpCode op, string value)
+    private BytecodeBuilder AddFieldOperand(OpCode op, string value)
     {
         RecordDebug();
         _bytes.Add((byte)op);
-        var utf8 = Encoding.UTF8.GetBytes(value);
-        _bytes.AddRange(BitConverter.GetBytes(utf8.Length));
-        _bytes.AddRange(utf8);
+        _bytes.AddRange(BitConverter.GetBytes(InternField(value)));
         return this;
+    }
+
+    private BytecodeBuilder AddTypeOperand(OpCode op, string typeName, bool isRecord)
+    {
+        RecordDebug();
+        _bytes.Add((byte)op);
+        _bytes.AddRange(BitConverter.GetBytes(InternType(typeName, isRecord)));
+        return this;
+    }
+
+    private int InternString(string value)
+    {
+        if (_stringIds.TryGetValue(value, out int id)) return id;
+        id = _strings.Count;
+        _strings.Add(value);
+        _stringIds[value] = id;
+        return id;
+    }
+
+    private int InternField(string name)
+    {
+        if (_fieldSlots.TryGetValue(name, out int slot)) return slot;
+        slot = _fields.Count;
+        _fields.Add(name);
+        _fieldSlots[name] = slot;
+        InternString(name);
+        return slot;
+    }
+
+    private int InternHostBinding(string symbol, int arity)
+    {
+        if (_hostBindingIds.TryGetValue(symbol, out int id))
+        {
+            if (_hostBindings[id].Arity != arity) throw new InvalidOperationException($"Host binding '{symbol}' used with inconsistent arity.");
+            return id;
+        }
+        id = _hostBindings.Count;
+        _hostBindings.Add((symbol, arity));
+        _hostBindingIds[symbol] = id;
+        InternString(symbol);
+        return id;
+    }
+
+    private int InternType(string name, bool isRecord)
+    {
+        if (_typeIds.TryGetValue(name, out int id)) return id;
+        id = _types.Count;
+        _types.Add((name, isRecord, Array.Empty<string>()));
+        _typeIds[name] = id;
+        InternString(name);
+        return id;
+    }
+
+    private byte[] BuildMetadata()
+    {
+        using var payload = new MemoryStream();
+        using var writer = new BinaryWriter(payload, Encoding.UTF8, leaveOpen: true);
+        writer.Write(_strings.Count);
+        foreach (string value in _strings)
+        {
+            byte[] utf8 = Encoding.UTF8.GetBytes(value);
+            writer.Write(utf8.Length);
+            writer.Write(utf8);
+        }
+        writer.Write(_fields.Count);
+        foreach (string field in _fields) writer.Write(_stringIds[field]);
+        writer.Write(_hostBindings.Count);
+        foreach (var host in _hostBindings)
+        {
+            writer.Write(_stringIds[host.Symbol]);
+            writer.Write(host.Arity);
+        }
+        writer.Write(_types.Count);
+        foreach (var type in _types)
+        {
+            writer.Write(_stringIds[type.Name]);
+            writer.Write(type.IsRecord ? (byte)1 : (byte)0);
+            writer.Write(type.Fields.Count);
+            foreach (string field in type.Fields) writer.Write(_fieldSlots[field]);
+        }
+        writer.Write(_callables.Count);
+        foreach (var callable in _callables)
+        {
+            if (!_labels.TryGetValue(callable.Label, out int target)) throw new InvalidOperationException($"Undefined callable label '{callable.Label}'.");
+            writer.Write(target);
+            writer.Write(callable.FrameSize);
+            writer.Write(_stringIds[callable.Name]);
+        }
+        writer.Flush();
+        byte[] body = payload.ToArray();
+        using var metadata = new MemoryStream();
+        metadata.Write(Encoding.ASCII.GetBytes(BytecodeFormat.MetadataMagicText));
+        metadata.Write(BitConverter.GetBytes(body.Length));
+        metadata.Write(body);
+        return metadata.ToArray();
     }
 }

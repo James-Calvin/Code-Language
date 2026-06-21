@@ -31,3 +31,11 @@ export function<integer> lastUpdateSteps() {
 export function<integer> lastDroppedUpdateSteps() {
   return diagnosticsLastDroppedUpdateSteps();
 }
+
+export function<real> lastUpdateIntervalMilliseconds() {
+  return diagnosticsLastUpdateIntervalMilliseconds();
+}
+
+export function<real> updateDeltaMilliseconds() {
+  return diagnosticsUpdateDeltaMilliseconds();
+}

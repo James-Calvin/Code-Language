@@ -136,6 +136,13 @@ static class HostAbiCatalog
             ["engine.diagnostics.last_draw_hud_work_milliseconds_scene"] = new HostAbiSymbol("engine.diagnostics.last_draw_hud_work_milliseconds_scene", 0, "engine.diagnostics", HostAbiTargets.All),
             ["engine.diagnostics.last_update_steps_scene"] = new HostAbiSymbol("engine.diagnostics.last_update_steps_scene", 0, "engine.diagnostics", HostAbiTargets.All),
             ["engine.diagnostics.last_dropped_update_steps_scene"] = new HostAbiSymbol("engine.diagnostics.last_dropped_update_steps_scene", 0, "engine.diagnostics", HostAbiTargets.All),
+            ["engine.diagnostics.last_update_interval_milliseconds_scene"] = new HostAbiSymbol("engine.diagnostics.last_update_interval_milliseconds_scene", 0, "engine.diagnostics", HostAbiTargets.All),
+            ["engine.diagnostics.update_delta_milliseconds_scene"] = new HostAbiSymbol("engine.diagnostics.update_delta_milliseconds_scene", 0, "engine.diagnostics", HostAbiTargets.All),
+
+            ["engine.runtime.use_continuous_updates_scene"] = new HostAbiSymbol("engine.runtime.use_continuous_updates_scene", 0, "engine.runtime", HostAbiTargets.All),
+            ["engine.runtime.set_fixed_update_rate_scene"] = new HostAbiSymbol("engine.runtime.set_fixed_update_rate_scene", 1, "engine.runtime", HostAbiTargets.All),
+            ["engine.runtime.set_maximum_render_rate_scene"] = new HostAbiSymbol("engine.runtime.set_maximum_render_rate_scene", 1, "engine.runtime", HostAbiTargets.All),
+            ["engine.runtime.use_display_synchronized_rendering_scene"] = new HostAbiSymbol("engine.runtime.use_display_synchronized_rendering_scene", 0, "engine.runtime", HostAbiTargets.All),
 
             ["engine.audio.can_play_sound_scene"] = new HostAbiSymbol("engine.audio.can_play_sound_scene", 0, "engine.audio", HostAbiTargets.All),
             ["engine.audio.play_sound_scene"] = new HostAbiSymbol("engine.audio.play_sound_scene", 2, "engine.audio", HostAbiTargets.All),
@@ -448,6 +455,20 @@ static class HostAbiCatalog
                 "engine.diagnostics.last_dropped_update_steps_scene",
                 TypeSymbol.Integer,
                 "integer"),
+            ["diagnosticsLastUpdateIntervalMilliseconds"] = Sig(
+                "diagnosticsLastUpdateIntervalMilliseconds",
+                "engine.diagnostics.last_update_interval_milliseconds_scene",
+                TypeSymbol.Real,
+                "real"),
+            ["diagnosticsUpdateDeltaMilliseconds"] = Sig(
+                "diagnosticsUpdateDeltaMilliseconds",
+                "engine.diagnostics.update_delta_milliseconds_scene",
+                TypeSymbol.Real,
+                "real"),
+            ["runtimeUseContinuousUpdates"] = Sig("runtimeUseContinuousUpdates", "engine.runtime.use_continuous_updates_scene", TypeSymbol.Void, "void"),
+            ["runtimeSetFixedUpdateRate"] = Sig("runtimeSetFixedUpdateRate", "engine.runtime.set_fixed_update_rate_scene", TypeSymbol.Void, "void", (TypeSymbol.Integer, "integer")),
+            ["runtimeSetMaximumRenderRate"] = Sig("runtimeSetMaximumRenderRate", "engine.runtime.set_maximum_render_rate_scene", TypeSymbol.Void, "void", (TypeSymbol.Integer, "integer")),
+            ["runtimeUseDisplaySynchronizedRendering"] = Sig("runtimeUseDisplaySynchronizedRendering", "engine.runtime.use_display_synchronized_rendering_scene", TypeSymbol.Void, "void"),
             ["audioCanPlaySound"] = Sig(
                 "audioCanPlaySound",
                 "engine.audio.can_play_sound_scene",

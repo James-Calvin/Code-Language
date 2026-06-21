@@ -82,7 +82,7 @@ Rules:
 - `drawHud()` is optional.
 - The runtime creates `MainScene` once, either explicitly or from the synthesized inferred entry.
 - `start()` runs once before updates.
-- `update()` runs at a fixed 60 Hz step.
+- `update()` runs at a fixed 60 Hz by default with an exact `1000 / 60` millisecond simulation delta.
 - `draw()` runs once per presented frame.
 - `drawHud()` runs after `draw()` when present.
 - Inferred top-level lifecycle entry is a web-build entry-module feature.
@@ -90,7 +90,7 @@ Rules:
 - Top-level helper functions remain top-level functions and can share those globals with lifecycle functions and object methods.
 - The compiler still synthesizes an internal `MainScene` so the browser runtime contract is unchanged.
 - Web app modules infer engine imports from usage.
-- `Draw`, `Input`, `Viewport`, `Colors`, `Diagnostics`, and `Audio` are implied namespaces.
+- `Draw`, `Input`, `Viewport`, `Colors`, `Diagnostics`, `Runtime`, and `Audio` are implied namespaces.
 - `Color`, `Scene`, `SceneLoop`, `Startable`, `Updatable`, `WorldDrawable`, and `HudDrawable` are available without explicit imports.
 - Bare engine functions such as `rectangle(...)` are still not implied; use namespace style such as `Draw.rectangle(...)` or add an explicit import.
 
@@ -227,6 +227,8 @@ API:
 | `lastDrawHudWorkMilliseconds()` | `real` |
 | `lastUpdateSteps()` | `integer` |
 | `lastDroppedUpdateSteps()` | `integer` |
+| `lastUpdateIntervalMilliseconds()` | `real` |
+| `updateDeltaMilliseconds()` | `real` |
 
 Example:
 
@@ -236,9 +238,15 @@ function drawHud() {
 }
 ```
 
-Diagnostics are last-completed-frame values. They measure Code VM/runtime work around update, draw, and HUD invocation. They do not include browser compositor or GPU presentation time. Native execution and web execution without an attached scene host return neutral zero values. Fixed-update catch-up is capped at five steps per animation frame; `lastDroppedUpdateSteps()` reports discarded excess whole steps.
+Frame diagnostics describe completed draws; `estimatedFramesPerSecond()` therefore cannot exceed browser/display presentation frequency. `lastUpdateWorkMilliseconds()` is the work time of the previous single completed update and is not cleared by a draw with no updates. Step counts aggregate updates since the previous completed draw. `lastUpdateIntervalMilliseconds()` measures wall-clock time between update starts. `updateDeltaMilliseconds()` is the timestep applications should integrate: exact in fixed mode and measured in continuous mode. Fixed-mode catch-up is capped at five consecutive update turns and reports discarded steps. Native execution and web execution without a scene host return zero values.
 
-Append `?code-profile=1` to a generated app URL for VM-level profiling. In browser developer tools, `CodeRuntime.profile.report()` prints tables and `CodeRuntime.profile.json()` returns exportable JSON. Profiling is opt-in because instruction and timing accounting adds runtime cost.
+## Runtime Scheduling
+
+Fixed 60 Hz updates are the default. `Runtime.useContinuousUpdates()` selects one atomic update per cooperative worker turn. `Runtime.setFixedUpdateRate(updatesPerSecond)` selects a monotonic fixed scheduler and supports rates above display refresh. `Runtime.setMaximumRenderRate(framesPerSecond)` may cap draws without stopping updates; `Runtime.useDisplaySynchronizedRendering()` restores one draw opportunity per `requestAnimationFrame`. Rates must be positive integers. Both loops pause while the document is hidden and reset timing on resume. Rendering cannot exceed the browser/display refresh rate.
+
+Append `?code-profile=1` to a generated app URL for VM-level profiling. The worker-backed methods are asynchronous: use `await CodeRuntime.profile.report()` for tables and `await CodeRuntime.profile.json()` for exportable JSON. Profiling is opt-in because instruction and timing accounting adds runtime cost.
+
+Generated apps execute the VM plus `start()`, `update()`, `draw()`, and `drawHud()` in a dedicated worker. Drawing calls become a transferable command buffer that the main thread replays into Canvas. The main thread retains DOM input, audio, visibility, and animation-frame ownership. Generated worker source is embedded and uses a Blob URL, preserving direct `file://` execution.
 
 For a benchmark app, build `ConsoleApp1/examples/performance_dashboard.code`. Use it for relative comparisons and threshold-finding. Record browser, device, display refresh rate, and viewport size when comparing results. Use browser devtools Performance for deeper compositor/GPU analysis.
 

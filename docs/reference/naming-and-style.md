@@ -7,7 +7,7 @@ Code source should read consistently in examples, libraries, and user apps.
 | Symbol kind | Style | Examples |
 | --- | --- | --- |
 | Objects, records, interfaces, enums, enum members | `PascalCase` | `Player`, `SceneLoop`, `WorldDrawable`, `ParseError.MissingFile` |
-| Namespace aliases | `PascalCase` | `Draw`, `Input`, `Viewport`, `Colors`, `Diagnostics`, `Audio` |
+| Namespace aliases | `PascalCase` | `Draw`, `Input`, `Viewport`, `Colors`, `Diagnostics`, `Runtime`, `Audio` |
 | Functions and methods | `camelCase` | `drawHud`, `keyIsDown`, `removeAt`, `playSound` |
 | Fields, locals, parameters, and constants | `camelCase` | `playerSpeed`, `frameCount`, `safeWidth` |
 | Import paths and package paths | lowercase file paths | `"engine/drawing.code"` |

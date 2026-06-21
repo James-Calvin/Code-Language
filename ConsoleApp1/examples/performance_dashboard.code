@@ -156,6 +156,7 @@ Scene dispatchScene;
 SceneLoop dispatchLoop;
 
 function start() {
+  Runtime.setFixedUpdateRate(60);
   state = new BenchmarkState();
   frameWorkMetrics = new RollingMetrics(120);
   entities = new array<MovingEntity>(0);
@@ -222,7 +223,7 @@ function drawHud() {
   y += 20;
   Draw.text("Frame work ms: {Diagnostics.lastFrameWorkMilliseconds()} | avg {frameWorkMetrics.average} | min {frameWorkMetrics.minimumValue} | max {frameWorkMetrics.maximumValue}", x, y, 13, "left", "top", textColor);
   y += 20;
-  Draw.text("Update ms: {Diagnostics.lastUpdateWorkMilliseconds()} | Draw ms: {Diagnostics.lastDrawWorkMilliseconds()} | HUD ms: {Diagnostics.lastDrawHudWorkMilliseconds()}", x, y, 13, "left", "top", textColor);
+  Draw.text("Update ms: {Diagnostics.lastUpdateWorkMilliseconds()} | Delta ms: {Diagnostics.updateDeltaMilliseconds()} | Draw ms: {Diagnostics.lastDrawWorkMilliseconds()} | HUD ms: {Diagnostics.lastDrawHudWorkMilliseconds()}", x, y, 13, "left", "top", textColor);
 
   if state.presentedFrames <= 30 then {
     Draw.text("Warming up samples...", Viewport.hudWidth() - 16, 16, 14, "right", "top", Colors.rgb(255, 223, 112));

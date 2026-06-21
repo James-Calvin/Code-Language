@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk.WebAssembly">
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RunAOTCompilation>true</RunAOTCompilation>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <WasmMainJSPath>wwwroot\main.mjs</WasmMainJSPath>
+    <WasmMainHTMLPath>wwwroot\index.html</WasmMainHTMLPath>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(BenchmarkInputDir)' != ''">
+    <EmbeddedResource Include="$(BenchmarkInputDir)\*.bytecode"
+                      LogicalName="benchmarks.%(Filename)%(Extension)" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Remove="Verify.cs" />
+  </ItemGroup>
+</Project>

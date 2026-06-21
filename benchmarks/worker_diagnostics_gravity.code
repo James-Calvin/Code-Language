@@ -1,0 +1,31 @@
+real gravityPosition = 100;
+real previousGravityPosition = 100;
+integer totalGravityUpdates = 0;
+integer updatesWithFrameTiming = 0;
+
+function start() {
+  Runtime.setFixedUpdateRate(60);
+}
+
+function update() {
+  totalGravityUpdates += 1;
+  real deltaTime = Diagnostics.lastFrameIntervalMilliseconds() / 1000;
+  if deltaTime > 0 then {
+    real velocity = gravityPosition - previousGravityPosition;
+    previousGravityPosition = gravityPosition;
+    gravityPosition += velocity + 1600 * deltaTime * deltaTime;
+    updatesWithFrameTiming += 1;
+  }
+
+  if totalGravityUpdates == 60 and updatesWithFrameTiming == 0 then {
+    panic "Worker frame diagnostics were never published to update().";
+  }
+  if updatesWithFrameTiming == 5 and gravityPosition <= 100 then {
+    panic "Gravity integration did not advance with published frame timing.";
+  }
+}
+
+function draw() {
+  Draw.clearScreen(Colors.rgb(0, 0, 0));
+  Draw.circle(320, gravityPosition, 8, Colors.rgb(255, 255, 255));
+}

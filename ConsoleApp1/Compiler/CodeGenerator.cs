@@ -126,6 +126,7 @@ sealed class CodeGenerator
         // Pre-register object names and constructor labels for forward constructor calls.
         foreach (var obj in objectDecls)
         {
+            _builder.RegisterTypeLayout(obj.Name.Lexeme, obj.IsRecord, obj.Fields.Select(field => field.Name.Lexeme).ToArray());
             _objectNames.Add(obj.Name.Lexeme);
             if (obj.IsRecord)
                 _recordNames.Add(obj.Name.Lexeme);
@@ -201,8 +202,13 @@ sealed class CodeGenerator
         _builder.Halt();
         PopScope();
 
-        byte[] bytecode = _builder.ToArray();
         var callableNames = new Dictionary<int, string>();
+        foreach (var entry in _callableDisplayNamesByLabel)
+        {
+            int frameSize = FindCallableFrameSize(entry.Key);
+            _builder.RegisterCallable(entry.Key, frameSize, entry.Value);
+        }
+        byte[] bytecode = _builder.ToArray();
         foreach (var entry in _callableDisplayNamesByLabel)
         {
             if (_builder.TryGetLabelAddress(entry.Key, out int address))
@@ -213,6 +219,14 @@ sealed class CodeGenerator
 
     private void SetLoc(Token token) => _builder.SetDebugLocation(token.Line, token.Column);
     private void SetLoc(int line, int column) => _builder.SetDebugLocation(line, column);
+
+    private int FindCallableFrameSize(string label)
+    {
+        foreach (var value in _functions.Values) if (value.Label == label) return value.LocalCount;
+        foreach (var value in _constructors.Values) if (value.Label == label) return value.LocalCount;
+        foreach (var value in _methods.Values) if (value.Label == label) return value.LocalCount;
+        throw new InvalidOperationException($"Missing callable metadata for label '{label}'.");
+    }
 
     private void EmitFunction(FunctionDecl fn)
     {

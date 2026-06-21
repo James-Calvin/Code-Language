@@ -1,5 +1,5 @@
 const BYTECODE_MAGIC = "CODE";
-const BYTECODE_VERSION = 9;
+const BYTECODE_VERSION = 10;
 const HEADER_SIZE = 13;
 const DEBUG_ENTRY_SIZE = 12;
 
@@ -175,8 +175,8 @@ function readHeader(bytes) {
   const codeSize = view.getInt32(5, true);
   const debugCount = view.getInt32(9, true);
   const codeEnd = HEADER_SIZE + codeSize;
-  const totalSize = codeEnd + debugCount * DEBUG_ENTRY_SIZE;
-  if (totalSize > bytes.length) {
+  const debugEnd = codeEnd + debugCount * DEBUG_ENTRY_SIZE;
+  if (debugEnd + 8 > bytes.length) {
     throw new Error("Bytecode truncated: header sizes exceed file length.");
   }
 
@@ -190,7 +190,149 @@ function readHeader(bytes) {
     debugOffset += DEBUG_ENTRY_SIZE;
   }
 
-  return { codeEnd, debugMap, view };
+  const metadata = readMetadata(bytes, view, debugEnd, codeEnd);
+  return { codeEnd, debugMap, view, metadata };
+}
+
+function readMetadata(bytes, view, offset, codeEnd) {
+  const magic = String.fromCharCode(bytes[offset], bytes[offset + 1], bytes[offset + 2], bytes[offset + 3]);
+  if (magic !== "META") throw new Error("Bytecode metadata magic is missing.");
+  const payloadSize = view.getInt32(offset + 4, true);
+  const end = offset + 8 + payloadSize;
+  if (payloadSize < 0 || end !== bytes.length) throw new Error("Bytecode metadata size is invalid.");
+  let cursor = offset + 8;
+  const ensure = count => {
+    if (count < 0 || cursor + count > end) throw new Error("Bytecode metadata is truncated.");
+  };
+  const readInt = name => {
+    ensure(4);
+    const value = view.getInt32(cursor, true);
+    cursor += 4;
+    if (value < 0) throw new Error(`Bytecode metadata ${name} is negative.`);
+    return value;
+  };
+  const readIndex = (count, name) => {
+    const value = readInt(name);
+    if (value >= count) throw new Error(`Bytecode metadata ${name} is out of range.`);
+    return value;
+  };
+  const stringCount = readInt("string count");
+  const strings = [];
+  for (let i = 0; i < stringCount; i += 1) {
+    const length = readInt("string length");
+    ensure(length);
+    strings.push(Utf8Decoder.decode(bytes.subarray(cursor, cursor + length)));
+    cursor += length;
+  }
+  const fieldCount = readInt("field count");
+  const fields = [];
+  for (let i = 0; i < fieldCount; i += 1) fields.push(strings[readIndex(strings.length, "field string")]);
+  const hostCount = readInt("host binding count");
+  const hostBindings = [];
+  for (let i = 0; i < hostCount; i += 1) {
+    hostBindings.push({ symbol: strings[readIndex(strings.length, "host symbol")], arity: readInt("host arity") });
+  }
+  const typeCount = readInt("type count");
+  const types = [];
+  for (let i = 0; i < typeCount; i += 1) {
+    const name = strings[readIndex(strings.length, "type name")];
+    ensure(1);
+    const kind = bytes[cursor++];
+    if (kind !== 0 && kind !== 1) throw new Error("Bytecode type kind is invalid.");
+    const declaredCount = readInt("declared field count");
+    const fieldSlots = [];
+    for (let field = 0; field < declaredCount; field += 1) fieldSlots.push(readIndex(fields.length, "field slot"));
+    types.push({ name, isRecord: kind === 1, fieldSlots });
+  }
+  const callableCount = readInt("callable count");
+  const callables = [];
+  const functionNames = new Map();
+  for (let i = 0; i < callableCount; i += 1) {
+    const targetIp = readInt("callable target");
+    const frameSize = readInt("callable frame size");
+    const name = strings[readIndex(strings.length, "callable name")];
+    if (targetIp < HEADER_SIZE || targetIp >= codeEnd) throw new Error("Bytecode callable target is outside code.");
+    callables.push({ targetIp, frameSize, name });
+    functionNames.set(targetIp, name);
+  }
+  if (cursor !== end) throw new Error("Bytecode metadata has trailing data.");
+  return { strings, fields, hostBindings, types, callables, functionNames };
+}
+
+function decodeInstructions(bytes, view, codeEnd, metadata) {
+  const decoded = new Array(codeEnd);
+  let ip = HEADER_SIZE;
+  const ensure = count => {
+    if (ip + count > codeEnd) throw new Error("Unexpected end of bytecode while decoding instruction.");
+  };
+  const readInt = () => { ensure(4); const value = view.getInt32(ip, true); ip += 4; return value; };
+  while (ip < codeEnd) {
+    const byteIp = ip;
+    const op = bytes[ip++];
+    let a = 0;
+    let b = 0;
+    let c = 0;
+    let extra = null;
+    switch (op) {
+      case OpCode.PushConst:
+      case OpCode.PushString:
+      case OpCode.Jump:
+      case OpCode.JumpIfZero:
+      case OpCode.JumpIfNotZero:
+      case OpCode.Load:
+      case OpCode.Store:
+      case OpCode.NewArray:
+      case OpCode.NewObject:
+      case OpCode.GetField:
+      case OpCode.SetField:
+      case OpCode.HostCall:
+      case OpCode.NewRecord:
+      case OpCode.LoadGlobal:
+      case OpCode.StoreGlobal:
+        a = readInt();
+        break;
+      case OpCode.PushReal:
+        ensure(8); a = view.getFloat64(ip, true); ip += 8;
+        break;
+      case OpCode.PushWideInteger: {
+        ensure(8);
+        const low = view.getUint32(ip, true);
+        const high = view.getInt32(ip + 4, true);
+        a = (high * 4294967296) + low;
+        ip += 8;
+        break;
+      }
+      case OpCode.CheckedSizedNumericCast:
+        ensure(1); a = bytes[ip++];
+        break;
+      case OpCode.Call:
+        a = readInt(); b = readInt(); c = readInt();
+        break;
+      case OpCode.InterfaceCall: {
+        a = readInt();
+        const entryCount = readInt();
+        extra = new Map();
+        for (let entry = 0; entry < entryCount; entry += 1) {
+          const typeId = readInt();
+          const targetIp = readInt();
+          const localCount = readInt();
+          extra.set(typeId, { targetIp, localCount });
+        }
+        break;
+      }
+      default:
+        break;
+    }
+    if (op === OpCode.PushString && (a < 0 || a >= metadata.strings.length)) throw new Error("Bytecode string ID is out of range.");
+    if ((op === OpCode.NewObject || op === OpCode.NewRecord) && (a < 0 || a >= metadata.types.length)) throw new Error("Bytecode type ID is out of range.");
+    if ((op === OpCode.GetField || op === OpCode.SetField) && (a < 0 || a >= metadata.fields.length)) throw new Error("Bytecode field slot is out of range.");
+    if (op === OpCode.HostCall && (a < 0 || a >= metadata.hostBindings.length)) throw new Error("Bytecode host binding ID is out of range.");
+    if (op === OpCode.InterfaceCall) {
+      for (const typeId of extra.keys()) if (typeId < 0 || typeId >= metadata.types.length) throw new Error("Bytecode interface type ID is out of range.");
+    }
+    decoded[byteIp] = { op, a, b, c, extra, byteIp, nextIp: ip };
+  }
+  return decoded;
 }
 
 class RuntimeProfiler {
@@ -311,6 +453,15 @@ class RuntimeProfiler {
       functions,
       hostCalls,
       allocations: { ...this.allocations },
+      runtimeLayout: {
+        decodedInstructions: this.vm.decodedInstructionCount,
+        pooledStrings: this.vm.metadata.strings.length,
+        fieldSlots: this.vm.metadata.fields.length,
+        hostBindings: this.vm.metadata.hostBindings.length,
+        types: this.vm.metadata.types.length,
+        callables: this.vm.metadata.callables.length,
+        localsHighWater: this.vm.localsHighWater
+      },
       maxStackDepth: this.maxStackDepth,
       maxCallDepth: this.maxCallDepth
     };
@@ -376,7 +527,7 @@ function isVmStack(value) {
 }
 
 function isVmObject(value) {
-  return value && typeof value === "object" && value.__vmObject === true && Array.isArray(value.fields);
+  return value !== null && typeof value === "object" && value.__vmObject === true;
 }
 
 function isVmMap(value) {
@@ -391,26 +542,15 @@ function isVmFallible(value) {
   return value && typeof value === "object" && value.__vmFallible === true;
 }
 
-function createVmObject(typeName, isRecord = false, layout = null) {
-  const resolvedLayout = layout ?? { slots: new Map(), names: [] };
+function createVmObject(typeId, type, fieldCount) {
   return {
     __vmObject: true,
-    typeName,
-    isRecord,
-    layout: resolvedLayout,
-    fields: [],
-    initializedFields: new Set()
+    typeId,
+    typeName: type.name,
+    isRecord: type.isRecord,
+    fields: new Array(fieldCount).fill(0),
+    initializedFields: new Uint8Array(fieldCount)
   };
-}
-
-function resolveVmFieldSlot(target, fieldName, createIfMissing) {
-  let slot = target.layout.slots.get(fieldName);
-  if (slot === undefined && createIfMissing) {
-    slot = target.layout.names.length;
-    target.layout.slots.set(fieldName, slot);
-    target.layout.names.push(fieldName);
-  }
-  return slot;
 }
 
 function createVmMap() {
@@ -460,17 +600,14 @@ function valueEquals(left, right) {
       if (!left.isRecord || !right.isRecord) {
         return false;
       }
-      if (left.typeName !== right.typeName || left.initializedFields.size !== right.initializedFields.size) {
+      if (left.typeId !== right.typeId) {
         return false;
       }
-
-      for (const slot of left.initializedFields) {
-        const fieldName = left.layout.names[slot];
-        const rightSlot = resolveVmFieldSlot(right, fieldName, false);
-        if (rightSlot === undefined || !right.initializedFields.has(rightSlot)) {
+      for (let slot = 0; slot < left.fields.length; slot += 1) {
+        if (left.initializedFields[slot] !== right.initializedFields[slot]) {
           return false;
         }
-        if (!valueEquals(left.fields[slot], right.fields[rightSlot])) {
+        if (left.initializedFields[slot] && !valueEquals(left.fields[slot], right.fields[slot])) {
           return false;
         }
       }
@@ -514,10 +651,9 @@ function valueHash(value) {
     }
 
     let hash = combineHash(2166136261, stringHash(`record:${value.typeName}`));
-    const fieldNames = Array.from(value.initializedFields, slot => value.layout.names[slot]).sort();
-    for (const fieldName of fieldNames) {
-      const slot = resolveVmFieldSlot(value, fieldName, false);
-      hash = combineHash(hash, stringHash(fieldName));
+    for (let slot = 0; slot < value.fields.length; slot += 1) {
+      if (!value.initializedFields[slot]) continue;
+      hash = combineHash(hash, slot);
       hash = combineHash(hash, valueHash(value.fields[slot]));
     }
     return hash;
@@ -726,9 +862,23 @@ export class CanvasSceneRuntime {
     this.pointerReleasedPending = false;
     this.pointerWasPressedForStep = false;
     this.pointerWasReleasedForStep = false;
-    this.stepMs = 1000 / 60;
+    this.updateMode = "fixed";
+    this.fixedUpdatesPerSecond = 60;
+    this.stepMs = 1000 / this.fixedUpdatesPerSecond;
+    this.continuousUpdateChunkMs = 4;
+    this.maximumRenderRate = 0;
     this.accumulatorMs = 0;
     this.lastTimestampMs = 0;
+    this.lastDrawTimestampMs = 0;
+    this.lastUpdateTimestampMs = 0;
+    this.lastUpdateIntervalMs = 0;
+    this.lastUpdateDeltaMs = 1000 / 60;
+    this.lastUpdatePumpTimestampMs = 0;
+    this.pendingUpdateWorkMs = 0;
+    this.pendingUpdateSteps = 0;
+    this.pendingDroppedUpdateSteps = 0;
+    this.updateTimerHandle = 0;
+    this.documentHidden = false;
     this.running = false;
     this.frameHandle = 0;
     this.sceneObject = null;
@@ -737,6 +887,7 @@ export class CanvasSceneRuntime {
     this.lastFrameIntervalMs = 0;
     this.lastFrameWorkMs = 0;
     this.lastUpdateWorkMs = 0;
+    this.lastFrameUpdateWorkMs = 0;
     this.lastDrawWorkMs = 0;
     this.lastDrawHudWorkMs = 0;
     this.lastUpdateStepsCount = 0;
@@ -751,6 +902,8 @@ export class CanvasSceneRuntime {
     this.pendingAudioHandles = new Set();
     this.nextAudioHandle = 1;
     this.audioUnlocked = false;
+    this.workerController = null;
+    this.audioStatusChanged = null;
     this.handleResize = () => this.resize();
     this.handleKeyDown = event => {
       if (this.shouldPreventBrowserKeyDefault(event)) {
@@ -758,16 +911,19 @@ export class CanvasSceneRuntime {
       }
       this.unlockAudio();
       this.keysDown.add(event.keyCode);
+      this.notifyWorkerInput();
     };
     this.handleKeyUp = event => {
       if (this.shouldPreventBrowserKeyDefault(event)) {
         event.preventDefault();
       }
       this.keysDown.delete(event.keyCode);
+      this.notifyWorkerInput();
     };
     this.handleBlur = () => {
       this.keysDown.clear();
       this.cancelActivePointer();
+      this.notifyWorkerInput();
     };
     this.handlePointerDown = event => this.onPointerDown(event);
     this.handlePointerMove = event => this.onPointerMove(event);
@@ -775,6 +931,13 @@ export class CanvasSceneRuntime {
     this.handlePointerCancel = event => this.onPointerCancel(event);
     this.handleContextMenu = event => event.preventDefault();
     this.tick = timestamp => this.onFrame(timestamp);
+    this.updateChannel = typeof MessageChannel === "function" ? new MessageChannel() : null;
+    if (this.updateChannel) {
+      this.updateChannel.port1.onmessage = () => this.onUpdatePump();
+      if (typeof this.updateChannel.port1.unref === "function") this.updateChannel.port1.unref();
+      if (typeof this.updateChannel.port2.unref === "function") this.updateChannel.port2.unref();
+    }
+    this.handleVisibilityChange = () => this.onVisibilityChange();
   }
 
   attach(root = document.body) {
@@ -838,6 +1001,7 @@ export class CanvasSceneRuntime {
     window.addEventListener("keydown", this.handleKeyDown, { passive: false });
     window.addEventListener("keyup", this.handleKeyUp, { passive: false });
     window.addEventListener("blur", this.handleBlur);
+    document.addEventListener("visibilitychange", this.handleVisibilityChange);
     canvas.addEventListener("pointerdown", this.handlePointerDown, { passive: false });
     canvas.addEventListener("pointermove", this.handlePointerMove, { passive: false });
     canvas.addEventListener("pointerup", this.handlePointerUp, { passive: false });
@@ -897,6 +1061,11 @@ export class CanvasSceneRuntime {
     this.canvas.style.width = `${viewportWidth}px`;
     this.canvas.style.height = `${viewportHeight}px`;
     this.applyCurrentTransform();
+    this.workerController?.sendViewportSnapshot();
+  }
+
+  notifyWorkerInput() {
+    this.workerController?.sendInputSnapshot();
   }
 
   appendOutput(line) {
@@ -971,6 +1140,7 @@ export class CanvasSceneRuntime {
         // Browsers can reject capture if the pointer is no longer active.
       }
     }
+    this.notifyWorkerInput();
   }
 
   onPointerMove(event) {
@@ -980,6 +1150,7 @@ export class CanvasSceneRuntime {
 
     this.preventPointerDefault(event);
     this.updatePointerPosition(event);
+    this.notifyWorkerInput();
   }
 
   onPointerUp(event) {
@@ -993,6 +1164,7 @@ export class CanvasSceneRuntime {
     this.preventPointerDefault(event);
     this.updatePointerPosition(event);
     this.releaseActivePointer(event.pointerId);
+    this.notifyWorkerInput();
   }
 
   onPointerCancel(event) {
@@ -1003,6 +1175,7 @@ export class CanvasSceneRuntime {
     this.preventPointerDefault(event);
     this.updatePointerPosition(event);
     this.releaseActivePointer(event.pointerId);
+    this.notifyWorkerInput();
   }
 
   releaseActivePointer(pointerId) {
@@ -1330,10 +1503,52 @@ export class CanvasSceneRuntime {
     return this.lastDroppedUpdateStepsCount;
   }
 
+  lastUpdateIntervalMilliseconds() {
+    return this.lastUpdateIntervalMs;
+  }
+
+  updateDeltaMilliseconds() {
+    return this.lastUpdateDeltaMs;
+  }
+
+  useContinuousUpdates() {
+    this.updateMode = "continuous";
+    this.accumulatorMs = 0;
+    this.restartUpdatePump();
+    return 0;
+  }
+
+  setFixedUpdateRate(updatesPerSecond) {
+    const rate = this.requirePositiveRate(updatesPerSecond, "update rate");
+    this.updateMode = "fixed";
+    this.fixedUpdatesPerSecond = rate;
+    this.stepMs = 1000 / rate;
+    this.lastUpdateDeltaMs = this.stepMs;
+    this.accumulatorMs = 0;
+    this.restartUpdatePump();
+    return 0;
+  }
+
+  setMaximumRenderRate(framesPerSecond) {
+    this.maximumRenderRate = this.requirePositiveRate(framesPerSecond, "render rate");
+    return 0;
+  }
+
+  useDisplaySynchronizedRendering() {
+    this.maximumRenderRate = 0;
+    return 0;
+  }
+
+  requirePositiveRate(value, name) {
+    const rate = Number(value);
+    if (!Number.isFinite(rate) || !Number.isInteger(rate) || rate <= 0) throw new Error(`${name} must be a positive integer.`);
+    return rate;
+  }
+
   publishDiagnostics(frameIntervalMs, frameWorkMs, updateWorkMs, drawWorkMs, drawHudWorkMs, updateSteps, droppedUpdateSteps = 0) {
     this.lastFrameIntervalMs = frameIntervalMs;
     this.lastFrameWorkMs = frameWorkMs;
-    this.lastUpdateWorkMs = updateWorkMs;
+    this.lastFrameUpdateWorkMs = updateWorkMs;
     this.lastDrawWorkMs = drawWorkMs;
     this.lastDrawHudWorkMs = drawHudWorkMs;
     this.lastUpdateStepsCount = updateSteps;
@@ -1442,6 +1657,7 @@ export class CanvasSceneRuntime {
         // Some browsers can reject currentTime changes before metadata loads.
       }
     }
+    this.audioStatusChanged?.(record.handle, false);
     return 0;
   }
 
@@ -1524,11 +1740,13 @@ export class CanvasSceneRuntime {
         record.failed = true;
         record.pending = false;
         this.pendingAudioHandles.delete(handle);
+        this.audioStatusChanged?.(handle, false);
         console.warn(`Could not load audio '${normalizedSource}'.`);
       });
       audio.addEventListener("ended", () => {
         if (!record.loop) {
           record.stopped = true;
+          this.audioStatusChanged?.(handle, false);
         }
       });
       record.audio = audio;
@@ -1561,8 +1779,8 @@ export class CanvasSceneRuntime {
     }
 
     const playResult = record.audio.play();
-    if (playResult && typeof playResult.catch === "function") {
-      playResult.catch(error => {
+    if (playResult && typeof playResult.then === "function") {
+      playResult.then(() => this.audioStatusChanged?.(record.handle, true)).catch(error => {
         if (record.stopped) {
           return;
         }
@@ -1571,15 +1789,19 @@ export class CanvasSceneRuntime {
           record.pending = true;
           this.pendingAudioHandles.add(record.handle);
           this.audioUnlocked = false;
+          this.audioStatusChanged?.(record.handle, false);
           return;
         }
 
         record.failed = true;
         record.pending = false;
         this.pendingAudioHandles.delete(record.handle);
+        this.audioStatusChanged?.(record.handle, false);
         const message = error && typeof error.message === "string" ? error.message : String(error);
         console.warn(`Could not play audio '${record.source}': ${message}`);
       });
+    } else {
+      this.audioStatusChanged?.(record.handle, true);
     }
   }
 
@@ -1598,8 +1820,15 @@ export class CanvasSceneRuntime {
     this.running = true;
     this.accumulatorMs = 0;
     this.lastTimestampMs = performance.now();
+    this.lastDrawTimestampMs = this.lastTimestampMs;
+    this.lastUpdateTimestampMs = 0;
+    this.lastUpdatePumpTimestampMs = performance.now();
+    this.pendingUpdateWorkMs = 0;
+    this.pendingUpdateSteps = 0;
+    this.pendingDroppedUpdateSteps = 0;
     this.publishDiagnostics(0, 0, 0, 0, 0, 0);
     this.frameHandle = requestAnimationFrame(this.tick);
+    if (this.updateMode === "continuous") this.scheduleUpdatePump();
   }
 
   stop() {
@@ -1608,40 +1837,46 @@ export class CanvasSceneRuntime {
       cancelAnimationFrame(this.frameHandle);
       this.frameHandle = 0;
     }
+    if (this.updateTimerHandle) {
+      clearTimeout(this.updateTimerHandle);
+      this.updateTimerHandle = 0;
+    }
     this.stopAllSounds();
   }
 
   onFrame(timestamp) {
+    this.frameHandle = 0;
     if (!this.running || !this.vm || !this.sceneInfo || !this.sceneObject) {
       return;
     }
 
     try {
-      const frameIntervalMs = Math.max(0, timestamp - this.lastTimestampMs);
-      const elapsedMs = Math.min(250, frameIntervalMs);
+      const schedulerIntervalMs = Math.max(0, timestamp - this.lastTimestampMs);
       this.lastTimestampMs = timestamp;
-      this.accumulatorMs += elapsedMs;
+      if (this.updateMode === "fixed") {
+        this.accumulatorMs += Math.min(250, schedulerIntervalMs);
+        let steps = 0;
+        while (this.accumulatorMs >= this.stepMs && steps < this.maxUpdateStepsPerFrame) {
+          this.executeUpdateStep(this.stepMs);
+          this.accumulatorMs -= this.stepMs;
+          steps += 1;
+        }
+        if (this.accumulatorMs >= this.stepMs) {
+          this.pendingDroppedUpdateSteps += Math.floor(this.accumulatorMs / this.stepMs);
+          this.accumulatorMs %= this.stepMs;
+        }
+      }
+
+      const frameIntervalMs = Math.max(0, timestamp - this.lastDrawTimestampMs);
+      if (this.maximumRenderRate > 0 && frameIntervalMs < 1000 / this.maximumRenderRate) {
+        this.frameHandle = requestAnimationFrame(this.tick);
+        return;
+      }
+      this.lastDrawTimestampMs = timestamp;
 
       const frameWorkStartMs = performance.now();
-      let updateWorkMs = 0;
-      let updateSteps = 0;
-      let droppedUpdateSteps = 0;
       let drawWorkMs = 0;
       let drawHudWorkMs = 0;
-
-      this.setDrawSpace("world");
-      while (this.accumulatorMs >= this.stepMs && updateSteps < this.maxUpdateStepsPerFrame) {
-        this.beginFixedUpdateStep();
-        const updateStartMs = performance.now();
-        this.vm.invokeVoid(this.sceneInfo.update.targetIp, this.sceneInfo.update.frameSize, [this.sceneObject]);
-        updateWorkMs += performance.now() - updateStartMs;
-        updateSteps += 1;
-        this.accumulatorMs -= this.stepMs;
-      }
-      if (this.accumulatorMs >= this.stepMs) {
-        droppedUpdateSteps = Math.floor(this.accumulatorMs / this.stepMs);
-        this.accumulatorMs %= this.stepMs;
-      }
 
       this.setDrawSpace("world");
       const drawStartMs = performance.now();
@@ -1656,12 +1891,15 @@ export class CanvasSceneRuntime {
       this.setDrawSpace("world");
       this.publishDiagnostics(
         frameIntervalMs,
-        performance.now() - frameWorkStartMs,
-        updateWorkMs,
+        this.pendingUpdateWorkMs + (performance.now() - frameWorkStartMs),
+        this.pendingUpdateWorkMs,
         drawWorkMs,
         drawHudWorkMs,
-        updateSteps,
-        droppedUpdateSteps);
+        this.pendingUpdateSteps,
+        this.pendingDroppedUpdateSteps);
+      this.pendingUpdateWorkMs = 0;
+      this.pendingUpdateSteps = 0;
+      this.pendingDroppedUpdateSteps = 0;
       this.frameHandle = requestAnimationFrame(this.tick);
     } catch (error) {
       this.stop();
@@ -1669,6 +1907,318 @@ export class CanvasSceneRuntime {
       console.error(error);
     }
   }
+
+  onUpdatePump() {
+    this.updateTimerHandle = 0;
+    if (!this.running || this.documentHidden || !this.vm || !this.sceneInfo || !this.sceneObject) return;
+    try {
+      if (this.updateMode !== "continuous") return;
+      const now = performance.now();
+      const deltaMs = this.lastUpdateTimestampMs > 0 ? Math.min(250, Math.max(0, now - this.lastUpdateTimestampMs)) : 0;
+      this.executeUpdateStep(deltaMs);
+      this.scheduleUpdatePump();
+    } catch (error) {
+      this.stop();
+      this.showFatal(error);
+      console.error(error);
+    }
+  }
+
+  executeUpdateStep(deltaMs = this.stepMs) {
+    const startedAt = performance.now();
+    this.lastUpdateIntervalMs = this.lastUpdateTimestampMs > 0 ? startedAt - this.lastUpdateTimestampMs : 0;
+    this.lastUpdateTimestampMs = startedAt;
+    this.lastUpdateDeltaMs = deltaMs;
+    this.beginFixedUpdateStep();
+    this.setDrawSpace("world");
+    this.vm.invokeVoid(this.sceneInfo.update.targetIp, this.sceneInfo.update.frameSize, [this.sceneObject]);
+    const updateWorkMs = performance.now() - startedAt;
+    this.lastUpdateWorkMs = updateWorkMs;
+    this.pendingUpdateWorkMs += updateWorkMs;
+    this.pendingUpdateSteps += 1;
+  }
+
+  scheduleUpdatePump() {
+    if (!this.running || this.documentHidden) return;
+    if (this.updateMode !== "continuous") return;
+    this.updateTimerHandle = setTimeout(() => this.onUpdatePump(), 0);
+  }
+
+  restartUpdatePump() {
+    this.lastUpdatePumpTimestampMs = performance.now();
+    if (this.updateTimerHandle) clearTimeout(this.updateTimerHandle);
+    this.updateTimerHandle = 0;
+    if (this.running && this.updateMode === "continuous") this.scheduleUpdatePump();
+  }
+
+  onVisibilityChange() {
+    this.documentHidden = typeof document !== "undefined" && document.hidden;
+    if (this.workerController) {
+      this.workerController.setHidden(this.documentHidden);
+      return;
+    }
+    if (this.documentHidden) {
+      if (this.frameHandle) cancelAnimationFrame(this.frameHandle);
+      this.frameHandle = 0;
+      if (this.updateTimerHandle) clearTimeout(this.updateTimerHandle);
+      this.updateTimerHandle = 0;
+    } else {
+      this.lastTimestampMs = performance.now();
+      this.lastDrawTimestampMs = this.lastTimestampMs;
+      this.lastUpdateTimestampMs = 0;
+      this.restartUpdatePump();
+      if (this.running && !this.frameHandle) this.frameHandle = requestAnimationFrame(this.tick);
+    }
+  }
+}
+
+const DrawCommand = Object.freeze({
+  Clear: 0, Rectangle: 1, RectangleOutline: 2, Circle: 3, CircleOutline: 4,
+  Polygon: 5, PolygonOutline: 6, Line: 7, Text: 8, Image: 9, Sprite: 10, Space: 11
+});
+
+export function replayDrawCommands(runtime, numbersBuffer, strings = []) {
+  const data = numbersBuffer instanceof Float64Array ? numbersBuffer : new Float64Array(numbersBuffer);
+  let cursor = 0;
+  while (cursor < data.length) {
+    const op = data[cursor++];
+    switch (op) {
+      case DrawCommand.Clear:
+        runtime.clear(data[cursor++], data[cursor++], data[cursor++], data[cursor++]);
+        break;
+      case DrawCommand.Rectangle:
+        runtime.drawRectangle(data[cursor++], data[cursor++], data[cursor++], data[cursor++], data[cursor++], data[cursor++], data[cursor++], data[cursor++]);
+        break;
+      case DrawCommand.RectangleOutline:
+        runtime.drawRectangleOutline(data[cursor++], data[cursor++], data[cursor++], data[cursor++], data[cursor++], data[cursor++], data[cursor++], data[cursor++], data[cursor++]);
+        break;
+      case DrawCommand.Circle:
+        runtime.drawCircle(data[cursor++], data[cursor++], data[cursor++], data[cursor++], data[cursor++], data[cursor++], data[cursor++]);
+        break;
+      case DrawCommand.CircleOutline:
+        runtime.drawCircleOutline(data[cursor++], data[cursor++], data[cursor++], data[cursor++], data[cursor++], data[cursor++], data[cursor++], data[cursor++]);
+        break;
+      case DrawCommand.Line:
+        runtime.drawLine(data[cursor++], data[cursor++], data[cursor++], data[cursor++], data[cursor++], data[cursor++], data[cursor++], data[cursor++]);
+        break;
+      case DrawCommand.Polygon: {
+        const count = data[cursor++];
+        const points = Array.from(data.slice(cursor, cursor += count));
+        runtime.drawPolygon(points, data[cursor++], data[cursor++], data[cursor++], data[cursor++]);
+        break;
+      }
+      case DrawCommand.PolygonOutline: {
+        const count = data[cursor++];
+        const points = Array.from(data.slice(cursor, cursor += count));
+        runtime.drawPolygonOutline(points, data[cursor++], data[cursor++], data[cursor++], data[cursor++], data[cursor++]);
+        break;
+      }
+      case DrawCommand.Text: {
+        const text = strings[data[cursor++]] ?? "";
+        const x = data[cursor++], y = data[cursor++], size = data[cursor++];
+        const horizontal = strings[data[cursor++]] ?? "left";
+        const vertical = strings[data[cursor++]] ?? "top";
+        runtime.drawText(text, x, y, size, horizontal, vertical, data[cursor++], data[cursor++], data[cursor++], data[cursor++]);
+        break;
+      }
+      case DrawCommand.Image: {
+        const source = strings[data[cursor++]] ?? "";
+        runtime.drawImage(source, data[cursor++], data[cursor++], data[cursor++], data[cursor++], data[cursor++]);
+        break;
+      }
+      case DrawCommand.Sprite: {
+        const source = strings[data[cursor++]] ?? "";
+        runtime.drawSprite(source, data[cursor++], data[cursor++], data[cursor++], data[cursor++], data[cursor++], data[cursor++], data[cursor++], data[cursor++], data[cursor++]);
+        break;
+      }
+      case DrawCommand.Space: runtime.setDrawSpace(data[cursor++] === 1 ? "hud" : "world"); break;
+      default: throw new Error(`Unknown worker draw command ${op}.`);
+    }
+  }
+}
+
+export class WorkerSceneRuntime extends CanvasSceneRuntime {
+  constructor(postToMain) {
+    super();
+    this.postToMain = postToMain;
+    this.commandNumbers = [];
+    this.commandStrings = [];
+    this.workerTimerHandle = 0;
+    this.catchUpTurns = 0;
+    this.workerAudioPlaying = new Set();
+  }
+
+  record(op, ...values) { this.commandNumbers.push(op, ...values); return 0; }
+  recordString(value) { this.commandStrings.push(String(value)); return this.commandStrings.length - 1; }
+  setDrawSpace(space) { this.drawSpace = space === "hud" ? "hud" : "world"; return this.record(DrawCommand.Space, this.drawSpace === "hud" ? 1 : 0); }
+  clear(r, g, b, a) { return this.record(DrawCommand.Clear, r, g, b, a); }
+  drawRectangle(...values) { return this.record(DrawCommand.Rectangle, ...values); }
+  drawRectangleOutline(...values) { return this.record(DrawCommand.RectangleOutline, ...values); }
+  drawCircle(...values) { return this.record(DrawCommand.Circle, ...values); }
+  drawCircleOutline(...values) { return this.record(DrawCommand.CircleOutline, ...values); }
+  drawLine(...values) { return this.record(DrawCommand.Line, ...values); }
+  drawPolygon(points, r, g, b, a) { return this.record(DrawCommand.Polygon, points.length, ...points, r, g, b, a); }
+  drawPolygonOutline(points, lineWidth, r, g, b, a) { return this.record(DrawCommand.PolygonOutline, points.length, ...points, lineWidth, r, g, b, a); }
+  drawText(text, x, y, size, horizontal, vertical, r, g, b, a) {
+    return this.record(DrawCommand.Text, this.recordString(text), x, y, size, this.recordString(horizontal), this.recordString(vertical), r, g, b, a);
+  }
+  drawImage(source, ...values) { return this.record(DrawCommand.Image, this.recordString(source), ...values); }
+  drawSprite(source, ...values) { return this.record(DrawCommand.Sprite, this.recordString(source), ...values); }
+
+  canPlaySound() { return this.audioUnlocked; }
+  playSound(source, volume) { return this.workerPlaySound(source, volume, false); }
+  playLoopingSound(source, volume) { return this.workerPlaySound(source, volume, true); }
+  workerPlaySound(source, volume, loop) {
+    const handle = this.nextAudioHandle++;
+    this.postToMain({ type: "audio", action: "play", handle, source: String(source), volume, loop });
+    return handle;
+  }
+  stopSound(handle) { handle = Math.trunc(handle); this.workerAudioPlaying.delete(handle); this.postToMain({ type: "audio", action: "stop", handle }); return 0; }
+  setSoundVolume(handle, volume) { this.postToMain({ type: "audio", action: "volume", handle: Math.trunc(handle), volume }); return 0; }
+  soundIsPlaying(handle) { return this.workerAudioPlaying.has(Math.trunc(handle)); }
+  applyAudioStatus(handle, playing) {
+    handle = Math.trunc(handle);
+    if (playing) this.workerAudioPlaying.add(handle);
+    else this.workerAudioPlaying.delete(handle);
+  }
+  stopAllSounds() { this.workerAudioPlaying.clear(); this.postToMain({ type: "audio", action: "stopAll" }); return 0; }
+  setMaximumRenderRate(rate) { const result = super.setMaximumRenderRate(rate); this.postToMain({ type: "config", maximumRenderRate: this.maximumRenderRate }); return result; }
+  useDisplaySynchronizedRendering() { const result = super.useDisplaySynchronizedRendering(); this.postToMain({ type: "config", maximumRenderRate: 0 }); return result; }
+
+  applyViewport(viewport) {
+    if (!viewport) return;
+    for (const key of ["safeLeft", "safeTop", "safeWidth", "safeHeight", "viewLeft", "viewTop", "viewWidth", "viewHeight", "viewportWidth", "viewportHeight", "worldScale"])
+      if (Number.isFinite(viewport[key])) this[key] = viewport[key];
+  }
+
+  applyInput(input) {
+    if (!input) return;
+    this.keysDown = new Set(input.keysDown ?? []);
+    this.pointerScreenX = input.pointerScreenX ?? this.pointerScreenX;
+    this.pointerScreenY = input.pointerScreenY ?? this.pointerScreenY;
+    this.pointerIsDownNow = input.pointerIsDownNow === true;
+    this.pointerPressedPending ||= input.pointerPressed === true;
+    this.pointerReleasedPending ||= input.pointerReleased === true;
+    this.audioUnlocked = input.audioUnlocked === true;
+  }
+
+  initializeWorkerScene(vm, sceneInfo) {
+    this.vm = vm;
+    this.sceneInfo = sceneInfo;
+    vm.run();
+    this.sceneObject = vm.createObject(sceneInfo.typeName);
+    vm.invokeVoid(sceneInfo.constructor.targetIp, sceneInfo.constructor.frameSize, [this.sceneObject]);
+    vm.invokeVoid(sceneInfo.start.targetIp, sceneInfo.start.frameSize, [this.sceneObject]);
+    this.running = true;
+    this.accumulatorMs = 0;
+    this.lastTimestampMs = performance.now();
+    this.lastDrawTimestampMs = this.lastTimestampMs;
+    this.lastUpdatePumpTimestampMs = this.lastTimestampMs;
+    this.scheduleWorkerPump();
+  }
+
+  restartUpdatePump() {
+    this.lastUpdatePumpTimestampMs = performance.now();
+    if (this.workerTimerHandle) clearTimeout(this.workerTimerHandle);
+    this.workerTimerHandle = 0;
+    if (this.running) this.scheduleWorkerPump();
+  }
+
+  scheduleWorkerPump(delay = 0) {
+    if (!this.running || this.documentHidden || this.workerTimerHandle) return;
+    this.workerTimerHandle = setTimeout(() => this.workerPump(), delay);
+  }
+
+  setWorkerHidden(hidden) {
+    this.documentHidden = hidden === true;
+    if (this.documentHidden) {
+      if (this.workerTimerHandle) clearTimeout(this.workerTimerHandle);
+      this.workerTimerHandle = 0;
+      return;
+    }
+    this.lastUpdateTimestampMs = 0;
+    this.lastUpdatePumpTimestampMs = performance.now();
+    this.accumulatorMs = 0;
+    this.scheduleWorkerPump();
+  }
+
+  workerPump() {
+    this.workerTimerHandle = 0;
+    if (!this.running || this.documentHidden) return;
+    try {
+      const now = performance.now();
+      if (this.updateMode === "continuous") {
+        const delta = this.lastUpdateTimestampMs > 0 ? Math.min(250, now - this.lastUpdateTimestampMs) : 0;
+        this.executeUpdateStep(delta);
+        this.scheduleWorkerPump(0);
+        return;
+      }
+      this.accumulatorMs += Math.min(250, Math.max(0, now - this.lastUpdatePumpTimestampMs));
+      this.lastUpdatePumpTimestampMs = now;
+      if (this.accumulatorMs >= this.stepMs) {
+        this.executeUpdateStep(this.stepMs);
+        this.accumulatorMs -= this.stepMs;
+        this.catchUpTurns += 1;
+        if (this.accumulatorMs >= this.stepMs && this.catchUpTurns >= this.maxUpdateStepsPerFrame) {
+          this.pendingDroppedUpdateSteps += Math.floor(this.accumulatorMs / this.stepMs);
+          this.accumulatorMs %= this.stepMs;
+          this.catchUpTurns = 0;
+        }
+      } else {
+        this.catchUpTurns = 0;
+      }
+      this.scheduleWorkerPump(this.accumulatorMs >= this.stepMs ? 0 : Math.max(0, this.stepMs - this.accumulatorMs));
+    } catch (error) {
+      this.running = false;
+      this.postToMain({ type: "fatal", error: serializeWorkerError(error) });
+    }
+  }
+
+  renderWorkerFrame(id, timestamp, viewport, input) {
+    this.applyViewport(viewport);
+    this.applyInput(input);
+    const frameIntervalMs = Math.max(0, timestamp - this.lastDrawTimestampMs);
+    this.lastDrawTimestampMs = timestamp;
+    this.commandNumbers = [];
+    this.commandStrings = [];
+    const started = performance.now();
+    this.setDrawSpace("world");
+    const drawStarted = performance.now();
+    this.vm.invokeVoid(this.sceneInfo.draw.targetIp, this.sceneInfo.draw.frameSize, [this.sceneObject]);
+    const drawWork = performance.now() - drawStarted;
+    let hudWork = 0;
+    if (this.sceneInfo.drawHud) {
+      this.setDrawSpace("hud");
+      const hudStarted = performance.now();
+      this.vm.invokeVoid(this.sceneInfo.drawHud.targetIp, this.sceneInfo.drawHud.frameSize, [this.sceneObject]);
+      hudWork = performance.now() - hudStarted;
+    }
+    const frameWorkMs = this.pendingUpdateWorkMs + (performance.now() - started);
+    const frameUpdateWorkMs = this.pendingUpdateWorkMs;
+    const frameUpdateSteps = this.pendingUpdateSteps;
+    const frameDroppedUpdateSteps = this.pendingDroppedUpdateSteps;
+    const diagnostics = {
+      frameIntervalMs, frameWorkMs,
+      updateWorkMs: this.lastUpdateWorkMs, drawWorkMs: drawWork, drawHudWorkMs: hudWork,
+      updateSteps: frameUpdateSteps, droppedUpdateSteps: frameDroppedUpdateSteps,
+      updateIntervalMs: this.lastUpdateIntervalMs, updateDeltaMs: this.lastUpdateDeltaMs
+    };
+    this.publishDiagnostics(
+      frameIntervalMs,
+      frameWorkMs,
+      frameUpdateWorkMs,
+      drawWork,
+      hudWork,
+      frameUpdateSteps,
+      frameDroppedUpdateSteps);
+    this.pendingUpdateWorkMs = 0; this.pendingUpdateSteps = 0; this.pendingDroppedUpdateSteps = 0;
+    const commands = new Float64Array(this.commandNumbers);
+    this.postToMain({ type: "frame", id, commands: commands.buffer, strings: this.commandStrings, diagnostics }, [commands.buffer]);
+  }
+}
+
+function serializeWorkerError(error) {
+  return { name: error?.name ?? "Error", message: error?.message ?? String(error), stack: error?.stack ?? "", payload: error?.payload ?? null };
 }
 
 export class WebVm {
@@ -1678,17 +2228,22 @@ export class WebVm {
     this.codeEnd = header.codeEnd;
     this.debugMap = header.debugMap;
     this.view = header.view;
+    this.metadata = header.metadata;
+    this.instructions = decodeInstructions(this.bytes, this.view, this.codeEnd, this.metadata);
+    this.decodedInstructionCount = this.instructions.reduce((count, instruction) => count + (instruction ? 1 : 0), 0);
     this.ip = HEADER_SIZE;
 
     this.stack = [];
-    this.locals = new Array(Math.max(8, options.initialLocals || 8)).fill(0);
+    this.localsStack = new Array(Math.max(8, options.initialLocals || 8)).fill(0);
+    this.frameBase = 0;
+    this.frameSize = this.localsStack.length;
+    this.allowFrameGrowth = true;
+    this.localsTop = this.frameSize;
+    this.localsHighWater = this.localsTop;
+    this.hostArgumentBuffers = new Map();
     this.globals = new Array(8).fill(0);
     this.callStack = [];
-    this.interfaceDispatchCache = new Map();
-    this.stringOperandCache = new Map();
-    this.hostCallCache = new Map();
-    this.fieldAccessCache = new Map();
-    this.typeLayouts = new Map();
+    this.callFramePool = [];
     this.nextWindowHandle = 1;
 
     this.output = typeof options.output === "function" ? options.output : line => console.log(line);
@@ -1696,8 +2251,7 @@ export class WebVm {
     this.monoOriginMs = performance.now();
     this.hostBindings = new Map();
     this.sceneHost = options.sceneHost ?? null;
-    this.functionNames = new Map(
-      Object.entries(options.functionNames ?? {}).map(([ip, name]) => [Number(ip), String(name)]));
+    this.functionNames = this.metadata.functionNames;
     this.profiler = new RuntimeProfiler(this, options.profileEnabled === true);
     if (this.profiler.enabled) this.profiler.start();
 
@@ -1957,6 +2511,36 @@ export class WebVm {
       arity: 0,
       handler: () => this.sceneHost ? this.sceneHost.lastDroppedUpdateSteps() : 0
     });
+    this.hostBindings.set("engine.diagnostics.last_update_interval_milliseconds_scene", {
+      arity: 0,
+      handler: () => this.sceneHost ? this.sceneHost.lastUpdateIntervalMilliseconds() : 0
+    });
+    this.hostBindings.set("engine.diagnostics.update_delta_milliseconds_scene", {
+      arity: 0,
+      handler: () => this.sceneHost ? this.sceneHost.updateDeltaMilliseconds() : 0
+    });
+    this.hostBindings.set("engine.runtime.use_continuous_updates_scene", {
+      arity: 0,
+      handler: () => this.sceneHost ? this.sceneHost.useContinuousUpdates() : 0
+    });
+    this.hostBindings.set("engine.runtime.set_fixed_update_rate_scene", {
+      arity: 1,
+      handler: args => {
+        try { return this.sceneHost ? this.sceneHost.setFixedUpdateRate(args[0]) : 0; }
+        catch (error) { this.throwRuntime(error.message, "HostBindingError"); }
+      }
+    });
+    this.hostBindings.set("engine.runtime.set_maximum_render_rate_scene", {
+      arity: 1,
+      handler: args => {
+        try { return this.sceneHost ? this.sceneHost.setMaximumRenderRate(args[0]) : 0; }
+        catch (error) { this.throwRuntime(error.message, "HostBindingError"); }
+      }
+    });
+    this.hostBindings.set("engine.runtime.use_display_synchronized_rendering_scene", {
+      arity: 0,
+      handler: () => this.sceneHost ? this.sceneHost.useDisplaySynchronizedRendering() : 0
+    });
     this.hostBindings.set("engine.audio.can_play_sound_scene", {
       arity: 0,
       handler: () => this.sceneHost && this.sceneHost.canPlaySound() ? 1 : 0
@@ -2214,40 +2798,47 @@ export class WebVm {
     });
   }
 
-  createObject(typeName) {
-    return createVmObject(typeName, false, this.getTypeLayout(typeName));
+  createObject(typeIdOrName) {
+    const typeId = typeof typeIdOrName === "number"
+      ? typeIdOrName
+      : this.metadata.types.findIndex(type => type.name === typeIdOrName);
+    if (typeId < 0 || typeId >= this.metadata.types.length) this.throwRuntime(`Unknown object type '${typeIdOrName}'`);
+    return createVmObject(typeId, this.metadata.types[typeId], this.metadata.fields.length);
   }
 
-  createRecord(typeName) {
-    return createVmObject(typeName, true, this.getTypeLayout(typeName));
-  }
-
-  getTypeLayout(typeName) {
-    let layout = this.typeLayouts.get(typeName);
-    if (!layout) {
-      layout = { slots: new Map(), names: [] };
-      this.typeLayouts.set(typeName, layout);
-    }
-    return layout;
+  createRecord(typeIdOrName) {
+    const typeId = typeof typeIdOrName === "number"
+      ? typeIdOrName
+      : this.metadata.types.findIndex(type => type.name === typeIdOrName);
+    if (typeId < 0 || typeId >= this.metadata.types.length) this.throwRuntime(`Unknown record type '${typeIdOrName}'`);
+    return createVmObject(typeId, this.metadata.types[typeId], this.metadata.fields.length);
   }
 
   invokeVoid(targetIp, localCount, args = []) {
     const savedIp = this.ip;
-    const savedLocals = this.locals;
+    const savedFrameBase = this.frameBase;
+    const savedFrameSize = this.frameSize;
+    const savedAllowFrameGrowth = this.allowFrameGrowth;
+    const savedLocalsTop = this.localsTop;
     const savedStackDepth = this.stack.length;
     const savedCallStackDepth = this.callStack.length;
     const savedProfileDepth = this.profiler.functionFrames.length;
 
     const frameSize = Math.max(localCount || 0, args.length, 1);
-    const locals = new Array(frameSize).fill(0);
-    this.profiler.allocate("callFrames");
+    const frameBase = this.localsTop;
+    this.ensureLocalsCapacity(frameBase + frameSize);
+    if (frameSize > args.length) this.localsStack.fill(0, frameBase + args.length, frameBase + frameSize);
+    if (this.profiler.enabled) this.profiler.allocate("callFrames");
     for (let i = 0; i < args.length; i += 1) {
-      locals[i] = args[i];
+      this.localsStack[frameBase + i] = args[i];
     }
 
-    this.locals = locals;
+    this.frameBase = frameBase;
+    this.frameSize = frameSize;
+    this.allowFrameGrowth = false;
+    this.localsTop = frameBase + frameSize;
     this.ip = targetIp;
-    this.profiler.enterFunction(targetIp);
+    if (this.profiler.enabled) this.profiler.enterFunction(targetIp);
 
     try {
       this.run();
@@ -2255,7 +2846,10 @@ export class WebVm {
       while (this.profiler.functionFrames.length > savedProfileDepth) {
         this.profiler.leaveFunction();
       }
-      this.locals = savedLocals;
+      this.frameBase = savedFrameBase;
+      this.frameSize = savedFrameSize;
+      this.allowFrameGrowth = savedAllowFrameGrowth;
+      this.localsTop = savedLocalsTop;
       this.ip = savedIp;
       this.stack.length = savedStackDepth;
       this.callStack.length = savedCallStackDepth;
@@ -2281,77 +2875,75 @@ export class WebVm {
         this.throwRuntime("Execution fell off the end of the program.");
       }
 
-      const op = this.bytes[this.ip];
-      this.ip += 1;
-      const instructionIp = this.ip - 1;
+      const instruction = this.instructions[this.ip];
+      if (!instruction) this.throwRuntime(`Invalid instruction address ${this.ip}`);
+      const op = instruction.op;
+      const instructionIp = instruction.byteIp;
+      this.currentInstructionIp = instructionIp;
+      this.ip = instruction.nextIp;
       if (this.profiler.enabled) this.profiler.instruction(op);
 
       switch (op) {
         case OpCode.PushConst:
-          this.stack.push(this.readIntOperand());
+          this.stack.push(instruction.a);
           break;
 
         case OpCode.PushReal:
-          this.stack.push(this.readDoubleOperand());
+          this.stack.push(instruction.a);
           break;
 
         case OpCode.PushWideInteger:
-          this.stack.push(this.readLongOperand());
+          this.stack.push(instruction.a);
           break;
 
         case OpCode.PushString: {
-          const length = this.readIntOperand();
-          this.ensureBytes(length);
-          const text = Utf8Decoder.decode(this.bytes.subarray(this.ip, this.ip + length));
-          this.ip += length;
-          this.stack.push(text);
+          this.stack.push(this.metadata.strings[instruction.a]);
           break;
         }
 
         case OpCode.Add: {
-          const [left, right] = this.popAny2();
+          this.ensureStack(2);
+          const right = this.stack.pop();
+          const left = this.stack.pop();
           if (typeof left === "string" || typeof right === "string") {
             this.stack.push(String(left) + String(right));
           } else {
-            this.stack.push(toNumber(left, m => this.throwRuntime(m)) + toNumber(right, m => this.throwRuntime(m)));
+            if (!isNumberValue(left) || !Number.isFinite(left) || !isNumberValue(right) || !Number.isFinite(right)) this.throwRuntime("Expected number on stack");
+            this.stack.push(left + right);
           }
           break;
         }
 
-        case OpCode.Sub:
-          this.numericBinary((a, b) => a - b);
+        case OpCode.Sub: {
+          const b = this.popNumber(); const a = this.popNumber(); this.stack.push(a - b);
           break;
+        }
 
-        case OpCode.Mul:
-          this.numericBinary((a, b) => a * b);
+        case OpCode.Mul: {
+          const b = this.popNumber(); const a = this.popNumber(); this.stack.push(a * b);
           break;
+        }
 
-        case OpCode.Div:
-          this.numericBinary((a, b) => {
-            if (b === 0) {
-              this.throwRuntime("Division by zero in bytecode.");
-            }
-            return a / b;
-          });
+        case OpCode.Div: {
+          const b = this.popNumber(); const a = this.popNumber();
+          if (b === 0) this.throwRuntime("Division by zero in bytecode.");
+          this.stack.push(a / b);
           break;
+        }
 
-        case OpCode.IntDiv:
-          this.integralBinary((a, b) => {
-            if (b === 0) {
-              this.throwRuntime("Division by zero in bytecode.");
-            }
-            return Math.trunc(a / b);
-          });
+        case OpCode.IntDiv: {
+          const b = Math.trunc(this.popNumber()); const a = Math.trunc(this.popNumber());
+          if (b === 0) this.throwRuntime("Division by zero in bytecode.");
+          this.stack.push(Math.trunc(a / b));
           break;
+        }
 
-        case OpCode.Mod:
-          this.numericBinary((a, b) => {
-            if (b === 0) {
-              this.throwRuntime("Modulo by zero in bytecode.");
-            }
-            return a % b;
-          });
+        case OpCode.Mod: {
+          const b = this.popNumber(); const a = this.popNumber();
+          if (b === 0) this.throwRuntime("Modulo by zero in bytecode.");
+          this.stack.push(a % b);
           break;
+        }
 
         case OpCode.Print: {
           this.ensureStack(1);
@@ -2384,12 +2976,12 @@ export class WebVm {
           break;
 
         case OpCode.Jump:
-          this.ip = this.readIntOperand();
+          this.ip = instruction.a;
           break;
 
         case OpCode.JumpIfZero: {
           const test = this.popNumber();
-          const target = this.readIntOperand();
+          const target = instruction.a;
           if (test === 0) {
             this.ip = target;
           }
@@ -2398,7 +2990,7 @@ export class WebVm {
 
         case OpCode.JumpIfNotZero: {
           const test = this.popNumber();
-          const target = this.readIntOperand();
+          const target = instruction.a;
           if (test !== 0) {
             this.ip = target;
           }
@@ -2406,86 +2998,117 @@ export class WebVm {
         }
 
         case OpCode.Load: {
-          const slot = this.readIntOperand();
-          this.ensureLocals(slot);
-          this.stack.push(this.locals[slot]);
+          const slot = instruction.a;
+          if (slot < 0) this.throwRuntime(`Negative local index ${slot}`);
+          if (slot >= this.frameSize) {
+            if (this.allowFrameGrowth) this.ensureLocals(slot);
+            else this.throwRuntime(`Local index ${slot} is outside frame size ${this.frameSize}`);
+          }
+          this.stack.push(this.localsStack[this.frameBase + slot]);
           break;
         }
 
         case OpCode.Store: {
-          const slot = this.readIntOperand();
+          const slot = instruction.a;
           this.ensureStack(1);
-          this.ensureLocals(slot);
-          this.locals[slot] = this.stack.pop();
+          if (slot < 0) this.throwRuntime(`Negative local index ${slot}`);
+          if (slot >= this.frameSize) {
+            if (this.allowFrameGrowth) this.ensureLocals(slot);
+            else this.throwRuntime(`Local index ${slot} is outside frame size ${this.frameSize}`);
+          }
+          this.localsStack[this.frameBase + slot] = this.stack.pop();
           break;
         }
 
         case OpCode.LoadGlobal: {
-          const slot = this.readIntOperand();
-          this.ensureGlobals(slot);
+          const slot = instruction.a;
+          if (slot < 0) this.throwRuntime(`Negative global index ${slot}`);
+          while (slot >= this.globals.length) this.globals.push(0);
           this.stack.push(this.globals[slot]);
           break;
         }
 
         case OpCode.StoreGlobal: {
-          const slot = this.readIntOperand();
+          const slot = instruction.a;
           this.ensureStack(1);
-          this.ensureGlobals(slot);
+          if (slot < 0) this.throwRuntime(`Negative global index ${slot}`);
+          while (slot >= this.globals.length) this.globals.push(0);
           this.globals[slot] = this.stack.pop();
           break;
         }
 
         case OpCode.Eq: {
-          const [left, right] = this.popAny2();
+          this.ensureStack(2);
+          const right = this.stack.pop();
+          const left = this.stack.pop();
           this.stack.push(valueEquals(left, right) ? 1 : 0);
           break;
         }
 
-        case OpCode.Lt:
-          this.numericBinary((a, b) => (a < b ? 1 : 0));
+        case OpCode.Lt: {
+          const b = this.popNumber(); const a = this.popNumber(); this.stack.push(a < b ? 1 : 0);
           break;
+        }
 
-        case OpCode.Gt:
-          this.numericBinary((a, b) => (a > b ? 1 : 0));
+        case OpCode.Gt: {
+          const b = this.popNumber(); const a = this.popNumber(); this.stack.push(a > b ? 1 : 0);
           break;
+        }
 
         case OpCode.Call: {
-          const callIp = this.ip - 1;
-          const target = this.readIntOperand();
-          const argCount = this.readIntOperand();
-          const localCount = this.readIntOperand();
-          const newLocals = new Array(Math.max(localCount, argCount)).fill(0);
-          this.profiler.allocate("callFrames");
+          const callIp = instructionIp;
+          const target = instruction.a;
+          const argCount = instruction.b;
+          const localCount = instruction.c;
+          const newFrameSize = Math.max(localCount, argCount);
+          const newFrameBase = this.localsTop;
+          this.ensureLocalsCapacity(newFrameBase + newFrameSize);
+          if (newFrameSize > argCount) this.localsStack.fill(0, newFrameBase + argCount, newFrameBase + newFrameSize);
+          if (this.profiler.enabled) this.profiler.allocate("callFrames");
           for (let i = argCount - 1; i >= 0; i -= 1) {
             this.ensureStack(1);
-            newLocals[i] = this.stack.pop();
+            this.localsStack[newFrameBase + i] = this.stack.pop();
           }
-          this.callStack.push({ returnIp: this.ip, callIp, locals: this.locals });
-          this.locals = newLocals;
+          const callDepth = this.callStack.length;
+          const callFrame = this.callFramePool[callDepth] ?? (this.callFramePool[callDepth] = {});
+          callFrame.returnIp = this.ip;
+          callFrame.callIp = callIp;
+          callFrame.frameBase = this.frameBase;
+          callFrame.frameSize = this.frameSize;
+          callFrame.localsTop = this.localsTop;
+          callFrame.allowFrameGrowth = this.allowFrameGrowth;
+          this.callStack.push(callFrame);
+          this.frameBase = newFrameBase;
+          this.frameSize = newFrameSize;
+          this.allowFrameGrowth = false;
+          this.localsTop = newFrameBase + newFrameSize;
           this.ip = target;
-          this.profiler.enterFunction(target);
+          if (this.profiler.enabled) this.profiler.enterFunction(target);
           break;
         }
 
         case OpCode.Ret: {
           this.ensureStack(1);
           const retVal = this.stack.pop();
-          this.profiler.leaveFunction();
+          if (this.profiler.enabled) this.profiler.leaveFunction();
           if (this.callStack.length === 0) {
             return;
           }
           const frame = this.callStack.pop();
-          this.locals = frame.locals;
+          this.frameBase = frame.frameBase;
+          this.frameSize = frame.frameSize;
+          this.allowFrameGrowth = frame.allowFrameGrowth;
+          this.localsTop = frame.localsTop;
           this.ip = frame.returnIp;
           this.stack.push(retVal);
           break;
         }
 
         case OpCode.NewArray: {
-          const count = this.readIntOperand();
+          const count = instruction.a;
           this.ensureStack(count);
           const items = new Array(count);
-          this.profiler.allocate("arrays");
+          if (this.profiler.enabled) this.profiler.allocate("arrays");
           for (let i = count - 1; i >= 0; i -= 1) {
             items[i] = this.stack.pop();
           }
@@ -2745,7 +3368,7 @@ export class WebVm {
           if (size < 0) {
             this.throwRuntime("Array size must be non-negative");
           }
-          this.profiler.allocate("arrays");
+          if (this.profiler.enabled) this.profiler.allocate("arrays");
           this.stack.push(new Array(size).fill(0));
           break;
         }
@@ -2855,36 +3478,32 @@ export class WebVm {
           break;
 
         case OpCode.CheckedSizedNumericCast:
-          this.stack.push(this.coerceCheckedSizedNumeric(this.readByteOperand()));
+          this.stack.push(this.coerceCheckedSizedNumeric(instruction.a));
           break;
 
         case OpCode.NewObject: {
-          const typeName = this.readStringOperand();
-          this.profiler.allocate("objects");
-          this.stack.push(this.createObject(typeName));
+          const typeId = instruction.a;
+          if (this.profiler.enabled) this.profiler.allocate("objects");
+          this.stack.push(this.createObject(typeId));
           break;
         }
 
         case OpCode.NewRecord: {
-          const typeName = this.readStringOperand();
-          this.profiler.allocate("objects");
-          this.stack.push(this.createRecord(typeName));
+          const typeId = instruction.a;
+          if (this.profiler.enabled) this.profiler.allocate("objects");
+          this.stack.push(this.createRecord(typeId));
           break;
         }
 
         case OpCode.GetField: {
-          const fieldName = this.readStringOperand();
+          const slot = instruction.a;
+          const fieldName = this.metadata.fields[slot];
           this.ensureStack(1);
           const target = this.stack.pop();
           if (!isVmObject(target)) {
             this.throwRuntime("GetField expects object");
           }
-          let slot = this.fieldAccessCache.get(instructionIp);
-          if (slot === undefined) {
-            slot = resolveVmFieldSlot(target, fieldName, false);
-            if (slot !== undefined) this.fieldAccessCache.set(instructionIp, slot);
-          }
-          if (slot === undefined || !target.initializedFields.has(slot)) {
+          if (!target.initializedFields[slot]) {
             this.throwRuntime(`Field '${fieldName}' is not initialized on object '${target.typeName}'`);
           }
           this.stack.push(target.fields[slot]);
@@ -2892,20 +3511,15 @@ export class WebVm {
         }
 
         case OpCode.SetField: {
-          const fieldName = this.readStringOperand();
+          const slot = instruction.a;
           this.ensureStack(2);
           const value = this.stack.pop();
           const target = this.stack.pop();
           if (!isVmObject(target)) {
             this.throwRuntime("SetField expects object");
           }
-          let slot = this.fieldAccessCache.get(instructionIp);
-          if (slot === undefined) {
-            slot = resolveVmFieldSlot(target, fieldName, true);
-            this.fieldAccessCache.set(instructionIp, slot);
-          }
           target.fields[slot] = value;
-          target.initializedFields.add(slot);
+          target.initializedFields[slot] = 1;
           this.stack.push(value);
           break;
         }
@@ -2921,14 +3535,8 @@ export class WebVm {
         }
 
         case OpCode.InterfaceCall: {
-          const callIp = this.ip - 1;
-          let dispatch = this.interfaceDispatchCache.get(callIp);
-          if (!dispatch) {
-            dispatch = this.readInterfaceDispatchTable();
-            this.interfaceDispatchCache.set(callIp, dispatch);
-          } else {
-            this.ip = dispatch.nextIp;
-          }
+          const callIp = instructionIp;
+          const dispatch = { explicitArgCount: instruction.a, entries: instruction.extra };
 
           this.ensureStack(dispatch.explicitArgCount + 1);
           const args = new Array(dispatch.explicitArgCount);
@@ -2941,23 +3549,37 @@ export class WebVm {
             this.throwRuntime("InterfaceCall expects object target");
           }
 
-          const entry = dispatch.entries.get(target.typeName);
+          const entry = dispatch.entries.get(target.typeId);
           if (!entry) {
             this.throwRuntime(`No implementation for interface call on runtime object '${target.typeName}'`);
           }
 
           const totalArgCount = dispatch.explicitArgCount + 1;
-          const newLocals = new Array(Math.max(entry.localCount, totalArgCount)).fill(0);
-          newLocals[0] = target;
+          const newFrameSize = Math.max(entry.localCount, totalArgCount);
+          const newFrameBase = this.localsTop;
+          this.ensureLocalsCapacity(newFrameBase + newFrameSize);
+          if (newFrameSize > totalArgCount) this.localsStack.fill(0, newFrameBase + totalArgCount, newFrameBase + newFrameSize);
+          this.localsStack[newFrameBase] = target;
           for (let i = 0; i < args.length; i += 1) {
-            newLocals[i + 1] = args[i];
+            this.localsStack[newFrameBase + i + 1] = args[i];
           }
 
-          this.callStack.push({ returnIp: this.ip, callIp, locals: this.locals });
-          this.profiler.allocate("callFrames");
-          this.locals = newLocals;
+          const callDepth = this.callStack.length;
+          const callFrame = this.callFramePool[callDepth] ?? (this.callFramePool[callDepth] = {});
+          callFrame.returnIp = this.ip;
+          callFrame.callIp = callIp;
+          callFrame.frameBase = this.frameBase;
+          callFrame.frameSize = this.frameSize;
+          callFrame.localsTop = this.localsTop;
+          callFrame.allowFrameGrowth = this.allowFrameGrowth;
+          this.callStack.push(callFrame);
+          if (this.profiler.enabled) this.profiler.allocate("callFrames");
+          this.frameBase = newFrameBase;
+          this.frameSize = newFrameSize;
+          this.allowFrameGrowth = false;
+          this.localsTop = newFrameBase + newFrameSize;
           this.ip = entry.targetIp;
-          this.profiler.enterFunction(entry.targetIp);
+          if (this.profiler.enabled) this.profiler.enterFunction(entry.targetIp);
           break;
         }
 
@@ -2989,16 +3611,9 @@ export class WebVm {
           break;
 
         case OpCode.HostCall: {
-          let callSite = this.hostCallCache.get(instructionIp);
-          if (!callSite) {
-            const symbol = this.readStringOperand();
-            const argCount = this.readIntOperand();
-            callSite = { symbol, argCount, binding: this.hostBindings.get(symbol), nextIp: this.ip };
-            this.hostCallCache.set(instructionIp, callSite);
-          } else {
-            this.ip = callSite.nextIp;
-          }
-          const { symbol, argCount, binding } = callSite;
+          const bindingId = instruction.a;
+          const { symbol, arity: argCount } = this.metadata.hostBindings[bindingId];
+          const binding = this.hostBindings.get(symbol);
           if (!binding) {
             this.throwRuntime(`Missing host binding '${symbol}'`, "HostBindingError");
           }
@@ -3010,7 +3625,11 @@ export class WebVm {
           }
 
           this.ensureStack(argCount);
-          const args = new Array(argCount);
+          let args = this.hostArgumentBuffers.get(argCount);
+          if (!args) {
+            args = new Array(argCount);
+            this.hostArgumentBuffers.set(argCount, args);
+          }
           for (let i = argCount - 1; i >= 0; i -= 1) {
             args[i] = this.stack.pop();
           }
@@ -3026,27 +3645,16 @@ export class WebVm {
           return;
 
         default:
-          this.throwRuntime(`Unknown opcode ${op} at ${this.ip - 1}`);
+          this.throwRuntime(`Unknown opcode ${op} at ${instructionIp}`);
       }
     }
-  }
-
-  numericBinary(operation) {
-    const b = this.popNumber();
-    const a = this.popNumber();
-    this.stack.push(operation(a, b));
-  }
-
-  integralBinary(operation) {
-    const b = Math.trunc(this.popNumber());
-    const a = Math.trunc(this.popNumber());
-    this.stack.push(operation(a, b));
   }
 
   popNumber() {
     this.ensureStack(1);
     const value = this.stack.pop();
-    return toNumber(value, message => this.throwRuntime(message));
+    if (typeof value !== "number" || !Number.isFinite(value)) this.throwRuntime(`Expected number on stack, found ${typeof value}`);
+    return value;
   }
 
   coerceNumericCastToInteger(allowNegative, targetType) {
@@ -3088,13 +3696,6 @@ export class WebVm {
     return truncated;
   }
 
-  popAny2() {
-    this.ensureStack(2);
-    const b = this.stack.pop();
-    const a = this.stack.pop();
-    return [a, b];
-  }
-
   ensureStack(needed) {
     if (this.stack.length < needed) {
       this.throwRuntime(`Stack underflow (need ${needed}, have ${this.stack.length})`);
@@ -3105,9 +3706,18 @@ export class WebVm {
     if (index < 0) {
       this.throwRuntime(`Negative local index ${index}`);
     }
-    while (index >= this.locals.length) {
-      this.locals.push(0);
+    if (index >= this.frameSize) {
+      const oldTop = this.localsTop;
+      this.frameSize = index + 1;
+      this.localsTop = this.frameBase + this.frameSize;
+      this.ensureLocalsCapacity(this.localsTop);
+      this.localsStack.fill(0, oldTop, this.localsTop);
     }
+  }
+
+  ensureLocalsCapacity(size) {
+    this.localsHighWater = Math.max(this.localsHighWater, size);
+    while (this.localsStack.length < size) this.localsStack.push(0);
   }
 
   ensureGlobals(index) {
@@ -3154,18 +3764,9 @@ export class WebVm {
     return value;
   }
 
-  readStringOperand() {
-    const operandIp = this.ip;
-    const cached = this.stringOperandCache.get(operandIp);
-    if (cached) {
-      this.ip = cached.nextIp;
-      return cached.value;
-    }
-    const length = this.readIntOperand();
-    this.ensureBytes(length);
-    const value = Utf8Decoder.decode(this.bytes.subarray(this.ip, this.ip + length));
-    this.ip += length;
-    this.stringOperandCache.set(operandIp, { value, nextIp: this.ip });
+  readMetadataIndex(count, name) {
+    const value = this.readIntOperand();
+    if (value < 0 || value >= count) this.throwRuntime(`Bytecode ${name} index ${value} is out of range`);
     return value;
   }
 
@@ -3174,10 +3775,10 @@ export class WebVm {
     const entryCount = this.readIntOperand();
     const entries = new Map();
     for (let i = 0; i < entryCount; i += 1) {
-      const runtimeTypeName = this.readStringOperand();
+      const runtimeTypeId = this.readMetadataIndex(this.metadata.types.length, "interface type");
       const targetIp = this.readIntOperand();
       const localCount = this.readIntOperand();
-      entries.set(runtimeTypeName, { targetIp, localCount });
+      entries.set(runtimeTypeId, { targetIp, localCount });
     }
     return {
       nextIp: this.ip,
@@ -3198,7 +3799,7 @@ export class WebVm {
       });
     }
 
-    const faultIp = this.ip - 1;
+    const faultIp = this.currentInstructionIp ?? (this.ip - 1);
     const faultLoc = this.debugMap.get(faultIp);
     const line = faultLoc ? faultLoc.line : -1;
     const column = faultLoc ? faultLoc.column : -1;
@@ -3219,4 +3820,240 @@ export class WebVm {
       error: errorObject
     });
   }
+}
+
+export class WorkerCodeRuntimeController {
+  constructor(runtime, workerSource, bytecode, sceneInfo, profileEnabled = false) {
+    this.runtime = runtime;
+    runtime.workerController = this;
+    this.sceneInfo = sceneInfo;
+    this.profileEnabled = profileEnabled;
+    this.frameInFlight = false;
+    this.nextFrameId = 1;
+    this.lastRequestedFrameTimestamp = 0;
+    this.pendingRequests = new Map();
+    this.nextRequestId = 1;
+    this.audioHandleMap = new Map();
+    this.lastCompletedFrameId = 0;
+    this.running = true;
+    this.tick = timestamp => this.onAnimationFrame(timestamp);
+    const blob = new Blob([workerSource], { type: "text/javascript" });
+    this.workerUrl = URL.createObjectURL(blob);
+    this.worker = new Worker(this.workerUrl, { name: "code-runtime" });
+    this.worker.onmessage = event => this.onWorkerMessage(event.data);
+    this.worker.onerror = event => this.onWorkerFailure(event.error ?? new Error(event.message));
+    runtime.audioStatusChanged = (mainHandle, playing) => {
+      for (const [workerHandle, mappedMainHandle] of this.audioHandleMap) {
+        if (mappedMainHandle === mainHandle) {
+          this.worker.postMessage({ type: "audioStatus", handle: workerHandle, playing });
+          break;
+        }
+      }
+    };
+    const sourceBytes = bytecode instanceof Uint8Array ? bytecode : new Uint8Array(bytecode);
+    const transferred = sourceBytes.buffer.slice(sourceBytes.byteOffset, sourceBytes.byteOffset + sourceBytes.byteLength);
+    this.worker.postMessage({ type: "init", bytecode: transferred, sceneInfo, profileEnabled }, [transferred]);
+  }
+
+  viewportSnapshot() {
+    const r = this.runtime;
+    return {
+      safeLeft: r.safeLeft, safeTop: r.safeTop, safeWidth: r.safeWidth, safeHeight: r.safeHeight,
+      viewLeft: r.viewLeft, viewTop: r.viewTop, viewWidth: r.viewWidth, viewHeight: r.viewHeight,
+      viewportWidth: r.viewportWidth, viewportHeight: r.viewportHeight, worldScale: r.worldScale
+    };
+  }
+
+  inputSnapshot() {
+    const r = this.runtime;
+    const snapshot = {
+      keysDown: Array.from(r.keysDown), pointerScreenX: r.pointerScreenX, pointerScreenY: r.pointerScreenY,
+      pointerIsDownNow: r.pointerIsDownNow, pointerPressed: r.pointerPressedPending,
+      pointerReleased: r.pointerReleasedPending, audioUnlocked: r.audioUnlocked
+    };
+    r.pointerPressedPending = false;
+    r.pointerReleasedPending = false;
+    return snapshot;
+  }
+
+  sendInputSnapshot() {
+    if (this.running) this.worker.postMessage({ type: "input", input: this.inputSnapshot() });
+  }
+
+  sendViewportSnapshot() {
+    if (this.running) this.worker.postMessage({ type: "viewport", viewport: this.viewportSnapshot() });
+  }
+
+  onAnimationFrame(timestamp) {
+    this.runtime.frameHandle = 0;
+    if (!this.running) return;
+    const cap = this.runtime.maximumRenderRate;
+    const due = cap <= 0 || timestamp - this.lastRequestedFrameTimestamp >= 1000 / cap;
+    if (due && !this.frameInFlight) {
+      this.frameInFlight = true;
+      this.lastRequestedFrameTimestamp = timestamp;
+      this.worker.postMessage({
+        type: "frame", id: this.nextFrameId++, timestamp,
+        viewport: this.viewportSnapshot(), input: this.inputSnapshot()
+      });
+    }
+    this.runtime.frameHandle = requestAnimationFrame(this.tick);
+  }
+
+  onWorkerMessage(message) {
+    switch (message?.type) {
+      case "ready":
+        if (typeof document !== "undefined") document.body.dataset.codeRuntime = "ready";
+        this.runtime.frameHandle = requestAnimationFrame(this.tick);
+        break;
+      case "frame":
+        this.frameInFlight = false;
+        if (message.id <= this.lastCompletedFrameId) break;
+        this.lastCompletedFrameId = message.id;
+        replayDrawCommands(this.runtime, message.commands, message.strings);
+        this.applyDiagnostics(message.diagnostics);
+        if (typeof document !== "undefined") document.body.dataset.codeRuntime = "frame";
+        break;
+      case "output": console.log(message.line); break;
+      case "config":
+        if (message.maximumRenderRate !== undefined) this.runtime.maximumRenderRate = message.maximumRenderRate;
+        break;
+      case "audio": this.handleAudio(message); break;
+      case "response": {
+        const request = this.pendingRequests.get(message.id);
+        if (request) { this.pendingRequests.delete(message.id); message.error ? request.reject(new Error(message.error)) : request.resolve(message.value); }
+        break;
+      }
+      case "fatal": this.onWorkerFailure(deserializeWorkerError(message.error)); break;
+    }
+  }
+
+  applyDiagnostics(value = {}) {
+    const r = this.runtime;
+    r.lastFrameIntervalMs = value.frameIntervalMs ?? r.lastFrameIntervalMs;
+    r.lastFrameWorkMs = value.frameWorkMs ?? r.lastFrameWorkMs;
+    r.lastUpdateWorkMs = value.updateWorkMs ?? r.lastUpdateWorkMs;
+    r.lastDrawWorkMs = value.drawWorkMs ?? r.lastDrawWorkMs;
+    r.lastDrawHudWorkMs = value.drawHudWorkMs ?? r.lastDrawHudWorkMs;
+    r.lastUpdateStepsCount = value.updateSteps ?? r.lastUpdateStepsCount;
+    r.lastDroppedUpdateStepsCount = value.droppedUpdateSteps ?? r.lastDroppedUpdateStepsCount;
+    r.lastUpdateIntervalMs = value.updateIntervalMs ?? r.lastUpdateIntervalMs;
+    r.lastUpdateDeltaMs = value.updateDeltaMs ?? r.lastUpdateDeltaMs;
+  }
+
+  handleAudio(message) {
+    if (message.action === "play") {
+      const mainHandle = message.loop
+        ? this.runtime.playLoopingSound(message.source, message.volume)
+        : this.runtime.playSound(message.source, message.volume);
+      this.audioHandleMap.set(message.handle, mainHandle);
+      this.worker.postMessage({
+        type: "audioStatus", handle: message.handle,
+        playing: this.runtime.soundIsPlaying(mainHandle)
+      });
+    } else if (message.action === "stop") {
+      this.runtime.stopSound(this.audioHandleMap.get(message.handle) ?? 0);
+      this.audioHandleMap.delete(message.handle);
+    } else if (message.action === "volume") {
+      this.runtime.setSoundVolume(this.audioHandleMap.get(message.handle) ?? 0, message.volume);
+    } else if (message.action === "stopAll") {
+      this.runtime.stopAllSounds();
+      this.audioHandleMap.clear();
+    }
+  }
+
+  request(action) {
+    const id = this.nextRequestId++;
+    return new Promise((resolve, reject) => {
+      this.pendingRequests.set(id, { resolve, reject });
+      this.worker.postMessage({ type: "request", id, action });
+    });
+  }
+
+  profileStart() { return this.request("profile-start"); }
+  profileStop() { return this.request("profile-stop"); }
+  profileReset() { return this.request("profile-reset"); }
+  async profileReport(print = true) {
+    const report = await this.request("profile-report");
+    if (print) {
+      console.log("Code runtime profile", report);
+      console.table(report.opcodes); console.table(report.functions); console.table(report.hostCalls);
+    }
+    return report;
+  }
+  async profileJson() { return JSON.stringify(await this.profileReport(false), null, 2); }
+
+  setHidden(hidden) {
+    this.worker.postMessage({ type: "visibility", hidden, timestamp: performance.now() });
+    if (hidden) {
+      if (this.runtime.frameHandle) cancelAnimationFrame(this.runtime.frameHandle);
+      this.runtime.frameHandle = 0;
+      this.frameInFlight = false;
+      return;
+    }
+    this.lastRequestedFrameTimestamp = 0;
+    if (this.running && !this.runtime.frameHandle) this.runtime.frameHandle = requestAnimationFrame(this.tick);
+  }
+  dispose() {
+    this.running = false;
+    if (this.runtime.frameHandle) cancelAnimationFrame(this.runtime.frameHandle);
+    this.runtime.audioStatusChanged = null;
+    this.runtime.workerController = null;
+    this.worker.terminate();
+    URL.revokeObjectURL(this.workerUrl);
+  }
+  onWorkerFailure(error) {
+    if (typeof document !== "undefined") document.body.dataset.codeRuntime = "fatal";
+    this.dispose(); this.runtime.showFatal(error); console.error(error);
+  }
+}
+
+function deserializeWorkerError(value) {
+  const error = new Error(value?.message ?? "Worker runtime failed.");
+  error.name = value?.name ?? "Error";
+  error.stack = value?.stack ?? error.stack;
+  error.payload = value?.payload ?? null;
+  return error;
+}
+
+function installCodeWorkerRuntime() {
+  let runtime = null;
+  let vm = null;
+  const respond = (id, value, error = null) => self.postMessage({ type: "response", id, value, error });
+  self.onmessage = event => {
+    const message = event.data;
+    try {
+      switch (message?.type) {
+        case "init":
+          runtime = new WorkerSceneRuntime((value, transfer = []) => self.postMessage(value, transfer));
+          vm = new WebVm(new Uint8Array(message.bytecode), {
+            output: line => self.postMessage({ type: "output", line: String(line) }),
+            sceneHost: runtime, profileEnabled: message.profileEnabled === true
+          });
+          runtime.initializeWorkerScene(vm, message.sceneInfo);
+          self.postMessage({ type: "ready" });
+          break;
+        case "frame": runtime.renderWorkerFrame(message.id, message.timestamp, message.viewport, message.input); break;
+        case "input": runtime.applyInput(message.input); break;
+        case "viewport": runtime.applyViewport(message.viewport); break;
+        case "audioStatus": runtime.applyAudioStatus(message.handle, message.playing === true); break;
+        case "visibility":
+          runtime.setWorkerHidden(message.hidden);
+          break;
+        case "request": {
+          let value;
+          if (message.action === "profile-start") value = vm.profiler.start().report();
+          else if (message.action === "profile-stop") value = vm.profiler.stop();
+          else if (message.action === "profile-reset") value = vm.profiler.reset().report();
+          else if (message.action === "profile-report") value = vm.profiler.report();
+          else throw new Error(`Unknown worker request '${message.action}'.`);
+          respond(message.id, value);
+          break;
+        }
+      }
+    } catch (error) {
+      if (message?.type === "request") respond(message.id, null, error?.message ?? String(error));
+      else self.postMessage({ type: "fatal", error: serializeWorkerError(error) });
+    }
+  };
 }

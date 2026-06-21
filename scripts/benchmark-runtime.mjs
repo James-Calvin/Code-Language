@@ -38,7 +38,7 @@ try {
     : readFileSync(runtimePath, "utf8");
   const runtimeModule = await import(`data:text/javascript;base64,${Buffer.from(runtimeSource).toString("base64")}`);
 
-  const workloads = ["runtime_cpu", "verlet_kernel"];
+  const workloads = ["runtime_cpu", "verlet_kernel", "ball_regression"];
   const results = [];
   for (const workload of workloads) {
     const sourcePath = join(repositoryRoot, "benchmarks", `${workload}.code`);
@@ -83,7 +83,11 @@ try {
       execute();
       samples.push(performance.now() - startedAt);
     }
-    results.push({ runtime: runtimeGitRef ?? "working-tree", workload, warmupRuns, sampleRuns, ...statistics(samples) });
+    const result = { runtime: runtimeGitRef ?? "working-tree", workload, warmupRuns, sampleRuns, ...statistics(samples) };
+    if (!runtimeGitRef && result.coefficientOfVariation > 0.15) {
+      throw new Error(`Benchmark '${workload}' is unstable (coefficient of variation ${result.coefficientOfVariation}).`);
+    }
+    results.push(result);
   }
 
   console.table(results);

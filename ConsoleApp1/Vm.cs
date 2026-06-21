@@ -109,6 +109,7 @@ sealed class Vm
     private readonly Dictionary<int, (int line, int column)> _debug = new();
     private readonly Dictionary<int, InterfaceDispatchTable> _interfaceDispatchCache = new();
     private readonly Dictionary<string, HostBinding> _hostBindings = new(StringComparer.Ordinal);
+    private readonly BytecodeMetadata _metadata;
     private readonly int _codeEnd;
     private readonly VmHostTarget _hostTarget;
     private readonly long _monoOriginTicks;
@@ -123,6 +124,7 @@ sealed class Vm
         TextReader? input = null)
     {
         var header = BytecodeFormat.ReadHeader(code);
+        _metadata = BytecodeMetadata.Read(code, header);
         _code = code;
         _ip = BytecodeFormat.HeaderSize;
         _codeEnd = BytecodeFormat.HeaderSize + header.CodeSize;
@@ -167,11 +169,7 @@ sealed class Vm
                     break;
                 case OpCode.PushString:
                 {
-                    int length = ReadIntOperand();
-                    EnsureBytes(length);
-                    string s = System.Text.Encoding.UTF8.GetString(_code, _ip, length);
-                    _ip += length;
-                    _stack.Push(s);
+                    _stack.Push(ReadMetadataString());
                     break;
                 }
 
@@ -655,21 +653,24 @@ sealed class Vm
 
                 case OpCode.NewObject:
                 {
-                    string typeName = ReadStringOperand();
-                    _stack.Push(new VmObject(typeName));
+                    int typeId = ReadMetadataIndex(_metadata.Types.Count, "type");
+                    var type = _metadata.Types[typeId];
+                    _stack.Push(new VmObject(typeId, type.Name, isRecord: false, _metadata.Fields.Count));
                     break;
                 }
 
                 case OpCode.NewRecord:
                 {
-                    string typeName = ReadStringOperand();
-                    _stack.Push(new VmObject(typeName, isRecord: true));
+                    int typeId = ReadMetadataIndex(_metadata.Types.Count, "type");
+                    var type = _metadata.Types[typeId];
+                    _stack.Push(new VmObject(typeId, type.Name, isRecord: true, _metadata.Fields.Count));
                     break;
                 }
 
                 case OpCode.GetField:
                 {
-                    string fieldName = ReadStringOperand();
+                    int fieldSlot = ReadMetadataIndex(_metadata.Fields.Count, "field");
+                    string fieldName = _metadata.Fields[fieldSlot];
                     EnsureStack(1);
                     var obj = _stack.Pop();
                     if (obj is not VmObject vmObj)
@@ -677,15 +678,15 @@ sealed class Vm
                         throwRuntimeType("GetField expects object");
                         break;
                     }
-                    if (!vmObj.Fields.TryGetValue(fieldName, out var value))
+                    if (!vmObj.InitializedFields[fieldSlot])
                         ThrowRuntime($"Field '{fieldName}' is not initialized on object '{vmObj.TypeName}'");
-                    _stack.Push(value!);
+                    _stack.Push(vmObj.Fields[fieldSlot]!);
                     break;
                 }
 
                 case OpCode.SetField:
                 {
-                    string fieldName = ReadStringOperand();
+                    int fieldSlot = ReadMetadataIndex(_metadata.Fields.Count, "field");
                     EnsureStack(2);
                     var value = _stack.Pop();
                     var obj = _stack.Pop();
@@ -694,7 +695,8 @@ sealed class Vm
                         throwRuntimeType("SetField expects object");
                         break;
                     }
-                    vmObj.Fields[fieldName] = value;
+                    vmObj.Fields[fieldSlot] = value;
+                    vmObj.InitializedFields[fieldSlot] = true;
                     _stack.Push(value);
                     break;
                 }
@@ -739,7 +741,7 @@ sealed class Vm
                         break;
                     }
 
-                    if (!dispatchTable.Entries.TryGetValue(targetObject.TypeName, out var targetEntry))
+                    if (!dispatchTable.Entries.TryGetValue(targetObject.TypeId, out var targetEntry))
                     {
                         ThrowRuntime($"No implementation for interface call on runtime object '{targetObject.TypeName}'");
                         break;
@@ -912,8 +914,10 @@ sealed class Vm
 
                 case OpCode.HostCall:
                 {
-                    string symbol = ReadStringOperand();
-                    int argCount = ReadIntOperand();
+                    int bindingId = ReadMetadataIndex(_metadata.HostBindings.Count, "host binding");
+                    var bindingMetadata = _metadata.HostBindings[bindingId];
+                    string symbol = bindingMetadata.Symbol;
+                    int argCount = bindingMetadata.Arity;
                     if (!_hostBindings.TryGetValue(symbol, out var binding))
                     {
                         ThrowRuntime($"Missing host binding '{symbol}'", type: "HostBindingError");
@@ -1103,6 +1107,12 @@ sealed class Vm
         _hostBindings["engine.diagnostics.last_draw_hud_work_milliseconds_scene"] = new HostBinding(0, _ => 0.0);
         _hostBindings["engine.diagnostics.last_update_steps_scene"] = new HostBinding(0, _ => 0);
         _hostBindings["engine.diagnostics.last_dropped_update_steps_scene"] = new HostBinding(0, _ => 0);
+        _hostBindings["engine.diagnostics.last_update_interval_milliseconds_scene"] = new HostBinding(0, _ => 0.0);
+        _hostBindings["engine.diagnostics.update_delta_milliseconds_scene"] = new HostBinding(0, _ => 0.0);
+        _hostBindings["engine.runtime.use_continuous_updates_scene"] = new HostBinding(0, _ => 0);
+        _hostBindings["engine.runtime.set_fixed_update_rate_scene"] = new HostBinding(1, args => { CoercePositiveIntArg(args[0], "engine.runtime.set_fixed_update_rate_scene"); return 0; });
+        _hostBindings["engine.runtime.set_maximum_render_rate_scene"] = new HostBinding(1, args => { CoercePositiveIntArg(args[0], "engine.runtime.set_maximum_render_rate_scene"); return 0; });
+        _hostBindings["engine.runtime.use_display_synchronized_rendering_scene"] = new HostBinding(0, _ => 0);
 
         _hostBindings["engine.audio.can_play_sound_scene"] = new HostBinding(0, _ => 0);
         _hostBindings["engine.audio.play_sound_scene"] = new HostBinding(2, _ => 0);
@@ -1340,14 +1350,24 @@ sealed class Vm
         return BitConverter.Int64BitsToDouble(bits);
     }
 
-    private string ReadStringOperand()
+    private int ReadMetadataIndex(int count, string name)
     {
-        int length = ReadIntOperand();
-        EnsureBytes(length);
-        string value = System.Text.Encoding.UTF8.GetString(_code, _ip, length);
-        _ip += length;
+        int value = ReadIntOperand();
+        if (value < 0 || value >= count) ThrowRuntime($"Bytecode {name} index {value} is out of range");
         return value;
     }
+
+    private int CoercePositiveIntArg(object? value, string symbol)
+    {
+        int result = CoerceNonNegativeIntArg(value, symbol);
+        if (result == 0)
+        {
+            ThrowRuntime($"Host binding '{symbol}' expected a positive argument", type: "HostBindingError");
+        }
+        return result;
+    }
+
+    private string ReadMetadataString() => _metadata.Strings[ReadMetadataIndex(_metadata.Strings.Count, "string")];
 
     private void EnsureStack(int needed)
     {
@@ -1461,13 +1481,13 @@ sealed class Vm
     {
         int explicitArgCount = ReadIntOperand();
         int entryCount = ReadIntOperand();
-        var entries = new Dictionary<string, InterfaceDispatchEntry>(StringComparer.Ordinal);
+        var entries = new Dictionary<int, InterfaceDispatchEntry>();
         for (int i = 0; i < entryCount; i++)
         {
-            string runtimeTypeName = ReadStringOperand();
+            int runtimeTypeId = ReadMetadataIndex(_metadata.Types.Count, "interface type");
             int targetIp = ReadIntOperand();
             int localCount = ReadIntOperand();
-            entries[runtimeTypeName] = new InterfaceDispatchEntry(targetIp, localCount);
+            entries[runtimeTypeId] = new InterfaceDispatchEntry(targetIp, localCount);
         }
         return new InterfaceDispatchTable(_ip, explicitArgCount, entries);
     }
@@ -1476,7 +1496,7 @@ sealed class Vm
     private sealed record InterfaceDispatchTable(
         int NextIp,
         int ExplicitArgCount,
-        Dictionary<string, InterfaceDispatchEntry> Entries);
+        Dictionary<int, InterfaceDispatchEntry> Entries);
 }
 
 sealed class VmFallible
@@ -1580,14 +1600,14 @@ file static class VmValueSemantics
             return false;
         if (!string.Equals(left.TypeName, right.TypeName, StringComparison.Ordinal))
             return false;
-        if (left.Fields.Count != right.Fields.Count)
+        if (left.Fields.Length != right.Fields.Length)
             return false;
 
-        foreach (var pair in left.Fields)
+        for (int slot = 0; slot < left.Fields.Length; slot++)
         {
-            if (!right.Fields.TryGetValue(pair.Key, out var otherValue))
+            if (left.InitializedFields[slot] != right.InitializedFields[slot])
                 return false;
-            if (!ValuesEqual(pair.Value, otherValue))
+            if (left.InitializedFields[slot] && !ValuesEqual(left.Fields[slot]!, right.Fields[slot]!))
                 return false;
         }
 
@@ -1599,14 +1619,11 @@ file static class VmValueSemantics
         var hash = new HashCode();
         hash.Add(record.TypeName, StringComparer.Ordinal);
 
-        var fieldNames = new List<string>(record.Fields.Keys);
-        fieldNames.Sort(StringComparer.Ordinal);
-        for (int i = 0; i < fieldNames.Count; i++)
+        for (int slot = 0; slot < record.Fields.Length; slot++)
         {
-            string fieldName = fieldNames[i];
-            hash.Add(fieldName, StringComparer.Ordinal);
-            record.Fields.TryGetValue(fieldName, out var fieldValue);
-            hash.Add(ValueHash(fieldValue));
+            if (!record.InitializedFields[slot]) continue;
+            hash.Add(slot);
+            hash.Add(ValueHash(record.Fields[slot]));
         }
 
         return hash.ToHashCode();

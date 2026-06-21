@@ -7,7 +7,8 @@ namespace ConsoleApp1;
 static class BytecodeFormat
 {
     public const string MagicText = "CODE";
-    public const byte Version = 9;
+    public const byte Version = 10;
+    public const string MetadataMagicText = "META";
 
     // magic (4) + version (1) + codeSize (4) + debugCount (4)
     public const int HeaderSize = 4 + 1 + 4 + 4;
@@ -29,10 +30,13 @@ static class BytecodeFormat
         ValidateHeader(bytes);
         int codeSize = BinaryPrimitives.ReadInt32LittleEndian(bytes.Slice(5, 4));
         int debugCount = BinaryPrimitives.ReadInt32LittleEndian(bytes.Slice(9, 4));
-        if (HeaderSize + codeSize + debugCount * DebugEntrySize > bytes.Length)
+        if (HeaderSize + codeSize + debugCount * DebugEntrySize + 8 > bytes.Length)
             throw new InvalidOperationException("Bytecode truncated: header sizes exceed file length.");
         return new Header(codeSize, debugCount);
     }
+
+    public static int GetMetadataOffset(Header header)
+        => HeaderSize + header.CodeSize + header.DebugCount * DebugEntrySize;
 
     public static void ValidateHeader(ReadOnlySpan<byte> bytes)
     {

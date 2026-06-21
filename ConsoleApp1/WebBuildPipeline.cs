@@ -70,7 +70,6 @@ internal static class WebBuildPipeline
         string html = BuildIndexHtml(
             manifest?.Name ?? Path.GetFileNameWithoutExtension(fullSourcePath),
             result.WebScene,
-            result.CallableNames,
             Convert.ToBase64String(result.Bytecode),
             runtimeScript);
 
@@ -166,7 +165,6 @@ internal static class WebBuildPipeline
     private static string BuildIndexHtml(
         string title,
         WebSceneMetadata webScene,
-        IReadOnlyDictionary<int, string> callableNames,
         string bytecodeBase64,
         string runtimeScript)
     {
@@ -178,7 +176,6 @@ internal static class WebBuildPipeline
             title = pageTitle,
             virtualWidth = VirtualWidth,
             virtualHeight = VirtualHeight,
-            callableNames,
             scene = new
             {
                 typeName = webScene.SceneTypeName,
@@ -192,6 +189,7 @@ internal static class WebBuildPipeline
             }
         }, new JsonSerializerOptions { WriteIndented = true });
         string bytecodeJson = JsonSerializer.Serialize(bytecodeBase64);
+        string workerRuntimeJson = JsonSerializer.Serialize(runtimeScript + "\ninstallCodeWorkerRuntime();\n");
 
         return
 $$"""
@@ -207,6 +205,7 @@ $$"""
 const APP_TITLE = {{titleJson}};
 const APP_METADATA = {{metadataJson}};
 const APP_BYTECODE_BASE64 = {{bytecodeJson}};
+const CODE_WORKER_SOURCE = {{workerRuntimeJson}};
 
 {{runtimeScript}}
 
@@ -221,24 +220,19 @@ runtime.attach(document.body);
 try {
   const bytecode = decodeBase64Bytes(APP_BYTECODE_BASE64);
   const profileEnabled = new URLSearchParams(window.location.search).get("code-profile") === "1";
-  const vm = new WebVm(bytecode, {
-    output: line => console.log(line),
-    sceneHost: runtime,
-    functionNames: APP_METADATA.callableNames,
-    profileEnabled
-  });
+  const controller = new WorkerCodeRuntimeController(runtime, CODE_WORKER_SOURCE, bytecode, APP_METADATA.scene, profileEnabled);
   window.CodeRuntime = {
-    vm,
+    vm: null,
     runtime,
+    controller,
     profile: {
-      start: () => vm.profiler.start(),
-      stop: () => vm.profiler.stop(),
-      reset: () => vm.profiler.reset(),
-      report: () => vm.profiler.print(),
-      json: () => JSON.stringify(vm.profiler.report(), null, 2)
+      start: () => controller.profileStart(),
+      stop: () => controller.profileStop(),
+      reset: () => controller.profileReset(),
+      report: () => controller.profileReport(true),
+      json: () => controller.profileJson()
     }
   };
-  runtime.runScene(vm, APP_METADATA.scene);
 } catch (error) {
   runtime.showFatal(error);
   console.error(error);

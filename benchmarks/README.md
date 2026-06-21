@@ -47,6 +47,19 @@ drawn objects while using `updateDeltaMilliseconds()` for integration.
 for authoritative frame diagnostics. It fails if updates never observe a
 completed frame interval or if gravity cannot advance once timing is present.
 
+For a local capacity sweep without modifying the checked-in O(n²) fixture:
+
+```powershell
+$env:CODE_BALL_COUNTS = "180,190,200,210,220"
+$env:CODE_BROWSER = "Chrome"
+node scripts/test-generated-worker.mjs
+```
+
+The alpha.9 pass sustained 200 balls for 120+ fixed updates with zero dropped
+steps on the development machine (median 10.6 ms, p95 11.1 ms). At 210 balls
+the run reported one dropped step, making 200 the conservative measured
+capacity on that browser and machine.
+
 The interactive Ball Simulator remains the end-to-end regression workload, but
 its frame rate must not be compared with this controlled kernel unless object
 counts, substeps, collision pairing, rendering, and broad-phase behavior match.
@@ -57,8 +70,23 @@ Run executable C# and JavaScript VM conformance checks with:
 node scripts/test-web-vm.mjs
 ```
 
-After installing the `.NET wasm-tools` workload, run the bounded Native-AOT
-experiment with `node scripts/benchmark-csharp-wasm.mjs`. It reports AOT build
+Run the Rust/Wasm stop/go benchmark and executable parity suite with:
+
+```powershell
+node scripts/benchmark-rust-wasm.mjs
+node scripts/test-rust-wasm.mjs
+```
+
+The benchmark runs JavaScript and Wasm sequentially in the same Chrome worker
+with identical bytecode, five warm-ups, and twenty samples. Adoption requires a
+1.5x geometric-mean median speedup across all three workloads, 1.5x on
+`ball_regression`, no workload below 0.9x, and coefficient of variation at or
+below 0.15. The retained full-parity pass measured 4.46x geometrically and
+4.32x on `ball_regression` on the development machine; results are
+machine/browser-specific and should be re-recorded for release candidates.
+
+The earlier C# Native-AOT experiment remains available after installing the
+`.NET wasm-tools` workload. Run `node scripts/benchmark-csharp-wasm.mjs`; it reports AOT build
 time, browser startup, raw and gzip-equivalent payload, managed memory, median,
 p95, variance, and geometric-mean speedup against the JavaScript v10 VM. The
 experiment implements only the two CPU benchmark opcode/host subsets; it is not

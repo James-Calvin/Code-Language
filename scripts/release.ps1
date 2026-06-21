@@ -70,7 +70,8 @@ foreach ($runtime in $Runtimes) {
         "lib/engine/drawing.code",
         "lib/engine/input.code",
         "lib/engine/viewport.code",
-        "web-runtime/code-vm-web.js"
+        "web-runtime/code-vm-web.js",
+        "web-runtime/code-runtime.wasm"
     )
     foreach ($requiredSidecarFile in $requiredSidecarFiles) {
         $requiredPath = Join-Path $publishDir $requiredSidecarFile

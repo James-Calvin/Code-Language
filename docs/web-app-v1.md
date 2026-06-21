@@ -442,14 +442,17 @@ The web build flow must produce a deployable static site folder.
 
 Required output:
 - `index.html` containing embedded compiled bytecode
+- `code-runtime.wasm`
 
 Current implementation output:
 - `index.html`
+- `code-runtime.wasm`, loaded separately for streaming/cache reuse when served
 - copied `assets/` directory when present beside the entry file or in the package root
 - The runtime loader is currently inlined into `index.html`.
 - The compiled bytecode is embedded in `index.html` so direct opening does not require a fetch of `app.bytecode`.
+- A base64 copy of the Wasm runtime is embedded as a `file://` fallback; hosted apps use the separate Wasm file without base64 expansion.
 - `app.bytecode` is emitted only when the maintainer/debug flag `--emit-web-bytecode` is passed.
-- The browser VM/runtime is currently worker-hosted JavaScript with decoded instructions, contiguous locals frames, and slot-backed object fields. A Wasm replacement remains gated on full parity, at least a 2x geometric-mean CPU benchmark improvement over this worker baseline, and a material Ball workload gain.
+- The required generated-app VM is Rust/Wasm and runs inside the worker. It uses decoded numeric instructions, contiguous operand/local/global/call stacks, 16-byte tagged values, slot-backed fields, handle-backed collections, and tracing garbage collection. JavaScript retains scheduling and browser API ownership and remains the reference VM for conformance.
 
 Required behavior:
 - Opening the generated `index.html` runs the app directly.

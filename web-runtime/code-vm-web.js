@@ -3822,8 +3822,196 @@ export class WebVm {
   }
 }
 
+class WasmRuntimeProfiler {
+  constructor(vm) { this.vm = vm; this.enabled = false; this.startedAtMs = performance.now(); this.elapsedMs = 0; }
+  start() { this.reset(); this.enabled = true; this.vm.exports.code_vm_profile_set_enabled(this.vm.vmHandle, 1); this.startedAtMs = performance.now(); return this; }
+  stop() {
+    if (this.enabled) this.elapsedMs += performance.now() - this.startedAtMs;
+    this.enabled = false; this.vm.exports.code_vm_profile_set_enabled(this.vm.vmHandle, 0); return this.report();
+  }
+  reset() {
+    this.startedAtMs = performance.now(); this.elapsedMs = 0;
+    if (this.vm.vmHandle > 0) this.vm.exports.code_vm_profile_reset(this.vm.vmHandle);
+    return this;
+  }
+  report() {
+    const elapsedMs = this.elapsedMs + (this.enabled ? performance.now() - this.startedAtMs : 0);
+    const vm = this.vm, handle = vm.vmHandle;
+    const opcodes = [];
+    for (let opcode = 0; opcode <= 255; opcode += 1) {
+      const count = handle > 0 ? vm.exports.code_vm_profile_opcode_count(handle, opcode) : 0;
+      if (count > 0) opcodes.push({ opcode, name: OpCodeNames[opcode] ?? `0x${opcode.toString(16)}`, count });
+    }
+    const decodeName = (pointer, length) => Utf8Decoder.decode(new Uint8Array(vm.exports.memory.buffer, pointer, length));
+    const functions = [];
+    for (let index = 0; index < (handle > 0 ? vm.exports.code_vm_profile_function_count(handle) : 0); index += 1) {
+      const calls = vm.exports.code_vm_profile_function_metric(handle, index, 0);
+      if (calls <= 0) continue;
+      functions.push({
+        name: decodeName(vm.exports.code_vm_profile_function_name_pointer(handle, index), vm.exports.code_vm_profile_function_name_length(handle, index)),
+        calls,
+        inclusiveMs: vm.exports.code_vm_profile_function_metric(handle, index, 1),
+        selfMs: vm.exports.code_vm_profile_function_metric(handle, index, 2)
+      });
+    }
+    const hostCalls = [];
+    for (let index = 0; index < (handle > 0 ? vm.exports.code_vm_profile_host_count(handle) : 0); index += 1) {
+      const calls = vm.exports.code_vm_profile_host_metric(handle, index, 0);
+      if (calls <= 0) continue;
+      hostCalls.push({
+        symbol: decodeName(vm.exports.code_vm_profile_host_name_pointer(handle, index), vm.exports.code_vm_profile_host_name_length(handle, index)),
+        calls,
+        totalMs: vm.exports.code_vm_profile_host_metric(handle, index, 1)
+      });
+    }
+    const metric = index => handle > 0 ? vm.exports.code_vm_profile_metric(handle, index) : 0;
+    return {
+      enabled: this.enabled, elapsedMs,
+      instructionCount: handle > 0 ? vm.exports.code_vm_profile_instruction_count(handle) : 0,
+      decodedInstructionCount: handle > 0 ? vm.exports.code_vm_decoded_instruction_count(handle) : 0,
+      opcodes, functions, hostCalls,
+      allocations: { objects: metric(0), arrays: metric(1), callFrames: metric(2) },
+      stackHighWater: metric(4), localsHighWater: metric(5), callStackHighWater: metric(6),
+      garbageCollections: metric(7),
+      runtime: "rust-wasm"
+    };
+  }
+}
+
+export class WasmWebVm {
+  static async create(bytecodeBytes, wasmBytes, options = {}) {
+    let adapter = null;
+    const imports = { code_host: {
+      call: (context, bindingId, argumentsPointer, argumentCount, resultPointer) =>
+        adapter?.invokeHost(bindingId, argumentsPointer, argumentCount, resultPointer) ?? 1,
+      output: (context, valuePointer) => adapter?.emitOutput(valuePointer),
+      unix_milliseconds: () => Date.now(),
+      monotonic_milliseconds: () => performance.now()
+    } };
+    const module = await WebAssembly.instantiate(wasmBytes, imports);
+    adapter = new WasmWebVm(module.instance, bytecodeBytes, options);
+    adapter.initialize();
+    return adapter;
+  }
+
+  constructor(instance, bytecodeBytes, options) {
+    this.instance = instance;
+    this.exports = instance.exports;
+    this.bytes = bytecodeBytes instanceof Uint8Array ? bytecodeBytes : new Uint8Array(bytecodeBytes);
+    this.output = typeof options.output === "function" ? options.output : line => console.log(line);
+    this.sceneHost = options.sceneHost ?? null;
+    this.metadata = readHeader(this.bytes).metadata;
+    this.hostBridge = new WebVm(this.bytes, { output: this.output, sceneHost: this.sceneHost });
+    this.profiler = new WasmRuntimeProfiler(this);
+    this.profileInitiallyEnabled = options.profileEnabled === true;
+    this.vmHandle = 0;
+    this.bytecodePointer = 0;
+  }
+
+  initialize() {
+    if (this.exports.code_value_size() !== 16) throw new Error("Rust/Wasm runtime value ABI mismatch.");
+    this.bytecodePointer = this.exports.code_alloc(this.bytes.byteLength);
+    new Uint8Array(this.exports.memory.buffer, this.bytecodePointer, this.bytes.byteLength).set(this.bytes);
+    this.vmHandle = this.exports.code_vm_create(this.bytecodePointer, this.bytes.byteLength);
+    this.exports.code_dealloc(this.bytecodePointer, this.bytes.byteLength);
+    this.bytecodePointer = 0;
+    if (this.vmHandle <= 0) throw new Error(`Rust/Wasm VM initialization failed with status ${-this.vmHandle}.`);
+    if (this.profileInitiallyEnabled) this.profiler.start();
+  }
+
+  run() { this.checkStatus(this.exports.code_vm_run(this.vmHandle), "module initialization"); }
+
+  createObject(typeIdOrName) {
+    const typeId = typeof typeIdOrName === "number" ? typeIdOrName : this.metadata.types.findIndex(type => type.name === typeIdOrName);
+    if (typeId < 0) throw new Error(`Unknown object type '${typeIdOrName}'.`);
+    const handle = this.exports.code_vm_create_object(this.vmHandle, typeId);
+    if (handle < 0) throw new Error(`Rust/Wasm object allocation failed with status ${-handle}.`);
+    return { __wasmObjectHandle: handle, typeId };
+  }
+
+  invokeVoid(targetIp, frameSize, args = []) {
+    if (args.length !== 1 || !args[0] || !Number.isInteger(args[0].__wasmObjectHandle)) {
+      throw new Error("Rust/Wasm lifecycle invocation requires one scene object argument.");
+    }
+    this.checkStatus(
+      this.exports.code_vm_invoke_object(this.vmHandle, targetIp, frameSize, args[0].__wasmObjectHandle),
+      `lifecycle call at bytecode offset ${targetIp}`
+    );
+  }
+
+  checkStatus(status, operation) {
+    if (status === 0) return;
+    if (status === 8 && this.lastHostError) {
+      const error = this.lastHostError;
+      this.lastHostError = null;
+      throw error;
+    }
+    const messages = {
+      1: "Invalid bytecode artifact.", 2: "Unsupported bytecode version.", 3: "Truncated bytecode artifact.",
+      4: "Missing bytecode metadata.", 5: "Invalid bytecode metadata.", 6: "Invalid branch or call target.",
+      7: "Unsupported bytecode opcode.", 8: "Unsupported host binding.", 9: "Expected numeric value.",
+      10: "Expected array value.", 11: "Expected object value.", 12: "Operand stack underflow.",
+      13: "Runtime value is out of range.", 14: "Runtime storage capacity exceeded.",
+      15: "Division by zero in bytecode.", 16: "Modulo by zero in bytecode.", 17: "User error."
+    };
+    const ip = this.exports.code_vm_last_error_metric(this.vmHandle, 1);
+    const line = this.exports.code_vm_last_error_metric(this.vmHandle, 2);
+    const column = this.exports.code_vm_last_error_metric(this.vmHandle, 3);
+    const message = messages[status] ?? `VM status ${status}.`;
+    throw new VmRuntimeError(`${message} (${operation})`, { ip, line, column, callStack: [], error: { type: "RuntimeError", message, line, column } });
+  }
+
+  readValue(pointer) {
+    const view = new DataView(this.exports.memory.buffer);
+    const payload = Number(view.getBigUint64(pointer, true));
+    const tag = view.getUint32(pointer + 12, true);
+    if (tag === 0) return view.getFloat64(pointer, true);
+    if (tag === 3) {
+      const stringPointer = this.exports.code_active_string_pointer(payload);
+      const length = this.exports.code_active_string_length(payload);
+      return Utf8Decoder.decode(new Uint8Array(this.exports.memory.buffer, stringPointer, length));
+    }
+    if (tag === 1) {
+      const length = this.exports.code_active_array_length(payload);
+      return Array.from({ length }, (_, index) => this.exports.code_active_array_number(payload, index));
+    }
+    if (tag === 10) return OptionalNone;
+    return { __wasmValueTag: tag, __wasmValueHandle: payload };
+  }
+
+  writeNumber(pointer, value) {
+    const view = new DataView(this.exports.memory.buffer);
+    view.setFloat64(pointer, Number(value), true);
+    view.setUint32(pointer + 8, 0, true);
+    view.setUint32(pointer + 12, 0, true);
+  }
+
+  invokeHost(bindingId, argumentsPointer, argumentCount, resultPointer) {
+    try {
+      const metadata = this.metadata.hostBindings[bindingId];
+      const binding = metadata ? this.hostBridge.hostBindings.get(metadata.symbol) : null;
+      if (!binding || binding.arity !== argumentCount) return 1;
+      const args = Array.from({ length: argumentCount }, (_, index) => this.readValue(argumentsPointer + index * 16));
+      const result = binding.handler(args);
+      if (typeof result !== "number") return 1;
+      this.writeNumber(resultPointer, result);
+      return 0;
+    } catch (error) {
+      this.lastHostError = error;
+      return 1;
+    }
+  }
+
+  emitOutput(valuePointer) { this.output(String(this.readValue(valuePointer))); }
+
+  dispose() {
+    if (this.vmHandle > 0) this.exports.code_vm_destroy(this.vmHandle);
+    this.vmHandle = 0;
+  }
+}
+
 export class WorkerCodeRuntimeController {
-  constructor(runtime, workerSource, bytecode, sceneInfo, profileEnabled = false) {
+  constructor(runtime, workerSource, bytecode, wasmBytes, sceneInfo, profileEnabled = false) {
     this.runtime = runtime;
     runtime.workerController = this;
     this.sceneInfo = sceneInfo;
@@ -3852,7 +4040,9 @@ export class WorkerCodeRuntimeController {
     };
     const sourceBytes = bytecode instanceof Uint8Array ? bytecode : new Uint8Array(bytecode);
     const transferred = sourceBytes.buffer.slice(sourceBytes.byteOffset, sourceBytes.byteOffset + sourceBytes.byteLength);
-    this.worker.postMessage({ type: "init", bytecode: transferred, sceneInfo, profileEnabled }, [transferred]);
+    const sourceWasm = wasmBytes instanceof Uint8Array ? wasmBytes : new Uint8Array(wasmBytes);
+    const transferredWasm = sourceWasm.buffer.slice(sourceWasm.byteOffset, sourceWasm.byteOffset + sourceWasm.byteLength);
+    this.worker.postMessage({ type: "init", bytecode: transferred, wasm: transferredWasm, sceneInfo, profileEnabled }, [transferred, transferredWasm]);
   }
 
   viewportSnapshot() {
@@ -4020,13 +4210,13 @@ function installCodeWorkerRuntime() {
   let runtime = null;
   let vm = null;
   const respond = (id, value, error = null) => self.postMessage({ type: "response", id, value, error });
-  self.onmessage = event => {
+  self.onmessage = async event => {
     const message = event.data;
     try {
       switch (message?.type) {
         case "init":
           runtime = new WorkerSceneRuntime((value, transfer = []) => self.postMessage(value, transfer));
-          vm = new WebVm(new Uint8Array(message.bytecode), {
+          vm = await WasmWebVm.create(new Uint8Array(message.bytecode), message.wasm, {
             output: line => self.postMessage({ type: "output", line: String(line) }),
             sceneHost: runtime, profileEnabled: message.profileEnabled === true
           });

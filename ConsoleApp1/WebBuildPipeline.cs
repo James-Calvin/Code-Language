@@ -67,10 +67,13 @@ internal static class WebBuildPipeline
         CopyAssets(fullSourcePath, resolvedOutputDirectory, manifest);
 
         string runtimeScript = PrepareRuntimeScriptForInlineModule(File.ReadAllText(ResolveWebRuntimeScriptPath(fullSourcePath)));
+        byte[] wasmRuntime = File.ReadAllBytes(ResolveWasmRuntimePath(fullSourcePath));
+        File.WriteAllBytes(Path.Combine(resolvedOutputDirectory, "code-runtime.wasm"), wasmRuntime);
         string html = BuildIndexHtml(
             manifest?.Name ?? Path.GetFileNameWithoutExtension(fullSourcePath),
             result.WebScene,
             Convert.ToBase64String(result.Bytecode),
+            Convert.ToBase64String(wasmRuntime),
             runtimeScript);
 
         string indexHtmlPath = Path.Combine(resolvedOutputDirectory, "index.html");
@@ -104,6 +107,18 @@ internal static class WebBuildPipeline
         }
 
         throw new FileNotFoundException("Could not locate web-runtime/code-vm-web.js required for web build.");
+    }
+
+    private static string ResolveWasmRuntimePath(string sourcePath)
+    {
+        foreach (var candidateRoot in EnumerateCandidateRoots(sourcePath))
+        {
+            string candidate = Path.Combine(candidateRoot, "web-runtime", "code-runtime.wasm");
+            if (File.Exists(candidate))
+                return candidate;
+        }
+
+        throw new FileNotFoundException("Could not locate web-runtime/code-runtime.wasm required for web build. Build the Rust runtime first.");
     }
 
     private static IEnumerable<string> EnumerateCandidateRoots(string sourcePath)
@@ -166,6 +181,7 @@ internal static class WebBuildPipeline
         string title,
         WebSceneMetadata webScene,
         string bytecodeBase64,
+        string wasmRuntimeBase64,
         string runtimeScript)
     {
         string pageTitle = string.IsNullOrWhiteSpace(title) ? "Code App" : title.Trim();
@@ -189,6 +205,7 @@ internal static class WebBuildPipeline
             }
         }, new JsonSerializerOptions { WriteIndented = true });
         string bytecodeJson = JsonSerializer.Serialize(bytecodeBase64);
+        string wasmRuntimeJson = JsonSerializer.Serialize(wasmRuntimeBase64);
         string workerRuntimeJson = JsonSerializer.Serialize(runtimeScript + "\ninstallCodeWorkerRuntime();\n");
 
         return
@@ -205,6 +222,7 @@ $$"""
 const APP_TITLE = {{titleJson}};
 const APP_METADATA = {{metadataJson}};
 const APP_BYTECODE_BASE64 = {{bytecodeJson}};
+const CODE_RUNTIME_WASM_BASE64 = {{wasmRuntimeJson}};
 const CODE_WORKER_SOURCE = {{workerRuntimeJson}};
 
 {{runtimeScript}}
@@ -219,8 +237,17 @@ runtime.attach(document.body);
 
 try {
   const bytecode = decodeBase64Bytes(APP_BYTECODE_BASE64);
+  let wasmBytes;
+  try {
+    if (window.location.protocol === "file:") throw new Error("Use embedded Wasm for direct-file execution.");
+    const response = await fetch("code-runtime.wasm");
+    if (!response.ok) throw new Error("Wasm request failed with status " + response.status + ".");
+    wasmBytes = new Uint8Array(await response.arrayBuffer());
+  } catch {
+    wasmBytes = decodeBase64Bytes(CODE_RUNTIME_WASM_BASE64);
+  }
   const profileEnabled = new URLSearchParams(window.location.search).get("code-profile") === "1";
-  const controller = new WorkerCodeRuntimeController(runtime, CODE_WORKER_SOURCE, bytecode, APP_METADATA.scene, profileEnabled);
+  const controller = new WorkerCodeRuntimeController(runtime, CODE_WORKER_SOURCE, bytecode, wasmBytes, APP_METADATA.scene, profileEnabled);
   window.CodeRuntime = {
     vm: null,
     runtime,

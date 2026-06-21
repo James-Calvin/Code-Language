@@ -42,7 +42,9 @@ Copy-Item -Path (Join-Path $resolvedArtifact "*") -Destination $installDirectory
 
 $sourceRuntime = Join-Path $repoRoot "web-runtime\code-vm-web.js"
 $installedRuntime = Join-Path $installDirectory "web-runtime\code-vm-web.js"
-if (-not (Test-Path $installedCompiler) -or -not (Test-Path $installedRuntime)) {
+$sourceWasmRuntime = Join-Path $repoRoot "web-runtime\code-runtime.wasm"
+$installedWasmRuntime = Join-Path $installDirectory "web-runtime\code-runtime.wasm"
+if (-not (Test-Path $installedCompiler) -or -not (Test-Path $installedRuntime) -or -not (Test-Path $installedWasmRuntime)) {
     throw "The local compiler installation is incomplete."
 }
 
@@ -50,6 +52,11 @@ $sourceRuntimeHash = (Get-FileHash -Algorithm SHA256 -Path $sourceRuntime).Hash
 $installedRuntimeHash = (Get-FileHash -Algorithm SHA256 -Path $installedRuntime).Hash
 if ($sourceRuntimeHash -ne $installedRuntimeHash) {
     throw "The installed web runtime does not match the working tree."
+}
+$sourceWasmRuntimeHash = (Get-FileHash -Algorithm SHA256 -Path $sourceWasmRuntime).Hash
+$installedWasmRuntimeHash = (Get-FileHash -Algorithm SHA256 -Path $installedWasmRuntime).Hash
+if ($sourceWasmRuntimeHash -ne $installedWasmRuntimeHash) {
+    throw "The installed Wasm runtime does not match the working tree."
 }
 
 $installedVersion = & $installedCompiler --version
@@ -59,3 +66,4 @@ if ($LASTEXITCODE -ne 0) {
 
 Write-Host "Installed compiler $installedVersion to $installDirectory"
 Write-Host "Verified installed web runtime SHA256: $installedRuntimeHash"
+Write-Host "Verified installed Wasm runtime SHA256: $installedWasmRuntimeHash"

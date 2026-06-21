@@ -5,10 +5,10 @@
     <TargetFramework>net9.0</TargetFramework>
     <AssemblyName>compiler</AssemblyName>
     <RootNamespace>ConsoleApp1</RootNamespace>
-    <Version>0.1.0-alpha.8</Version>
+    <Version>0.1.0-alpha.9</Version>
     <AssemblyVersion>0.1.0.0</AssemblyVersion>
     <FileVersion>0.1.0.0</FileVersion>
-    <InformationalVersion>0.1.0-alpha.8</InformationalVersion>
+    <InformationalVersion>0.1.0-alpha.9</InformationalVersion>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
@@ -17,8 +17,18 @@
   <ItemGroup>
     <Content Include="..\lib\**\*.code" Link="lib\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="..\web-runtime\code-vm-web.js" Link="web-runtime\code-vm-web.js" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="..\web-runtime\code-runtime.wasm" Link="web-runtime\code-runtime.wasm" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="..\web-runtime\index.html" Link="web-runtime\index.html" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="..\web-runtime\README.md" Link="web-runtime\README.md" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
+
+  <Target Name="BuildRustWasmRuntime"
+          BeforeTargets="PrepareForBuild"
+          Condition="'$(Configuration)' == 'Release'">
+    <Exec Command="cargo build --release --target wasm32-unknown-unknown --locked"
+          WorkingDirectory="$(MSBuildProjectDirectory)\..\runtime-wasm" />
+    <Copy SourceFiles="$(MSBuildProjectDirectory)\..\runtime-wasm\target\wasm32-unknown-unknown\release\code_runtime_wasm.wasm"
+          DestinationFiles="$(MSBuildProjectDirectory)\..\web-runtime\code-runtime.wasm" />
+  </Target>
 
 </Project>

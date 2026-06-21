@@ -47,6 +47,7 @@ This creates `MyGame/index.html`.
 The web app output includes:
 
 - `index.html` with embedded bytecode and browser runtime
+- `code-runtime.wasm`, loaded as a cacheable sidecar when served and embedded as a direct-`file://` fallback
 - copied `assets/` content when present beside the entry file or package root
 - a full-window canvas runtime with keyboard, primary pointer, drawing, image/sprite, audio, and diagnostics support
 
@@ -107,8 +108,8 @@ node scripts/benchmark-runtime.mjs
 
 See [benchmarks/README.md](benchmarks/README.md) for baseline comparison rules.
 
-Generated web apps use bytecode v10 and run the VM, lifecycle methods, and
-updates in a dedicated worker. Fixed 60 Hz updates are the default. Drawing is
+Generated web apps use bytecode v10 and run the Rust/Wasm VM, lifecycle methods,
+and updates in a dedicated worker. Fixed 60 Hz updates are the default. Drawing is
 encoded by the worker, replayed on the main-thread canvas, and remains limited
 by browser/display refresh. `Runtime.useContinuousUpdates()` is an explicit
 opt-in for applications designed around measured update deltas.

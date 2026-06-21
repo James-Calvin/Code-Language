@@ -3490,9 +3490,15 @@ function drawHud() {
                     path.Replace('\\', '/'),
                     "assets/code-sheet.svg",
                     StringComparison.OrdinalIgnoreCase)) &&
+                outputs.OutputFiles.Any(path => string.Equals(
+                    path.Replace('\\', '/'),
+                    "code-runtime.wasm",
+                    StringComparison.OrdinalIgnoreCase)) &&
                 outputs.IndexHtml.Contains("CanvasSceneRuntime", StringComparison.Ordinal) &&
                 outputs.IndexHtml.Contains("APP_METADATA", StringComparison.Ordinal) &&
                 outputs.IndexHtml.Contains("APP_BYTECODE_BASE64", StringComparison.Ordinal) &&
+                outputs.IndexHtml.Contains("CODE_RUNTIME_WASM_BASE64", StringComparison.Ordinal) &&
+                outputs.IndexHtml.Contains("WasmWebVm", StringComparison.Ordinal) &&
                 outputs.IndexHtml.Contains("CODE_WORKER_SOURCE", StringComparison.Ordinal) &&
                 outputs.IndexHtml.Contains("new WorkerCodeRuntimeController", StringComparison.Ordinal) &&
                 outputs.IndexHtml.Contains("new Worker(this.workerUrl", StringComparison.Ordinal) &&
@@ -3677,6 +3683,7 @@ export object MainScene {
                 outputs.IndexHtmlExists &&
                 outputs.BytecodeExists &&
                 outputs.BytecodeLength > 0 &&
+                outputs.OutputFiles.Any(path => string.Equals(path.Replace('\\', '/'), "code-runtime.wasm", StringComparison.OrdinalIgnoreCase)) &&
                 outputs.IndexHtml.Contains("APP_BYTECODE_BASE64", StringComparison.Ordinal) &&
                 outputs.IndexHtml.Contains("new WorkerCodeRuntimeController", StringComparison.Ordinal);
 

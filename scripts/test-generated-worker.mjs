@@ -1,5 +1,5 @@
 import { spawn, execFileSync } from "node:child_process";
-import { accessSync, constants, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { accessSync, constants, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL, fileURLToPath } from "node:url";
@@ -9,11 +9,20 @@ const repositoryRoot = resolve(scriptDirectory, "..");
 const project = join(repositoryRoot, "ConsoleApp1", "ConsoleApp1.csproj");
 const installedCompiler = process.env.CODE_COMPILER?.trim() || null;
 const temporaryRoot = mkdtempSync(join(tmpdir(), "code-worker-browser-"));
-const workloads = [
+let workloads = [
   { name: "web-scene", source: join(repositoryRoot, "ConsoleApp1", "examples", "web_scene.code") },
   { name: "ball-130", source: join(repositoryRoot, "benchmarks", "ball_scene.code") },
   { name: "gravity-diagnostics", source: join(repositoryRoot, "benchmarks", "worker_diagnostics_gravity.code") }
 ];
+const capacityCounts = (process.env.CODE_BALL_COUNTS ?? "").split(",").map(value => Number(value.trim())).filter(value => Number.isInteger(value) && value > 0);
+if (capacityCounts.length > 0) {
+  const template = readFileSync(join(repositoryRoot, "benchmarks", "ball_scene.code"), "utf8");
+  workloads = capacityCounts.map(count => {
+    const source = join(temporaryRoot, `ball-${count}.code`);
+    writeFileSync(source, template.replace("constant integer SCENE_BALL_COUNT = 130;", `constant integer SCENE_BALL_COUNT = ${count};`).replace("130-ball worker regression", `${count}-ball worker benchmark`));
+    return { name: `ball-${count}`, source };
+  });
+}
 
 const programFiles = process.env.ProgramFiles ?? "C:\\Program Files";
 const programFilesX86 = process.env["ProgramFiles(x86)"] ?? "C:\\Program Files (x86)";
@@ -146,7 +155,7 @@ async function runBrowserSmoke(browser, pageUrl, workloadName) {
       throw new Error(`${browser.name} worker failed: ${state.error || diagnostics.join("\n") || "no diagnostic"}`);
     }
     await connection.send("Runtime.evaluate", {
-      expression: "(() => { const controller = CodeRuntime.controller; window.__codeWorkerProbe = { updates: 0, draws: 0, dropped: 0, updateWork: 0 }; const apply = controller.applyDiagnostics.bind(controller); controller.applyDiagnostics = value => { __codeWorkerProbe.updates += value.updateSteps ?? 0; __codeWorkerProbe.draws += 1; __codeWorkerProbe.dropped += value.droppedUpdateSteps ?? 0; __codeWorkerProbe.updateWork += value.updateWorkMs ?? 0; apply(value); }; })()"
+      expression: "(() => { const controller = CodeRuntime.controller; window.__codeWorkerProbe = { updates: 0, draws: 0, dropped: 0, updateWork: 0, samples: [] }; const apply = controller.applyDiagnostics.bind(controller); controller.applyDiagnostics = value => { __codeWorkerProbe.updates += value.updateSteps ?? 0; __codeWorkerProbe.draws += 1; __codeWorkerProbe.dropped += value.droppedUpdateSteps ?? 0; __codeWorkerProbe.updateWork += value.updateWorkMs ?? 0; if ((value.updateSteps ?? 0) > 0) __codeWorkerProbe.samples.push(value.updateWorkMs ?? 0); apply(value); }; })()"
     });
     const sustainedResult = await waitFor(async () => {
       const result = await connection.send("Runtime.evaluate", {
@@ -154,16 +163,17 @@ async function runBrowserSmoke(browser, pageUrl, workloadName) {
         returnByValue: true
       });
       const value = result.result?.value;
-      return value?.updates >= (workloadName === "gravity-diagnostics" ? 65 : 30) ? value : null;
+      const requiredUpdates = capacityCounts.length > 0 ? 120 : (workloadName === "gravity-diagnostics" ? 65 : 30);
+      return value?.updates >= requiredUpdates ? value : null;
     }, 20_000, `${browser.name} ${workloadName} sustained updates`);
     if (sustainedResult.draws < 1) throw new Error(`${browser.name} ${workloadName} completed no draws.`);
     const profileResult = await connection.send("Runtime.evaluate", {
-      expression: "(async () => { const started = CodeRuntime.profile.start(); const isPromise = typeof started?.then === 'function'; await started; const report = await CodeRuntime.profile.report(); await CodeRuntime.profile.stop(); return { isPromise, hasOpcodes: Array.isArray(report.opcodes) }; })()",
+      expression: "(async () => { const started = CodeRuntime.profile.start(); const isPromise = typeof started?.then === 'function'; await started; await new Promise(resolve => setTimeout(resolve, 150)); const report = await CodeRuntime.profile.report(); await CodeRuntime.profile.stop(); return { isPromise, hasOpcodes: report.instructionCount > 0 && report.opcodes.length > 0, hasFunctions: report.functions.length > 0, hasHostCalls: report.hostCalls.length > 0, runtime: report.runtime }; })()",
       awaitPromise: true,
       returnByValue: true
     });
     const profile = profileResult.result?.value;
-    if (!profile?.isPromise || !profile?.hasOpcodes) {
+    if (!profile?.isPromise || !profile?.hasOpcodes || !profile?.hasFunctions || !profile?.hasHostCalls || profile?.runtime !== "rust-wasm") {
       throw new Error(`${browser.name} worker profiler API did not return asynchronous reports.`);
     }
     const beforeVisibility = sustainedResult.updates;
@@ -178,7 +188,10 @@ async function runBrowserSmoke(browser, pageUrl, workloadName) {
       const result = await connection.send("Runtime.evaluate", { expression: "window.__codeWorkerProbe", returnByValue: true });
       return result.result?.value?.updates >= beforeVisibility + 3;
     }, 10_000, `${browser.name} ${workloadName} visibility resume`);
-    console.log(`[PASS] generated worker ${browser.name} ${workloadName} file:// smoke (${sustainedResult.updates} updates, ${sustainedResult.dropped} dropped)`);
+    const sortedSamples = [...sustainedResult.samples].sort((left, right) => left - right);
+    const median = sortedSamples[Math.ceil(sortedSamples.length * 0.5) - 1] ?? 0;
+    const p95 = sortedSamples[Math.ceil(sortedSamples.length * 0.95) - 1] ?? 0;
+    console.log(`[PASS] generated worker ${browser.name} ${workloadName} file:// smoke (${sustainedResult.updates} updates, ${sustainedResult.dropped} dropped, median ${median.toFixed(2)} ms, p95 ${p95.toFixed(2)} ms)`);
   } catch (error) {
     const suffix = diagnostics.length > 0 ? `\n${diagnostics.join("\n")}` : "";
     throw new Error(`${error.message}${suffix}`);
@@ -191,7 +204,7 @@ async function runBrowserSmoke(browser, pageUrl, workloadName) {
 
 try {
   const browsers = browserCandidates.filter((candidate, index, all) =>
-    exists(candidate.path) && all.findIndex(other => other.name === candidate.name && other.path === candidate.path) === index);
+    exists(candidate.path) && (!process.env.CODE_BROWSER || candidate.name.toLowerCase() === process.env.CODE_BROWSER.toLowerCase()) && all.findIndex(other => other.name === candidate.name && other.path === candidate.path) === index);
   if (browsers.length === 0) throw new Error("Chrome or Edge is required for the generated-worker smoke test.");
   for (const workload of workloads) {
     const outputDirectory = join(temporaryRoot, workload.name);

@@ -29,7 +29,7 @@ Version: 0.15 (2026-06-20)
 ## Stack conventions
 - Operand stack stores numeric values as `int`, `long`, or `double`; most numeric ops coerce to double math, while `INT_DIV` truncates integral division toward zero. Strings, runtime object/record values, and fallible success/error values are boxed.
 - Locals are indexed slots separate from the operand stack; they auto-grow on demand. Functions record a high-water mark for frame size.
-- The web VM predecodes instructions and uses one reusable locals stack with frame base pointers. `RET` restores the caller frame while leaving the return value on the operand stack.
+- The generated-web Rust/Wasm VM predecodes instructions and numeric targets and uses contiguous operand, local, global, and call stacks. Values use a 16-byte tagged representation; heap values are stable handles traced from stacks and globals. `RET` restores the caller frame while leaving the return value on the operand stack. The JavaScript VM implements the same contract as a reference path.
 - `CALL` and `INTERFACE_CALL` frame-size operands are finalized after all callable bodies have been emitted. This is required for forward calls whose parameter count is smaller than their eventual local-slot high-water mark.
 
 ## Opcodes

@@ -6,6 +6,7 @@ namespace ConsoleApp1.Compiler;
 
 sealed class TypeChecker
 {
+    private readonly SemanticModel _semanticModel = new();
     private readonly Dictionary<string, FunctionSignature> _functions = new(StringComparer.Ordinal);
     private readonly Dictionary<string, EnumSymbol> _enums = new(StringComparer.Ordinal);
     private readonly Dictionary<string, ObjectSymbol> _objects = new(StringComparer.Ordinal);
@@ -404,6 +405,12 @@ sealed class TypeChecker
                 _currentModulePath = previousModulePath;
             }
         }
+    }
+
+    public SemanticModel CheckWithModel(IList<Stmt> statements)
+    {
+        Check(statements);
+        return _semanticModel;
     }
 
     private void CheckGlobalVarDecl(VarDecl variable)
@@ -1092,6 +1099,14 @@ sealed class TypeChecker
 
     private TypeSymbol CheckExpr(Expr expr, TypeEnvironment env, TypeSymbol? currentReturn)
     {
+        var type = CheckExprCore(expr, env, currentReturn);
+        var typeRef = ResolveExprTypeRef(expr, env) ?? BuildTypeRefForSymbol(type, GetLine(expr), GetCol(expr));
+        _semanticModel.Record(expr, type, typeRef);
+        return type;
+    }
+
+    private TypeSymbol CheckExprCore(Expr expr, TypeEnvironment env, TypeSymbol? currentReturn)
+    {
         switch (expr)
         {
             case DefaultValueExpr d:
@@ -1294,6 +1309,7 @@ sealed class TypeChecker
                 Require(targetType == TypeSymbol.Object || targetType == TypeSymbol.Record, fset.Target.Target, "Field assignment requires object or record target");
                 var rhsType = CheckExpr(fset.Value, env, currentReturn);
                 var field = ResolveFieldSignature(fset.Target, env, out _);
+                _semanticModel.Record(fset.Target, MapType(field.TypeRef), field.TypeRef);
                 EnsureCanAssignField(field, fset.Target.Name);
                 var expectedType = MapType(field.TypeRef);
                 if (expectedType is TypeSymbol expected)
@@ -2541,6 +2557,17 @@ sealed class TypeChecker
         {
             case DefaultValueExpr d:
                 return d.Type;
+            case Literal literal:
+                return literal.Value switch
+                {
+                    bool => new TypeRef("boolean", null, literal.Line, literal.Column),
+                    string => new TypeRef("string", null, literal.Line, literal.Column),
+                    double => new TypeRef("real", null, literal.Line, literal.Column),
+                    long => new TypeRef("whole32", null, literal.Line, literal.Column),
+                    _ => new TypeRef("integer", null, literal.Line, literal.Column)
+                };
+            case InterpString interpolated:
+                return new TypeRef("string", null, interpolated.Line, interpolated.Column);
             case ArrayLiteral al:
                 return al.ResolvedTypeRef;
             case NewArrayExpr na:
@@ -2559,6 +2586,10 @@ sealed class TypeChecker
                 return null;
             case NewObjectExpr no:
                 return new TypeRef(no.TypeName.Lexeme, null, no.TypeName.Line, no.TypeName.Column);
+            case ArrayLengthExpr length:
+                return new TypeRef("integer", null, length.DotToken.Line, length.DotToken.Column);
+            case OptionalHasValueExpr:
+                return new TypeRef("boolean", null, GetLine(expr), GetCol(expr));
             case Call c:
                 if (c.ResolvedImplicitMethodReturnTypeRef is not null)
                     return c.ResolvedImplicitMethodReturnTypeRef;
@@ -2577,6 +2608,18 @@ sealed class TypeChecker
                 return ai.ResolvedElementTypeRef;
             case ArraySetExpr aset:
                 return ResolveExprTypeRef(aset.Target, env);
+            case FieldSetExpr fieldSet:
+                return ResolveExprTypeRef(fieldSet.Target, env);
+            case Assign assignment:
+                if (assignment.ResolvedImplicitFieldTypeRef is not null)
+                    return assignment.ResolvedImplicitFieldTypeRef;
+                if (assignment.ResolvedGlobalTypeRef is not null)
+                    return assignment.ResolvedGlobalTypeRef;
+                if (env.TryGetDeclaredType(assignment.Name, out var assignedType))
+                    return assignedType;
+                return ResolveExprTypeRef(assignment.Value, env);
+            case CompoundAssignExpr compound:
+                return ResolveExprTypeRef(compound.Target, env);
             case OptionalValueExpr oval:
             {
                 var optionalTypeRef = ResolveExprTypeRef(oval.Target, env);
@@ -2658,6 +2701,7 @@ sealed class TypeChecker
                 var targetType = CheckExpr(fieldAccess.Target, env, currentReturn);
                 Require(targetType == TypeSymbol.Object || targetType == TypeSymbol.Record, fieldAccess.Target, "Field access requires object or record target");
                 var field = ResolveFieldSignature(fieldAccess, env, out _);
+                _semanticModel.Record(fieldAccess, MapType(field.TypeRef), field.TypeRef);
                 EnsureCanAssignField(field, fieldAccess.Name);
                 return (
                     MapType(field.TypeRef),

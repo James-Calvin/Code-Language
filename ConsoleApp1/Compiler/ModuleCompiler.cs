@@ -15,6 +15,7 @@ sealed class ModuleCompileOptions
     public Action<string>? TraceWriter { get; init; }
     public bool EnableGraphicalAppProfile { get; init; }
     public bool EnableImpliedEngineImports { get; init; }
+    public bool EmitDirectWasm { get; init; }
 }
 
 sealed class ModuleCompileResult
@@ -25,6 +26,7 @@ sealed class ModuleCompileResult
     public IReadOnlyList<string> RequiredCapabilities { get; }
     public WebSceneMetadata? WebScene { get; }
     public IReadOnlyDictionary<int, string> CallableNames { get; }
+    public DirectWasmCompilation? DirectWasm { get; }
 
     public ModuleCompileResult(
         byte[] bytecode,
@@ -32,7 +34,8 @@ sealed class ModuleCompileResult
         CompileTarget target,
         IReadOnlyList<string> requiredCapabilities,
         WebSceneMetadata? webScene,
-        IReadOnlyDictionary<int, string> callableNames)
+        IReadOnlyDictionary<int, string> callableNames,
+        DirectWasmCompilation? directWasm = null)
     {
         Bytecode = bytecode;
         Graph = graph;
@@ -40,6 +43,7 @@ sealed class ModuleCompileResult
         RequiredCapabilities = requiredCapabilities;
         WebScene = webScene;
         CallableNames = callableNames;
+        DirectWasm = directWasm;
     }
 }
 
@@ -274,16 +278,24 @@ static class ModuleCompiler
             TraceLinker = baseOptions.TraceLinker,
             TraceWriter = baseOptions.TraceWriter,
             EnableGraphicalAppProfile = baseOptions.EnableGraphicalAppProfile,
-            EnableImpliedEngineImports = baseOptions.EnableImpliedEngineImports
+            EnableImpliedEngineImports = baseOptions.EnableImpliedEngineImports,
+            EmitDirectWasm = baseOptions.EmitDirectWasm
         };
         var linker = new ModuleLinker(projectRoot, fullEntryPath, compileOptions);
         var linkResult = linker.Link(fullEntryPath);
         var loweredStatements = LowerInlineInterfaceImplementations(linkResult.Statements);
         var typeChecker = new TypeChecker(enableImpliedEngineImports: compileOptions.EnableImpliedEngineImports);
-        typeChecker.Check(loweredStatements);
+        SemanticModel? semanticModel = null;
+        if (compileOptions.EmitDirectWasm)
+            semanticModel = typeChecker.CheckWithModel(loweredStatements);
+        else
+            typeChecker.Check(loweredStatements);
         var generator = new CodeGenerator();
         var generated = generator.GenerateWithMetadata(loweredStatements);
         var bytecode = generated.Bytecode;
+        DirectWasmCompilation? directWasm = null;
+        if (compileOptions.EmitDirectWasm)
+            directWasm = new DirectWasmCompiler(TypedProgram.Lower(loweredStatements, semanticModel!)).Compile();
 
         if (manifest is not null && string.Equals(manifest.Kind, "library", StringComparison.Ordinal))
         {
@@ -308,7 +320,8 @@ static class ModuleCompiler
             compileOptions.Target,
             linkResult.RequiredCapabilities,
             generated.WebScene,
-            generated.CallableNames);
+            generated.CallableNames,
+            directWasm);
     }
 
     private static void WriteLibraryArtifact(

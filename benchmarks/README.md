@@ -85,6 +85,21 @@ below 0.15. The retained full-parity pass measured 4.46x geometrically and
 4.32x on `ball_regression` on the development machine; results are
 machine/browser-specific and should be re-recorded for release candidates.
 
+Run the typed direct-Wasm stop/go gate and executable parity suite with:
+
+```powershell
+node scripts/benchmark-direct-wasm.mjs
+node scripts/test-direct-wasm.mjs
+```
+
+The direct benchmark compiles identical source to bytecode and native Wasm,
+runs both sequentially in one Chrome worker, calibrates batches above browser
+timer resolution, and reports compilation/startup separately. Adoption requires
+2x geometric-mean throughput, 2x on `ball_regression`, no workload below 0.9x,
+and CV at or below 0.15. The alpha.10 development pass measured 46.5x
+geometrically and 60.5x on `ball_regression`; these machine-specific results do
+not override conformance and memory-management gates.
+
 The earlier C# Native-AOT experiment remains available after installing the
 `.NET wasm-tools` workload. Run `node scripts/benchmark-csharp-wasm.mjs`; it reports AOT build
 time, browser startup, raw and gzip-equivalent payload, managed memory, median,

@@ -44,6 +44,7 @@ internal static class Program
         bool nativeMode = false;
         bool emitWebBytecode = false;
         bool targetSpecified = false;
+        bool directWasmBackend = false;
         CompileTarget compileTarget = CompileTarget.VmNative;
 
         for (int i = 0; i < args.Length; i++)
@@ -106,6 +107,12 @@ internal static class Program
                         Fail($"Unsupported target '{targetArg}'. Use vm-native or vm-web.");
                     targetSpecified = true;
                     break;
+                case "--web-backend":
+                    if (i + 1 >= args.Length) Fail("Usage: --web-backend <wasm-vm|direct-wasm>");
+                    string backend = args[++i];
+                    if (backend == "direct-wasm") directWasmBackend = true;
+                    else if (backend != "wasm-vm") Fail($"Unsupported web backend '{backend}'. Use wasm-vm or direct-wasm.");
+                    break;
                 default:
                     if (args[i].EndsWith(".bytecode", StringComparison.OrdinalIgnoreCase))
                         bytecodePath = args[i];
@@ -154,6 +161,8 @@ internal static class Program
 
         if (emitWebBytecode && !shouldBuildWeb && !buildWeb)
             Fail("--emit-web-bytecode can only be used when building a web app.");
+        if (directWasmBackend && codePath is null)
+            Fail("--web-backend direct-wasm requires a .code input.");
 
         if (disasmPath != null)
         {
@@ -179,12 +188,12 @@ internal static class Program
                     Fail("Module graph options are not supported with web builds yet.");
 
                 string outputDirectory = ResolveCliWebOutputDirectory(codePath, outPath);
-                BuildWebApp(codePath, outputDirectory, traceLinker, emitWebBytecode);
+                BuildWebApp(codePath, outputDirectory, traceLinker, emitWebBytecode, directWasmBackend);
                 return;
             }
 
             string outputPath = outPath ?? ResolveCliNativeOutputPath(codePath);
-            CompileToFile(codePath, outputPath, dumpModuleGraph, moduleGraphOutputPath, moduleGraphFormat, traceLinker, compileTarget);
+            CompileToFile(codePath, outputPath, dumpModuleGraph, moduleGraphOutputPath, moduleGraphFormat, traceLinker, compileTarget, directWasmBackend);
             if (!compileOnly)
                 RunBytecode(outputPath, MapHostTarget(compileTarget));
             return;
@@ -216,7 +225,8 @@ internal static class Program
         string? moduleGraphOutputPath,
         string? moduleGraphFormat,
         bool traceLinker,
-        CompileTarget target)
+        CompileTarget target,
+        bool directWasmBackend)
     {
         var source = File.ReadAllText(sourcePath);
         try
@@ -225,14 +235,20 @@ internal static class Program
             {
                 Target = target,
                 TraceLinker = traceLinker,
-                TraceWriter = traceLinker ? message => Console.Error.WriteLine($"[linker] {message}") : null
+                TraceWriter = traceLinker ? message => Console.Error.WriteLine($"[linker] {message}") : null,
+                EnableGraphicalAppProfile = directWasmBackend && target == CompileTarget.VmWeb,
+                EnableImpliedEngineImports = directWasmBackend && target == CompileTarget.VmWeb,
+                EmitDirectWasm = directWasmBackend
             };
             var result = ModuleCompiler.CompileFromFileWithMetadata(sourcePath, options);
             string? outputDirectory = Path.GetDirectoryName(Path.GetFullPath(outputPath));
             if (!string.IsNullOrWhiteSpace(outputDirectory))
                 Directory.CreateDirectory(outputDirectory);
-            File.WriteAllBytes(outputPath, result.Bytecode);
-            Console.WriteLine($"Compiled {sourcePath} -> {outputPath} (target={target.ToCliValue()})");
+            var output = directWasmBackend
+                ? result.DirectWasm?.Module ?? throw new InvalidOperationException("Direct-Wasm compilation did not produce a module.")
+                : result.Bytecode;
+            File.WriteAllBytes(outputPath, output);
+            Console.WriteLine($"Compiled {sourcePath} -> {outputPath} (target={target.ToCliValue()}, backend={(directWasmBackend ? "direct-wasm" : "bytecode")})");
             if (dumpModuleGraph)
             {
                 string graphBody = FormatModuleGraph(
@@ -274,7 +290,8 @@ internal static class Program
         string sourcePath,
         string? outputDirectory,
         bool traceLinker,
-        bool emitWebBytecode)
+        bool emitWebBytecode,
+        bool directWasmBackend)
     {
         var source = File.ReadAllText(sourcePath);
         try
@@ -284,7 +301,8 @@ internal static class Program
                 outputDirectory,
                 traceLinker,
                 traceLinker ? message => Console.Error.WriteLine($"[linker] {message}") : null,
-                emitWebBytecode);
+                emitWebBytecode,
+                directWasmBackend);
 
             Console.WriteLine($"Built web app {sourcePath} -> {result.OutputDirectory}");
             Console.WriteLine($"Entry page: {result.IndexHtmlPath}");

@@ -156,6 +156,7 @@ internal static class TestHarness
         }
 
         failures += RunBytecodeV10Tests();
+        failures += RunDirectWasmEncodingTests();
 
         if (failures > 0)
         {
@@ -221,6 +222,59 @@ internal static class TestHarness
         byte[] copy = (byte[])source.Clone();
         mutation(copy);
         return copy;
+    }
+
+    private static int RunDirectWasmEncodingTests()
+    {
+        int failures = 0;
+        void Check(string name, Action test)
+        {
+            try { test(); Console.WriteLine($"[PASS] {name}"); }
+            catch (Exception ex) { failures++; Console.WriteLine($"[FAIL] {name}: {ex.Message}"); }
+        }
+
+        Check("direct-wasm-leb128-unsigned", () =>
+        {
+            var bytes = new List<byte>();
+            Compiler.DirectWasmEncoding.WriteU32(bytes, 624485);
+            if (!bytes.SequenceEqual(new byte[] { 0xe5, 0x8e, 0x26 })) throw new Exception("incorrect unsigned LEB128 encoding");
+        });
+        Check("direct-wasm-leb128-signed", () =>
+        {
+            var bytes = new List<byte>();
+            Compiler.DirectWasmEncoding.WriteS32(bytes, -123456);
+            if (!bytes.SequenceEqual(new byte[] { 0xc0, 0xbb, 0x78 })) throw new Exception("incorrect signed LEB128 encoding");
+        });
+        Check("direct-wasm-module-sections", () =>
+        {
+            var module = new Compiler.DirectWasmModuleBuilder();
+            int function = module.ReserveFunction("answer", [], [Compiler.DirectWasmValueType.I64]);
+            module.GetFunctionBody(function).I64Const(42);
+            module.ExportFunction("answer", function);
+            byte[] bytes = module.Build();
+            if (!bytes.AsSpan(0, 8).SequenceEqual(new byte[] { 0, 0x61, 0x73, 0x6d, 1, 0, 0, 0 }))
+                throw new Exception("Wasm magic/version header is invalid");
+            if (!bytes.Contains((byte)10)) throw new Exception("code section is missing");
+        });
+        Check("direct-wasm-typed-program", () =>
+        {
+            string root = Path.Combine(Path.GetTempPath(), "code-direct-wasm-test-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(root);
+            try
+            {
+                string source = Path.Combine(root, "main.code");
+                File.WriteAllText(source, "integer value = 0; foreach index in 10 then value += index; print(value == 45);");
+                var result = Compiler.ModuleCompiler.CompileFromFileWithMetadata(source, new Compiler.ModuleCompileOptions
+                {
+                    Target = Compiler.CompileTarget.VmWeb,
+                    EmitDirectWasm = true
+                });
+                if (result.DirectWasm is null || result.DirectWasm.Module.Length < 32) throw new Exception("direct module was not emitted");
+                if (result.DirectWasm.FunctionCount < 2) throw new Exception("typed functions were not emitted");
+            }
+            finally { try { Directory.Delete(root, recursive: true); } catch { } }
+        });
+        return failures;
     }
 
     private static int ExpectBytecodeFailure(string name, byte[] bytes, string expected)

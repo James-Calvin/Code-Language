@@ -8,6 +8,7 @@ const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = resolve(scriptDirectory, "..");
 const project = join(repositoryRoot, "ConsoleApp1", "ConsoleApp1.csproj");
 const installedCompiler = process.env.CODE_COMPILER?.trim() || null;
+const webBackend = process.env.CODE_WEB_BACKEND?.trim() || "wasm-vm";
 const temporaryRoot = mkdtempSync(join(tmpdir(), "code-worker-browser-"));
 let workloads = [
   { name: "web-scene", source: join(repositoryRoot, "ConsoleApp1", "examples", "web_scene.code") },
@@ -168,12 +169,15 @@ async function runBrowserSmoke(browser, pageUrl, workloadName) {
     }, 20_000, `${browser.name} ${workloadName} sustained updates`);
     if (sustainedResult.draws < 1) throw new Error(`${browser.name} ${workloadName} completed no draws.`);
     const profileResult = await connection.send("Runtime.evaluate", {
-      expression: "(async () => { const started = CodeRuntime.profile.start(); const isPromise = typeof started?.then === 'function'; await started; await new Promise(resolve => setTimeout(resolve, 150)); const report = await CodeRuntime.profile.report(); await CodeRuntime.profile.stop(); return { isPromise, hasOpcodes: report.instructionCount > 0 && report.opcodes.length > 0, hasFunctions: report.functions.length > 0, hasHostCalls: report.hostCalls.length > 0, runtime: report.runtime }; })()",
+      expression: "(async () => { const started = CodeRuntime.profile.start(); const isPromise = typeof started?.then === 'function'; await started; await new Promise(resolve => setTimeout(resolve, 150)); const report = await CodeRuntime.profile.report(); await CodeRuntime.profile.stop(); return { isPromise, instructionCount: report.instructionCount, opcodeCount: report.opcodes.length, hasFunctions: report.functions.length > 0, hasHostCalls: report.hostCalls.length > 0, runtime: report.runtime, backend: report.backend ?? report.runtime }; })()",
       awaitPromise: true,
       returnByValue: true
     });
     const profile = profileResult.result?.value;
-    if (!profile?.isPromise || !profile?.hasOpcodes || !profile?.hasFunctions || !profile?.hasHostCalls || profile?.runtime !== "rust-wasm") {
+    const profileShapeValid = webBackend === "direct-wasm"
+      ? profile?.instructionCount === 0 && profile?.opcodeCount === 0 && profile?.backend === "direct-wasm"
+      : profile?.instructionCount > 0 && profile?.opcodeCount > 0 && profile?.runtime === "rust-wasm";
+    if (!profile?.isPromise || !profileShapeValid || !profile?.hasFunctions || !profile?.hasHostCalls) {
       throw new Error(`${browser.name} worker profiler API did not return asynchronous reports.`);
     }
     const beforeVisibility = sustainedResult.updates;
@@ -209,11 +213,11 @@ try {
   for (const workload of workloads) {
     const outputDirectory = join(temporaryRoot, workload.name);
     if (installedCompiler) {
-      execFileSync(installedCompiler, [workload.source, "-o", outputDirectory], { cwd: repositoryRoot, stdio: "ignore" });
+      execFileSync(installedCompiler, [workload.source, "-o", outputDirectory, "--web-backend", webBackend], { cwd: repositoryRoot, stdio: "ignore" });
     } else {
       execFileSync("dotnet", [
         "run", "--project", project, "-c", "Release", "--no-build", "--",
-        workload.source, "-o", outputDirectory
+        workload.source, "-o", outputDirectory, "--web-backend", webBackend
       ], { cwd: repositoryRoot, stdio: "ignore" });
     }
     const pageUrl = pathToFileURL(join(outputDirectory, "index.html")).href;

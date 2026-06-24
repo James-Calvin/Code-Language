@@ -453,6 +453,7 @@ Current implementation output:
 - A base64 copy of the Wasm runtime is embedded as a `file://` fallback; hosted apps use the separate Wasm file without base64 expansion.
 - `app.bytecode` is emitted only when the maintainer/debug flag `--emit-web-bytecode` is passed.
 - The required generated-app VM is Rust/Wasm and runs inside the worker. It uses decoded numeric instructions, contiguous operand/local/global/call stacks, 16-byte tagged values, slot-backed fields, handle-backed collections, and tracing garbage collection. JavaScript retains scheduling and browser API ownership and remains the reference VM for conformance.
+- Maintainer builds may select `--web-backend direct-wasm`, which additionally emits `code-app.wasm` with an embedded direct-file fallback. This typed backend executes lifecycle/application functions natively in Wasm but remains gated; the public default does not switch until tracing reclamation, bytecode-free host metadata, and complete parity pass.
 
 Required behavior:
 - Opening the generated `index.html` runs the app directly.

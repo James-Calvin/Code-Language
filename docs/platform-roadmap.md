@@ -132,6 +132,7 @@ Host calls are explicit, capability-scoped bindings provided by the runtime host
 ### 2.6 Backend policy (WebGPU compatibility)
 - Current JS web runtime does **not** block a WebGPU future; it is a bootstrap runtime for ABI bring-up.
 - Generated apps now use the gated Rust/Wasm bytecode-v10 VM in the existing worker. The JavaScript VM remains the reference/conformance path; browser scheduling and Canvas/audio/input ownership remain JavaScript responsibilities.
+- A typed direct Code-to-Wasm backend is available behind the maintainer `--web-backend direct-wasm` selector. It emits `code-app.wasm`, uses native Wasm functions/control flow and typed linear-memory layouts, and passed its CPU gate; it is not the default until tracing reclamation, bytecode-free host metadata, and complete error/fuzz parity pass.
 - The long-term design keeps `engine.*` APIs backend-agnostic and maps them per target/backend.
 - Web target backend preference:
   1) WebGPU when available,

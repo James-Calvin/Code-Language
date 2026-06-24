@@ -1,6 +1,6 @@
 # Release Process
 
-Current release target: `0.1.0-alpha.9`.
+Current release target: `0.1.0-alpha.10`.
 
 This is a maintainer-facing document. User install and quickstart instructions live in the README.
 
@@ -31,6 +31,8 @@ node scripts/benchmark-scheduler.mjs
 node scripts/test-web-vm.mjs
 node scripts/test-rust-wasm.mjs
 node scripts/benchmark-rust-wasm.mjs
+node scripts/test-direct-wasm.mjs
+node scripts/benchmark-direct-wasm.mjs
 node scripts/test-generated-worker.mjs
 ```
 
@@ -122,7 +124,7 @@ Checks:
 5. Run `./scripts/install-local.ps1 -SkipTests` as the final local pass gate.
 6. Run `./scripts/release.ps1` for all release runtimes.
 7. Smoke test at least the Windows zip locally.
-8. Commit and tag, for example `v0.1.0-alpha.9`.
+8. Commit and tag, for example `v0.1.0-alpha.10`.
 9. Create a GitHub prerelease.
 10. Upload all `code-compiler-*.zip` files and `SHA256SUMS.txt`.
 11. Test `install.ps1` from the GitHub release before announcing.

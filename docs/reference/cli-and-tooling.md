@@ -72,6 +72,7 @@ These flags remain supported for compatibility and compiler development, but the
 | `--target vm-native\|vm-web` | Select bytecode compile/run target for internal target checks |
 | `--compile-only` | Compile bytecode without running in native/internal modes |
 | `--emit-web-bytecode` | Also emit `app.bytecode` when building a web app |
+| `--web-backend wasm-vm\|direct-wasm` | Select the generated-web backend; direct Wasm is a gated maintainer preview |
 | `--disasm <file.bytecode\|file.codelib>` | Disassemble bytecode or library artifacts |
 | `--dump-tokens <file.code>` | Print lexer tokens |
 | `--dump-module-graph [out]` | Print or write the module graph |

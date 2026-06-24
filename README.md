@@ -114,6 +114,12 @@ encoded by the worker, replayed on the main-thread canvas, and remains limited
 by browser/display refresh. `Runtime.useContinuousUpdates()` is an explicit
 opt-in for applications designed around measured update deltas.
 
+Maintainers can select the gated typed backend with `--web-backend direct-wasm`.
+It emits `code-app.wasm` beside `code-runtime.wasm` and compiles application
+control flow and calls to native Wasm rather than interpreting bytecode. This
+backend is experimental until its tracing-memory and bytecode-free host ABI
+gates pass; the Rust/Wasm VM remains the public default.
+
 ## For Maintainers
 
 Maintainer build, test, and release commands live in [docs/release.md](docs/release.md).

@@ -4010,8 +4010,201 @@ export class WasmWebVm {
   }
 }
 
+class DirectWasmProfiler {
+  constructor(vm, enabled = false) {
+    this.vm = vm;
+    this.enabled = enabled;
+    this.reset();
+  }
+  start() { this.reset(); this.enabled = true; this.startedAtMs = performance.now(); return this; }
+  stop() { this.enabled = false; return this.report(); }
+  reset() { this.startedAtMs = performance.now(); this.functions = new Map(); this.hosts = new Map(); return this; }
+  recordFunction(name, elapsedMs) {
+    if (!this.enabled) return;
+    const value = this.functions.get(name) ?? { name, calls: 0, inclusiveMs: 0, selfMs: 0 };
+    value.calls += 1; value.inclusiveMs += elapsedMs; value.selfMs += elapsedMs;
+    this.functions.set(name, value);
+  }
+  recordHost(symbol, elapsedMs) {
+    if (!this.enabled) return;
+    const value = this.hosts.get(symbol) ?? { symbol, calls: 0, totalMs: 0 };
+    value.calls += 1; value.totalMs += elapsedMs;
+    this.hosts.set(symbol, value);
+  }
+  report() {
+    return {
+      backend: "direct-wasm",
+      runtime: "direct-wasm",
+      elapsedMs: performance.now() - this.startedAtMs,
+      instructionCount: 0,
+      decodedInstructionCount: 0,
+      opcodes: [],
+      typedOperations: [],
+      functions: Array.from(this.functions.values()),
+      hostCalls: Array.from(this.hosts.values()),
+      allocations: { objects: 0, arrays: 0, frames: 0 },
+      stackHighWater: 0,
+      frameHighWater: 0
+    };
+  }
+}
+
+export class DirectWasmWebVm {
+  static async create(appWasmBytes, bridgeBytecode, options = {}) {
+    let adapter = null;
+    const strings = [""];
+    const stringIds = new Map([["", 0]]);
+    const stringHandle = value => {
+      const text = String(value);
+      if (stringIds.has(text)) return stringIds.get(text);
+      strings.push(text);
+      const handle = strings.length - 1;
+      stringIds.set(text, handle);
+      return handle;
+    };
+    const collections = [null];
+    const runtimeBase = {
+      string_from_utf8: (pointer, length) => {
+        const bytes = new Uint8Array(adapter.exports.memory.buffer, pointer, length);
+        return stringHandle(Utf8Decoder.decode(bytes));
+      },
+      string_concat: (left, right) => stringHandle((strings[left] ?? "") + (strings[right] ?? "")),
+      string_equal: (left, right) => (strings[left] ?? "") === (strings[right] ?? "") ? 1 : 0,
+      string_from_i32: value => stringHandle(value ? "true" : "false"),
+      string_from_i64: value => stringHandle(String(value)),
+      string_from_f64: value => stringHandle(String(value)),
+      collection_new: kind => { collections.push({ kind, items: [], map: new Map(), set: new Set() }); return collections.length - 1; },
+      collection_length: handle => BigInt(collections[handle]?.kind === 1 ? collections[handle].map.size : collections[handle]?.kind === 2 ? collections[handle].set.size : collections[handle]?.items.length ?? 0)
+    };
+    const runtimeImports = new Proxy(runtimeBase, {
+      get(target, name) {
+        if (name in target) return target[name];
+        const operation = String(name);
+        if (operation.startsWith("map_set_")) return (handle, key, value) => collections[handle].map.set(key, value);
+        if (operation.startsWith("map_get_")) return (handle, key) => collections[handle].map.get(key);
+        if (operation.startsWith("collection_add_")) return (handle, value) => {
+          const collection = collections[handle];
+          if (collection.kind === 2) collection.set.add(value); else collection.items.push(value);
+        };
+        if (operation.startsWith("collection_contains_")) return (handle, value) => {
+          const collection = collections[handle];
+          return (collection.kind === 1 ? collection.map.has(value) : collection.kind === 2 ? collection.set.has(value) : collection.items.includes(value)) ? 1 : 0;
+        };
+        if (operation.startsWith("collection_remove_")) return (handle, value) => {
+          const collection = collections[handle];
+          if (collection.kind === 1) collection.map.delete(value);
+          else if (collection.kind === 2) collection.set.delete(value);
+          else { const index = collection.items.indexOf(value); if (index >= 0) collection.items.splice(index, 1); }
+        };
+        if (operation.startsWith("collection_peek_")) return handle => {
+          const collection = collections[handle];
+          return collection.kind === 4 ? collection.items[collection.items.length - 1] : collection.items[0];
+        };
+        if (operation.startsWith("collection_pop_")) return handle => {
+          const collection = collections[handle];
+          return collection.kind === 4 ? collection.items.pop() : collection.items.shift();
+        };
+        return undefined;
+      }
+    });
+    const directPrint = value => options.output?.(String(value));
+    const hostImports = new Proxy({
+      print_i32: directPrint,
+      print_i64: directPrint,
+      print_f64: directPrint,
+      print_string: handle => directPrint(strings[handle] ?? ""),
+      panic_string: handle => { throw new Error(strings[handle] ?? "Direct-Wasm panic"); }
+    }, {
+      get(target, symbol) {
+        if (symbol in target) return target[symbol];
+        return (...args) => adapter.invokeHost(String(symbol), args);
+      }
+    });
+    const module = await WebAssembly.instantiate(appWasmBytes, { code_host: hostImports, code_runtime: runtimeImports });
+    adapter = new DirectWasmWebVm(module.instance, bridgeBytecode, strings, options);
+    return adapter;
+  }
+
+  constructor(instance, bridgeBytecode, strings, options) {
+    this.instance = instance;
+    this.exports = instance.exports;
+    this.strings = strings;
+    this.sceneInfo = options.sceneInfo;
+    this.output = typeof options.output === "function" ? options.output : line => console.log(line);
+    this.hostBridge = new WebVm(bridgeBytecode, { output: this.output, sceneHost: options.sceneHost });
+    this.profiler = new DirectWasmProfiler(this, options.profileEnabled === true);
+    if (this.profiler.enabled) this.profiler.start();
+  }
+
+  run() {
+    const status = this.exports.code_run();
+    if (status !== 0) throw new Error(`Direct-Wasm initialization failed with status ${status}.`);
+  }
+
+  createObject() { return typeof this.exports.code_scene_new === "function" ? this.exports.code_scene_new() : 0; }
+
+  invokeVoid(targetIp, _frameSize, args = []) {
+    const scene = this.sceneInfo;
+    let name;
+    let callable;
+    if (targetIp === scene.constructor.targetIp) return;
+    if (targetIp === scene.start.targetIp) { name = "start"; callable = this.exports.code_start; }
+    else if (targetIp === scene.update.targetIp) { name = "update"; callable = this.exports.code_update; }
+    else if (targetIp === scene.draw.targetIp) { name = "draw"; callable = this.exports.code_draw; }
+    else if (scene.drawHud && targetIp === scene.drawHud.targetIp) { name = "drawHud"; callable = this.exports.code_draw_hud; }
+    if (typeof callable !== "function") throw new Error(`Direct-Wasm lifecycle export is missing for bytecode offset ${targetIp}.`);
+    const startedAt = this.profiler.enabled ? performance.now() : 0;
+    if (callable.length > 0) callable(args[0] ?? 0);
+    else callable();
+    if (this.profiler.enabled) this.profiler.recordFunction(name, performance.now() - startedAt);
+  }
+
+  invokeHost(symbol, rawArguments) {
+    const binding = this.hostBridge.hostBindings.get(symbol);
+    if (!binding) throw new Error(`Direct-Wasm host binding '${symbol}' is unavailable.`);
+    const args = rawArguments.map(value => typeof value === "bigint" ? Number(value) : value);
+    this.convertHostReferences(symbol, args);
+    const startedAt = this.profiler.enabled ? performance.now() : 0;
+    const result = binding.handler(args);
+    if (this.profiler.enabled) this.profiler.recordHost(symbol, performance.now() - startedAt);
+    return this.hostReturnsI64(symbol) ? BigInt(Math.trunc(Number(result) || 0)) : Number(result) || 0;
+  }
+
+  convertHostReferences(symbol, args) {
+    const stringIndexes = {
+      "engine.window.create": [0],
+      "engine.gfx.draw_text_scene": [0, 4, 5],
+      "engine.gfx.draw_image_scene": [0],
+      "engine.gfx.draw_sprite_scene": [0],
+      "engine.audio.play_sound_scene": [0],
+      "engine.audio.play_looping_sound_scene": [0]
+    }[symbol] ?? [];
+    for (const index of stringIndexes) args[index] = this.strings[args[index]] ?? "";
+    if (symbol === "engine.gfx.draw_polygon_scene" || symbol === "engine.gfx.draw_polygon_outline_scene")
+      args[0] = this.readRealArray(args[0]);
+  }
+
+  readRealArray(pointer) {
+    if (!pointer) return [];
+    const view = new DataView(this.exports.memory.buffer);
+    const length = view.getInt32(pointer, true);
+    const data = view.getInt32(pointer + 8, true);
+    return Array.from({ length }, (_, index) => view.getFloat64(data + index * 8, true));
+  }
+
+  hostReturnsI64(symbol) {
+    return symbol.startsWith("std.time.") || symbol === "std.math.sign" ||
+      symbol === "engine.window.create" || symbol === "engine.audio.play_sound_scene" ||
+      symbol === "engine.audio.play_looping_sound_scene" ||
+      symbol === "engine.diagnostics.last_update_steps_scene" ||
+      symbol === "engine.diagnostics.last_dropped_update_steps_scene";
+  }
+
+  dispose() {}
+}
+
 export class WorkerCodeRuntimeController {
-  constructor(runtime, workerSource, bytecode, wasmBytes, sceneInfo, profileEnabled = false) {
+  constructor(runtime, workerSource, bytecode, wasmBytes, sceneInfo, profileEnabled = false, backend = "wasm-vm", appWasm = null) {
     this.runtime = runtime;
     runtime.workerController = this;
     this.sceneInfo = sceneInfo;
@@ -4042,7 +4235,10 @@ export class WorkerCodeRuntimeController {
     const transferred = sourceBytes.buffer.slice(sourceBytes.byteOffset, sourceBytes.byteOffset + sourceBytes.byteLength);
     const sourceWasm = wasmBytes instanceof Uint8Array ? wasmBytes : new Uint8Array(wasmBytes);
     const transferredWasm = sourceWasm.buffer.slice(sourceWasm.byteOffset, sourceWasm.byteOffset + sourceWasm.byteLength);
-    this.worker.postMessage({ type: "init", bytecode: transferred, wasm: transferredWasm, sceneInfo, profileEnabled }, [transferred, transferredWasm]);
+    const appSource = appWasm ? (appWasm instanceof Uint8Array ? appWasm : new Uint8Array(appWasm)) : null;
+    const transferredApp = appSource?.buffer.slice(appSource.byteOffset, appSource.byteOffset + appSource.byteLength) ?? null;
+    const transfers = transferredApp ? [transferred, transferredWasm, transferredApp] : [transferred, transferredWasm];
+    this.worker.postMessage({ type: "init", backend, bytecode: transferred, wasm: transferredWasm, appWasm: transferredApp, sceneInfo, profileEnabled }, transfers);
   }
 
   viewportSnapshot() {
@@ -4216,10 +4412,17 @@ function installCodeWorkerRuntime() {
       switch (message?.type) {
         case "init":
           runtime = new WorkerSceneRuntime((value, transfer = []) => self.postMessage(value, transfer));
-          vm = await WasmWebVm.create(new Uint8Array(message.bytecode), message.wasm, {
-            output: line => self.postMessage({ type: "output", line: String(line) }),
-            sceneHost: runtime, profileEnabled: message.profileEnabled === true
-          });
+          if (message.backend === "direct-wasm") {
+            vm = await DirectWasmWebVm.create(message.appWasm, new Uint8Array(message.bytecode), {
+              output: line => self.postMessage({ type: "output", line: String(line) }),
+              sceneHost: runtime, sceneInfo: message.sceneInfo, profileEnabled: message.profileEnabled === true
+            });
+          } else {
+            vm = await WasmWebVm.create(new Uint8Array(message.bytecode), message.wasm, {
+              output: line => self.postMessage({ type: "output", line: String(line) }),
+              sceneHost: runtime, profileEnabled: message.profileEnabled === true
+            });
+          }
           runtime.initializeWorkerScene(vm, message.sceneInfo);
           self.postMessage({ type: "ready" });
           break;

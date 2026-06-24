@@ -33,7 +33,8 @@ internal static class WebBuildPipeline
         string? outputDirectory,
         bool traceLinker = false,
         Action<string>? traceWriter = null,
-        bool emitWebBytecode = false)
+        bool emitWebBytecode = false,
+        bool directWasmBackend = false)
     {
         string fullSourcePath = Path.GetFullPath(sourcePath);
         var options = new ModuleCompileOptions
@@ -42,7 +43,8 @@ internal static class WebBuildPipeline
             TraceLinker = traceLinker,
             TraceWriter = traceWriter,
             EnableGraphicalAppProfile = true,
-            EnableImpliedEngineImports = true
+            EnableImpliedEngineImports = true,
+            EmitDirectWasm = directWasmBackend
         };
 
         var result = ModuleCompiler.CompileFromFileWithMetadata(fullSourcePath, options);
@@ -69,11 +71,19 @@ internal static class WebBuildPipeline
         string runtimeScript = PrepareRuntimeScriptForInlineModule(File.ReadAllText(ResolveWebRuntimeScriptPath(fullSourcePath)));
         byte[] wasmRuntime = File.ReadAllBytes(ResolveWasmRuntimePath(fullSourcePath));
         File.WriteAllBytes(Path.Combine(resolvedOutputDirectory, "code-runtime.wasm"), wasmRuntime);
+        byte[]? appWasm = result.DirectWasm?.Module;
+        string appWasmPath = Path.Combine(resolvedOutputDirectory, "code-app.wasm");
+        if (directWasmBackend)
+            File.WriteAllBytes(appWasmPath, appWasm ?? throw new InvalidOperationException("Direct-Wasm compilation did not produce an application module."));
+        else if (File.Exists(appWasmPath))
+            File.Delete(appWasmPath);
         string html = BuildIndexHtml(
             manifest?.Name ?? Path.GetFileNameWithoutExtension(fullSourcePath),
             result.WebScene,
             Convert.ToBase64String(result.Bytecode),
             Convert.ToBase64String(wasmRuntime),
+            appWasm is null ? null : Convert.ToBase64String(appWasm),
+            directWasmBackend,
             runtimeScript);
 
         string indexHtmlPath = Path.Combine(resolvedOutputDirectory, "index.html");
@@ -182,6 +192,8 @@ internal static class WebBuildPipeline
         WebSceneMetadata webScene,
         string bytecodeBase64,
         string wasmRuntimeBase64,
+        string? appWasmBase64,
+        bool directWasmBackend,
         string runtimeScript)
     {
         string pageTitle = string.IsNullOrWhiteSpace(title) ? "Code App" : title.Trim();
@@ -206,6 +218,8 @@ internal static class WebBuildPipeline
         }, new JsonSerializerOptions { WriteIndented = true });
         string bytecodeJson = JsonSerializer.Serialize(bytecodeBase64);
         string wasmRuntimeJson = JsonSerializer.Serialize(wasmRuntimeBase64);
+        string appWasmJson = JsonSerializer.Serialize(appWasmBase64 ?? string.Empty);
+        string backendJson = JsonSerializer.Serialize(directWasmBackend ? "direct-wasm" : "wasm-vm");
         string workerRuntimeJson = JsonSerializer.Serialize(runtimeScript + "\ninstallCodeWorkerRuntime();\n");
 
         return
@@ -223,6 +237,8 @@ const APP_TITLE = {{titleJson}};
 const APP_METADATA = {{metadataJson}};
 const APP_BYTECODE_BASE64 = {{bytecodeJson}};
 const CODE_RUNTIME_WASM_BASE64 = {{wasmRuntimeJson}};
+const CODE_APP_WASM_BASE64 = {{appWasmJson}};
+const CODE_WEB_BACKEND = {{backendJson}};
 const CODE_WORKER_SOURCE = {{workerRuntimeJson}};
 
 {{runtimeScript}}
@@ -246,8 +262,19 @@ try {
   } catch {
     wasmBytes = decodeBase64Bytes(CODE_RUNTIME_WASM_BASE64);
   }
+  let appWasmBytes = null;
+  if (CODE_WEB_BACKEND === "direct-wasm") {
+    try {
+      if (window.location.protocol === "file:") throw new Error("Use embedded application Wasm for direct-file execution.");
+      const response = await fetch("code-app.wasm");
+      if (!response.ok) throw new Error("Application Wasm request failed with status " + response.status + ".");
+      appWasmBytes = new Uint8Array(await response.arrayBuffer());
+    } catch {
+      appWasmBytes = decodeBase64Bytes(CODE_APP_WASM_BASE64);
+    }
+  }
   const profileEnabled = new URLSearchParams(window.location.search).get("code-profile") === "1";
-  const controller = new WorkerCodeRuntimeController(runtime, CODE_WORKER_SOURCE, bytecode, wasmBytes, APP_METADATA.scene, profileEnabled);
+  const controller = new WorkerCodeRuntimeController(runtime, CODE_WORKER_SOURCE, bytecode, wasmBytes, APP_METADATA.scene, profileEnabled, CODE_WEB_BACKEND, appWasmBytes);
   window.CodeRuntime = {
     vm: null,
     runtime,

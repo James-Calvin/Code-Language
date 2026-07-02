@@ -32,7 +32,11 @@ pair traversal and runs 130 objects without a broad phase. Run
 common display refresh rates. The scheduler report includes update rate,
 completed draws, update work, discarded steps, and 50 ms main-thread task
 counts. Use `node scripts/test-generated-worker.mjs` for the real generated
-worker path in installed Chrome and Edge.
+worker path in installed Chrome and Edge. Use
+`node scripts/test-browser-compat.mjs` for the direct-Wasm modern-browser
+compatibility lane; it builds multiple generated apps, serves them locally,
+automates local Chromium-family desktop browsers, and writes `mobile-report.html`
+for manual iOS/Android browser checks.
 
 Ball-style physics must integrate `Diagnostics.updateDeltaMilliseconds()`.
 `lastFrameIntervalMilliseconds()` describes draw spacing and is not a physics
@@ -90,6 +94,7 @@ Run the typed direct-Wasm stop/go gate and executable parity suite with:
 ```powershell
 node scripts/benchmark-direct-wasm.mjs
 node scripts/test-direct-wasm.mjs
+node scripts/test-browser-compat.mjs
 ```
 
 The direct benchmark compiles identical source to bytecode and native Wasm,
@@ -99,6 +104,16 @@ timer resolution, and reports compilation/startup separately. Adoption requires
 and CV at or below 0.15. The alpha.10 development pass measured 46.5x
 geometrically and 60.5x on `ball_regression`; these machine-specific results do
 not override conformance and memory-management gates.
+
+Diagnostic no-GC direct-Wasm browser runs are available with:
+
+```powershell
+$env:CODE_DIRECT_WASM_DISABLE_GC = "1"
+node scripts/test-browser-compat.mjs --keep
+```
+
+This mode is allowed to leak memory and should be used only for diagnostics,
+performance comparison, and future no-GC profile work.
 
 The earlier C# Native-AOT experiment remains available after installing the
 `.NET wasm-tools` workload. Run `node scripts/benchmark-csharp-wasm.mjs`; it reports AOT build

@@ -274,6 +274,35 @@ internal static class TestHarness
             }
             finally { try { Directory.Delete(root, recursive: true); } catch { } }
         });
+        Check("direct-wasm-disable-gc-option", () =>
+        {
+            string root = Path.Combine(Path.GetTempPath(), "code-direct-wasm-gc-option-test-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(root);
+            try
+            {
+                string source = Path.Combine(root, "main.code");
+                File.WriteAllText(source, "function start() {} function update() {} function draw() { Draw.clearScreen(Colors.rgb(0, 0, 0)); }");
+                var result = Compiler.ModuleCompiler.CompileFromFileWithMetadata(source, new Compiler.ModuleCompileOptions
+                {
+                    Target = Compiler.CompileTarget.VmWeb,
+                    EnableGraphicalAppProfile = true,
+                    EnableImpliedEngineImports = true,
+                    EmitDirectWasm = true,
+                    DisableDirectWasmGarbageCollection = true
+                });
+                if (result.DirectWasm is null) throw new Exception("direct module was not emitted");
+                if (!result.DirectWasm.GarbageCollectionDisabled) throw new Exception("direct module did not retain disabled-GC metadata");
+            }
+            finally { try { Directory.Delete(root, recursive: true); } catch { } }
+        });
+        Check("direct-wasm-disable-gc-cli-validation", () =>
+        {
+            string? error = Program.ValidateDirectWasmGarbageCollectionFlag(disableGarbageCollection: true, directWasmBackend: false);
+            if (string.IsNullOrWhiteSpace(error) || !error.Contains("--web-backend direct-wasm", StringComparison.Ordinal))
+                throw new Exception("missing validation error for default backend");
+            if (Program.ValidateDirectWasmGarbageCollectionFlag(disableGarbageCollection: true, directWasmBackend: true) is not null)
+                throw new Exception("direct-wasm backend should accept disabled GC");
+        });
         return failures;
     }
 
@@ -3762,6 +3791,49 @@ export object MainScene {
             var outputs = BuildWebApp(
                 new Dictionary<string, string>
                 {
+                    ["main.code"] =
+@"function start() {
+}
+
+function update() {
+}
+
+function draw() {
+  Draw.clearScreen(Colors.rgb(0, 0, 0));
+}"
+                },
+                "main.code",
+                directWasmBackend: true,
+                disableDirectWasmGarbageCollection: true);
+
+            bool matched =
+                outputs.IndexHtmlExists &&
+                outputs.OutputFiles.Any(path => string.Equals(path.Replace('\\', '/'), "code-app.wasm", StringComparison.OrdinalIgnoreCase)) &&
+                outputs.IndexHtml.Contains("const CODE_WEB_BACKEND = \"direct-wasm\"", StringComparison.Ordinal) &&
+                outputs.IndexHtml.Contains("const CODE_DIRECT_WASM_OPTIONS = {\"garbageCollectionDisabled\":true", StringComparison.Ordinal) &&
+                outputs.IndexHtml.Contains("garbageCollectionMode\":\"disabled\"", StringComparison.Ordinal);
+
+            if (!matched)
+            {
+                failures++;
+                Console.WriteLine("[FAIL] web-build-direct-wasm-disable-gc: generated web app did not include expected direct-Wasm GC metadata");
+            }
+            else
+            {
+                Console.WriteLine("[PASS] web-build-direct-wasm-disable-gc");
+            }
+        }
+        catch (Exception ex)
+        {
+            failures++;
+            Console.WriteLine($"[FAIL] web-build-direct-wasm-disable-gc: threw {ex.GetType().Name} - {ex.Message}");
+        }
+
+        try
+        {
+            var outputs = BuildWebApp(
+                new Dictionary<string, string>
+                {
                     ["helper.code"] =
 @"export object HelperDrawable {
   Color color;
@@ -4941,6 +5013,48 @@ print(quick);";
             Console.WriteLine($"[FAIL] web-runtime-audio-host-bindings: {ex.GetType().Name} - {ex.Message}");
         }
 
+        try
+        {
+            string runtimePath = Path.Combine(Directory.GetCurrentDirectory(), "web-runtime", "code-vm-web.js");
+            string runtimeText = File.ReadAllText(runtimePath);
+            bool hasDirectWasmGcMetadata =
+                runtimeText.Contains("garbageCollectionDisabled", StringComparison.Ordinal) &&
+                runtimeText.Contains("garbageCollectionEnabled", StringComparison.Ordinal) &&
+                runtimeText.Contains("garbageCollectionMode", StringComparison.Ordinal) &&
+                runtimeText.Contains("directWasmOptions", StringComparison.Ordinal);
+            if (!hasDirectWasmGcMetadata)
+                throw new Exception("Web runtime is missing direct-Wasm GC mode profiler metadata.");
+
+            Console.WriteLine("[PASS] web-runtime-direct-wasm-gc-metadata");
+        }
+        catch (Exception ex)
+        {
+            failures++;
+            Console.WriteLine($"[FAIL] web-runtime-direct-wasm-gc-metadata: {ex.GetType().Name} - {ex.Message}");
+        }
+
+        try
+        {
+            string scriptPath = Path.Combine(Directory.GetCurrentDirectory(), "scripts", "test-browser-compat.mjs");
+            string scriptText = File.ReadAllText(scriptPath);
+            bool hasCompatibilitySuite =
+                scriptText.Contains("CODE_BROWSER_COMPAT_BACKEND", StringComparison.Ordinal) &&
+                scriptText.Contains("CODE_DIRECT_WASM_DISABLE_GC", StringComparison.Ordinal) &&
+                scriptText.Contains("mobile-report.html", StringComparison.Ordinal) &&
+                scriptText.Contains("browser-compat-report.json", StringComparison.Ordinal) &&
+                scriptText.Contains("--web-backend", StringComparison.Ordinal) &&
+                scriptText.Contains("direct-wasm", StringComparison.Ordinal);
+            if (!hasCompatibilitySuite)
+                throw new Exception("Browser compatibility suite is missing expected direct-Wasm report hooks.");
+
+            Console.WriteLine("[PASS] browser-compat-suite-static-contract");
+        }
+        catch (Exception ex)
+        {
+            failures++;
+            Console.WriteLine($"[FAIL] browser-compat-suite-static-contract: {ex.GetType().Name} - {ex.Message}");
+        }
+
         return failures;
     }
 
@@ -5466,7 +5580,9 @@ print(sum);";
         IReadOnlyDictionary<string, string> files,
         string entryRelativePath,
         string? outputDirectory = null,
-        bool emitWebBytecode = false)
+        bool emitWebBytecode = false,
+        bool directWasmBackend = false,
+        bool disableDirectWasmGarbageCollection = false)
     {
         string tempRoot = Path.Combine(Path.GetTempPath(), "code-web-build-tests-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tempRoot);
@@ -5482,7 +5598,9 @@ print(sum);";
             var result = WebBuildPipeline.Build(
                 entryPath,
                 resolvedOutputDirectory,
-                emitWebBytecode: emitWebBytecode);
+                emitWebBytecode: emitWebBytecode,
+                directWasmBackend: directWasmBackend,
+                disableDirectWasmGarbageCollection: disableDirectWasmGarbageCollection);
             bool indexHtmlExists = File.Exists(result.IndexHtmlPath);
             string bytecodePath = result.BytecodePath ?? Path.Combine(result.OutputDirectory, "app.bytecode");
             bool bytecodeExists = File.Exists(bytecodePath);

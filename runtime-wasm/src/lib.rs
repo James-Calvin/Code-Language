@@ -171,6 +171,8 @@ struct Vm {
     field_count: usize,
     string_pool: Vec<Value>,
     strings: Vec<Vec<u8>>,
+    free_strings: Vec<usize>,
+    string_free: Vec<u8>,
     types: Vec<TypeInfo>,
     stack: Vec<Value>,
     stack_pointer: usize,
@@ -228,6 +230,7 @@ impl Vm {
             strings.push(text);
             string_pool.push(Value::handle(TAG_STRING, handle));
         }
+        let string_free = vec![0; strings.len()];
         Self {
             host_context: 0,
             instructions: artifact.instructions,
@@ -238,6 +241,8 @@ impl Vm {
             field_count: artifact.field_count,
             string_pool,
             strings,
+            free_strings: Vec::new(),
+            string_free,
             types: artifact.types,
             debug_entries: artifact.debug_entries,
             profile_functions: vec![FunctionProfile::default(); function_count],
@@ -287,8 +292,16 @@ impl Vm {
 
     fn allocate_string(&mut self, text: Vec<u8>) -> Value {
         self.allocations_since_gc += 1;
-        let handle = self.strings.len();
-        self.strings.push(text);
+        let handle = if let Some(reused) = self.free_strings.pop() {
+            self.strings[reused] = text;
+            self.string_free[reused] = 0;
+            reused
+        } else {
+            let next = self.strings.len();
+            self.strings.push(text);
+            self.string_free.push(0);
+            next
+        };
         Value::handle(TAG_STRING, handle)
     }
 
@@ -426,20 +439,36 @@ impl Vm {
                 TAG_RECORD => if let Some(values) = self.records.get(handle) { work.extend_from_slice(values); },
                 TAG_MAP => if let Some(values) = self.maps.get(handle) { for (key, value) in values { work.push(*key); work.push(*value); } },
                 TAG_SET => if let Some(values) = self.sets.get(handle) { work.extend_from_slice(values); },
-                TAG_QUEUE => if let Some(values) = self.queues.get(handle) { work.extend_from_slice(values); },
+                TAG_QUEUE => if let Some(values) = self.queues.get(handle) {
+                    let head = self.queue_heads.get(handle).copied().unwrap_or(0).min(values.len());
+                    work.extend_from_slice(&values[head..]);
+                },
                 TAG_STACK => if let Some(values) = self.value_stacks.get(handle) { work.extend_from_slice(values); },
                 TAG_FALLIBLE => if let Some((_, value, code, message)) = self.fallibles.get(handle) { work.push(*value); work.push(*code); work.push(*message); },
                 _ => {}
             }
         }
 
-        for (index, value) in self.strings.iter_mut().enumerate() { if !marked.contains(&(TAG_STRING, index)) { value.clear(); value.shrink_to_fit(); } }
+        for (index, value) in self.strings.iter_mut().enumerate() {
+            if !marked.contains(&(TAG_STRING, index)) && self.string_free.get(index).copied().unwrap_or(0) == 0 {
+                value.clear();
+                value.shrink_to_fit();
+                self.string_free[index] = 1;
+                self.free_strings.push(index);
+            }
+        }
         for (index, value) in self.arrays.iter_mut().enumerate() { if !marked.contains(&(TAG_ARRAY, index)) { value.clear(); value.shrink_to_fit(); } }
         for (index, value) in self.objects.iter_mut().enumerate() { if !marked.contains(&(TAG_OBJECT, index)) { value.clear(); value.shrink_to_fit(); } }
         for (index, value) in self.records.iter_mut().enumerate() { if !marked.contains(&(TAG_RECORD, index)) { value.clear(); value.shrink_to_fit(); } }
         for (index, value) in self.maps.iter_mut().enumerate() { if !marked.contains(&(TAG_MAP, index)) { value.clear(); value.shrink_to_fit(); } }
         for (index, value) in self.sets.iter_mut().enumerate() { if !marked.contains(&(TAG_SET, index)) { value.clear(); value.shrink_to_fit(); } }
-        for (index, value) in self.queues.iter_mut().enumerate() { if !marked.contains(&(TAG_QUEUE, index)) { value.clear(); value.shrink_to_fit(); } }
+        for (index, value) in self.queues.iter_mut().enumerate() {
+            if !marked.contains(&(TAG_QUEUE, index)) {
+                value.clear();
+                value.shrink_to_fit();
+                if let Some(head) = self.queue_heads.get_mut(index) { *head = 0; }
+            }
+        }
         for (index, value) in self.value_stacks.iter_mut().enumerate() { if !marked.contains(&(TAG_STACK, index)) { value.clear(); value.shrink_to_fit(); } }
         for (index, value) in self.fallibles.iter_mut().enumerate() {
             if !marked.contains(&(TAG_FALLIBLE, index)) { *value = (false, Value::default(), Value::default(), Value::default()); }
@@ -1598,6 +1627,41 @@ mod tests {
         assert_eq!(vm.strings[rooted.payload as usize], b"rooted");
         assert!(vm.strings[unreachable.payload as usize].is_empty());
         assert_eq!(vm.garbage_collections, 1);
+    }
+
+    #[test]
+    fn tracing_gc_does_not_keep_dequeued_queue_values_alive() {
+        let parsed = parse(&artifact(&[0xFF])).unwrap();
+        let mut vm = Vm::new(parsed);
+        let dequeued = vm.allocate_string(b"dequeued".to_vec());
+        let queue_handle = vm.queues.len();
+        vm.queues.push(vec![dequeued]);
+        vm.queue_heads.push(1);
+        vm.globals[0] = Value::handle(TAG_QUEUE, queue_handle);
+        vm.collect_garbage();
+        assert!(
+            vm.strings[dequeued.payload as usize].is_empty(),
+            "dequeued queue entries should not be traced as live GC roots"
+        );
+    }
+
+    #[test]
+    fn tracing_gc_reuses_unreachable_string_slots() {
+        let parsed = parse(&artifact(&[0xFF])).unwrap();
+        let mut vm = Vm::new(parsed);
+        let baseline = vm.strings.len();
+        let allocation_count = 4096;
+        for cycle in 0..3 {
+            for index in 0..allocation_count {
+                vm.allocate_string(format!("cycle-{cycle}-{index}").into_bytes());
+            }
+            vm.collect_garbage();
+            assert!(
+                vm.strings.len() <= baseline + allocation_count,
+                "unreachable string slots should be reused after GC instead of growing from {baseline} to {}",
+                vm.strings.len()
+            );
+        }
     }
 
     #[test]

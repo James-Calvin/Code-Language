@@ -18,6 +18,10 @@ Windows:
 irm https://raw.githubusercontent.com/James-Calvin/Code-Language/master/install.ps1 | iex
 ```
 
+The installer writes to `$HOME\.code-language\bin`, adds that folder to your
+user `PATH`, and updates the current PowerShell session when possible. If an
+already-open terminal still cannot find `compiler`, open a new terminal.
+
 macOS/Linux:
 
 ```sh
@@ -116,9 +120,21 @@ opt-in for applications designed around measured update deltas.
 
 Maintainers can select the gated typed backend with `--web-backend direct-wasm`.
 It emits `code-app.wasm` beside `code-runtime.wasm` and compiles application
-control flow and calls to native Wasm rather than interpreting bytecode. This
-backend is experimental until its tracing-memory and bytecode-free host ABI
-gates pass; the Rust/Wasm VM remains the public default.
+control flow and calls to native Wasm rather than interpreting bytecode. Direct
+Wasm is the primary compiler/runtime focus, but the Rust/Wasm VM remains the
+public default until the browser compatibility, memory behavior, bytecode-free
+host metadata, and error/fuzz parity gates pass. Direct-Wasm diagnostic builds
+may also pass `--disable-garbage-collection`; this is intentionally
+direct-Wasm-only and may leak memory.
+
+Run the modern-browser compatibility suite with:
+
+```powershell
+node scripts/test-browser-compat.mjs
+```
+
+The suite automates local Chromium-family desktop browsers and writes a
+mobile/manual report page for iOS and Android browser checks.
 
 ## For Maintainers
 

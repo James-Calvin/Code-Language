@@ -1,10 +1,16 @@
 namespace ConsoleApp1.Compiler;
 
-sealed record DirectWasmCompilation(byte[] Module, int FunctionCount, int GlobalCount, int TypeCount);
+sealed record DirectWasmCompilation(
+    byte[] Module,
+    int FunctionCount,
+    int GlobalCount,
+    int TypeCount,
+    bool GarbageCollectionDisabled);
 
 sealed class DirectWasmCompiler
 {
     private readonly TypedProgram _program;
+    private readonly bool _garbageCollectionDisabled;
     private readonly DirectWasmModuleBuilder _module = new();
     private readonly Dictionary<string, DirectFunction> _functions = new(StringComparer.Ordinal);
     private readonly Dictionary<string, DirectGlobal> _globals = new(StringComparer.Ordinal);
@@ -35,7 +41,11 @@ sealed class DirectWasmCompiler
     private int _runFunction;
     private int _sceneFactory = -1;
 
-    public DirectWasmCompiler(TypedProgram program) => _program = program;
+    public DirectWasmCompiler(TypedProgram program, bool garbageCollectionDisabled = false)
+    {
+        _program = program;
+        _garbageCollectionDisabled = garbageCollectionDisabled;
+    }
 
     public DirectWasmCompilation Compile()
     {
@@ -65,7 +75,7 @@ sealed class DirectWasmCompiler
         EmitSceneFactory();
         EmitRun();
         var module = _module.Build();
-        return new DirectWasmCompilation(module, _functions.Count + 2, _globals.Count, _objects.Count);
+        return new DirectWasmCompilation(module, _functions.Count + 2, _globals.Count, _objects.Count, _garbageCollectionDisabled);
     }
 
     private void ClassifyProgram()

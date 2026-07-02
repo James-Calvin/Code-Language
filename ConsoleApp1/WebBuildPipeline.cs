@@ -34,7 +34,8 @@ internal static class WebBuildPipeline
         bool traceLinker = false,
         Action<string>? traceWriter = null,
         bool emitWebBytecode = false,
-        bool directWasmBackend = false)
+        bool directWasmBackend = false,
+        bool disableDirectWasmGarbageCollection = false)
     {
         string fullSourcePath = Path.GetFullPath(sourcePath);
         var options = new ModuleCompileOptions
@@ -44,7 +45,8 @@ internal static class WebBuildPipeline
             TraceWriter = traceWriter,
             EnableGraphicalAppProfile = true,
             EnableImpliedEngineImports = true,
-            EmitDirectWasm = directWasmBackend
+            EmitDirectWasm = directWasmBackend,
+            DisableDirectWasmGarbageCollection = disableDirectWasmGarbageCollection
         };
 
         var result = ModuleCompiler.CompileFromFileWithMetadata(fullSourcePath, options);
@@ -84,6 +86,7 @@ internal static class WebBuildPipeline
             Convert.ToBase64String(wasmRuntime),
             appWasm is null ? null : Convert.ToBase64String(appWasm),
             directWasmBackend,
+            result.DirectWasm?.GarbageCollectionDisabled == true,
             runtimeScript);
 
         string indexHtmlPath = Path.Combine(resolvedOutputDirectory, "index.html");
@@ -194,6 +197,7 @@ internal static class WebBuildPipeline
         string wasmRuntimeBase64,
         string? appWasmBase64,
         bool directWasmBackend,
+        bool directWasmGarbageCollectionDisabled,
         string runtimeScript)
     {
         string pageTitle = string.IsNullOrWhiteSpace(title) ? "Code App" : title.Trim();
@@ -220,6 +224,11 @@ internal static class WebBuildPipeline
         string wasmRuntimeJson = JsonSerializer.Serialize(wasmRuntimeBase64);
         string appWasmJson = JsonSerializer.Serialize(appWasmBase64 ?? string.Empty);
         string backendJson = JsonSerializer.Serialize(directWasmBackend ? "direct-wasm" : "wasm-vm");
+        string directWasmOptionsJson = JsonSerializer.Serialize(new
+        {
+            garbageCollectionDisabled = directWasmGarbageCollectionDisabled,
+            garbageCollectionMode = directWasmGarbageCollectionDisabled ? "disabled" : "bump"
+        });
         string workerRuntimeJson = JsonSerializer.Serialize(runtimeScript + "\ninstallCodeWorkerRuntime();\n");
 
         return
@@ -239,6 +248,7 @@ const APP_BYTECODE_BASE64 = {{bytecodeJson}};
 const CODE_RUNTIME_WASM_BASE64 = {{wasmRuntimeJson}};
 const CODE_APP_WASM_BASE64 = {{appWasmJson}};
 const CODE_WEB_BACKEND = {{backendJson}};
+const CODE_DIRECT_WASM_OPTIONS = {{directWasmOptionsJson}};
 const CODE_WORKER_SOURCE = {{workerRuntimeJson}};
 
 {{runtimeScript}}
@@ -274,7 +284,7 @@ try {
     }
   }
   const profileEnabled = new URLSearchParams(window.location.search).get("code-profile") === "1";
-  const controller = new WorkerCodeRuntimeController(runtime, CODE_WORKER_SOURCE, bytecode, wasmBytes, APP_METADATA.scene, profileEnabled, CODE_WEB_BACKEND, appWasmBytes);
+  const controller = new WorkerCodeRuntimeController(runtime, CODE_WORKER_SOURCE, bytecode, wasmBytes, APP_METADATA.scene, profileEnabled, CODE_WEB_BACKEND, appWasmBytes, CODE_DIRECT_WASM_OPTIONS);
   window.CodeRuntime = {
     vm: null,
     runtime,

@@ -45,6 +45,7 @@ internal static class Program
         bool emitWebBytecode = false;
         bool targetSpecified = false;
         bool directWasmBackend = false;
+        bool disableGarbageCollection = false;
         CompileTarget compileTarget = CompileTarget.VmNative;
 
         for (int i = 0; i < args.Length; i++)
@@ -113,6 +114,9 @@ internal static class Program
                     if (backend == "direct-wasm") directWasmBackend = true;
                     else if (backend != "wasm-vm") Fail($"Unsupported web backend '{backend}'. Use wasm-vm or direct-wasm.");
                     break;
+                case "--disable-garbage-collection":
+                    disableGarbageCollection = true;
+                    break;
                 default:
                     if (args[i].EndsWith(".bytecode", StringComparison.OrdinalIgnoreCase))
                         bytecodePath = args[i];
@@ -163,6 +167,8 @@ internal static class Program
             Fail("--emit-web-bytecode can only be used when building a web app.");
         if (directWasmBackend && codePath is null)
             Fail("--web-backend direct-wasm requires a .code input.");
+        if (ValidateDirectWasmGarbageCollectionFlag(disableGarbageCollection, directWasmBackend) is { } directGcError)
+            Fail(directGcError);
 
         if (disasmPath != null)
         {
@@ -188,12 +194,12 @@ internal static class Program
                     Fail("Module graph options are not supported with web builds yet.");
 
                 string outputDirectory = ResolveCliWebOutputDirectory(codePath, outPath);
-                BuildWebApp(codePath, outputDirectory, traceLinker, emitWebBytecode, directWasmBackend);
+                BuildWebApp(codePath, outputDirectory, traceLinker, emitWebBytecode, directWasmBackend, disableGarbageCollection);
                 return;
             }
 
             string outputPath = outPath ?? ResolveCliNativeOutputPath(codePath);
-            CompileToFile(codePath, outputPath, dumpModuleGraph, moduleGraphOutputPath, moduleGraphFormat, traceLinker, compileTarget, directWasmBackend);
+            CompileToFile(codePath, outputPath, dumpModuleGraph, moduleGraphOutputPath, moduleGraphFormat, traceLinker, compileTarget, directWasmBackend, disableGarbageCollection);
             if (!compileOnly)
                 RunBytecode(outputPath, MapHostTarget(compileTarget));
             return;
@@ -226,7 +232,8 @@ internal static class Program
         string? moduleGraphFormat,
         bool traceLinker,
         CompileTarget target,
-        bool directWasmBackend)
+        bool directWasmBackend,
+        bool disableGarbageCollection)
     {
         var source = File.ReadAllText(sourcePath);
         try
@@ -238,7 +245,8 @@ internal static class Program
                 TraceWriter = traceLinker ? message => Console.Error.WriteLine($"[linker] {message}") : null,
                 EnableGraphicalAppProfile = directWasmBackend && target == CompileTarget.VmWeb,
                 EnableImpliedEngineImports = directWasmBackend && target == CompileTarget.VmWeb,
-                EmitDirectWasm = directWasmBackend
+                EmitDirectWasm = directWasmBackend,
+                DisableDirectWasmGarbageCollection = disableGarbageCollection
             };
             var result = ModuleCompiler.CompileFromFileWithMetadata(sourcePath, options);
             string? outputDirectory = Path.GetDirectoryName(Path.GetFullPath(outputPath));
@@ -291,7 +299,8 @@ internal static class Program
         string? outputDirectory,
         bool traceLinker,
         bool emitWebBytecode,
-        bool directWasmBackend)
+        bool directWasmBackend,
+        bool disableGarbageCollection)
     {
         var source = File.ReadAllText(sourcePath);
         try
@@ -302,7 +311,8 @@ internal static class Program
                 traceLinker,
                 traceLinker ? message => Console.Error.WriteLine($"[linker] {message}") : null,
                 emitWebBytecode,
-                directWasmBackend);
+                directWasmBackend,
+                disableGarbageCollection);
 
             Console.WriteLine($"Built web app {sourcePath} -> {result.OutputDirectory}");
             Console.WriteLine($"Entry page: {result.IndexHtmlPath}");
@@ -405,6 +415,16 @@ internal static class Program
 
     private static bool IsHelpFlag(string arg) =>
         arg is "--help" or "-h" or "/?";
+
+    internal static string? ValidateDirectWasmGarbageCollectionFlag(bool disableGarbageCollection, bool directWasmBackend)
+    {
+        if (!disableGarbageCollection)
+            return null;
+
+        return directWasmBackend
+            ? null
+            : "--disable-garbage-collection requires --web-backend direct-wasm.";
+    }
 
     private static string ResolveCliWebOutputDirectory(string sourcePath, string? outputPath)
     {

@@ -4044,7 +4044,11 @@ class DirectWasmProfiler {
       hostCalls: Array.from(this.hosts.values()),
       allocations: { objects: 0, arrays: 0, frames: 0 },
       stackHighWater: 0,
-      frameHighWater: 0
+      frameHighWater: 0,
+      garbageCollections: 0,
+      garbageCollectionDisabled: this.vm.directWasmOptions.garbageCollectionDisabled === true,
+      garbageCollectionEnabled: false,
+      garbageCollectionMode: this.vm.directWasmOptions.garbageCollectionMode ?? "bump"
     };
   }
 }
@@ -4130,6 +4134,7 @@ export class DirectWasmWebVm {
     this.exports = instance.exports;
     this.strings = strings;
     this.sceneInfo = options.sceneInfo;
+    this.directWasmOptions = options.directWasmOptions ?? {};
     this.output = typeof options.output === "function" ? options.output : line => console.log(line);
     this.hostBridge = new WebVm(bridgeBytecode, { output: this.output, sceneHost: options.sceneHost });
     this.profiler = new DirectWasmProfiler(this, options.profileEnabled === true);
@@ -4204,7 +4209,7 @@ export class DirectWasmWebVm {
 }
 
 export class WorkerCodeRuntimeController {
-  constructor(runtime, workerSource, bytecode, wasmBytes, sceneInfo, profileEnabled = false, backend = "wasm-vm", appWasm = null) {
+  constructor(runtime, workerSource, bytecode, wasmBytes, sceneInfo, profileEnabled = false, backend = "wasm-vm", appWasm = null, directWasmOptions = {}) {
     this.runtime = runtime;
     runtime.workerController = this;
     this.sceneInfo = sceneInfo;
@@ -4238,7 +4243,7 @@ export class WorkerCodeRuntimeController {
     const appSource = appWasm ? (appWasm instanceof Uint8Array ? appWasm : new Uint8Array(appWasm)) : null;
     const transferredApp = appSource?.buffer.slice(appSource.byteOffset, appSource.byteOffset + appSource.byteLength) ?? null;
     const transfers = transferredApp ? [transferred, transferredWasm, transferredApp] : [transferred, transferredWasm];
-    this.worker.postMessage({ type: "init", backend, bytecode: transferred, wasm: transferredWasm, appWasm: transferredApp, sceneInfo, profileEnabled }, transfers);
+    this.worker.postMessage({ type: "init", backend, bytecode: transferred, wasm: transferredWasm, appWasm: transferredApp, sceneInfo, profileEnabled, directWasmOptions }, transfers);
   }
 
   viewportSnapshot() {
@@ -4415,7 +4420,8 @@ function installCodeWorkerRuntime() {
           if (message.backend === "direct-wasm") {
             vm = await DirectWasmWebVm.create(message.appWasm, new Uint8Array(message.bytecode), {
               output: line => self.postMessage({ type: "output", line: String(line) }),
-              sceneHost: runtime, sceneInfo: message.sceneInfo, profileEnabled: message.profileEnabled === true
+              sceneHost: runtime, sceneInfo: message.sceneInfo, profileEnabled: message.profileEnabled === true,
+              directWasmOptions: message.directWasmOptions ?? {}
             });
           } else {
             vm = await WasmWebVm.create(new Uint8Array(message.bytecode), message.wasm, {

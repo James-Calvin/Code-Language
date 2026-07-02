@@ -73,6 +73,7 @@ These flags remain supported for compatibility and compiler development, but the
 | `--compile-only` | Compile bytecode without running in native/internal modes |
 | `--emit-web-bytecode` | Also emit `app.bytecode` when building a web app |
 | `--web-backend wasm-vm\|direct-wasm` | Select the generated-web backend; direct Wasm is a gated maintainer preview |
+| `--disable-garbage-collection` | Direct-Wasm-only diagnostic flag; disables direct-Wasm GC mode/metadata and may leak memory |
 | `--disasm <file.bytecode\|file.codelib>` | Disassemble bytecode or library artifacts |
 | `--dump-tokens <file.code>` | Print lexer tokens |
 | `--dump-module-graph [out]` | Print or write the module graph |
@@ -88,3 +89,15 @@ compiler --target vm-web --compile-only ConsoleApp1/examples/time.code
 compiler --compile-only --dump-module-graph graph.json ConsoleApp1/examples/modules/main.code
 compiler --disasm path/to/file.bytecode
 ```
+
+Direct-Wasm maintainer validation:
+
+```powershell
+compiler ConsoleApp1/examples/shape_dodge.code -o .tmp/shape-direct --web-backend direct-wasm
+compiler ConsoleApp1/examples/shape_dodge.code -o .tmp/shape-direct-no-gc --web-backend direct-wasm --disable-garbage-collection
+node scripts/test-browser-compat.mjs
+```
+
+`--disable-garbage-collection` is rejected unless `--web-backend direct-wasm` is
+also present. It is for diagnostics and future no-GC build profiles, not normal
+application builds.

@@ -1,6 +1,6 @@
 # Release Process
 
-Current release target: `0.1.0-alpha.10`.
+Current release target: `0.1.0-alpha.14`.
 
 This is a maintainer-facing document. User install and quickstart instructions live in the README.
 
@@ -34,34 +34,83 @@ node scripts/benchmark-rust-wasm.mjs
 node scripts/test-direct-wasm.mjs
 node scripts/benchmark-direct-wasm.mjs
 node scripts/test-generated-worker.mjs
+node scripts/test-browser-compat.mjs
 ```
 
-Release builds require Rust 1.83 with the `wasm32-unknown-unknown` target. MSBuild
-builds the locked dependency-free runtime and packages `web-runtime/code-runtime.wasm`.
+Release builds require Rust 1.83 with the `wasm32-unknown-unknown` target. The
+release script checks for `cargo`, `rustc`, `rustup`, and the Wasm target before
+running .NET so missing Rust tooling fails with setup guidance instead of an
+MSBuild `9009` command-not-found error.
+Full release tests also require Node.js and at least one local Chromium-family
+browser such as Chrome, Edge, or Chromium for the browser compatibility suite.
+If `node` is not visible in the current shell, the release script also checks
+common Windows Node.js install paths under `Program Files`, which helps when
+VS Code was opened before PATH updates were applied.
+
+Windows setup:
+
+```powershell
+winget install --id Rustlang.Rustup -e
+winget install --id Microsoft.VisualStudio.2022.BuildTools -e
+# Restart PowerShell so PATH includes cargo, rustc, and rustup.
+rustup toolchain install 1.83.0 --profile minimal --target wasm32-unknown-unknown
+```
+
+`cargo test` uses the Windows MSVC host toolchain and needs `link.exe`. Release
+packaging with `-SkipTests` can build the Wasm runtime without `link.exe`. For
+the full validation path, `scripts/release.ps1` first uses `link.exe` from
+`PATH`; if it is missing, the script locates Visual Studio Build Tools and runs
+Rust tests through `vcvars64.bat`. If that auto-detection fails, run release from
+the "x64 Native Tools Command Prompt for VS 2022" or install the Build Tools
+"Desktop development with C++" workload.
+
+From the repository root, the manual Rust runtime build command is:
+
+```powershell
+cargo build --manifest-path runtime-wasm/Cargo.toml --release --target wasm32-unknown-unknown --locked
+```
+
+MSBuild builds the locked dependency-free runtime and packages `web-runtime/code-runtime.wasm`.
+`scripts/release.ps1` also runs `cargo test --locked` for `runtime-wasm` before
+the .NET harness, then runs the direct-Wasm browser compatibility suite. The
+Rust/Wasm GC regression tests cover dequeued queue values and free-slot reuse so
+memory leaks stay release-gated.
 `--run-tests` includes the arithmetic, boolean, string, loop, and panic fuzz
 suites. Runtime changes also pass executable C#/JavaScript VM conformance, the
 profiler smoke checks embedded in the benchmark runner, and record benchmark
 results before release. Bytecode/runtime changes must also cover malformed v10
-metadata and explicit v9 rejection. Browser scheduling changes require current
-Chrome and Edge direct-`file://` generated-worker smoke tests; Firefox and Safari are checked before
-shipping a runtime release.
+metadata and explicit v9 rejection. Browser scheduling or direct-Wasm runtime
+changes require current generated-worker smoke tests plus
+`node scripts/test-browser-compat.mjs`. The compatibility suite automates local
+Chromium-family desktop browsers and writes a mobile/manual report page for iOS
+Safari, iOS Chrome, Android Chrome, Android Firefox, Android Edge, and Samsung
+Internet checks before shipping a runtime release.
 
 ## Local Pass Completion Gate
 
-Every performance or feature pass increments the compiler version, then ends
-by packaging and installing the current Windows Release compiler after code,
-tests, benchmarks, and documentation are complete:
+Every performance or feature pass ends by packaging and installing the current
+Windows Release compiler after code, tests, benchmarks, and documentation are
+complete:
 
 ```powershell
 ./scripts/install-local.ps1 -SkipTests
 ```
 
 Omit `-SkipTests` if the full harness has not already passed during the same
-pass. The script rejects an unchanged installed version, builds the Windows release artifact, installs it to
-`$HOME/.code-language/bin`, verifies `compiler --version`, and checks that the
-installed JavaScript and Wasm runtime hashes match the working tree. Smoke-test at least one
-native program and one generated web app with the installed executable when
-the pass changes compiler or runtime behavior.
+pass. If the installed compiler version already matches the project version, the
+script automatically increments numeric prerelease versions such as
+`0.1.0-alpha.11` to `0.1.0-alpha.12`, updates the project metadata, and updates
+this release document. Pass `-NoAutoIncrementVersion` to restore the strict
+"fail unless manually incremented" behavior. The script builds the Windows
+release artifact, installs it to `$HOME/.code-language/bin`, verifies
+`compiler --version`, and checks that the installed JavaScript and Wasm runtime
+hashes match the working tree. It also ensures `$HOME/.code-language/bin` is on
+the user PATH and adds it to the current PowerShell session when possible.
+Smoke-test at least one native program and one generated web app with the
+installed executable when the pass changes compiler or runtime behavior.
+Release archive creation retries short-lived file locks around freshly
+published executables, which can happen in synced directories such as OneDrive
+or while antivirus scanners inspect the output.
 
 Set `CODE_COMPILER` to the installed executable when running generated-worker
 browser gates against the installed package:
@@ -69,6 +118,7 @@ browser gates against the installed package:
 ```powershell
 $env:CODE_COMPILER = "$HOME/.code-language/bin/compiler.exe"
 node scripts/test-generated-worker.mjs
+node scripts/test-browser-compat.mjs --keep
 ```
 
 ## Create Release Artifacts
@@ -117,14 +167,13 @@ Checks:
 
 ## GitHub Release Checklist
 
-1. Update `ConsoleApp1/ConsoleApp1.csproj` version fields.
-2. Run the build and full test harness.
-3. Run benchmarks and browser smoke tests required by the changed area.
-4. Update related documentation.
-5. Run `./scripts/install-local.ps1 -SkipTests` as the final local pass gate.
-6. Run `./scripts/release.ps1` for all release runtimes.
-7. Smoke test at least the Windows zip locally.
-8. Commit and tag, for example `v0.1.0-alpha.10`.
-9. Create a GitHub prerelease.
-10. Upload all `code-compiler-*.zip` files and `SHA256SUMS.txt`.
-11. Test `install.ps1` from the GitHub release before announcing.
+1. Run the build and full test harness.
+2. Run benchmarks and browser smoke tests required by the changed area.
+3. Update related documentation.
+4. Run `./scripts/install-local.ps1 -SkipTests` as the final local pass gate; it auto-increments the prerelease version if needed.
+5. Run `./scripts/release.ps1` for all release runtimes.
+6. Smoke test at least the Windows zip locally.
+7. Commit and tag, for example `v0.1.0-alpha.14`.
+8. Create a GitHub prerelease.
+9. Upload all `code-compiler-*.zip` files and `SHA256SUMS.txt`.
+10. Test `install.ps1` from the GitHub release before announcing.

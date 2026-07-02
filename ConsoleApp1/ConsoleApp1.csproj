@@ -1,14 +1,14 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net9.0</TargetFramework>
     <AssemblyName>compiler</AssemblyName>
     <RootNamespace>ConsoleApp1</RootNamespace>
-    <Version>0.1.0-alpha.10</Version>
+    <Version>0.1.0-alpha.14</Version>
     <AssemblyVersion>0.1.0.0</AssemblyVersion>
     <FileVersion>0.1.0.0</FileVersion>
-    <InformationalVersion>0.1.0-alpha.10</InformationalVersion>
+    <InformationalVersion>0.1.0-alpha.14</InformationalVersion>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
@@ -25,6 +25,16 @@
   <Target Name="BuildRustWasmRuntime"
           BeforeTargets="PrepareForBuild"
           Condition="'$(Configuration)' == 'Release'">
+    <Exec Command="cargo --version"
+          WorkingDirectory="$(MSBuildProjectDirectory)\..\runtime-wasm"
+          IgnoreExitCode="true"
+          ConsoleToMSBuild="true"
+          StandardOutputImportance="Low"
+          StandardErrorImportance="High">
+      <Output TaskParameter="ExitCode" PropertyName="CargoPreflightExitCode" />
+    </Exec>
+    <Error Condition="'$(CargoPreflightExitCode)' != '0'"
+           Text="Rust/Cargo is required to build the Release web runtime. Install Rustup, restart your shell, then run: rustup toolchain install 1.83.0 --profile minimal --target wasm32-unknown-unknown" />
     <Exec Command="cargo build --release --target wasm32-unknown-unknown --locked"
           WorkingDirectory="$(MSBuildProjectDirectory)\..\runtime-wasm" />
     <Copy SourceFiles="$(MSBuildProjectDirectory)\..\runtime-wasm\target\wasm32-unknown-unknown\release\code_runtime_wasm.wasm"

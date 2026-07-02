@@ -16,6 +16,7 @@ sealed class ModuleCompileOptions
     public bool EnableGraphicalAppProfile { get; init; }
     public bool EnableImpliedEngineImports { get; init; }
     public bool EmitDirectWasm { get; init; }
+    public bool DisableDirectWasmGarbageCollection { get; init; }
 }
 
 sealed class ModuleCompileResult
@@ -279,7 +280,8 @@ static class ModuleCompiler
             TraceWriter = baseOptions.TraceWriter,
             EnableGraphicalAppProfile = baseOptions.EnableGraphicalAppProfile,
             EnableImpliedEngineImports = baseOptions.EnableImpliedEngineImports,
-            EmitDirectWasm = baseOptions.EmitDirectWasm
+            EmitDirectWasm = baseOptions.EmitDirectWasm,
+            DisableDirectWasmGarbageCollection = baseOptions.DisableDirectWasmGarbageCollection
         };
         var linker = new ModuleLinker(projectRoot, fullEntryPath, compileOptions);
         var linkResult = linker.Link(fullEntryPath);
@@ -295,7 +297,9 @@ static class ModuleCompiler
         var bytecode = generated.Bytecode;
         DirectWasmCompilation? directWasm = null;
         if (compileOptions.EmitDirectWasm)
-            directWasm = new DirectWasmCompiler(TypedProgram.Lower(loweredStatements, semanticModel!)).Compile();
+            directWasm = new DirectWasmCompiler(
+                TypedProgram.Lower(loweredStatements, semanticModel!),
+                compileOptions.DisableDirectWasmGarbageCollection).Compile();
 
         if (manifest is not null && string.Equals(manifest.Kind, "library", StringComparison.Ordinal))
         {

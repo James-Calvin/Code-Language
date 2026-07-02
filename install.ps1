@@ -29,9 +29,14 @@ $alreadyOnPath = $pathParts | Where-Object {
 if (-not $alreadyOnPath) {
     $newPath = if ([string]::IsNullOrWhiteSpace($userPath)) { $binDir } else { "$userPath;$binDir" }
     [Environment]::SetEnvironmentVariable("Path", $newPath, "User")
-    Write-Host "Added $binDir to your user PATH. Open a new terminal before running compiler."
+    Write-Host "Added $binDir to your user PATH."
 } else {
     Write-Host "$binDir is already on your user PATH."
+}
+
+if (-not (($env:Path -split ";") | Where-Object { $_.TrimEnd("\") -ieq $binDir.TrimEnd("\") })) {
+    $env:Path = if ([string]::IsNullOrWhiteSpace($env:Path)) { $binDir } else { "$env:Path;$binDir" }
+    Write-Host "Added $binDir to this PowerShell session PATH."
 }
 
 Write-Host "Installed compiler to $binDir"

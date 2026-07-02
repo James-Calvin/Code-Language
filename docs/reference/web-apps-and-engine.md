@@ -14,6 +14,8 @@ Output folder:
 Current note:
 
 - The generated `index.html` embeds the bytecode for direct opening. Maintainer builds can pass `--emit-web-bytecode` to also write `app.bytecode` for debugging or inspection.
+- Maintainer builds can pass `--web-backend direct-wasm` to emit `code-app.wasm` and run app code as direct Wasm while the Rust/Wasm VM remains the public default.
+- `--disable-garbage-collection` is valid only with `--web-backend direct-wasm`; it is a diagnostic no-GC mode that may leak memory.
 - Generated apps route normal `print` output to the browser console. The on-screen overlay is reserved for fatal/runtime diagnostics.
 - Generated apps prevent browser scroll/panning for app-control keys such as arrows, Space, Page Up, Page Down, Home, and End.
 
@@ -32,6 +34,21 @@ Common mistakes:
 
 - Web builds require a `.code` input.
 - Module graph flags do not combine with web builds yet.
+- `--disable-garbage-collection` does not apply to the default `wasm-vm` backend.
+
+## Browser Compatibility
+
+Maintainers validate generated direct-Wasm apps with:
+
+```powershell
+node scripts/test-browser-compat.mjs
+```
+
+The suite builds several generated web apps with `--web-backend direct-wasm`,
+serves them locally, and automates installed Chromium-family desktop browsers.
+Use `--keep` to preserve the generated suite and `mobile-report.html` for iOS
+and Android browser checks. Set `CODE_DIRECT_WASM_DISABLE_GC=1` to run the suite
+with direct-Wasm no-GC diagnostic builds.
 
 ## Web Entry Contract
 

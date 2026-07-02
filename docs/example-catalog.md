@@ -1,6 +1,6 @@
 # Example Catalog
 
-Last updated: 2026-05-05
+Last updated: 2026-06-28
 
 This catalog is implementation-truthful.
 

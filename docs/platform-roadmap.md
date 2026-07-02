@@ -132,7 +132,9 @@ Host calls are explicit, capability-scoped bindings provided by the runtime host
 ### 2.6 Backend policy (WebGPU compatibility)
 - Current JS web runtime does **not** block a WebGPU future; it is a bootstrap runtime for ABI bring-up.
 - Generated apps now use the gated Rust/Wasm bytecode-v10 VM in the existing worker. The JavaScript VM remains the reference/conformance path; browser scheduling and Canvas/audio/input ownership remain JavaScript responsibilities.
-- A typed direct Code-to-Wasm backend is available behind the maintainer `--web-backend direct-wasm` selector. It emits `code-app.wasm`, uses native Wasm functions/control flow and typed linear-memory layouts, and passed its CPU gate; it is not the default until tracing reclamation, bytecode-free host metadata, and complete error/fuzz parity pass.
+- A typed direct Code-to-Wasm backend is available behind the maintainer `--web-backend direct-wasm` selector. It emits `code-app.wasm`, uses native Wasm functions/control flow and typed linear-memory layouts, passed its CPU gate, and is now the active compiler/runtime focus; it is not the default until browser compatibility, memory behavior, bytecode-free host metadata, and complete error/fuzz parity pass.
+- Direct-Wasm validation includes `scripts/test-browser-compat.mjs`, which automates local Chromium-family desktop browsers and emits a mobile/manual report page for iOS and Android browser checks.
+- `--disable-garbage-collection` is a direct-Wasm-only diagnostic flag. It records no-GC metadata in generated apps, is allowed to leak memory, and exists for memory/performance comparison and future no-GC profiles.
 - The long-term design keeps `engine.*` APIs backend-agnostic and maps them per target/backend.
 - Web target backend preference:
   1) WebGPU when available,

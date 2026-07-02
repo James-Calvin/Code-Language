@@ -91,6 +91,7 @@ sealed class TypeChecker
                 throw new CompilerException($"Type name '{iface.Name.Lexeme}' is already used by an enum", iface.Name.Line, iface.Name.Column);
             _interfaces[iface.Name.Lexeme] = new InterfaceSymbol(
                 iface.Name,
+                new Dictionary<string, FieldSignature>(StringComparer.Ordinal),
                 new Dictionary<string, InterfaceMethodSignature>(StringComparer.Ordinal));
         }
 
@@ -159,6 +160,22 @@ sealed class TypeChecker
                 continue;
 
             var ifaceSym = _interfaces[iface.Name.Lexeme];
+            foreach (var field in iface.Fields)
+            {
+                if (ifaceSym.Fields.ContainsKey(field.Name.Lexeme))
+                    throw new CompilerException($"Interface field '{field.Name.Lexeme}' is already defined in interface '{iface.Name.Lexeme}'", field.Name.Line, field.Name.Column);
+                if (IsReservedPropertyName(field.Name.Lexeme))
+                    throw new CompilerException($"Interface field name '{field.Name.Lexeme}' is reserved for built-in properties", field.Name.Line, field.Name.Column);
+                if (field.Initializer is not null)
+                    throw new CompilerException("Interface fields cannot have initializers", field.Name.Line, field.Name.Column);
+                if (field.IsConstant)
+                    throw new CompilerException("Interface fields cannot be constant", field.Name.Line, field.Name.Column);
+                if (field.Visibility != DeclarationVisibility.Public)
+                    throw new CompilerException("Interface members are public contract requirements and cannot declare visibility", field.Name.Line, field.Name.Column);
+                ValidateTypeRef(field.Type);
+                EnsureNotVoidTypeRef(field.Type, "Interface fields cannot be void", field.Name.Line, field.Name.Column);
+                ifaceSym.Fields[field.Name.Lexeme] = new FieldSignature(field.Name, field.Type, DeclarationVisibility.Public, false);
+            }
             foreach (var method in iface.Methods)
             {
                 ValidateTypeRef(method.ReturnType);
@@ -282,6 +299,18 @@ sealed class TypeChecker
                 throw new CompilerException($"Unknown interface '{first.InterfaceName.Lexeme}'", first.InterfaceName.Line, first.InterfaceName.Column);
             if (!_objects.TryGetValue(first.ObjectName.Lexeme, out var obj))
                 throw new CompilerException($"Unknown object '{first.ObjectName.Lexeme}'", first.ObjectName.Line, first.ObjectName.Column);
+
+            foreach (var ifaceField in iface.Fields.Values)
+            {
+                if (!obj.Fields.TryGetValue(ifaceField.Name.Lexeme, out var objectField))
+                    throw new CompilerException($"Object '{first.ObjectName.Lexeme}' does not declare interface field '{ifaceField.Name.Lexeme}'", first.ObjectName.Line, first.ObjectName.Column);
+                if (objectField.Visibility != DeclarationVisibility.Public)
+                    throw new CompilerException($"Field '{first.ObjectName.Lexeme}.{objectField.Name.Lexeme}' must be public to satisfy interface '{first.InterfaceName.Lexeme}'", objectField.Name.Line, objectField.Name.Column);
+                if (objectField.IsConstant)
+                    throw new CompilerException($"Field '{first.ObjectName.Lexeme}.{objectField.Name.Lexeme}' cannot be constant when satisfying interface '{first.InterfaceName.Lexeme}'", objectField.Name.Line, objectField.Name.Column);
+                if (!SameTypeRef(objectField.TypeRef, ifaceField.TypeRef))
+                    throw new CompilerException($"Field '{first.ObjectName.Lexeme}.{objectField.Name.Lexeme}' type does not satisfy interface field '{first.InterfaceName.Lexeme}.{ifaceField.Name.Lexeme}'", objectField.Name.Line, objectField.Name.Column);
+            }
 
             var mapped = new HashSet<string>(StringComparer.Ordinal);
             for (int declIndex = 0; declIndex < pair.Value.Count; declIndex++)
@@ -1237,6 +1266,8 @@ sealed class TypeChecker
                 fa.ResolvedEnumTypeRef = null;
                 fa.ResolvedEnumValue = null;
                 fa.ResolvedFallibleErrorFieldTypeRef = null;
+                fa.ResolvedInterfaceFieldName = null;
+                fa.ResolvedInterfaceFieldTypeRef = null;
                 var targetType = CheckExpr(fa.Target, env, currentReturn);
                 if (targetType == TypeSymbol.Error)
                 {
@@ -1258,7 +1289,7 @@ sealed class TypeChecker
 
                     throw new CompilerException($"Recoverable error has no field '{fa.Name.Lexeme}'", fa.Name.Line, fa.Name.Column);
                 }
-                Require(targetType == TypeSymbol.Object || targetType == TypeSymbol.Record, fa.Target, "Field access requires object or record target");
+                Require(targetType == TypeSymbol.Object || targetType == TypeSymbol.Record || targetType == TypeSymbol.Interface, fa.Target, "Field access requires object, record, or interface target");
                 var resolved = ResolveFieldType(fa, env);
                 return resolved ?? TypeSymbol.Unknown;
             }
@@ -1306,7 +1337,7 @@ sealed class TypeChecker
                     throw new CompilerException("Enum members are constants and cannot be assigned", fset.Target.Name.Line, fset.Target.Name.Column);
 
                 var targetType = CheckExpr(fset.Target.Target, env, currentReturn);
-                Require(targetType == TypeSymbol.Object || targetType == TypeSymbol.Record, fset.Target.Target, "Field assignment requires object or record target");
+                Require(targetType == TypeSymbol.Object || targetType == TypeSymbol.Record || targetType == TypeSymbol.Interface, fset.Target.Target, "Field assignment requires object, record, or interface target");
                 var rhsType = CheckExpr(fset.Value, env, currentReturn);
                 var field = ResolveFieldSignature(fset.Target, env, out _);
                 _semanticModel.Record(fset.Target, MapType(field.TypeRef), field.TypeRef);
@@ -2427,6 +2458,18 @@ sealed class TypeChecker
         if (targetType is null)
             throw new CompilerException("Could not resolve field target type", fieldAccess.Name.Line, fieldAccess.Name.Column);
 
+        if (_interfaces.TryGetValue(targetType.Name, out var interfaceSymbol))
+        {
+            if (!interfaceSymbol.Fields.TryGetValue(fieldAccess.Name.Lexeme, out var interfaceField))
+                throw new CompilerException($"Interface '{targetType.Name}' has no field '{fieldAccess.Name.Lexeme}'", fieldAccess.Name.Line, fieldAccess.Name.Column);
+            fieldAccess.ResolvedInterfaceFieldName = fieldAccess.Name.Lexeme;
+            fieldAccess.ResolvedInterfaceFieldTypeRef = interfaceField.TypeRef;
+            ownerSymbol = null!;
+            return interfaceField;
+        }
+
+        fieldAccess.ResolvedInterfaceFieldName = null;
+        fieldAccess.ResolvedInterfaceFieldTypeRef = null;
         if (!_objects.TryGetValue(targetType.Name, out ownerSymbol!))
             throw new CompilerException($"Object '{targetType.Name}' has no field '{fieldAccess.Name.Lexeme}'", fieldAccess.Name.Line, fieldAccess.Name.Column);
 
@@ -2699,7 +2742,7 @@ sealed class TypeChecker
 
             {
                 var targetType = CheckExpr(fieldAccess.Target, env, currentReturn);
-                Require(targetType == TypeSymbol.Object || targetType == TypeSymbol.Record, fieldAccess.Target, "Field access requires object or record target");
+                Require(targetType == TypeSymbol.Object || targetType == TypeSymbol.Record || targetType == TypeSymbol.Interface, fieldAccess.Target, "Field access requires object, record, or interface target");
                 var field = ResolveFieldSignature(fieldAccess, env, out _);
                 _semanticModel.Record(fieldAccess, MapType(field.TypeRef), field.TypeRef);
                 EnsureCanAssignField(field, fieldAccess.Name);
@@ -3320,6 +3363,7 @@ sealed class TypeChecker
         string SignatureKey);
     private sealed record InterfaceSymbol(
         Token Name,
+        Dictionary<string, FieldSignature> Fields,
         Dictionary<string, InterfaceMethodSignature> Methods);
     private sealed record EnumSymbol(
         Token Name,

@@ -430,7 +430,7 @@ print(turns.dequeue());
 
 ## 9. Object Model and Interfaces
 - Current implementation status:
-  - Implemented: object declarations with fields/constructors/methods, record declarations with fields/constructors/methods, `new Type(...)`, field read/write (`obj.field`, `obj.field = value`), method calls (`obj.method(args)`), interface conformance checks via either inline interface methods or `implement Interface for Object/Record`, and interface-typed locals/parameters/returns/fields/arrays with runtime-dispatched interface method calls.
+  - Implemented: object declarations with fields/constructors/methods, record declarations with fields/constructors/methods, `new Type(...)`, field read/write (`obj.field`, `obj.field = value`), method calls (`obj.method(args)`), interface field/method conformance checks via either inline interface methods or `implement Interface for Object/Record`, and interface-typed locals/parameters/returns/fields/arrays with runtime-dispatched interface method calls plus interface field access.
   - Implemented: top-level declaration visibility for modules (`public`, `package`, `private`) with package-aware import checks.
   - Implemented: member-level visibility for object/record fields, constructors, and methods.
 - No inheritance.
@@ -439,6 +439,10 @@ print(turns.dequeue());
 - Copy-by-value data types are declared as `record`.
 - Objects can implement multiple interfaces.
 - Interface fulfillment may be expressed either inline inside the object body or through `implement Interface for Object`.
+- Interface fields use `Type name;` and are public read/write contract requirements.
+- Interface fields cannot declare initializers, constants, or visibility modifiers.
+- A concrete field satisfying an interface field must be public and have the same type.
+- Data-only interfaces are valid; explicit empty `implement Interface for Type {}` blocks satisfy them when all required fields exist.
 - Interface methods must declare explicit return and parameter types; `void` is allowed when written explicitly.
 - Methods may also be declared directly inside the `object` body.
 - External interface fulfillment maps interface signatures to object methods via `interfaceMethod(parameterTypes...) via ObjectName.methodName;`.
@@ -487,6 +491,7 @@ Interface example:
 
 ```code
 interface Methodable {
+  integer count;
   function<integer> method(string name);
 }
 ```
@@ -496,12 +501,15 @@ Object declaration with constructor and method:
 ```code
 object Person {
   string name;
+  integer count;
 
   constructor(string name) {
     this.name = name;
+    count = 0;
   }
 
   function<integer> method(string name) {
+    count += 1;
     print(name); // local variable
     print(this.name); // object field
     return 1;
@@ -533,12 +541,15 @@ Inline interface implementation:
 ```code
 object Person {
   string name;
+  integer count;
 
   constructor(string name) {
     this.name = name;
+    count = 0;
   }
 
   implement Methodable.method(string other_name) {
+    count += 1;
     print(other_name);
     print(name);
     return 1;
@@ -547,7 +558,7 @@ object Person {
 ```
 
 Current limitation:
-- Interface dispatch currently covers direct interface-typed values and arrays of interface-typed values. Wider container types beyond arrays are still being expanded.
+- Interface method dispatch and interface field access currently cover direct interface-typed values and arrays of interface-typed values. Wider container types beyond arrays are still being expanded.
 
 Instantiation:
 

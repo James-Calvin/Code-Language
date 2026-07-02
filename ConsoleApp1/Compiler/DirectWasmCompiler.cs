@@ -16,6 +16,7 @@ sealed class DirectWasmCompiler
     private readonly Dictionary<string, DirectGlobal> _globals = new(StringComparer.Ordinal);
     private readonly Dictionary<string, DirectObjectLayout> _objects = new(StringComparer.Ordinal);
     private readonly Dictionary<string, List<DirectInterfaceTarget>> _interfaceDispatch = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, List<DirectInterfaceFieldTarget>> _interfaceFieldDispatch = new(StringComparer.Ordinal);
     private readonly Dictionary<string, DirectHostFunction> _hostFunctions = new(StringComparer.Ordinal);
     private readonly HashSet<string> _usedIntrinsicNames = new(StringComparer.Ordinal);
     private readonly Dictionary<string, DirectStringData> _stringData = new(StringComparer.Ordinal);
@@ -81,6 +82,7 @@ sealed class DirectWasmCompiler
     private void ClassifyProgram()
     {
         var implementations = new List<ImplementDecl>();
+        var interfaces = new Dictionary<string, InterfaceDecl>(StringComparer.Ordinal);
         foreach (var statement in _program.Statements)
         {
             CollectIntrinsicCalls(statement);
@@ -95,31 +97,53 @@ sealed class DirectWasmCompiler
                 case ImplementDecl implementation:
                     implementations.Add(implementation);
                     break;
-                case InterfaceDecl or EnumDecl:
+                case InterfaceDecl iface:
+                    interfaces[iface.Name.Lexeme] = iface;
+                    break;
+                case EnumDecl:
                     break;
                 default:
                     _topLevel.Add(statement);
                     if (statement is VarDecl global)
                         RegisterGlobal(global);
-                    break;
+                break;
             }
         }
-        BuildInterfaceDispatch(implementations);
+        BuildInterfaceDispatch(implementations, interfaces);
     }
 
-    private void BuildInterfaceDispatch(IEnumerable<ImplementDecl> implementations)
+    private void BuildInterfaceDispatch(IEnumerable<ImplementDecl> implementations, IReadOnlyDictionary<string, InterfaceDecl> interfaces)
     {
+        var fieldPairs = new HashSet<string>(StringComparer.Ordinal);
         foreach (var implementation in implementations)
         {
+            if (interfaces.TryGetValue(implementation.InterfaceName.Lexeme, out var iface) &&
+                _objects.TryGetValue(implementation.ObjectName.Lexeme, out var owner))
+            {
+                string pairKey = $"{implementation.InterfaceName.Lexeme}->{implementation.ObjectName.Lexeme}";
+                if (fieldPairs.Add(pairKey))
+                {
+                    foreach (var field in iface.Fields)
+                    {
+                        if (!owner.Fields.TryGetValue(field.Name.Lexeme, out var concreteField))
+                            throw new InvalidOperationException($"Direct-Wasm interface field target '{pairKey}.{field.Name.Lexeme}' is unavailable.");
+                        string fieldKey = $"{implementation.InterfaceName.Lexeme}.{field.Name.Lexeme}";
+                        if (!_interfaceFieldDispatch.TryGetValue(fieldKey, out var fieldTargets))
+                            _interfaceFieldDispatch[fieldKey] = fieldTargets = [];
+                        fieldTargets.Add(new DirectInterfaceFieldTarget(owner, concreteField));
+                    }
+                }
+            }
+
             foreach (var map in implementation.Methods)
             {
                 string interfaceKey = $"{implementation.InterfaceName.Lexeme}.{InterfaceMethodKey(map.InterfaceMethodName.Lexeme, map.Parameters)}";
                 string methodKey = MethodKey(implementation.ObjectName.Lexeme, map.ViaMethodName.Lexeme, map.Parameters);
-                if (!_objects.TryGetValue(implementation.ObjectName.Lexeme, out var owner) || !_functions.TryGetValue(methodKey, out var function))
+                if (!_objects.TryGetValue(implementation.ObjectName.Lexeme, out var methodOwner) || !_functions.TryGetValue(methodKey, out var function))
                     throw new InvalidOperationException($"Direct-Wasm interface target '{methodKey}' is unavailable.");
                 if (!_interfaceDispatch.TryGetValue(interfaceKey, out var targets))
                     _interfaceDispatch[interfaceKey] = targets = [];
-                targets.Add(new DirectInterfaceTarget(owner, function));
+                targets.Add(new DirectInterfaceTarget(methodOwner, function));
             }
         }
     }
@@ -691,11 +715,19 @@ sealed class DirectWasmCompiler
                     context.Body.I32Const(field.ResolvedEnumValue!.Value);
                     return true;
                 }
+                if (field.ResolvesToInterfaceField)
+                {
+                    EmitInterfaceFieldGet(field, context);
+                    return true;
+                }
                 EmitFieldAddress(field, context);
                 EmitMemoryLoad(GetType(field), context.Body);
                 return true;
             case FieldSetExpr set:
-                EmitFieldSet(set.Target, set.Value, context);
+                if (set.Target.ResolvesToInterfaceField)
+                    EmitInterfaceFieldSet(set.Target, set.Value, context);
+                else
+                    EmitFieldSet(set.Target, set.Value, context);
                 return true;
             case Call call:
                 return EmitCall(call, context);
@@ -955,7 +987,10 @@ sealed class DirectWasmCompiler
                 break;
             }
             case FieldAccessExpr field:
-                EmitCompoundField(field, expression.Value, expression.Operator.Type, context);
+                if (field.ResolvesToInterfaceField)
+                    EmitCompoundInterfaceField(field, expression.Value, expression.Operator.Type, context);
+                else
+                    EmitCompoundField(field, expression.Value, expression.Operator.Type, context);
                 break;
             case ArrayIndexExpr index when GetType(index.Array).NormalizeBuiltInShorthands().Name == "map":
                 EmitCompoundMap(index, expression.Value, expression.Operator.Type, context);
@@ -1191,6 +1226,129 @@ sealed class DirectWasmCompiler
         var layout = GetObject(targetType.Name);
         EmitExpressionAs(field.Target, ReferenceType(), context);
         EmitFieldLoadAddress(layout, field.Name.Lexeme, context.Body);
+    }
+
+    private IReadOnlyList<DirectInterfaceFieldTarget> InterfaceFieldTargets(FieldAccessExpr field)
+    {
+        string interfaceName = GetType(field.Target).Name;
+        string fieldName = field.ResolvedInterfaceFieldName ?? field.Name.Lexeme;
+        string key = $"{interfaceName}.{fieldName}";
+        if (!_interfaceFieldDispatch.TryGetValue(key, out var targets) || targets.Count == 0)
+            throw Unsupported(field, $"interface field dispatch '{key}'");
+        return targets;
+    }
+
+    private void EmitInterfaceFieldGet(FieldAccessExpr field, FunctionContext context)
+    {
+        var type = GetType(field);
+        var targets = InterfaceFieldTargets(field);
+        int receiver = context.AddTemporary(DirectWasmValueType.I32);
+        EmitExpressionAs(field.Target, GetType(field.Target), context);
+        context.Body.LocalSet(receiver);
+        EmitInterfaceFieldGetTarget(targets, 0, receiver, type, context);
+    }
+
+    private void EmitInterfaceFieldGetTarget(
+        IReadOnlyList<DirectInterfaceFieldTarget> targets,
+        int index,
+        int receiver,
+        TypeRef type,
+        FunctionContext context)
+    {
+        var target = targets[index];
+        if (index + 1 < targets.Count)
+        {
+            context.Body.LocalGet(receiver);
+            context.Body.Load(0x28, 2);
+            context.Body.I32Const(ObjectTypeId(target.Owner.Name));
+            context.Body.Op(0x46);
+            context.Body.Op(0x04);
+            context.Body.Op((byte)MapType(type));
+            EmitDirectInterfaceFieldGet(target, receiver, type, context);
+            context.Body.Op(0x05);
+            EmitInterfaceFieldGetTarget(targets, index + 1, receiver, type, context);
+            context.Body.Op(0x0b);
+            return;
+        }
+
+        EmitDirectInterfaceFieldGet(target, receiver, type, context);
+    }
+
+    private void EmitDirectInterfaceFieldGet(DirectInterfaceFieldTarget target, int receiver, TypeRef type, FunctionContext context)
+    {
+        context.Body.LocalGet(receiver);
+        EmitFieldLoadAddress(target.Owner, target.Field.Name, context.Body);
+        EmitMemoryLoad(type, context.Body);
+    }
+
+    private void EmitInterfaceFieldSet(FieldAccessExpr field, Expr value, FunctionContext context)
+    {
+        var type = GetType(field);
+        var targets = InterfaceFieldTargets(field);
+        int receiver = context.AddTemporary(DirectWasmValueType.I32);
+        int result = context.AddTemporary(MapType(type));
+        EmitExpressionAs(field.Target, GetType(field.Target), context);
+        context.Body.LocalSet(receiver);
+        EmitExpressionAs(value, type, context);
+        context.Body.LocalSet(result);
+        EmitInterfaceFieldSetTarget(targets, 0, receiver, result, type, context);
+    }
+
+    private void EmitInterfaceFieldSetTarget(
+        IReadOnlyList<DirectInterfaceFieldTarget> targets,
+        int index,
+        int receiver,
+        int result,
+        TypeRef type,
+        FunctionContext context)
+    {
+        var target = targets[index];
+        if (index + 1 < targets.Count)
+        {
+            context.Body.LocalGet(receiver);
+            context.Body.Load(0x28, 2);
+            context.Body.I32Const(ObjectTypeId(target.Owner.Name));
+            context.Body.Op(0x46);
+            context.Body.Op(0x04);
+            context.Body.Op((byte)MapType(type));
+            EmitDirectInterfaceFieldSet(target, receiver, result, type, context);
+            context.Body.Op(0x05);
+            EmitInterfaceFieldSetTarget(targets, index + 1, receiver, result, type, context);
+            context.Body.Op(0x0b);
+            return;
+        }
+
+        EmitDirectInterfaceFieldSet(target, receiver, result, type, context);
+    }
+
+    private void EmitDirectInterfaceFieldSet(DirectInterfaceFieldTarget target, int receiver, int result, TypeRef type, FunctionContext context)
+    {
+        context.Body.LocalGet(receiver);
+        EmitFieldLoadAddress(target.Owner, target.Field.Name, context.Body);
+        context.Body.LocalGet(result);
+        EmitMemoryStore(type, context.Body);
+        context.Body.LocalGet(result);
+    }
+
+    private void EmitCompoundInterfaceField(FieldAccessExpr field, Expr value, TokenType operation, FunctionContext context)
+    {
+        var type = GetType(field);
+        var targets = InterfaceFieldTargets(field);
+        int receiver = context.AddTemporary(DirectWasmValueType.I32);
+        int current = context.AddTemporary(MapType(type));
+        int rhs = context.AddTemporary(MapType(type));
+        int result = context.AddTemporary(MapType(type));
+        EmitExpressionAs(field.Target, GetType(field.Target), context);
+        context.Body.LocalSet(receiver);
+        EmitInterfaceFieldGetTarget(targets, 0, receiver, type, context);
+        context.Body.LocalSet(current);
+        EmitExpressionAs(value, type, context);
+        context.Body.LocalSet(rhs);
+        context.Body.LocalGet(current);
+        context.Body.LocalGet(rhs);
+        context.Body.Op(BinaryOpcode(operation, MapType(type)));
+        context.Body.LocalSet(result);
+        EmitInterfaceFieldSetTarget(targets, 0, receiver, result, type, context);
     }
 
     private static void EmitFieldLoadAddress(DirectObjectLayout layout, string fieldName, DirectWasmFunctionBody body)
@@ -1964,6 +2122,7 @@ sealed class DirectWasmCompiler
     private sealed record DirectHostFunction(HostAbiIntrinsic Intrinsic, int Index, TypeRef ReturnType);
     private sealed record DirectStringData(int Pointer, int Length);
     private sealed record DirectInterfaceTarget(DirectObjectLayout Owner, DirectFunction Function);
+    private sealed record DirectInterfaceFieldTarget(DirectObjectLayout Owner, DirectField Field);
     private sealed record DirectLoop(int BreakLocal, int ContinueLocal);
 
     private sealed class DirectFunction

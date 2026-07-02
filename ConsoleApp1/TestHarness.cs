@@ -295,6 +295,42 @@ internal static class TestHarness
             }
             finally { try { Directory.Delete(root, recursive: true); } catch { } }
         });
+        Check("direct-wasm-interface-field-dispatch", () =>
+        {
+            string root = Path.Combine(Path.GetTempPath(), "code-direct-wasm-interface-field-test-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(root);
+            try
+            {
+                string source = Path.Combine(root, "main.code");
+                File.WriteAllText(source,
+@"interface Craftable {
+  integer quantity;
+}
+
+object Material {
+  integer quantity;
+
+  constructor(integer value) {
+    quantity = value;
+  }
+}
+
+implement Craftable for Material {
+}
+
+Craftable item = new Material(1);
+item.quantity += 1;
+print(item.quantity);");
+                var result = Compiler.ModuleCompiler.CompileFromFileWithMetadata(source, new Compiler.ModuleCompileOptions
+                {
+                    Target = Compiler.CompileTarget.VmWeb,
+                    EmitDirectWasm = true
+                });
+                if (result.DirectWasm is null || result.DirectWasm.Module.Length < 32)
+                    throw new Exception("direct module was not emitted");
+            }
+            finally { try { Directory.Delete(root, recursive: true); } catch { } }
+        });
         Check("direct-wasm-disable-gc-cli-validation", () =>
         {
             string? error = Program.ValidateDirectWasmGarbageCollectionFlag(disableGarbageCollection: true, directWasmBackend: false);
@@ -1493,6 +1529,111 @@ object Counter {
 }
 IValue item = new Counter(7);
 print(item.read());", "7\n"),
+            ("interface-data-field-template",
+@"object Template {
+  string name;
+
+  constructor(string value) {
+    name = value;
+  }
+}
+
+interface Craftable {
+  Template template;
+}
+
+object Recipe {
+  Template template;
+
+  constructor() {
+    template = new Template(""blade"");
+  }
+}
+
+implement Craftable for Recipe {
+}
+
+Craftable item = new Recipe();
+print(item.template.name);
+item.template = new Template(""hinge"");
+print(item.template.name);", "blade\nhinge\n"),
+            ("interface-field-and-method-contract",
+@"interface ICounter {
+  integer amount;
+  function<integer> read();
+}
+
+object Counter {
+  integer amount;
+
+  constructor(integer initial) {
+    amount = initial;
+  }
+
+  function<integer> read() {
+    return amount;
+  }
+}
+
+implement ICounter for Counter {
+  read() via Counter.read;
+}
+
+ICounter counter = new Counter(4);
+counter.amount += 3;
+print(counter.amount);
+print(counter.read());", "7\n7\n"),
+            ("interface-record-field-contract",
+@"interface HasAmount {
+  integer amount;
+}
+
+record Stack {
+  integer amount;
+
+  constructor(integer initial) {
+    amount = initial;
+  }
+}
+
+implement HasAmount for Stack {
+}
+
+HasAmount stack = new Stack(2);
+print(stack.amount);
+stack.amount = 5;
+print(stack.amount);", "2\n5\n"),
+            ("interface-field-array-and-holder",
+@"interface Craftable {
+  integer quantity;
+}
+
+object Material {
+  integer quantity;
+
+  constructor(integer value) {
+    quantity = value;
+  }
+}
+
+implement Craftable for Material {
+}
+
+object Holder {
+  Craftable item;
+
+  constructor(Craftable value) {
+    item = value;
+  }
+}
+
+array<Craftable> items = new array<Craftable>(0);
+items.append(new Material(3));
+items[0].quantity++;
+print(items[0].quantity);
+Holder holder = new Holder(items[0]);
+holder.item.quantity += 2;
+print(holder.item.quantity);", "4\n6\n"),
         };
         var moduleCases = new List<(string Name, IReadOnlyDictionary<string, string> Files, string Entry, string Expected)>
         {
@@ -2714,6 +2855,75 @@ object Holder {
 }
 Holder h = new Holder(new Thing());
 h.current = new Other();", "Field assignment type mismatch"),
+            ("interface-field-initializer-rejected",
+@"interface IThing {
+  integer value = 1;
+}", "Interface fields cannot have initializers"),
+            ("interface-field-private-rejected",
+@"interface IThing {
+  private integer value;
+}", "Interface fields and methods do not declare visibility"),
+            ("interface-field-missing-concrete-field",
+@"interface IThing {
+  integer amount;
+}
+object Thing {
+  constructor() { }
+}
+implement IThing for Thing {
+}", "does not declare interface field"),
+            ("interface-field-wrong-type",
+@"interface IThing {
+  integer amount;
+}
+object Thing {
+  string amount;
+  constructor() {
+    amount = ""bad"";
+  }
+}
+implement IThing for Thing {
+}", "type does not satisfy interface field"),
+            ("interface-field-concrete-private",
+@"interface IThing {
+  integer amount;
+}
+object Thing {
+  private integer amount;
+  constructor() {
+    amount = 1;
+  }
+}
+implement IThing for Thing {
+}", "must be public to satisfy interface"),
+            ("interface-field-not-in-contract",
+@"interface IThing {
+  integer amount;
+}
+object Thing {
+  integer amount;
+  integer hidden;
+  constructor() {
+    amount = 1;
+    hidden = 2;
+  }
+}
+implement IThing for Thing {
+}
+IThing item = new Thing();
+print(item.hidden);", "has no field"),
+            ("interface-empty-implement-missing-method",
+@"interface IThing {
+  function<integer> id();
+}
+object Thing {
+  constructor() { }
+  function<integer> id() {
+    return 1;
+  }
+}
+implement IThing for Thing {
+}", "does not map interface method"),
             ("enum-init-from-integer-mismatch",
 @"enum Direction {
   Left;
@@ -4349,6 +4559,7 @@ function draw() {
             ("example-implicit-this-runnable", @"ConsoleApp1/examples/implicit_this.code", Compiler.CompileTarget.VmNative),
             ("example-interface-dispatch-runnable", @"ConsoleApp1/examples/interface_dispatch.code", Compiler.CompileTarget.VmNative),
             ("example-interface-array-dispatch-runnable", @"ConsoleApp1/examples/interface_array_dispatch.code", Compiler.CompileTarget.VmNative),
+            ("example-interface-fields-runnable", @"ConsoleApp1/examples/interface_fields.code", Compiler.CompileTarget.VmNative),
             ("example-modules-main-runnable", @"ConsoleApp1/examples/modules/main.code", Compiler.CompileTarget.VmNative),
             ("example-modules-grouped-imports-runnable", @"ConsoleApp1/examples/modules/grouped-imports.code", Compiler.CompileTarget.VmNative),
             ("example-modules-re-exports-runnable", @"ConsoleApp1/examples/modules/re_exports_main.code", Compiler.CompileTarget.VmNative),

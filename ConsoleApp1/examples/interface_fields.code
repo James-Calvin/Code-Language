@@ -1,0 +1,38 @@
+// Runnable example: data-only and field-bearing interfaces.
+
+interface Ingredient {
+  string name;
+  integer quantity;
+}
+
+object MetalBar {
+  string name;
+  integer quantity;
+
+  constructor(string materialName, integer startingQuantity) {
+    name = materialName;
+    quantity = startingQuantity;
+  }
+}
+
+implement Ingredient for MetalBar {
+}
+
+object RecipeSlot {
+  Ingredient item;
+
+  constructor(Ingredient startingItem) {
+    item = startingItem;
+  }
+
+  function add(integer amount) {
+    item.quantity += amount;
+  }
+}
+
+Ingredient iron = new MetalBar("iron", 2);
+RecipeSlot slot = new RecipeSlot(iron);
+print(slot.item.name);
+print(slot.item.quantity);
+slot.add(3);
+print(slot.item.quantity);

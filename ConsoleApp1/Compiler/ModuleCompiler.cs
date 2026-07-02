@@ -1123,6 +1123,10 @@ static class ModuleCompiler
                     }
                     break;
                 case InterfaceDecl iface:
+                    for (int i = 0; i < iface.Fields.Count; i++)
+                    {
+                        ValidateImpliedEngineReservedName(iface.Fields[i].Name, reservedName);
+                    }
                     ValidateImpliedEngineReservedName(iface.Name, reservedName);
                     for (int i = 0; i < iface.Methods.Count; i++)
                     {
@@ -1380,6 +1384,10 @@ static class ModuleCompiler
                     }
                     break;
                 case InterfaceDecl iface:
+                    for (int i = 0; i < iface.Fields.Count; i++)
+                    {
+                        CollectImpliedEngineUsage(iface.Fields[i].Type, directNames);
+                    }
                     for (int i = 0; i < iface.Methods.Count; i++)
                     {
                         CollectImpliedEngineUsage(iface.Methods[i].ReturnType, directNames);
@@ -2568,6 +2576,12 @@ static class ModuleCompiler
                     m.Visibility)).ToList()),
             InterfaceDecl iface => new InterfaceDecl(
                 iface.Name,
+                iface.Fields.Select(f => new FieldDecl(
+                    RewriteTypeRef(f.Type, typeAliases),
+                    f.Name,
+                    null,
+                    f.Visibility,
+                    f.IsConstant)).ToList(),
                 iface.Methods.Select(m => new InterfaceMethodDecl(
                     m.Name,
                     RewriteTypeRef(m.ReturnType, typeAliases),
@@ -2693,7 +2707,9 @@ static class ModuleCompiler
             {
                 ResolvedEnumTypeRef = fieldAccess.ResolvedEnumTypeRef is null ? null : RewriteTypeRef(fieldAccess.ResolvedEnumTypeRef, typeAliases),
                 ResolvedEnumValue = fieldAccess.ResolvedEnumValue,
-                ResolvedFallibleErrorFieldTypeRef = fieldAccess.ResolvedFallibleErrorFieldTypeRef is null ? null : RewriteTypeRef(fieldAccess.ResolvedFallibleErrorFieldTypeRef, typeAliases)
+                ResolvedFallibleErrorFieldTypeRef = fieldAccess.ResolvedFallibleErrorFieldTypeRef is null ? null : RewriteTypeRef(fieldAccess.ResolvedFallibleErrorFieldTypeRef, typeAliases),
+                ResolvedInterfaceFieldName = fieldAccess.ResolvedInterfaceFieldName,
+                ResolvedInterfaceFieldTypeRef = fieldAccess.ResolvedInterfaceFieldTypeRef is null ? null : RewriteTypeRef(fieldAccess.ResolvedInterfaceFieldTypeRef, typeAliases)
             };
         }
 

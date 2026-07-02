@@ -414,10 +414,25 @@ sealed class Parser
     {
         Token name = Consume(TokenType.Identifier, "Expect interface name.");
         Consume(TokenType.LeftBrace, "Expect '{' after interface name.");
+        var fields = new List<FieldDecl>();
         var methods = new List<InterfaceMethodDecl>();
         while (!Check(TokenType.RightBrace) && !IsAtEnd())
         {
-            Consume(TokenType.Function, "Expect 'function' in interface body.");
+            if (Check(TokenType.Public) || Check(TokenType.Package) || Check(TokenType.Private))
+                throw Error(Peek(), "Interface fields and methods do not declare visibility; interface members are public contract requirements.");
+            if (Check(TokenType.Constant))
+                throw Error(Peek(), "Interface fields cannot be constant.");
+            if (!Match(TokenType.Function))
+            {
+                TypeRef fieldType = ParseTypeRef();
+                Token fieldName = Consume(TokenType.Identifier, "Expect interface field name.");
+                if (Match(TokenType.Equal))
+                    throw Error(Previous(), "Interface fields cannot have initializers.");
+                Consume(TokenType.Semicolon, "Expect ';' after interface field.");
+                fields.Add(new FieldDecl(fieldType, fieldName));
+                continue;
+            }
+
             var sig = ParseCallableSignature("interface method");
             if (sig.ReturnType is null)
                 throw Error(sig.Name, $"Interface method '{sig.Name.Lexeme}' must declare a return type.");
@@ -430,7 +445,7 @@ sealed class Parser
             methods.Add(new InterfaceMethodDecl(sig.Name, sig.ReturnType, sig.Parameters));
         }
         Consume(TokenType.RightBrace, "Expect '}' after interface body.");
-        return new InterfaceDecl(name, methods);
+        return new InterfaceDecl(name, fields, methods);
     }
 
     private Stmt ImplementDeclaration()

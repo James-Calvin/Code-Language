@@ -88,7 +88,7 @@ Implemented today:
 
 - typed variables/functions; primitives: `integer`, `whole`, `real`, `boolean`, `string`, sized numeric boundary types, and `byte`
 - same-module global variables/constants plus built-in real constants `pi` and `tau`
-- objects, records, interfaces, arrays, maps, sets, queues, stacks, optionals, and typed recoverable `fallible` errors
+- objects, records, field/method interfaces, arrays, maps, sets, queues, stacks, optionals, and typed recoverable `fallible` errors
 - `if`, `switch`, `while`, `for`, `foreach`, `break`, `continue`, functions, methods, modules, package manifests, lockfiles, and library artifacts
 - web app lifecycle entry through top-level `start()`, `update()`, `draw()`, and optional `drawHud()`
 - engine wrapper modules for colors, drawing, input, viewport, diagnostics, runtime scheduling, audio, and scene composition

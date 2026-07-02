@@ -178,8 +178,11 @@ sealed class FieldAccessExpr : Expr
     public TypeRef? ResolvedEnumTypeRef { get; set; }
     public int? ResolvedEnumValue { get; set; }
     public TypeRef? ResolvedFallibleErrorFieldTypeRef { get; set; }
+    public string? ResolvedInterfaceFieldName { get; set; }
+    public TypeRef? ResolvedInterfaceFieldTypeRef { get; set; }
     public bool ResolvesToEnumMember => ResolvedEnumTypeRef is not null;
     public bool ResolvesToFallibleErrorField => ResolvedFallibleErrorFieldTypeRef is not null;
+    public bool ResolvesToInterfaceField => ResolvedInterfaceFieldName is not null;
     public FieldAccessExpr(Expr target, Token name) { Target = target; Name = name; }
 }
 
@@ -581,10 +584,11 @@ sealed class InlineImplementMethodDecl
 sealed class InterfaceDecl : Stmt
 {
     public Token Name { get; }
+    public IReadOnlyList<FieldDecl> Fields { get; }
     public IReadOnlyList<InterfaceMethodDecl> Methods { get; }
-    public InterfaceDecl(Token name, IReadOnlyList<InterfaceMethodDecl> methods)
+    public InterfaceDecl(Token name, IReadOnlyList<FieldDecl> fields, IReadOnlyList<InterfaceMethodDecl> methods)
     {
-        Name = name; Methods = methods;
+        Name = name; Fields = fields; Methods = methods;
     }
 }
 

@@ -100,10 +100,11 @@ Common mistakes:
 
 ## Interfaces
 
-Interfaces define method contracts.
+Interfaces define field and method contracts.
 
 ```code
 interface Reader {
+  integer count;
   function<integer> read();
 }
 ```
@@ -112,14 +113,14 @@ interface Reader {
 
 ```code
 object Counter {
-  integer value;
+  integer count;
 
   constructor(integer value) {
-    this.value = value;
+    count = value;
   }
 
   function<integer> read_value() {
-    return value;
+    return count;
   }
 }
 
@@ -128,13 +129,46 @@ implement Reader for Counter {
 }
 
 Reader reader = new Counter(7);
+reader.count += 1;
+print(reader.count);
 print(reader.read());
 ```
 
 Output:
 
 ```text
-7
+8
+8
+```
+
+### Data-Only Interfaces
+
+Interfaces may declare only fields. They still require explicit implementation,
+but the implement block can be empty because there are no methods to map.
+
+```code
+interface Ingredient {
+  string name;
+  integer quantity;
+}
+
+object MetalBar {
+  string name;
+  integer quantity;
+
+  constructor(string materialName, integer startingQuantity) {
+    name = materialName;
+    quantity = startingQuantity;
+  }
+}
+
+implement Ingredient for MetalBar {
+}
+
+Ingredient iron = new MetalBar("iron", 2);
+iron.quantity += 3;
+print(iron.name);
+print(iron.quantity);
 ```
 
 ### Inline Implementation
@@ -161,15 +195,20 @@ Output:
 
 Interface behavior:
 
+- Interface fields use `Type name;` and are public read/write contract requirements.
 - Interface methods must declare explicit return types.
 - Objects and records can implement interfaces.
 - Interface-typed locals, parameters, returns, fields, and arrays are supported.
+- Interface field reads and writes use the interface contract and mutate the concrete object's field.
 - Interface method calls dispatch at runtime.
 - Inline `implement Interface.method(...)` inherits the return type from the interface method.
 - External `implement Interface for Type` maps interface signatures to concrete methods with `via`.
+- Empty `implement Interface for Type {}` blocks are valid when all requirements are fields.
 
 Common mistakes:
 
+- Interface fields cannot declare initializers, constants, or visibility modifiers.
+- Concrete fields that satisfy interface fields must be public and have the same type.
 - External implementation maps by method name and parameter type signature.
 - The mapped method return type must satisfy the interface return type.
 - A non-implementing object cannot be assigned to an interface-typed variable.

@@ -44,6 +44,7 @@ Use this document as the primary answer to "does this exist yet?"
 | `runnable` | `ConsoleApp1/examples/implicit_this.code` | `run` | Implicit field access and bare method calls inside object bodies |
 | `runnable` | `ConsoleApp1/examples/interface_dispatch.code` | `run` | Interface dispatch across object values |
 | `runnable` | `ConsoleApp1/examples/interface_array_dispatch.code` | `run` | Inline interface methods plus interface-typed arrays |
+| `runnable` | `ConsoleApp1/examples/interface_fields.code` | `run` | Data-only and field-bearing interfaces with explicit empty implement blocks |
 
 ## Modules and Packages
 

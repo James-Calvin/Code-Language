@@ -2545,7 +2545,7 @@ static class ModuleCompiler
             FunctionDecl fn => new FunctionDecl(
                 fn.Name,
                 fn.ReturnType is null ? null : RewriteTypeRef(fn.ReturnType, typeAliases),
-                fn.Parameters.Select(p => new Parameter(p.Type is null ? null : RewriteTypeRef(p.Type, typeAliases), p.Name)).ToList(),
+                fn.Parameters.Select(p => RewriteParameter(p, typeAliases, namespaceAliases)).ToList(),
                 (Block)RewriteStmt(fn.Body, typeAliases, namespaceAliases)),
             EnumDecl enumDecl => enumDecl,
             ObjectDecl obj => new ObjectDecl(
@@ -2556,22 +2556,23 @@ static class ModuleCompiler
                     f.Name,
                     f.Initializer is null ? null : RewriteExpr(f.Initializer, typeAliases, namespaceAliases),
                     f.Visibility,
-                    f.IsConstant)).ToList(),
+                    f.IsConstant,
+                    f.HashRole)).ToList(),
                 obj.Constructors.Select(c => new ConstructorDecl(
                     c.Keyword,
-                    c.Parameters.Select(p => new Parameter(p.Type is null ? null : RewriteTypeRef(p.Type, typeAliases), p.Name)).ToList(),
+                    c.Parameters.Select(p => RewriteParameter(p, typeAliases, namespaceAliases)).ToList(),
                     (Block)RewriteStmt(c.Body, typeAliases, namespaceAliases),
                     c.Visibility)).ToList(),
                 obj.Methods.Select(m => new MethodDecl(
                     m.Name,
                     m.ReturnType is null ? null : RewriteTypeRef(m.ReturnType, typeAliases),
-                    m.Parameters.Select(p => new Parameter(p.Type is null ? null : RewriteTypeRef(p.Type, typeAliases), p.Name)).ToList(),
+                    m.Parameters.Select(p => RewriteParameter(p, typeAliases, namespaceAliases)).ToList(),
                     (Block)RewriteStmt(m.Body, typeAliases, namespaceAliases),
                     m.Visibility)).ToList(),
                 obj.InlineInterfaceMethods.Select(m => new InlineImplementMethodDecl(
                     RewriteTypeToken(m.InterfaceName, typeAliases),
                     m.MethodName,
-                    m.Parameters.Select(p => new Parameter(p.Type is null ? null : RewriteTypeRef(p.Type, typeAliases), p.Name)).ToList(),
+                    m.Parameters.Select(p => RewriteParameter(p, typeAliases, namespaceAliases)).ToList(),
                     (Block)RewriteStmt(m.Body, typeAliases, namespaceAliases),
                     m.Visibility)).ToList()),
             InterfaceDecl iface => new InterfaceDecl(
@@ -2581,21 +2582,31 @@ static class ModuleCompiler
                     f.Name,
                     null,
                     f.Visibility,
-                    f.IsConstant)).ToList(),
+                    f.IsConstant,
+                    f.HashRole)).ToList(),
                 iface.Methods.Select(m => new InterfaceMethodDecl(
                     m.Name,
                     RewriteTypeRef(m.ReturnType, typeAliases),
-                    m.Parameters.Select(p => new Parameter(p.Type is null ? null : RewriteTypeRef(p.Type, typeAliases), p.Name)).ToList())).ToList()),
+                    m.Parameters.Select(p => RewriteParameter(p, typeAliases, namespaceAliases)).ToList())).ToList()),
             ImplementDecl impl => new ImplementDecl(
                 RewriteTypeToken(impl.InterfaceName, typeAliases),
                 RewriteTypeToken(impl.ObjectName, typeAliases),
                 impl.Methods.Select(m => new ImplementMethodMap(
                     m.InterfaceMethodName,
-                    m.Parameters.Select(p => new Parameter(p.Type is null ? null : RewriteTypeRef(p.Type, typeAliases), p.Name)).ToList(),
+                    m.Parameters.Select(p => RewriteParameter(p, typeAliases, namespaceAliases)).ToList(),
                     RewriteTypeToken(m.ViaObjectName, typeAliases),
                     m.ViaMethodName)).ToList()),
             _ => stmt
         };
+
+        private static Parameter RewriteParameter(
+            Parameter parameter,
+            IReadOnlyDictionary<string, string> typeAliases,
+            IReadOnlyDictionary<string, Dictionary<string, string>> namespaceAliases) =>
+            new(
+                parameter.Type is null ? null : RewriteTypeRef(parameter.Type, typeAliases),
+                parameter.Name,
+                parameter.DefaultValue is null ? null : RewriteExpr(parameter.DefaultValue, typeAliases, namespaceAliases));
 
         private static Expr RewriteExpr(
             Expr expr,

@@ -1,7 +1,8 @@
 param(
     [string]$Configuration = "Release",
     [switch]$SkipTests,
-    [switch]$NoAutoIncrementVersion
+    [switch]$NoAutoIncrementVersion,
+    [switch]$InstallVsCodeExtension
 )
 
 $ErrorActionPreference = "Stop"
@@ -13,6 +14,48 @@ $installDirectory = [System.IO.Path]::GetFullPath((Join-Path $HOME ".code-langua
 $projectPath = Join-Path $repoRoot "ConsoleApp1\ConsoleApp1.csproj"
 $releaseDocPath = Join-Path $repoRoot "docs\release.md"
 $installedCompiler = Join-Path $installDirectory "compiler.exe"
+
+function Resolve-CodeCommand {
+    $codeCommand = Get-Command "code" -ErrorAction SilentlyContinue
+    if ($codeCommand) {
+        if (-not [string]::IsNullOrWhiteSpace($codeCommand.Source)) {
+            return $codeCommand.Source
+        }
+        if (-not [string]::IsNullOrWhiteSpace($codeCommand.Path)) {
+            return $codeCommand.Path
+        }
+        return $codeCommand.Name
+    }
+
+    return $null
+}
+
+function Install-VsCodeExtension([string]$VsixPath) {
+    $manualCommand = "code --install-extension `"$VsixPath`""
+    $codeCommand = Resolve-CodeCommand
+    if ([string]::IsNullOrWhiteSpace($codeCommand)) {
+        Write-Host "VS Code CLI 'code' was not found. Install the Code language extension manually with:"
+        Write-Host "  $manualCommand"
+        return
+    }
+
+    $previousErrorActionPreference = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        $output = & $codeCommand --install-extension $VsixPath --force 2>&1
+        $exitCode = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
+
+    foreach ($line in $output) {
+        Write-Host $line
+    }
+
+    if ($exitCode -ne 0) {
+        Write-Warning "VS Code extension install failed. Compiler install completed. Manual command: $manualCommand"
+    }
+}
 
 function Get-NextPrereleaseVersion([string]$Version) {
     $match = [regex]::Match($Version, "^(?<prefix>\d+\.\d+\.\d+-[0-9A-Za-z][0-9A-Za-z-]*(?:\.[0-9A-Za-z-]+)*\.)(?<number>\d+)$")
@@ -79,10 +122,11 @@ if ([string]::IsNullOrWhiteSpace($projectVersion)) {
     throw "ConsoleApp1.csproj does not define a release version."
 }
 if (Test-Path $installedCompiler) {
-    $installedVersion = [string](& $installedCompiler --version)
+    $installedVersionOutput = & $installedCompiler --version
     if ($LASTEXITCODE -ne 0) {
         throw "Could not read the currently installed compiler version."
     }
+    $installedVersion = (($installedVersionOutput | Select-Object -First 1).ToString()).Trim()
     if ($installedVersion.Trim() -eq $projectVersion.Trim()) {
         if ($NoAutoIncrementVersion) {
             throw "Increment the compiler version before the final build/install gate (currently $projectVersion)."
@@ -127,13 +171,26 @@ if ($sourceWasmRuntimeHash -ne $installedWasmRuntimeHash) {
     throw "The installed Wasm runtime does not match the working tree."
 }
 
-$installedVersion = & $installedCompiler --version
+$installedVersionOutput = & $installedCompiler --version
 if ($LASTEXITCODE -ne 0) {
     throw "The installed compiler version check failed."
 }
+$installedVersionText = (($installedVersionOutput | Select-Object -First 1).ToString()).Trim()
 
 Ensure-InstallDirectoryOnUserPath $installDirectory
 
-Write-Host "Installed compiler $installedVersion to $installDirectory"
+$releaseRoot = Split-Path -Parent $artifactDirectory
+$vsixArtifact = Join-Path $releaseRoot "code-language-vscode-$installedVersionText.vsix"
+if (Test-Path $vsixArtifact) {
+    $installedVsix = Join-Path $installDirectory (Split-Path -Leaf $vsixArtifact)
+    Copy-Item -LiteralPath $vsixArtifact -Destination $installedVsix -Force
+    if ($InstallVsCodeExtension) {
+        Install-VsCodeExtension $installedVsix
+    }
+} elseif ($InstallVsCodeExtension) {
+    Write-Warning "VS Code extension package was not found: $vsixArtifact"
+}
+
+Write-Host "Installed compiler $installedVersionText to $installDirectory"
 Write-Host "Verified installed web runtime SHA256: $installedRuntimeHash"
 Write-Host "Verified installed Wasm runtime SHA256: $installedWasmRuntimeHash"

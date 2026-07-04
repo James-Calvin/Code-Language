@@ -4,7 +4,7 @@ using System.Text;
 namespace ConsoleApp1;
 
 sealed record BytecodeHostBindingMetadata(string Symbol, int Arity);
-sealed record BytecodeTypeMetadata(string Name, bool IsRecord, int[] FieldSlots);
+sealed record BytecodeTypeMetadata(string Name, bool IsRecord, int[] FieldSlots, int[] HashFieldSlots);
 sealed record BytecodeCallableMetadata(int TargetIp, int FrameSize, string Name);
 
 sealed class BytecodeMetadata
@@ -73,7 +73,11 @@ sealed class BytecodeMetadata
             var slots = new int[declaredCount];
             for (int field = 0; field < declaredCount; field++)
                 slots[field] = reader.ReadIndex(fields.Count, "field slot");
-            types.Add(new BytecodeTypeMetadata(name, isRecord, slots));
+            int hashCount = reader.ReadCount("hash field");
+            var hashSlots = new int[hashCount];
+            for (int field = 0; field < hashCount; field++)
+                hashSlots[field] = reader.ReadIndex(fields.Count, "hash field slot");
+            types.Add(new BytecodeTypeMetadata(name, isRecord, slots, hashSlots));
         }
 
         int callableCount = reader.ReadCount("callable");

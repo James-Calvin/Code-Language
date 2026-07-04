@@ -1,0 +1,50 @@
+package Examples.Editor;
+
+import { Scene, SceneLoop, Updatable } from "engine/scene.code";
+
+constant integer maxLives = 3;
+real x = Viewport.safeWidth() / 2.;
+string label = "Position: {x}, literal braces \{ok\}";
+
+enum PlayerState {
+  Ready;
+  Moving;
+}
+
+interface Actor {
+  integer health;
+  function<void> update();
+}
+
+object Player {
+  public integer health = maxLives;
+  private PlayerState state = PlayerState.Ready;
+
+  constructor() {
+  }
+
+  implement Updatable.update() {
+    if Input.keyIsDown(39) then {
+      x += 2;
+      state = PlayerState.Moving;
+    } else {
+      state = PlayerState.Ready;
+    }
+  }
+}
+
+implement Actor for Player {
+  update() via Player.update;
+}
+
+function start() {
+  print("start");
+}
+
+function update() {
+}
+
+function draw() {
+  Draw.clearScreen(Colors.rgb(0, 0, 0));
+  Draw.text(label, x, 24, 16, "center", "top", Colors.rgb(255, 255, 255));
+}

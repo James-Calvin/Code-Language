@@ -5,10 +5,10 @@
     <TargetFramework>net9.0</TargetFramework>
     <AssemblyName>compiler</AssemblyName>
     <RootNamespace>ConsoleApp1</RootNamespace>
-    <Version>0.1.0-alpha.15</Version>
+    <Version>0.1.0-alpha.21</Version>
     <AssemblyVersion>0.1.0.0</AssemblyVersion>
     <FileVersion>0.1.0.0</FileVersion>
-    <InformationalVersion>0.1.0-alpha.15</InformationalVersion>
+    <InformationalVersion>0.1.0-alpha.21</InformationalVersion>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
@@ -20,6 +20,7 @@
     <Content Include="..\web-runtime\code-runtime.wasm" Link="web-runtime\code-runtime.wasm" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="..\web-runtime\index.html" Link="web-runtime\index.html" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="..\web-runtime\README.md" Link="web-runtime\README.md" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="..\editor\**\*" Exclude="..\editor\**\node_modules\**;..\editor\**\.tmp\**;..\editor\**\*.vsix" Link="editor\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
   <Target Name="BuildRustWasmRuntime"

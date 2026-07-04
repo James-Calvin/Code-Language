@@ -20,7 +20,7 @@ sealed class BytecodeBuilder
     private readonly Dictionary<string, int> _fieldSlots = new(StringComparer.Ordinal);
     private readonly List<(string Symbol, int Arity)> _hostBindings = new();
     private readonly Dictionary<string, int> _hostBindingIds = new(StringComparer.Ordinal);
-    private readonly List<(string Name, bool IsRecord, IReadOnlyList<string> Fields)> _types = new();
+    private readonly List<(string Name, bool IsRecord, IReadOnlyList<string> Fields, IReadOnlyList<string> HashFields)> _types = new();
     private readonly Dictionary<string, int> _typeIds = new(StringComparer.Ordinal);
     private readonly List<(string Label, int FrameSize, string Name)> _callables = new();
     private int _currentLine;
@@ -273,11 +273,13 @@ sealed class BytecodeBuilder
 
     public bool TryGetLabelAddress(string name, out int address) => _labels.TryGetValue(name, out address);
 
-    public void RegisterTypeLayout(string name, bool isRecord, IReadOnlyList<string> fields)
+    public void RegisterTypeLayout(string name, bool isRecord, IReadOnlyList<string> fields, IReadOnlyList<string>? hashFields = null)
     {
         int typeId = InternType(name, isRecord);
         foreach (string field in fields) InternField(field);
-        _types[typeId] = (name, isRecord, fields.ToArray());
+        var hashFieldArray = (hashFields ?? fields).ToArray();
+        foreach (string field in hashFieldArray) InternField(field);
+        _types[typeId] = (name, isRecord, fields.ToArray(), hashFieldArray);
     }
 
     public void RegisterCallable(string label, int frameSize, string name)
@@ -397,7 +399,7 @@ sealed class BytecodeBuilder
     {
         if (_typeIds.TryGetValue(name, out int id)) return id;
         id = _types.Count;
-        _types.Add((name, isRecord, Array.Empty<string>()));
+        _types.Add((name, isRecord, Array.Empty<string>(), Array.Empty<string>()));
         _typeIds[name] = id;
         InternString(name);
         return id;
@@ -429,6 +431,8 @@ sealed class BytecodeBuilder
             writer.Write(type.IsRecord ? (byte)1 : (byte)0);
             writer.Write(type.Fields.Count);
             foreach (string field in type.Fields) writer.Write(_fieldSlots[field]);
+            writer.Write(type.HashFields.Count);
+            foreach (string field in type.HashFields) writer.Write(_fieldSlots[field]);
         }
         writer.Write(_callables.Count);
         foreach (var callable in _callables)

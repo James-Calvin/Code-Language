@@ -26,7 +26,7 @@ sealed class SemanticModel
     };
 }
 
-sealed record TypedFieldLayout(string Name, TypeRef Type, int Index);
+sealed record TypedFieldLayout(string Name, TypeRef Type, int Index, FieldHashRole HashRole);
 sealed record TypedTypeLayout(string Name, bool IsRecord, IReadOnlyList<TypedFieldLayout> Fields);
 
 sealed class TypedProgram
@@ -54,7 +54,7 @@ sealed class TypedProgram
                 continue;
             var fields = new List<TypedFieldLayout>(type.Fields.Count);
             for (int index = 0; index < type.Fields.Count; index++)
-                fields.Add(new TypedFieldLayout(type.Fields[index].Name.Lexeme, type.Fields[index].Type, index));
+                fields.Add(new TypedFieldLayout(type.Fields[index].Name.Lexeme, type.Fields[index].Type, index, type.Fields[index].HashRole));
             types[type.Name.Lexeme] = new TypedTypeLayout(type.Name.Lexeme, type.IsRecord, fields);
         }
         return new TypedProgram(statements, semantics, types);

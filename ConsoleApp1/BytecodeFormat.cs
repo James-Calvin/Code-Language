@@ -7,7 +7,7 @@ namespace ConsoleApp1;
 static class BytecodeFormat
 {
     public const string MagicText = "CODE";
-    public const byte Version = 10;
+    public const byte Version = 11;
     public const string MetadataMagicText = "META";
 
     // magic (4) + version (1) + codeSize (4) + debugCount (4)

@@ -1,7 +1,7 @@
 # Code Language Specification (Living Draft)
 
 Version: 1.0
-Last updated: 2026-06-14
+Last updated: 2026-07-04
 
 ## 1. Goals and Design
 - `Code` is a code-first language for building 2D interactive applications that target the web first.
@@ -236,11 +236,17 @@ function<integer> add(integer parameter1, integer parameter2) {
   return parameter1 + parameter2;
 }
 ```
+- Default parameters:
+  - Functions, methods, constructors, and object/record primary constructors may declare trailing default values, for example `function<integer> add(integer left, integer right = 1)`.
+  - Parameters after a defaulted parameter must also declare defaults.
+  - Defaults are type-checked against the parameter type and are emitted at the call site when omitted.
+  - Interface method declarations and `implement ... via ...` mappings cannot declare default values in the current implementation.
 - Overload resolution:
   - Prefer exact parameter type matches.
   - Otherwise choose the candidate requiring the fewest implicit promotions; if tied, choose the one with the lowest-rank promotions.
   - Non-variadic matches beat variadics when both apply.
   - Remaining ambiguity results in a compile error (declaration order is not a tie-breaker).
+  - Omitted default arguments count as a small conversion cost, so exact arity wins over a defaulted overload when both otherwise match.
 
 ## 7. Control Flow, Loops, and Operators
 - `if` uses `then`.
@@ -313,6 +319,7 @@ while value != someValue then {
 - Arrays (current impl): array literal syntax `{a, b, c}` builds a runtime array; typed declarations `array<integer> xs = {1,2,3};`; dynamic `new array<integer>(n)` requires a size; `xs.length` yields length; `xs[index]` reads an element; `xs[index] = value` writes an element; `xs.append(value)` grows the array; `xs.removeAt(index)` removes an element; `foreach` can iterate arrays by element in addition to numeric bounds.
 - Built-in collections (current impl):
   - `map<Key, Value>` uses `new map<Key, Value>()`, supports `.length`, indexing (`items[key]`, `items[key] = value`), `contains(key)`, and `remove(key)`.
+  - Direct reads of a missing map key still raise a runtime error. Compound assignment to a missing map key, such as `items[key] += amount`, uses the value type's default as the old value before storing the result.
   - `set<Value>` uses `new set<Value>()`, supports `.length`, `add(value)`, `contains(value)`, and `remove(value)`.
   - `queue<Value>` uses `new queue<Value>()`, supports `.length`, `enqueue(value)`, `dequeue()`, and `peek()`.
   - `stack<Value>` uses `new stack<Value>()`, supports `.length`, `push(value)`, `pop()`, and `peek()`.
@@ -430,7 +437,7 @@ print(turns.dequeue());
 
 ## 9. Object Model and Interfaces
 - Current implementation status:
-  - Implemented: object declarations with fields/constructors/methods, record declarations with fields/constructors/methods, `new Type(...)`, field read/write (`obj.field`, `obj.field = value`), method calls (`obj.method(args)`), interface field/method conformance checks via either inline interface methods or `implement Interface for Object/Record`, and interface-typed locals/parameters/returns/fields/arrays with runtime-dispatched interface method calls plus interface field access.
+  - Implemented: object declarations with fields/constructors/methods, record declarations with fields/constructors/methods, `new Type(...)`, implicit `Type(...)` construction, field read/write (`obj.field`, `obj.field = value`), method calls (`obj.method(args)`), interface field/method conformance checks via either inline interface methods or `implement Interface for Object/Record`, and interface-typed locals/parameters/returns/fields/arrays with runtime-dispatched interface method calls plus interface field access.
   - Implemented: top-level declaration visibility for modules (`public`, `package`, `private`) with package-aware import checks.
   - Implemented: member-level visibility for object/record fields, constructors, and methods.
 - No inheritance.
@@ -459,7 +466,11 @@ print(turns.dequeue());
 - Field default expressions are evaluated for each new instance before the constructor body runs.
 - Field default expressions may read same-module globals and built-in constants, but they do not have access to constructor parameters, `this`, sibling fields, or implicit field lookup; use a constructor for dependent field initialization.
 - Current constructor rules (implemented):
-  - If an object or record has fields without defaults, it must declare at least one constructor.
+  - `TypeName(args...)` is shorthand for `new TypeName(args...)` when normal function resolution does not apply.
+  - `TypeName.method(...)` does not construct a value; use `TypeName().method(...)` for zero-argument builder chains.
+  - Object and record declarations may use primary constructor syntax, for example `object Builder(string name) { string name; }`; each primary constructor parameter assigns the same-named field.
+  - Records with no explicit constructors receive an implicit field-order constructor for fields without declaration defaults.
+  - Objects with fields without defaults must declare at least one constructor.
   - Objects or records whose fields all have defaults may omit constructors and still be constructed with `new Type()`.
   - Constructor overloads resolve by parameter-type signatures with best-match conversion scoring.
   - Each constructor must definitely assign all declared fields that do not have field defaults via either `this.field = ...` or implicit field assignment (`field = ...`) inside the constructor body.
@@ -478,13 +489,23 @@ print(turns.dequeue());
   - the method body sees a cloned `this`
   - mutating fields inside the method only updates that local copy
   - persistent updates should return a record value and be assigned back at the call site
-- Record equality (`==` / `!=`) is structural for hashable records only.
-- Hashable record fields are recursively limited to:
+- Record equality (`==` / `!=`) is structural for hashable records.
+- By default, every record field participates in equality and hashing.
+- Record fields may use contextual hash-selection modifiers:
+  - `key Type name;` means only `key` fields define equality and hashing.
+  - `ignore key Type name;` excludes that field from the default all-field equality and hashing set.
+  - `key` and `ignore key` are contextual modifiers, not reserved words.
+  - A record may use `key` fields or `ignore key` fields, but not both.
+  - `key` fields are constructor-only after initialization.
+- Participating hash fields may recursively contain:
   - `whole`, `integer`, `real`, `boolean`, `string`
   - enums
+  - object references, compared and hashed by identity
   - hashable records
   - `optional<T>` where `T` is hashable by the same rule
-- Records with non-hashable fields are still valid record types, but they cannot be compared for equality and cannot be used as `map` keys or `set` elements.
+  - `array<T>`, `queue<T>`, `stack<T>`, and `set<T>` where `T` is hashable
+  - `map<K, V>` where both `K` and `V` are hashable
+- `map` key insertion and `set` element insertion snapshot the key/element so later mutation of the original value does not corrupt lookup buckets.
 - For remaining categories, reference/value behavior follows common C# conventions (provisional).
 
 Interface example:

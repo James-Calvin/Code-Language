@@ -126,7 +126,11 @@ sealed class CodeGenerator
         // Pre-register object names and constructor labels for forward constructor calls.
         foreach (var obj in objectDecls)
         {
-            _builder.RegisterTypeLayout(obj.Name.Lexeme, obj.IsRecord, obj.Fields.Select(field => field.Name.Lexeme).ToArray());
+            _builder.RegisterTypeLayout(
+                obj.Name.Lexeme,
+                obj.IsRecord,
+                obj.Fields.Select(field => field.Name.Lexeme).ToArray(),
+                GetRecordHashFieldNames(obj).ToArray());
             _objectNames.Add(obj.Name.Lexeme);
             if (obj.IsRecord)
                 _recordNames.Add(obj.Name.Lexeme);
@@ -273,6 +277,26 @@ sealed class CodeGenerator
         foreach (var ctor in obj.Constructors)
         {
             EmitConstructor(obj, ctor);
+        }
+    }
+
+    private static IEnumerable<string> GetRecordHashFieldNames(ObjectDecl obj)
+    {
+        if (!obj.IsRecord)
+            yield break;
+
+        bool hasKeyFields = obj.Fields.Any(field => field.HashRole == FieldHashRole.Key);
+        foreach (var field in obj.Fields)
+        {
+            if (hasKeyFields)
+            {
+                if (field.HashRole == FieldHashRole.Key)
+                    yield return field.Name.Lexeme;
+            }
+            else if (field.HashRole != FieldHashRole.IgnoreKey)
+            {
+                yield return field.Name.Lexeme;
+            }
         }
     }
 
@@ -642,34 +666,7 @@ sealed class CodeGenerator
                 break;
             case NewObjectExpr no:
             {
-                if (!_objectNames.Contains(no.TypeName.Lexeme))
-                    throw new InvalidOperationException($"Unknown object type '{no.TypeName.Lexeme}' at line {no.TypeName.Line}, col {no.TypeName.Column}");
-                if (_recordNames.Contains(no.TypeName.Lexeme))
-                    _builder.NewRecord(no.TypeName.Lexeme);
-                else
-                    _builder.NewObject(no.TypeName.Lexeme);
-                EmitFieldDefaultInitializers(no.TypeName.Lexeme);
-                string ctorKey = no.ResolvedConstructorKey ?? ConstructorKey(no.TypeName.Lexeme, no.Arguments.Count);
-                if (_constructors.TryGetValue(ctorKey, out var ctor))
-                {
-                    _builder.Dup(); // keep object on stack after constructor call
-                    _constructorParamTypes.TryGetValue(ctorKey, out var constructorParamTypes);
-                    for (int i = 0; i < no.Arguments.Count; i++)
-                    {
-                        var arg = no.Arguments[i];
-                        Emit(arg);
-                        EmitCloneForSourceExprIfNeeded(arg);
-                        if (constructorParamTypes is not null && i < constructorParamTypes.Count)
-                            EmitStorageBoundaryCheck(constructorParamTypes[i]);
-                    }
-                    int frameSize = Math.Max(ctor.LocalCount, ctor.ParamCount);
-                    _builder.Call(ctor.Label, ctor.ParamCount, frameSize);
-                    _builder.Pop(); // discard constructor return value
-                }
-                else if (no.Arguments.Count > 0 || HasConstructors(no.TypeName.Lexeme))
-                {
-                    throw new InvalidOperationException($"No constructor found for '{no.TypeName.Lexeme}' with {no.Arguments.Count} arguments at line {no.TypeName.Line}, col {no.TypeName.Column}");
-                }
+                EmitObjectConstruction(no.TypeName, no.Arguments, no.ResolvedDefaultArguments, no.ResolvedConstructorKey);
                 break;
             }
             case ArrayLengthExpr alen:
@@ -1264,6 +1261,8 @@ sealed class CodeGenerator
             case OptionalHasValueExpr:
                 return new TypeRef("boolean", null, 0, 0);
             case Call c:
+                if (c.ResolvedConstructorTypeRef is not null)
+                    return c.ResolvedConstructorTypeRef;
                 if (c.ResolvedImplicitMethodReturnTypeRef is not null)
                     return c.ResolvedImplicitMethodReturnTypeRef;
                 return _functionReturnTypes.TryGetValue(c.Callee.Lexeme, out var functionReturnType) ? functionReturnType : null;
@@ -1417,9 +1416,29 @@ sealed class CodeGenerator
                 Emit(arrayIndex.Index);
                 EmitIndexKeyBoundaryCheck(arrayIndex.Array);
                 _builder.Store(indexSlot);
-                _builder.Load(arraySlot);
-                _builder.Load(indexSlot);
-                EmitIndexGet(arrayIndex.Array);
+                var collectionType = TryResolveTypeRef(arrayIndex.Array);
+                if (collectionType is not null && string.Equals(collectionType.Name, "map", StringComparison.Ordinal))
+                {
+                    string missingLabel = NewLabel("map_compound_missing");
+                    string valueReadyLabel = NewLabel("map_compound_value_ready");
+                    _builder.Load(arraySlot);
+                    _builder.Load(indexSlot);
+                    _builder.MapContains();
+                    _builder.JumpIfZero(missingLabel);
+                    _builder.Load(arraySlot);
+                    _builder.Load(indexSlot);
+                    _builder.MapGet();
+                    _builder.Jump(valueReadyLabel);
+                    _builder.Label(missingLabel);
+                    EmitDefaultValue(arrayIndex.ResolvedElementTypeRef ?? new TypeRef("integer", null, 0, 0));
+                    _builder.Label(valueReadyLabel);
+                }
+                else
+                {
+                    _builder.Load(arraySlot);
+                    _builder.Load(indexSlot);
+                    EmitIndexGet(arrayIndex.Array);
+                }
                 Emit(expr.Value);
                 EmitBinaryOperator(expr.Operator, arrayIndex, expr.Value);
                 EmitStorageBoundaryCheck(arrayIndex.ResolvedElementTypeRef);
@@ -1646,6 +1665,55 @@ sealed class CodeGenerator
         }
     }
 
+    private void EmitObjectConstruction(
+        Token typeName,
+        IReadOnlyList<Expr> arguments,
+        IReadOnlyList<Expr> defaultArguments,
+        string? resolvedConstructorKey)
+    {
+        if (!_objectNames.Contains(typeName.Lexeme))
+            throw new InvalidOperationException($"Unknown object type '{typeName.Lexeme}' at line {typeName.Line}, col {typeName.Column}");
+        if (_recordNames.Contains(typeName.Lexeme))
+            _builder.NewRecord(typeName.Lexeme);
+        else
+            _builder.NewObject(typeName.Lexeme);
+        EmitFieldDefaultInitializers(typeName.Lexeme);
+
+        var allArguments = CombineArguments(arguments, defaultArguments);
+        string ctorKey = resolvedConstructorKey ?? ConstructorKey(typeName.Lexeme, allArguments.Count);
+        if (_constructors.TryGetValue(ctorKey, out var ctor))
+        {
+            _builder.Dup(); // keep object on stack after constructor call
+            _constructorParamTypes.TryGetValue(ctorKey, out var constructorParamTypes);
+            for (int i = 0; i < allArguments.Count; i++)
+            {
+                var arg = allArguments[i];
+                Emit(arg);
+                EmitCloneForSourceExprIfNeeded(arg);
+                if (constructorParamTypes is not null && i < constructorParamTypes.Count)
+                    EmitStorageBoundaryCheck(constructorParamTypes[i]);
+            }
+            int frameSize = Math.Max(ctor.LocalCount, ctor.ParamCount);
+            _builder.Call(ctor.Label, ctor.ParamCount, frameSize);
+            _builder.Pop(); // discard constructor return value
+        }
+        else if (allArguments.Count > 0 || HasConstructors(typeName.Lexeme))
+        {
+            throw new InvalidOperationException($"No constructor found for '{typeName.Lexeme}' with {allArguments.Count} arguments at line {typeName.Line}, col {typeName.Column}");
+        }
+    }
+
+    private static IReadOnlyList<Expr> CombineArguments(IReadOnlyList<Expr> arguments, IReadOnlyList<Expr> defaultArguments)
+    {
+        if (defaultArguments.Count == 0)
+            return arguments;
+
+        var combined = new List<Expr>(arguments.Count + defaultArguments.Count);
+        combined.AddRange(arguments);
+        combined.AddRange(defaultArguments);
+        return combined;
+    }
+
     private void EmitIndexGet(Expr collectionExpr)
     {
         var collectionType = TryResolveTypeRef(collectionExpr)
@@ -1866,9 +1934,10 @@ sealed class CodeGenerator
         Emit(mc.Target);
         string key = mc.ResolvedMethodKey ?? MethodKey(targetType.Name, mc.MethodName.Lexeme, mc.Arguments.Count);
         _methodParamTypes.TryGetValue(key, out var methodParamTypes);
-        for (int i = 0; i < mc.Arguments.Count; i++)
+        var allArguments = CombineArguments(mc.Arguments, mc.ResolvedDefaultArguments);
+        for (int i = 0; i < allArguments.Count; i++)
         {
-            var arg = mc.Arguments[i];
+            var arg = allArguments[i];
             Emit(arg);
             EmitCloneForSourceExprIfNeeded(arg);
             if (methodParamTypes is not null && i < methodParamTypes.Count)
@@ -1889,9 +1958,10 @@ sealed class CodeGenerator
 
         EmitCurrentObject();
         _methodParamTypes.TryGetValue(call.ResolvedImplicitMethodKey, out var methodParamTypes);
-        for (int i = 0; i < call.Arguments.Count; i++)
+        var allArguments = CombineArguments(call.Arguments, call.ResolvedDefaultArguments);
+        for (int i = 0; i < allArguments.Count; i++)
         {
-            var arg = call.Arguments[i];
+            var arg = allArguments[i];
             Emit(arg);
             EmitCloneForSourceExprIfNeeded(arg);
             if (methodParamTypes is not null && i < methodParamTypes.Count)
@@ -2126,6 +2196,13 @@ sealed class CodeGenerator
 
     private void EmitCall(Call call)
     {
+        if (call.ResolvesToConstructor)
+        {
+            var typeToken = new Token(TokenType.Identifier, call.ResolvedConstructorTypeName!, null, call.Callee.Line, call.Callee.Column);
+            EmitObjectConstruction(typeToken, call.Arguments, call.ResolvedDefaultArguments, call.ResolvedConstructorKey);
+            return;
+        }
+
         if (call.ResolvesToImplicitMethod)
         {
             EmitImplicitMethodCall(call);
@@ -2138,16 +2215,17 @@ sealed class CodeGenerator
         if (!_functions.TryGetValue(call.Callee.Lexeme, out var info))
             throw new InvalidOperationException($"Call to undefined function '{call.Callee.Lexeme}' at line {call.Callee.Line}, col {call.Callee.Column}");
         _functionParamTypes.TryGetValue(call.Callee.Lexeme, out var functionParamTypes);
-        for (int i = 0; i < call.Arguments.Count; i++)
+        var allArguments = CombineArguments(call.Arguments, call.ResolvedDefaultArguments);
+        for (int i = 0; i < allArguments.Count; i++)
         {
-            var arg = call.Arguments[i];
+            var arg = allArguments[i];
             Emit(arg);
             EmitCloneForSourceExprIfNeeded(arg);
             if (functionParamTypes is not null && i < functionParamTypes.Count)
                 EmitStorageBoundaryCheck(functionParamTypes[i]);
         }
         int frameSize = Math.Max(info.LocalCount, info.ParamCount); // include params in frame size
-        _builder.Call(info.Label, call.Arguments.Count, frameSize);
+        _builder.Call(info.Label, info.ParamCount, frameSize);
     }
 
     private bool TryEmitIntrinsicCall(Call call)

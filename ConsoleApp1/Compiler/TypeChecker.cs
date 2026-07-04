@@ -174,7 +174,7 @@ sealed class TypeChecker
                     throw new CompilerException("Interface members are public contract requirements and cannot declare visibility", field.Name.Line, field.Name.Column);
                 ValidateTypeRef(field.Type);
                 EnsureNotVoidTypeRef(field.Type, "Interface fields cannot be void", field.Name.Line, field.Name.Column);
-                ifaceSym.Fields[field.Name.Lexeme] = new FieldSignature(field.Name, field.Type, DeclarationVisibility.Public, false);
+                ifaceSym.Fields[field.Name.Lexeme] = new FieldSignature(field.Name, field.Type, DeclarationVisibility.Public, false, FieldHashRole.Default);
             }
             foreach (var method in iface.Methods)
             {
@@ -216,8 +216,10 @@ sealed class TypeChecker
                     throw new CompilerException("Package-visible members require a containing package declaration.", field.Name.Line, field.Name.Column);
                 ValidateTypeRef(field.Type);
                 EnsureNotVoidTypeRef(field.Type, $"{Capitalize(typeKind)} fields cannot be void", field.Name.Line, field.Name.Column);
-                symbol.Fields[field.Name.Lexeme] = new FieldSignature(field.Name, field.Type, field.Visibility, field.IsConstant);
+                symbol.Fields[field.Name.Lexeme] = new FieldSignature(field.Name, field.Type, field.Visibility, field.IsConstant, field.HashRole);
             }
+
+            ValidateRecordHashFieldRoles(obj, symbol);
 
             var ctorSignatures = new HashSet<string>(StringComparer.Ordinal);
             foreach (var ctor in obj.Constructors)
@@ -240,7 +242,7 @@ sealed class TypeChecker
                 }
                 if (ctor.Visibility == DeclarationVisibility.Package && string.IsNullOrWhiteSpace(symbol.PackageName))
                     throw new CompilerException("Package-visible members require a containing package declaration.", ctor.Keyword.Line, ctor.Keyword.Column);
-                symbol.Constructors.Add(new ConstructorSignature(ctor.Keyword, paramTypes, paramTypeRefs, dispatchKey, ctor.Body, ctor.Visibility));
+                symbol.Constructors.Add(new ConstructorSignature(ctor.Keyword, paramTypes, paramTypeRefs, ctor.Parameters.Select(p => p.DefaultValue).ToList(), dispatchKey, ctor.Body, ctor.Visibility));
             }
 
             var methodKeys = new HashSet<string>(StringComparer.Ordinal);
@@ -265,7 +267,7 @@ sealed class TypeChecker
                     throw new CompilerException("Package-visible members require a containing package declaration.", method.Name.Line, method.Name.Column);
                 var paramTypes = method.Parameters.Select(p => MapType(p.Type!)).ToList();
                 var returnType = MapType(returnTypeRef);
-                symbol.Methods[methodKey] = new MethodSignature(method.Name, returnTypeRef, returnType, paramTypes, paramTypeRefs, methodKey, method.Body, method.Parameters, method.Visibility);
+                symbol.Methods[methodKey] = new MethodSignature(method.Name, returnTypeRef, returnType, paramTypes, paramTypeRefs, method.Parameters.Select(p => p.DefaultValue).ToList(), methodKey, method.Body, method.Parameters, method.Visibility);
             }
 
             if (symbol.Fields.Count > 0 && symbol.Constructors.Count == 0 && obj.Fields.Any(field => field.Initializer is null))
@@ -389,7 +391,8 @@ sealed class TypeChecker
                     Return: MapType(returnTypeRef),
                     ReturnTypeRef: returnTypeRef,
                     Params: fn.Parameters.Select(p => MapType(p.Type!)).ToList(),
-                    ParamTypeRefs: fn.Parameters.Select(p => p.Type!).ToList()
+                    ParamTypeRefs: fn.Parameters.Select(p => p.Type!).ToList(),
+                    DefaultValues: fn.Parameters.Select(p => p.DefaultValue).ToList()
                 );
                 for (int i = 0; i < fn.Parameters.Count; i++)
                 {
@@ -398,6 +401,8 @@ sealed class TypeChecker
                 _functions[fn.Name.Lexeme] = sig;
             }
         }
+
+        ValidateParameterDefaults(statements);
 
         // Validate constructor bodies and field definite-initialization.
         foreach (var stmt in statements)
@@ -468,6 +473,107 @@ sealed class TypeChecker
 
         if (hasInit || global.Type == TypeSymbol.Optional)
             _assignedGlobals.Add(GlobalKey(global.ModuleKey, variable.Name.Lexeme));
+    }
+
+    private void ValidateParameterDefaults(IList<Stmt> statements)
+    {
+        foreach (var stmt in statements)
+        {
+            switch (stmt)
+            {
+                case FunctionDecl fn:
+                    ValidateDefaultParameterList(fn.Parameters, fn.OriginPackageName, fn.OriginModulePath);
+                    break;
+                case ObjectDecl obj:
+                    foreach (var ctor in obj.Constructors)
+                        ValidateDefaultParameterList(ctor.Parameters, obj.OriginPackageName, obj.OriginModulePath);
+                    foreach (var method in obj.Methods)
+                        ValidateDefaultParameterList(method.Parameters, obj.OriginPackageName, obj.OriginModulePath);
+                    foreach (var inlineMethod in obj.InlineInterfaceMethods)
+                    {
+                        foreach (var param in inlineMethod.Parameters)
+                        {
+                            if (param.DefaultValue is not null)
+                                throw new CompilerException("Inline implement parameters cannot declare default values", param.Name.Line, param.Name.Column);
+                        }
+                    }
+                    break;
+                case InterfaceDecl iface:
+                    foreach (var method in iface.Methods)
+                    {
+                        foreach (var param in method.Parameters)
+                        {
+                            if (param.DefaultValue is not null)
+                                throw new CompilerException("Interface method parameters cannot declare default values", param.Name.Line, param.Name.Column);
+                        }
+                    }
+                    break;
+                case ImplementDecl impl:
+                    foreach (var map in impl.Methods)
+                    {
+                        foreach (var param in map.Parameters)
+                        {
+                            if (param.DefaultValue is not null)
+                                throw new CompilerException("Implementation mapping parameters cannot declare default values", param.Name.Line, param.Name.Column);
+                        }
+                    }
+                    break;
+            }
+        }
+    }
+
+    private void ValidateDefaultParameterList(IReadOnlyList<Parameter> parameters, string? packageName, string? modulePath)
+    {
+        bool sawDefault = false;
+        for (int i = 0; i < parameters.Count; i++)
+        {
+            var param = parameters[i];
+            if (param.DefaultValue is null)
+            {
+                if (sawDefault)
+                    throw new CompilerException($"Parameter '{param.Name.Lexeme}' must declare a default value because an earlier parameter has a default", param.Name.Line, param.Name.Column);
+                continue;
+            }
+
+            sawDefault = true;
+            if (param.Type is null)
+                throw new CompilerException($"Parameter '{param.Name.Lexeme}' with a default value must have a type", param.Name.Line, param.Name.Column);
+
+            var previousObjectSymbol = _currentObjectSymbol;
+            var previousObjectTypeRef = _currentObjectTypeRef;
+            var previousAccessPackageName = _currentAccessPackageName;
+            var previousModulePath = _currentModulePath;
+            var previousAllowImplicitThisLookup = _allowImplicitThisLookup;
+            _currentObjectSymbol = null;
+            _currentObjectTypeRef = null;
+            _currentAccessPackageName = packageName;
+            _currentModulePath = modulePath;
+            _allowImplicitThisLookup = false;
+            try
+            {
+                var env = new TypeEnvironment();
+                var actualType = CheckExpr(param.DefaultValue, env, currentReturn: null);
+                var actualTypeRef = ResolveExprTypeRef(param.DefaultValue, env);
+                var expectedType = MapType(param.Type);
+                RequireAssignable(
+                    expectedType,
+                    param.Type,
+                    actualType,
+                    actualTypeRef,
+                    param.Name.Line,
+                    param.Name.Column,
+                    $"Default value type mismatch for parameter '{param.Name.Lexeme}'",
+                    param.DefaultValue);
+            }
+            finally
+            {
+                _currentObjectSymbol = previousObjectSymbol;
+                _currentObjectTypeRef = previousObjectTypeRef;
+                _currentAccessPackageName = previousAccessPackageName;
+                _currentModulePath = previousModulePath;
+                _allowImplicitThisLookup = previousAllowImplicitThisLookup;
+            }
+        }
     }
 
     private void CheckFunction(FunctionDecl fn)
@@ -795,6 +901,37 @@ sealed class TypeChecker
         }
     }
 
+    private void ValidateRecordHashFieldRoles(ObjectDecl obj, ObjectSymbol symbol)
+    {
+        bool hasKeyFields = obj.Fields.Any(field => field.HashRole == FieldHashRole.Key);
+        bool hasIgnoredFields = obj.Fields.Any(field => field.HashRole == FieldHashRole.IgnoreKey);
+
+        if (!symbol.IsRecord)
+        {
+            var invalid = obj.Fields.FirstOrDefault(field => field.HashRole != FieldHashRole.Default);
+            if (invalid is not null)
+                throw new CompilerException("Record hash field modifiers are only valid on record fields.", invalid.Name.Line, invalid.Name.Column);
+            return;
+        }
+
+        if (hasKeyFields && hasIgnoredFields)
+        {
+            var ignored = obj.Fields.First(field => field.HashRole == FieldHashRole.IgnoreKey);
+            throw new CompilerException($"Record '{obj.Name.Lexeme}' cannot mix 'key' and 'ignore key' fields", ignored.Name.Line, ignored.Name.Column);
+        }
+
+        foreach (var field in GetRecordHashFields(symbol))
+        {
+            if (!IsHashableTypeRef(field.TypeRef))
+            {
+                throw new CompilerException(
+                    $"Record '{obj.Name.Lexeme}' hash field '{field.Name.Lexeme}' of type '{FormatTypeRef(field.TypeRef)}' is not hashable",
+                    field.Name.Line,
+                    field.Name.Column);
+            }
+        }
+    }
+
     private bool TryResolveImplicitField(Token name, TypeEnvironment env, out TypeSymbol type, out TypeRef? typeRef)
     {
         type = TypeSymbol.Unknown;
@@ -892,6 +1029,9 @@ sealed class TypeChecker
 
     private void EnsureCanAssignField(FieldSignature field, Token name)
     {
+        if (field.HashRole == FieldHashRole.Key && !_checkingConstructorBody)
+            throw new CompilerException($"Cannot assign to key field '{name.Lexeme}' outside a constructor", name.Line, name.Column);
+
         if (!field.IsConstant)
             return;
 
@@ -1193,6 +1333,7 @@ sealed class TypeChecker
                 }
 
                 no.ResolvedConstructorKey = ctor!.DispatchKey;
+                no.ResolvedDefaultArguments = ResolveDefaultArguments(ctor.DefaultValues, no.Arguments.Count);
                 return obj.IsRecord ? TypeSymbol.Record : TypeSymbol.Object;
             }
             case ArrayLengthExpr alen:
@@ -1387,6 +1528,7 @@ sealed class TypeChecker
                     mc.ResolvedInterfaceName = targetTypeRef.Name;
                     mc.ResolvedInterfaceMethodKey = resolvedInterfaceMethod.SignatureKey;
                     mc.ResolvedReturnTypeRef = resolvedInterfaceMethod.ReturnTypeRef;
+                    mc.ResolvedDefaultArguments = [];
                     return resolvedInterfaceMethod.ReturnType;
                 }
 
@@ -1406,6 +1548,7 @@ sealed class TypeChecker
                 mc.ResolvedInterfaceName = null;
                 mc.ResolvedInterfaceMethodKey = null;
                 mc.ResolvedReturnTypeRef = method.ReturnTypeRef;
+                mc.ResolvedDefaultArguments = ResolveDefaultArguments(method.DefaultValues, mc.Arguments.Count);
                 return method.ReturnType;
             }
             case Variable v:
@@ -1441,6 +1584,8 @@ sealed class TypeChecker
                     v.ResolvedBuiltInConstant = true;
                     return TypeSymbol.Real;
                 }
+                if (_objects.ContainsKey(v.Name.Lexeme))
+                    throw new CompilerException($"Type '{v.Name.Lexeme}' cannot be used as a value. Use '{v.Name.Lexeme}(...)' to construct a value, or '{v.Name.Lexeme}().method(...)' for zero-argument builder chaining.", v.Name.Line, v.Name.Column);
                 throw new CompilerException($"Undefined variable '{v.Name.Lexeme}'", v.Name.Line, v.Name.Column);
             case Assign a:
             {
@@ -1532,11 +1677,47 @@ sealed class TypeChecker
                     c.ResolvedImplicitMethodOwnerTypeName = _currentObjectTypeRef.Name;
                     c.ResolvedImplicitMethodKey = method!.DispatchKey;
                     c.ResolvedImplicitMethodReturnTypeRef = method.ReturnTypeRef;
+                    c.ResolvedDefaultArguments = ResolveDefaultArguments(method.DefaultValues, c.Arguments.Count);
+                    c.ResolvedConstructorTypeName = null;
+                    c.ResolvedConstructorKey = null;
+                    c.ResolvedConstructorTypeRef = null;
                     return method.ReturnType;
                 }
 
                 if (!TryGetFunctionSignature(c.Callee.Lexeme, out var sig))
                 {
+                    if (_objects.TryGetValue(c.Callee.Lexeme, out var constructorType))
+                    {
+                        if (!TryResolveBestConstructor(constructorType, argTypes, requireAccessible: true, out var ctor, out bool ambiguousConstructor))
+                        {
+                            if (constructorType.Constructors.Count == 0 && c.Arguments.Count == 0)
+                            {
+                                c.ResolvedImplicitMethodOwnerTypeName = null;
+                                c.ResolvedImplicitMethodKey = null;
+                                c.ResolvedImplicitMethodReturnTypeRef = null;
+                                c.ResolvedDefaultArguments = [];
+                                c.ResolvedConstructorTypeName = constructorType.Name.Lexeme;
+                                c.ResolvedConstructorKey = null;
+                                c.ResolvedConstructorTypeRef = new TypeRef(constructorType.Name.Lexeme, null, c.Callee.Line, c.Callee.Column);
+                                return constructorType.IsRecord ? TypeSymbol.Record : TypeSymbol.Object;
+                            }
+                            if (ambiguousConstructor)
+                                throw new CompilerException($"Ambiguous constructor call for '{c.Callee.Lexeme}'", c.Callee.Line, c.Callee.Column);
+                            if (TryResolveBestConstructor(constructorType, argTypes, requireAccessible: false, out _, out _))
+                                throw new CompilerException($"Constructor for '{c.Callee.Lexeme}' is not accessible", c.Callee.Line, c.Callee.Column);
+                            throw new CompilerException($"No matching constructor overload for '{c.Callee.Lexeme}'", c.Callee.Line, c.Callee.Column);
+                        }
+
+                        c.ResolvedImplicitMethodOwnerTypeName = null;
+                        c.ResolvedImplicitMethodKey = null;
+                        c.ResolvedImplicitMethodReturnTypeRef = null;
+                        c.ResolvedDefaultArguments = ResolveDefaultArguments(ctor!.DefaultValues, c.Arguments.Count);
+                        c.ResolvedConstructorTypeName = constructorType.Name.Lexeme;
+                        c.ResolvedConstructorKey = ctor.DispatchKey;
+                        c.ResolvedConstructorTypeRef = new TypeRef(constructorType.Name.Lexeme, null, c.Callee.Line, c.Callee.Column);
+                        return constructorType.IsRecord ? TypeSymbol.Record : TypeSymbol.Object;
+                    }
+
                     if (_enableImpliedEngineImports &&
                         ImpliedEngineFunctionNamespaces.TryGetValue(c.Callee.Lexeme, out var namespaceAlias))
                     {
@@ -1548,8 +1729,9 @@ sealed class TypeChecker
 
                     throw new CompilerException($"Undefined function '{c.Callee.Lexeme}'", c.Callee.Line, c.Callee.Column);
                 }
-                if (sig.Params.Count != c.Arguments.Count)
-                    throw new CompilerException($"Function '{c.Callee.Lexeme}' expects {sig.Params.Count} args, got {c.Arguments.Count}", c.Callee.Line, c.Callee.Column);
+                int requiredFunctionArgs = RequiredParameterCount(sig.DefaultValues);
+                if (c.Arguments.Count < requiredFunctionArgs || c.Arguments.Count > sig.Params.Count)
+                    throw new CompilerException($"Function '{c.Callee.Lexeme}' expects {requiredFunctionArgs} to {sig.Params.Count} args, got {c.Arguments.Count}", c.Callee.Line, c.Callee.Column);
                 for (int i = 0; i < c.Arguments.Count; i++)
                 {
                     RequireAssignable(sig.Params[i], sig.ParamTypeRefs[i], argTypes[i].Symbol, argTypes[i].Ref, c.Callee.Line, c.Callee.Column, $"Argument {i} type mismatch for '{c.Callee.Lexeme}'", c.Arguments[i]);
@@ -1557,6 +1739,10 @@ sealed class TypeChecker
                 c.ResolvedImplicitMethodOwnerTypeName = null;
                 c.ResolvedImplicitMethodKey = null;
                 c.ResolvedImplicitMethodReturnTypeRef = null;
+                c.ResolvedDefaultArguments = ResolveDefaultArguments(sig.DefaultValues, c.Arguments.Count);
+                c.ResolvedConstructorTypeName = null;
+                c.ResolvedConstructorKey = null;
+                c.ResolvedConstructorTypeRef = null;
                 return sig.Return;
             }
             case Unary u:
@@ -2028,7 +2214,8 @@ sealed class TypeChecker
                 intrinsic.ReturnType,
                 returnType,
                 paramTypes,
-                paramTypeRefs);
+                paramTypeRefs,
+                new Expr?[paramTypes.Count]);
         }
         return map;
     }
@@ -2123,8 +2310,8 @@ sealed class TypeChecker
         {
             if (requireAccessible && !IsMemberAccessible(obj, ctor.Visibility))
                 continue;
-            if (!TryCandidateCost(ctor.Params, ctor.ParamTypeRefs, args, out int cost))
-                continue;
+                if (!TryCandidateCost(ctor.Params, ctor.ParamTypeRefs, ctor.DefaultValues, args, out int cost))
+                    continue;
 
             if (cost < bestCost)
             {
@@ -2157,8 +2344,8 @@ sealed class TypeChecker
         {
             if (requireAccessible && !IsMemberAccessible(obj, method.Visibility))
                 continue;
-            if (!TryCandidateCost(method.ParamTypes, method.ParamTypeRefs, args, out int cost))
-                continue;
+                if (!TryCandidateCost(method.ParamTypes, method.ParamTypeRefs, method.DefaultValues, args, out int cost))
+                    continue;
 
             if (cost < bestCost)
             {
@@ -2188,7 +2375,7 @@ sealed class TypeChecker
 
         foreach (var method in iface.Methods.Values.Where(m => string.Equals(m.Name.Lexeme, methodName, StringComparison.Ordinal)))
         {
-            if (!TryCandidateCost(method.ParamTypes.ToList(), method.ParamTypeRefs, args, out int cost))
+            if (!TryCandidateCost(method.ParamTypes.ToList(), method.ParamTypeRefs, new Expr?[method.ParamTypes.Count], args, out int cost))
                 continue;
 
             if (cost < bestCost)
@@ -2252,19 +2439,51 @@ sealed class TypeChecker
     private bool TryCandidateCost(
         IList<TypeSymbol> expectedSymbols,
         IReadOnlyList<TypeRef> expectedTypeRefs,
+        IReadOnlyList<Expr?> defaultValues,
         IReadOnlyList<(TypeSymbol Symbol, TypeRef? Ref)> actuals,
         out int totalCost)
     {
         totalCost = 0;
-        if (expectedSymbols.Count != actuals.Count) return false;
+        int requiredCount = RequiredParameterCount(defaultValues);
+        if (actuals.Count < requiredCount || actuals.Count > expectedSymbols.Count) return false;
 
         for (int i = 0; i < expectedSymbols.Count; i++)
         {
+            if (i >= actuals.Count)
+            {
+                if (defaultValues[i] is null)
+                    return false;
+                totalCost += 1;
+                continue;
+            }
             if (!TryConversionCost(expectedSymbols[i], expectedTypeRefs[i], actuals[i].Symbol, actuals[i].Ref, out int cost))
                 return false;
             totalCost += cost;
         }
         return true;
+    }
+
+    private static int RequiredParameterCount(IReadOnlyList<Expr?> defaultValues)
+    {
+        int required = defaultValues.Count;
+        while (required > 0 && defaultValues[required - 1] is not null)
+            required--;
+        return required;
+    }
+
+    private static IReadOnlyList<Expr> ResolveDefaultArguments(IReadOnlyList<Expr?> defaultValues, int providedCount)
+    {
+        if (providedCount >= defaultValues.Count)
+            return [];
+
+        var result = new List<Expr>(defaultValues.Count - providedCount);
+        for (int i = providedCount; i < defaultValues.Count; i++)
+        {
+            if (defaultValues[i] is null)
+                throw new InvalidOperationException("Resolved callable omitted a parameter without a default.");
+            result.Add(defaultValues[i]!);
+        }
+        return result;
     }
 
     private bool TryConversionCost(
@@ -2634,6 +2853,8 @@ sealed class TypeChecker
             case OptionalHasValueExpr:
                 return new TypeRef("boolean", null, GetLine(expr), GetCol(expr));
             case Call c:
+                if (c.ResolvedConstructorTypeRef is not null)
+                    return c.ResolvedConstructorTypeRef;
                 if (c.ResolvedImplicitMethodReturnTypeRef is not null)
                     return c.ResolvedImplicitMethodReturnTypeRef;
                 if (TryGetFunctionSignature(c.Callee.Lexeme, out var sig))
@@ -2858,11 +3079,9 @@ sealed class TypeChecker
                 if (typeRef.TypeArguments.Count != 1)
                     throw new CompilerException($"Type '{typeRef.Name}' expects exactly one type argument", typeRef.Line, typeRef.Column);
                 ValidateTypeRef(typeRef.TypeArguments[0]);
-                if (typeRef.Name == "set" &&
-                    RequiresHashableRecordSemantics(typeRef.TypeArguments[0]) &&
-                    !IsHashableTypeRef(typeRef.TypeArguments[0]))
+                if (typeRef.Name == "set" && !IsHashableTypeRef(typeRef.TypeArguments[0]))
                 {
-                    throw new CompilerException("Set elements that use record value types must be hashable", typeRef.Line, typeRef.Column);
+                    throw new CompilerException($"Set elements must be hashable; '{FormatTypeRef(typeRef.TypeArguments[0])}' is not hashable", typeRef.Line, typeRef.Column);
                 }
                 return;
 
@@ -2871,10 +3090,9 @@ sealed class TypeChecker
                     throw new CompilerException($"Type '{typeRef.Name}' expects exactly two type arguments", typeRef.Line, typeRef.Column);
                 ValidateTypeRef(typeRef.TypeArguments[0]);
                 ValidateTypeRef(typeRef.TypeArguments[1]);
-                if (RequiresHashableRecordSemantics(typeRef.TypeArguments[0]) &&
-                    !IsHashableTypeRef(typeRef.TypeArguments[0]))
+                if (!IsHashableTypeRef(typeRef.TypeArguments[0]))
                 {
-                    throw new CompilerException("Map keys that use record value types must be hashable", typeRef.Line, typeRef.Column);
+                    throw new CompilerException($"Map keys must be hashable; '{FormatTypeRef(typeRef.TypeArguments[0])}' is not hashable", typeRef.Line, typeRef.Column);
                 }
                 return;
 
@@ -2922,9 +3140,21 @@ sealed class TypeChecker
                 return true;
             case "optional":
                 return typeRef.TypeArguments.Count == 1 && IsHashableTypeRef(typeRef.TypeArguments[0], visitingRecords);
+            case "array":
+            case "queue":
+            case "stack":
+            case "set":
+                return typeRef.TypeArguments.Count == 1 && IsHashableTypeRef(typeRef.TypeArguments[0], visitingRecords);
+            case "map":
+                return typeRef.TypeArguments.Count == 2 &&
+                       IsHashableTypeRef(typeRef.TypeArguments[0], visitingRecords) &&
+                       IsHashableTypeRef(typeRef.TypeArguments[1], visitingRecords);
         }
 
         if (_enums.ContainsKey(typeRef.Name))
+            return true;
+
+        if (_objects.TryGetValue(typeRef.Name, out var possibleObject) && !possibleObject.IsRecord)
             return true;
 
         if (!_objects.TryGetValue(typeRef.Name, out var objectSymbol) || !objectSymbol.IsRecord)
@@ -2935,7 +3165,7 @@ sealed class TypeChecker
 
         try
         {
-            foreach (var field in objectSymbol.Fields.Values)
+            foreach (var field in GetRecordHashFields(objectSymbol))
             {
                 if (!IsHashableTypeRef(field.TypeRef, visitingRecords))
                     return false;
@@ -2947,6 +3177,30 @@ sealed class TypeChecker
         {
             visitingRecords.Remove(typeRef.Name);
         }
+    }
+
+    private static IEnumerable<FieldSignature> GetRecordHashFields(ObjectSymbol record)
+    {
+        bool hasKeyFields = record.Fields.Values.Any(field => field.HashRole == FieldHashRole.Key);
+        foreach (var field in record.Fields.Values)
+        {
+            if (hasKeyFields)
+            {
+                if (field.HashRole == FieldHashRole.Key)
+                    yield return field;
+            }
+            else if (field.HashRole != FieldHashRole.IgnoreKey)
+            {
+                yield return field;
+            }
+        }
+    }
+
+    private static string FormatTypeRef(TypeRef typeRef)
+    {
+        if (typeRef.TypeArguments.Count == 0)
+            return typeRef.Name;
+        return $"{typeRef.Name}<{string.Join(", ", typeRef.TypeArguments.Select(FormatTypeRef))}>";
     }
 
     private static TypeRef BuildImplicitVoidTypeRef(Token origin)
@@ -3325,12 +3579,14 @@ sealed class TypeChecker
         TypeSymbol Return,
         TypeRef ReturnTypeRef,
         IList<TypeSymbol> Params,
-        IReadOnlyList<TypeRef> ParamTypeRefs);
+        IReadOnlyList<TypeRef> ParamTypeRefs,
+        IReadOnlyList<Expr?> DefaultValues);
     private sealed record FieldSignature(
         Token Name,
         TypeRef TypeRef,
         DeclarationVisibility Visibility,
-        bool IsConstant);
+        bool IsConstant,
+        FieldHashRole HashRole);
     private sealed record GlobalSymbol(
         Token Name,
         TypeSymbol Type,
@@ -3341,6 +3597,7 @@ sealed class TypeChecker
         Token Keyword,
         IList<TypeSymbol> Params,
         IReadOnlyList<TypeRef> ParamTypeRefs,
+        IReadOnlyList<Expr?> DefaultValues,
         string DispatchKey,
         Block Body,
         DeclarationVisibility Visibility);
@@ -3350,6 +3607,7 @@ sealed class TypeChecker
         TypeSymbol ReturnType,
         IList<TypeSymbol> ParamTypes,
         IReadOnlyList<TypeRef> ParamTypeRefs,
+        IReadOnlyList<Expr?> DefaultValues,
         string DispatchKey,
         Block Body,
         IReadOnlyList<Parameter> Parameters,

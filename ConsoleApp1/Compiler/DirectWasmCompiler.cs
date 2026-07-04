@@ -862,6 +862,11 @@ sealed class DirectWasmCompiler
 
         bool comparison = binary.Operator.Type is TokenType.EqualEqual or TokenType.BangEqual
             or TokenType.Less or TokenType.Greater or TokenType.LessEqual or TokenType.GreaterEqual;
+        if (binary.Operator.Type is TokenType.EqualEqual or TokenType.BangEqual &&
+            (RequiresStructuralValueSemantics(GetType(binary.Left)) || RequiresStructuralValueSemantics(GetType(binary.Right))))
+        {
+            throw Unsupported(binary, "record and collection structural equality in direct-Wasm");
+        }
         var operationType = comparison ? Promote(GetType(binary.Left), GetType(binary.Right)) : result;
         EmitExpressionAs(binary.Left, operationType, context);
         EmitExpressionAs(binary.Right, operationType, context);
@@ -1052,6 +1057,7 @@ sealed class DirectWasmCompiler
         }
         var keyType = targetType.TypeArguments[0];
         var valueType = targetType.TypeArguments[1];
+        EnsureDirectWasmCollectionKeySupported(keyType, index);
         EmitExpressionAs(index.Array, targetType, context);
         EmitExpressionAs(index.Index, keyType, context);
         context.Body.Call(CollectionFunction("map-get", MapType(keyType), MapType(valueType)));
@@ -1067,6 +1073,7 @@ sealed class DirectWasmCompiler
         }
         var keyType = targetType.TypeArguments[0];
         var valueType = targetType.TypeArguments[1];
+        EnsureDirectWasmCollectionKeySupported(keyType, index);
         int result = context.AddTemporary(MapType(valueType));
         EmitExpressionAs(value, valueType, context);
         context.Body.LocalSet(result);
@@ -1082,6 +1089,7 @@ sealed class DirectWasmCompiler
         var mapType = GetType(index.Array).NormalizeBuiltInShorthands();
         var keyType = mapType.TypeArguments[0];
         var valueType = mapType.TypeArguments[1];
+        EnsureDirectWasmCollectionKeySupported(keyType, index);
         int map = context.AddTemporary(DirectWasmValueType.I32);
         int key = context.AddTemporary(MapType(keyType));
         int result = context.AddTemporary(MapType(valueType));
@@ -1091,7 +1099,15 @@ sealed class DirectWasmCompiler
         context.Body.LocalSet(key);
         context.Body.LocalGet(map);
         context.Body.LocalGet(key);
+        context.Body.Call(CollectionFunction("contains", MapType(keyType)));
+        context.Body.Op(0x04);
+        context.Body.Op((byte)MapType(valueType));
+        context.Body.LocalGet(map);
+        context.Body.LocalGet(key);
         context.Body.Call(CollectionFunction("map-get", MapType(keyType), MapType(valueType)));
+        context.Body.Op(0x05);
+        EmitDefault(valueType, context.Body);
+        context.Body.Op(0x0b);
         EmitExpressionAs(value, valueType, context);
         context.Body.Op(BinaryOpcode(operation, MapType(valueType)));
         context.Body.LocalSet(result);
@@ -1192,7 +1208,17 @@ sealed class DirectWasmCompiler
 
     private void EmitNewObject(NewObjectExpr instance, FunctionContext context)
     {
-        var layout = GetObject(instance.TypeName.Lexeme);
+        EmitNewObject(instance.TypeName, instance.Arguments, instance.ResolvedDefaultArguments, instance.ResolvedConstructorKey, context);
+    }
+
+    private void EmitNewObject(
+        Token typeName,
+        IReadOnlyList<Expr> arguments,
+        IReadOnlyList<Expr> defaultArguments,
+        string? resolvedConstructorKey,
+        FunctionContext context)
+    {
+        var layout = GetObject(typeName.Lexeme);
         int pointer = context.AddTemporary(DirectWasmValueType.I32);
         context.Body.I32Const(layout.Size);
         context.Body.Call(_allocator);
@@ -1207,16 +1233,17 @@ sealed class DirectWasmCompiler
             EmitExpressionAs(field.Initializer, field.Type, context);
             EmitMemoryStore(field.Type, context.Body);
         }
-        string key = instance.ResolvedConstructorKey ?? ConstructorKey(layout.Name, instance.Arguments.Count);
+        var allArguments = CombineArguments(arguments, defaultArguments);
+        string key = resolvedConstructorKey ?? ConstructorKey(layout.Name, allArguments.Count);
         if (_functions.TryGetValue(key, out var constructor))
         {
             context.Body.LocalGet(pointer);
-            for (int index = 0; index < instance.Arguments.Count; index++)
-                EmitExpressionAs(instance.Arguments[index], constructor.Parameters[index].Type!, context);
+            for (int index = 0; index < allArguments.Count; index++)
+                EmitExpressionAs(allArguments[index], constructor.Parameters[index].Type!, context);
             context.Body.Call(constructor.Index);
         }
-        else if (instance.Arguments.Count != 0)
-            throw Unsupported(instance, $"constructor '{key}'");
+        else if (allArguments.Count != 0)
+            throw new CompilerException($"Direct-Wasm does not support constructor '{key}'.", typeName.Line, typeName.Column);
         context.Body.LocalGet(pointer);
     }
 
@@ -1378,6 +1405,12 @@ sealed class DirectWasmCompiler
     {
         if (EmitNativeMathCall(call, context, out bool nativeLeavesValue))
             return nativeLeavesValue;
+        if (call.ResolvesToConstructor)
+        {
+            var typeToken = new Token(TokenType.Identifier, call.ResolvedConstructorTypeName!, null, call.Callee.Line, call.Callee.Column);
+            EmitNewObject(typeToken, call.Arguments, call.ResolvedDefaultArguments, call.ResolvedConstructorKey, context);
+            return true;
+        }
         DirectFunction function;
         if (call.ResolvesToImplicitMethod)
         {
@@ -1395,8 +1428,9 @@ sealed class DirectWasmCompiler
             return !IsVoid(host.ReturnType);
         }
         else throw Unsupported(call, $"call '{call.Callee.Lexeme}'");
-        for (int index = 0; index < call.Arguments.Count; index++)
-            EmitExpressionAs(call.Arguments[index], function.Parameters[index].Type!, context);
+        var allArguments = CombineArguments(call.Arguments, call.ResolvedDefaultArguments);
+        for (int index = 0; index < allArguments.Count; index++)
+            EmitExpressionAs(allArguments[index], function.Parameters[index].Type!, context);
         context.Body.Call(function.Index);
         return !IsVoid(function.ReturnType);
     }
@@ -1445,8 +1479,9 @@ sealed class DirectWasmCompiler
             throw Unsupported(call, $"method '{call.MethodName.Lexeme}'");
         if (IsRecord(GetType(call.Target))) EmitRecordClone(call.Target, GetType(call.Target), context);
         else EmitExpressionAs(call.Target, ReferenceType(), context);
-        for (int index = 0; index < call.Arguments.Count; index++)
-            EmitExpressionAs(call.Arguments[index], function.Parameters[index].Type!, context);
+        var allArguments = CombineArguments(call.Arguments, call.ResolvedDefaultArguments);
+        for (int index = 0; index < allArguments.Count; index++)
+            EmitExpressionAs(allArguments[index], function.Parameters[index].Type!, context);
         context.Body.Call(function.Index);
         return !IsVoid(function.ReturnType);
     }
@@ -1522,6 +1557,7 @@ sealed class DirectWasmCompiler
         if (targetType.Name == "map")
         {
             var keyType = targetType.TypeArguments[0];
+            EnsureDirectWasmCollectionKeySupported(keyType, call);
             EmitExpressionAs(call.Target, targetType, context);
             EmitExpressionAs(call.Arguments[0], keyType, context);
             string operation = call.ResolvedBuiltInCollectionMethodName == "contains" ? "contains" : "remove";
@@ -1531,6 +1567,7 @@ sealed class DirectWasmCompiler
         if (targetType.Name == "set")
         {
             var valueType = targetType.TypeArguments[0];
+            EnsureDirectWasmCollectionKeySupported(valueType, call);
             EmitExpressionAs(call.Target, targetType, context);
             EmitExpressionAs(call.Arguments[0], valueType, context);
             string operation = call.ResolvedBuiltInCollectionMethodName switch
@@ -2076,6 +2113,17 @@ sealed class DirectWasmCompiler
     private static TypeRef StringType() => new("string", null, 0, 0);
     private static TypeRef ReferenceType() => new("array", [IntegerType()], 0, 0);
 
+    private static IReadOnlyList<Expr> CombineArguments(IReadOnlyList<Expr> arguments, IReadOnlyList<Expr> defaultArguments)
+    {
+        if (defaultArguments.Count == 0)
+            return arguments;
+
+        var combined = new List<Expr>(arguments.Count + defaultArguments.Count);
+        combined.AddRange(arguments);
+        combined.AddRange(defaultArguments);
+        return combined;
+    }
+
     private static string TypeKey(TypeRef type)
     {
         type = type.NormalizeBuiltInShorthands();
@@ -2091,6 +2139,23 @@ sealed class DirectWasmCompiler
 
     private bool IsRecord(TypeRef type)
         => _objects.TryGetValue(type.NormalizeBuiltInShorthands().Name, out var layout) && layout.Declaration.IsRecord;
+
+    private void EnsureDirectWasmCollectionKeySupported(TypeRef type, Expr expression)
+    {
+        if (RequiresStructuralValueSemantics(type))
+            throw Unsupported(expression, "record and collection structural map/set keys in direct-Wasm");
+    }
+
+    private bool RequiresStructuralValueSemantics(TypeRef type)
+    {
+        type = type.NormalizeBuiltInShorthands();
+        if (IsRecord(type))
+            return true;
+        if (type.Name is "array" or "map" or "set" or "queue" or "stack")
+            return true;
+        return type.Name is "optional" or "fallible" &&
+               type.TypeArguments.Any(RequiresStructuralValueSemantics);
+    }
 
     private static CompilerException Unsupported(object node, string feature)
     {

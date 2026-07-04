@@ -1,6 +1,6 @@
 # Release Process
 
-Current release target: `0.1.0-alpha.15`.
+Current release target: `0.1.0-alpha.21`.
 
 This is a maintainer-facing document. User install and quickstart instructions live in the README.
 
@@ -33,6 +33,7 @@ node scripts/test-rust-wasm.mjs
 node scripts/benchmark-rust-wasm.mjs
 node scripts/test-direct-wasm.mjs
 node scripts/benchmark-direct-wasm.mjs
+node scripts/test-editor-syntax.mjs
 node scripts/test-generated-worker.mjs
 node scripts/test-browser-compat.mjs
 ```
@@ -78,8 +79,8 @@ memory leaks stay release-gated.
 `--run-tests` includes the arithmetic, boolean, string, loop, and panic fuzz
 suites. Runtime changes also pass executable C#/JavaScript VM conformance, the
 profiler smoke checks embedded in the benchmark runner, and record benchmark
-results before release. Bytecode/runtime changes must also cover malformed v10
-metadata and explicit v9 rejection. Browser scheduling or direct-Wasm runtime
+results before release. Bytecode/runtime changes must also cover malformed current-version
+metadata and explicit old-version rejection. Browser scheduling or direct-Wasm runtime
 changes require current generated-worker smoke tests plus
 `node scripts/test-browser-compat.mjs`. The compatibility suite automates local
 Chromium-family desktop browsers and writes a mobile/manual report page for iOS
@@ -121,6 +122,17 @@ node scripts/test-generated-worker.mjs
 node scripts/test-browser-compat.mjs --keep
 ```
 
+To install the local VS Code syntax-highlighting extension as part of the local
+gate, add `-InstallVsCodeExtension`:
+
+```powershell
+./scripts/install-local.ps1 -SkipTests -InstallVsCodeExtension
+```
+
+This requires the VS Code `code` command on `PATH`. If it is missing, the script
+prints the manual `code --install-extension ...` command and keeps the compiler
+install successful.
+
 ## Create Release Artifacts
 
 ```powershell
@@ -133,6 +145,7 @@ The script builds self-contained single-file runtime zips for:
 - `code-compiler-linux-x64.zip`
 - `code-compiler-osx-x64.zip`
 - `code-compiler-osx-arm64.zip`
+- `code-language-vscode-<version>.vsix`
 - `SHA256SUMS.txt`
 
 Artifacts are written to `artifacts/release/`, which is intentionally git-ignored.
@@ -173,7 +186,7 @@ Checks:
 4. Run `./scripts/install-local.ps1 -SkipTests` as the final local pass gate; it auto-increments the prerelease version if needed.
 5. Run `./scripts/release.ps1` for all release runtimes.
 6. Smoke test at least the Windows zip locally.
-7. Commit and tag, for example `v0.1.0-alpha.15`.
+7. Commit and tag, for example `v0.1.0-alpha.21`.
 8. Create a GitHub prerelease.
-9. Upload all `code-compiler-*.zip` files and `SHA256SUMS.txt`.
+9. Upload all `code-compiler-*.zip` files, `code-language-vscode-<version>.vsix`, and `SHA256SUMS.txt`.
 10. Test `install.ps1` from the GitHub release before announcing.

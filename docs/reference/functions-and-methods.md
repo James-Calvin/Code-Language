@@ -52,6 +52,31 @@ Output:
 
 Arguments are checked by type. Numeric widening is allowed when it is lossless according to the current type ranks.
 
+Trailing parameters may declare defaults:
+
+```code
+function<integer> add(integer left, integer right = 1) {
+  return left + right;
+}
+
+print(add(4));
+print(add(4, 6));
+```
+
+Output:
+
+```text
+5
+10
+```
+
+Default-parameter rules:
+
+- Defaults are supported on functions, methods, constructors, and primary constructors.
+- Parameters after a defaulted parameter must also declare defaults.
+- Defaults are type-checked against the parameter type.
+- Interface method declarations and external `implement ... via ...` mappings do not declare defaults today.
+
 ## Overloads
 
 Functions, methods, and constructors resolve by typed signature.
@@ -147,10 +172,14 @@ object Player {
 
 Constructor rules:
 
-- Objects and records with fields must define constructors.
-- Each constructor must assign every field.
+- Objects with fields that lack defaults must define constructors.
+- Records without explicit constructors get an implicit field-order constructor for fields that lack defaults.
+- Each object constructor must assign every field that lacks a field default.
 - Constructor overloads resolve by parameter types.
 - Constructors cannot return.
+- `TypeName(args...)` can be used as shorthand for `new TypeName(args...)` when a normal function call does not exist.
+- `TypeName.method(...)` is not implicit construction; use `TypeName().method(...)` for zero-argument builder chains.
+- Object and record declarations may use primary constructor syntax, for example `object Builder(string name) { string name; }`.
 
 Common mistakes:
 

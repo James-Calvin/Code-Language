@@ -198,6 +198,7 @@ sealed class NewObjectExpr : Expr
     public Token TypeName { get; }
     public IReadOnlyList<Expr> Arguments { get; }
     public string? ResolvedConstructorKey { get; set; }
+    public IReadOnlyList<Expr> ResolvedDefaultArguments { get; set; } = [];
     public NewObjectExpr(Token typeName, IReadOnlyList<Expr> args) { TypeName = typeName; Arguments = args; }
 }
 
@@ -253,7 +254,12 @@ sealed class Call : Expr
     public string? ResolvedImplicitMethodOwnerTypeName { get; set; }
     public string? ResolvedImplicitMethodKey { get; set; }
     public TypeRef? ResolvedImplicitMethodReturnTypeRef { get; set; }
+    public IReadOnlyList<Expr> ResolvedDefaultArguments { get; set; } = [];
+    public string? ResolvedConstructorTypeName { get; set; }
+    public string? ResolvedConstructorKey { get; set; }
+    public TypeRef? ResolvedConstructorTypeRef { get; set; }
     public bool ResolvesToImplicitMethod => ResolvedImplicitMethodKey is not null;
+    public bool ResolvesToConstructor => ResolvedConstructorTypeName is not null;
     public Call(Token callee, IReadOnlyList<Expr> args) { Callee = callee; Arguments = args; }
 }
 
@@ -267,6 +273,7 @@ sealed class MethodCallExpr : Expr
     public string? ResolvedInterfaceName { get; set; }
     public string? ResolvedInterfaceMethodKey { get; set; }
     public TypeRef? ResolvedReturnTypeRef { get; set; }
+    public IReadOnlyList<Expr> ResolvedDefaultArguments { get; set; } = [];
     public bool ResolvesToBuiltInCollectionMethod => ResolvedBuiltInCollectionMethodName is not null;
     public MethodCallExpr(Expr target, Token methodName, IReadOnlyList<Expr> args)
     {
@@ -308,14 +315,22 @@ sealed class PackageDecl : Stmt
     }
 }
 
-sealed record Parameter(TypeRef? Type, Token Name);
+sealed record Parameter(TypeRef? Type, Token Name, Expr? DefaultValue = null);
 
 sealed record FieldDecl(
     TypeRef Type,
     Token Name,
     Expr? Initializer = null,
     DeclarationVisibility Visibility = DeclarationVisibility.Public,
-    bool IsConstant = false);
+    bool IsConstant = false,
+    FieldHashRole HashRole = FieldHashRole.Default);
+
+enum FieldHashRole
+{
+    Default,
+    Key,
+    IgnoreKey
+}
 
 sealed record EnumMemberDecl(Token Name, int? ExplicitValue);
 

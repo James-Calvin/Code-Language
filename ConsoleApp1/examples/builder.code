@@ -1,0 +1,39 @@
+// Runnable example: builder ergonomics with implicit constructors and defaults.
+
+record Stat {
+  string name;
+}
+
+record Substance {
+  string name;
+  real densityGramsPerCm3;
+  map<Stat, real> statsPerCm3;
+}
+
+object SubstanceBuilder(string name, real densityGramsPerCm3) {
+  string name;
+  real densityGramsPerCm3;
+  map<Stat, real> statsPerCm3 = new map<Stat, real>();
+
+  function<SubstanceBuilder> addStatPerCm3(Stat stat, real valuePerCm3 = 1.) {
+    statsPerCm3[stat] += valuePerCm3;
+    return this;
+  }
+
+  function<Substance> build() {
+    return Substance(name, densityGramsPerCm3, statsPerCm3);
+  }
+}
+
+Stat action = Stat("Action");
+Stat base = Stat("Base");
+
+Substance iron = SubstanceBuilder("Iron", 7.86)
+  .addStatPerCm3(action)
+  .addStatPerCm3(base, 3.)
+  .build();
+
+print(iron.name);
+print(iron.densityGramsPerCm3);
+print(iron.statsPerCm3[action]);
+print(iron.statsPerCm3[base]);

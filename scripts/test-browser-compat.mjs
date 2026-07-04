@@ -40,6 +40,25 @@ mkdirSync(sourcesRoot, { recursive: true });
 
 const delay = milliseconds => new Promise(resolveDelay => setTimeout(resolveDelay, milliseconds));
 
+async function removeTemporaryRoot(path) {
+  const retryableCodes = new Set(["EBUSY", "ENOTEMPTY", "EPERM"]);
+  let lastError = null;
+  for (let attempt = 1; attempt <= 8; attempt += 1) {
+    try {
+      rmSync(path, { recursive: true, force: true, maxRetries: 3, retryDelay: 150 });
+      return true;
+    } catch (error) {
+      lastError = error;
+      if (!retryableCodes.has(error?.code) || attempt === 8) break;
+      await delay(250 * attempt);
+    }
+  }
+
+  console.warn(`Could not remove browser compatibility temp directory '${path}': ${lastError?.message ?? lastError}`);
+  console.warn("The compatibility checks already completed; leaving the temp directory for later cleanup.");
+  return false;
+}
+
 function executableExists(path) {
   try {
     accessSync(path, constants.X_OK);
@@ -337,6 +356,7 @@ async function runAutomatedBrowser(browser, workload, pageUrl) {
     "--headless=new", "--disable-gpu", "--no-sandbox", "--remote-debugging-port=0",
     `--user-data-dir=${profileDirectory}`, "about:blank"
   ], { stdio: "ignore", windowsHide: true });
+  const childExit = new Promise(resolveExit => child.once("exit", resolveExit));
   let connection = null;
   const diagnostics = [];
   try {
@@ -424,8 +444,8 @@ async function runAutomatedBrowser(browser, workload, pageUrl) {
     };
   } finally {
     connection?.close();
-    child.kill();
-    await Promise.race([new Promise(resolveExit => child.once("exit", resolveExit)), delay(2_000)]);
+    if (child.exitCode === null && child.signalCode === null) child.kill();
+    await Promise.race([childExit, delay(5_000)]);
   }
 }
 
@@ -551,6 +571,6 @@ try {
   }
 } finally {
   await new Promise(resolveClose => server?.close(resolveClose) ?? resolveClose());
-  if (!keepOutput) rmSync(temporaryRoot, { recursive: true, force: true });
+  if (!keepOutput) await removeTemporaryRoot(temporaryRoot);
   else console.log(`Kept browser compatibility suite at ${suiteRoot}`);
 }

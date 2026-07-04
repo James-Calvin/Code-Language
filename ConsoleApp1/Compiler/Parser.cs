@@ -276,7 +276,7 @@ sealed class Parser
         return new FunctionDecl(sig.Name, sig.ReturnType, sig.Parameters, body);
     }
 
-    private (Token Name, TypeRef? ReturnType, IReadOnlyList<Parameter> Parameters) ParseCallableSignature(string kind)
+    private (Token Name, TypeRef? ReturnType, IReadOnlyList<Parameter> Parameters) ParseCallableSignature(string kind, bool allowDefaults = true)
     {
         TypeRef? returnType = null;
         if (Match(TokenType.Less))
@@ -290,22 +290,39 @@ sealed class Parser
         }
         Token name = Consume(TokenType.Identifier, $"Expect {kind} name.");
         Consume(TokenType.LeftParen, $"Expect '(' after {kind} name.");
+        var parameters = ParseParameterList(kind, requireTypes: false, allowDefaults);
+        Consume(TokenType.RightParen, $"Expect ')' after {kind} parameters.");
+        return (name, returnType, parameters);
+    }
+
+    private List<Parameter> ParseParameterList(string kind, bool requireTypes, bool allowDefaults)
+    {
         var parameters = new List<Parameter>();
+        bool sawDefault = false;
         if (!Check(TokenType.RightParen))
         {
             do
             {
                 TypeRef? paramType = null;
-                if (LooksLikeTypeThenIdentifier(_current))
-                {
+                if (requireTypes || LooksLikeTypeThenIdentifier(_current))
                     paramType = ParseTypeRef();
-                }
                 Token paramName = Consume(TokenType.Identifier, $"Expect {kind} parameter name.");
-                parameters.Add(new Parameter(paramType, paramName));
+                Expr? defaultValue = null;
+                if (Match(TokenType.Equal))
+                {
+                    if (!allowDefaults)
+                        throw Error(Previous(), $"{Capitalize(kind)} parameters cannot declare default values here.");
+                    sawDefault = true;
+                    defaultValue = Expression();
+                }
+                else if (sawDefault)
+                {
+                    throw Error(paramName, $"{Capitalize(kind)} parameter '{paramName.Lexeme}' must declare a default value because an earlier parameter has a default.");
+                }
+                parameters.Add(new Parameter(paramType, paramName, defaultValue));
             } while (Match(TokenType.Comma));
         }
-        Consume(TokenType.RightParen, $"Expect ')' after {kind} parameters.");
-        return (name, returnType, parameters);
+        return parameters;
     }
 
     private Block ParseCallableBody(string kind)
@@ -327,16 +344,7 @@ sealed class Parser
     private ConstructorDecl ParseConstructor(Token ctorKeyword, DeclarationVisibility visibility = DeclarationVisibility.Public)
     {
         Consume(TokenType.LeftParen, "Expect '(' after constructor.");
-        var parameters = new List<Parameter>();
-        if (!Check(TokenType.RightParen))
-        {
-            do
-            {
-                TypeRef paramType = ParseTypeRef();
-                Token paramName = Consume(TokenType.Identifier, "Expect constructor parameter name.");
-                parameters.Add(new Parameter(paramType, paramName));
-            } while (Match(TokenType.Comma));
-        }
+        var parameters = ParseParameterList("constructor", requireTypes: true, allowDefaults: true);
         Consume(TokenType.RightParen, "Expect ')' after constructor parameters.");
         Block body = ParseCallableBody("constructor");
         return new ConstructorDecl(ctorKeyword, parameters, body, visibility);
@@ -345,6 +353,12 @@ sealed class Parser
     private Stmt ObjectDeclaration(bool isRecord)
     {
         Token name = Consume(TokenType.Identifier, "Expect object name.");
+        List<Parameter>? primaryConstructorParameters = null;
+        if (Match(TokenType.LeftParen))
+        {
+            primaryConstructorParameters = ParseParameterList(isRecord ? "record primary constructor" : "object primary constructor", requireTypes: true, allowDefaults: true);
+            Consume(TokenType.RightParen, $"Expect ')' after {(isRecord ? "record" : "object")} primary constructor parameters.");
+        }
         Consume(TokenType.LeftBrace, $"Expect '{{' after {(isRecord ? "record" : "object")} name.");
         var fields = new List<FieldDecl>();
         var constructors = new List<ConstructorDecl>();
@@ -369,17 +383,47 @@ sealed class Parser
                 continue;
             }
 
+            var hashRole = ParseRecordFieldHashRole(isRecord);
             var fType = ParseTypeRef();
             Token fname = Consume(TokenType.Identifier, "Expect field name.");
             Expr? initializer = null;
             if (Match(TokenType.Equal))
                 initializer = Expression();
             Consume(TokenType.Semicolon, "Expect ';' after field.");
-            fields.Add(new FieldDecl(fType, fname, initializer, visibility));
+            fields.Add(new FieldDecl(fType, fname, initializer, visibility, HashRole: hashRole));
         }
         Consume(TokenType.RightBrace, $"Expect '}}' after {(isRecord ? "record" : "object")} fields.");
+        if (primaryConstructorParameters is not null)
+            constructors.Insert(0, BuildSynthesizedConstructor(name, primaryConstructorParameters));
+        else if (isRecord && constructors.Count == 0)
+        {
+            var implicitRecordParameters = fields
+                .Where(field => field.Initializer is null)
+                .Select(field => new Parameter(field.Type, field.Name))
+                .ToList();
+            if (implicitRecordParameters.Count > 0)
+                constructors.Add(BuildSynthesizedConstructor(name, implicitRecordParameters));
+        }
         return new ObjectDecl(name, isRecord, fields, constructors, methods, inlineInterfaceMethods);
     }
+
+    private static ConstructorDecl BuildSynthesizedConstructor(Token ownerName, IReadOnlyList<Parameter> parameters)
+    {
+        var keyword = new Token(TokenType.Constructor, "constructor", null, ownerName.Line, ownerName.Column);
+        var statements = new List<Stmt>(parameters.Count);
+        foreach (var parameter in parameters)
+        {
+            var thisToken = new Token(TokenType.Identifier, "this", null, parameter.Name.Line, parameter.Name.Column);
+            var fieldToken = new Token(TokenType.Identifier, parameter.Name.Lexeme, null, parameter.Name.Line, parameter.Name.Column);
+            var target = new FieldAccessExpr(new Variable(thisToken), fieldToken);
+            var value = new Variable(parameter.Name);
+            statements.Add(new ExprStmt(new FieldSetExpr(target, value)));
+        }
+        return new ConstructorDecl(keyword, parameters, new Block(statements));
+    }
+
+    private static string Capitalize(string value) =>
+        string.IsNullOrEmpty(value) ? value : char.ToUpperInvariant(value[0]) + value[1..];
 
     private DeclarationVisibility ParseMemberVisibility()
     {
@@ -388,6 +432,37 @@ sealed class Parser
         if (Match(TokenType.Private)) return DeclarationVisibility.Private;
         return DeclarationVisibility.Public;
     }
+
+    private FieldHashRole ParseRecordFieldHashRole(bool isRecord)
+    {
+        if (LooksLikeIgnoreKeyFieldModifier())
+        {
+            if (!isRecord)
+                throw Error(Peek(), "Record hash field modifiers are only valid on record fields.");
+            Advance(); // ignore
+            Advance(); // key
+            return FieldHashRole.IgnoreKey;
+        }
+
+        if (LooksLikeKeyFieldModifier())
+        {
+            if (!isRecord)
+                throw Error(Peek(), "Record hash field modifiers are only valid on record fields.");
+            Advance(); // key
+            return FieldHashRole.Key;
+        }
+
+        return FieldHashRole.Default;
+    }
+
+    private bool LooksLikeIgnoreKeyFieldModifier() =>
+        CheckIdentifierLexeme(0, "ignore") &&
+        CheckIdentifierLexeme(1, "key") &&
+        LooksLikeTypeThenIdentifier(_current + 2);
+
+    private bool LooksLikeKeyFieldModifier() =>
+        CheckIdentifierLexeme(0, "key") &&
+        LooksLikeTypeThenIdentifier(_current + 1);
 
     private InlineImplementMethodDecl ParseInlineImplementMethod(DeclarationVisibility visibility = DeclarationVisibility.Public)
     {
@@ -402,6 +477,8 @@ sealed class Parser
             {
                 TypeRef parameterType = ParseTypeRef();
                 Token parameterName = Consume(TokenType.Identifier, "Expect inline implement parameter name.");
+                if (Match(TokenType.Equal))
+                    throw Error(Previous(), "Inline implement parameters cannot declare default values.");
                 parameters.Add(new Parameter(parameterType, parameterName));
             } while (Match(TokenType.Comma));
         }
@@ -422,6 +499,8 @@ sealed class Parser
                 throw Error(Peek(), "Interface fields and methods do not declare visibility; interface members are public contract requirements.");
             if (Check(TokenType.Constant))
                 throw Error(Peek(), "Interface fields cannot be constant.");
+            if (LooksLikeIgnoreKeyFieldModifier() || LooksLikeKeyFieldModifier())
+                throw Error(Peek(), "Record hash field modifiers are only valid on record fields.");
             if (!Match(TokenType.Function))
             {
                 TypeRef fieldType = ParseTypeRef();
@@ -433,7 +512,7 @@ sealed class Parser
                 continue;
             }
 
-            var sig = ParseCallableSignature("interface method");
+            var sig = ParseCallableSignature("interface method", allowDefaults: false);
             if (sig.ReturnType is null)
                 throw Error(sig.Name, $"Interface method '{sig.Name.Lexeme}' must declare a return type.");
             for (int i = 0; i < sig.Parameters.Count; i++)
@@ -476,6 +555,8 @@ sealed class Parser
                 Token pName = Check(TokenType.Identifier)
                     ? Advance()
                     : new Token(TokenType.Identifier, $"_p{parameters.Count}", null, pType.Line, pType.Column);
+                if (Match(TokenType.Equal))
+                    throw Error(Previous(), "Implementation mapping parameters cannot declare default values.");
                 parameters.Add(new Parameter(pType, pName));
             } while (Match(TokenType.Comma));
         }
@@ -929,6 +1010,14 @@ sealed class Parser
     {
         if (IsAtEnd()) return false;
         return Peek().Type == type;
+    }
+
+    private bool CheckIdentifierLexeme(int offset, string lexeme)
+    {
+        int index = _current + offset;
+        return index < _tokens.Count &&
+               _tokens[index].Type == TokenType.Identifier &&
+               string.Equals(_tokens[index].Lexeme, lexeme, StringComparison.Ordinal);
     }
 
     private Token PeekNext()

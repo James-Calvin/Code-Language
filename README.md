@@ -30,6 +30,24 @@ curl -fsSL https://raw.githubusercontent.com/James-Calvin/Code-Language/master/i
 
 Manual downloads are available from the [GitHub Releases page](https://github.com/James-Calvin/Code-Language/releases). Release zips include the compiler executable plus sidecar `lib/` engine modules and `web-runtime/` browser files needed for web builds. Extract the whole folder and put that folder on `PATH`; do not move only the executable. Use the release `SHA256SUMS.txt` file to verify manual downloads.
 
+## Editor Support
+
+Release artifacts include a VS Code syntax-highlighting extension:
+
+```powershell
+code --install-extension code-language-vscode-<version>.vsix
+```
+
+Windows users can opt into installing the extension during the public install:
+
+```powershell
+iex "& { $(irm https://raw.githubusercontent.com/James-Calvin/Code-Language/master/install.ps1) } -InstallVsCodeExtension"
+```
+
+The compiler installer does not modify VS Code unless that flag is provided. If
+the `code` command is unavailable, the installer prints the manual command and
+still completes the compiler install.
+
 ## Build A Web App
 
 Default output folder:
@@ -88,7 +106,8 @@ Implemented today:
 
 - typed variables/functions; primitives: `integer`, `whole`, `real`, `boolean`, `string`, sized numeric boundary types, and `byte`
 - same-module global variables/constants plus built-in real constants `pi` and `tau`
-- objects, records, field/method interfaces, arrays, maps, sets, queues, stacks, optionals, and typed recoverable `fallible` errors
+- objects, records, record key selection (`key` / `ignore key`), field/method interfaces, arrays, maps, sets, queues, stacks, optionals, and typed recoverable `fallible` errors
+- default parameters for functions, methods, and constructors, plus implicit `TypeName(...)` construction as readable builder-pattern sugar
 - `if`, `switch`, `while`, `for`, `foreach`, `break`, `continue`, functions, methods, modules, package manifests, lockfiles, and library artifacts
 - web app lifecycle entry through top-level `start()`, `update()`, `draw()`, and optional `drawHud()`
 - engine wrapper modules for colors, drawing, input, viewport, diagnostics, runtime scheduling, audio, and scene composition
@@ -112,7 +131,7 @@ node scripts/benchmark-runtime.mjs
 
 See [benchmarks/README.md](benchmarks/README.md) for baseline comparison rules.
 
-Generated web apps use bytecode v10 and run the Rust/Wasm VM, lifecycle methods,
+Generated web apps use bytecode v11 and run the Rust/Wasm VM, lifecycle methods,
 and updates in a dedicated worker. Fixed 60 Hz updates are the default. Drawing is
 encoded by the worker, replayed on the main-thread canvas, and remains limited
 by browser/display refresh. `Runtime.useContinuousUpdates()` is an explicit

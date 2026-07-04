@@ -1,4 +1,4 @@
-//! Dependency-free bytecode-v10 interpreter used by the Rust/Wasm performance gate.
+//! Dependency-free bytecode-v11 interpreter used by the Rust/Wasm performance gate.
 //!
 //! This crate deliberately exposes a small raw Wasm ABI. Browser integration can
 //! copy an artifact into linear memory and run it without a binding generator or
@@ -10,7 +10,7 @@ use std::cell::RefCell;
 use std::collections::HashSet;
 
 const HEADER_SIZE: usize = 13;
-const BYTECODE_VERSION: u8 = 10;
+const BYTECODE_VERSION: u8 = 11;
 const ROOT_FRAME_SIZE: usize = 32;
 
 const TAG_NUMBER: u32 = 0;
@@ -84,6 +84,7 @@ struct HostBinding {
 struct TypeInfo {
     name: Vec<u8>,
     is_record: bool,
+    hash_field_slots: Vec<usize>,
 }
 
 #[derive(Clone)]
@@ -373,12 +374,53 @@ impl Vm {
                 let left_handle = left.payload as usize;
                 let right_handle = right.payload as usize;
                 if self.record_types.get(left_handle) != self.record_types.get(right_handle) { return false; }
+                let Some(type_id) = self.record_types.get(left_handle).copied() else { return false; };
+                let Some(type_info) = self.types.get(type_id) else { return false; };
                 let Some(left_fields) = self.records.get(left_handle) else { return false; };
                 let Some(right_fields) = self.records.get(right_handle) else { return false; };
                 let Some(left_initialized) = self.record_initialized.get(left_handle) else { return false; };
                 let Some(right_initialized) = self.record_initialized.get(right_handle) else { return false; };
-                left_initialized == right_initialized && left_fields.iter().zip(right_fields).enumerate()
-                    .all(|(slot, (a, b))| left_initialized[slot] == 0 || self.value_equals(*a, *b))
+                type_info.hash_field_slots.iter().all(|slot| {
+                    let slot = *slot;
+                    let left_init = left_initialized.get(slot).copied().unwrap_or(0);
+                    let right_init = right_initialized.get(slot).copied().unwrap_or(0);
+                    left_init == right_init &&
+                        (left_init == 0 ||
+                            self.value_equals(
+                                *left_fields.get(slot).unwrap_or(&Value::default()),
+                                *right_fields.get(slot).unwrap_or(&Value::default())))
+                })
+            }
+            TAG_ARRAY => {
+                let Some(left_values) = self.arrays.get(left.payload as usize) else { return false; };
+                let Some(right_values) = self.arrays.get(right.payload as usize) else { return false; };
+                left_values.len() == right_values.len() && left_values.iter().zip(right_values).all(|(a, b)| self.value_equals(*a, *b))
+            }
+            TAG_QUEUE => {
+                let Some(left_values) = self.queues.get(left.payload as usize) else { return false; };
+                let Some(right_values) = self.queues.get(right.payload as usize) else { return false; };
+                let left_head = self.queue_heads.get(left.payload as usize).copied().unwrap_or(0).min(left_values.len());
+                let right_head = self.queue_heads.get(right.payload as usize).copied().unwrap_or(0).min(right_values.len());
+                let left_live = &left_values[left_head..];
+                let right_live = &right_values[right_head..];
+                left_live.len() == right_live.len() && left_live.iter().zip(right_live).all(|(a, b)| self.value_equals(*a, *b))
+            }
+            TAG_STACK => {
+                let Some(left_values) = self.value_stacks.get(left.payload as usize) else { return false; };
+                let Some(right_values) = self.value_stacks.get(right.payload as usize) else { return false; };
+                left_values.len() == right_values.len() && left_values.iter().rev().zip(right_values.iter().rev()).all(|(a, b)| self.value_equals(*a, *b))
+            }
+            TAG_SET => {
+                let Some(left_values) = self.sets.get(left.payload as usize) else { return false; };
+                let Some(right_values) = self.sets.get(right.payload as usize) else { return false; };
+                left_values.len() == right_values.len() && left_values.iter().all(|left_value| right_values.iter().any(|right_value| self.value_equals(*left_value, *right_value)))
+            }
+            TAG_MAP => {
+                let Some(left_values) = self.maps.get(left.payload as usize) else { return false; };
+                let Some(right_values) = self.maps.get(right.payload as usize) else { return false; };
+                left_values.len() == right_values.len() && left_values.iter().all(|(left_key, left_value)| {
+                    right_values.iter().any(|(right_key, right_value)| self.value_equals(*left_key, *right_key) && self.value_equals(*left_value, *right_value))
+                })
             }
             _ => left.payload == right.payload,
         }
@@ -397,6 +439,93 @@ impl Vm {
             TAG_RECORD => self.record_types.get(value.payload as usize)
                 .and_then(|type_id| self.types.get(*type_id)).map(|info| [info.name.as_slice(), b" value"].concat()).unwrap_or_default(),
             _ => b"value".to_vec(),
+        }
+    }
+
+    fn snapshot_hash_key(&mut self, value: Value) -> Result<Value, VmError> {
+        match value.tag {
+            TAG_RECORD => {
+                let source = value.payload as usize;
+                let type_id = *self.record_types.get(source).ok_or(VmError::Bounds)?;
+                let fields = self.records.get(source).ok_or(VmError::Bounds)?.clone();
+                let initialized = self.record_initialized.get(source).ok_or(VmError::Bounds)?.clone();
+                let clone = self.allocate_object(type_id, true)?;
+                let target = clone.payload as usize;
+                for slot in 0..fields.len() {
+                    if initialized.get(slot).copied().unwrap_or(0) == 0 { continue; }
+                    let field_value = self.snapshot_hash_key(fields[slot])?;
+                    *self.records.get_mut(target).and_then(|record| record.get_mut(slot)).ok_or(VmError::Bounds)? = field_value;
+                    *self.record_initialized.get_mut(target).and_then(|record| record.get_mut(slot)).ok_or(VmError::Bounds)? = 1;
+                }
+                Ok(clone)
+            }
+            TAG_ARRAY => {
+                let source = value.payload as usize;
+                let values = self.arrays.get(source).ok_or(VmError::Bounds)?.clone();
+                let handle = self.arrays.len();
+                self.allocations_since_gc += 1;
+                self.arrays.push(Vec::with_capacity(values.len()));
+                for item in values {
+                    let snapshot = self.snapshot_hash_key(item)?;
+                    self.arrays.get_mut(handle).ok_or(VmError::Bounds)?.push(snapshot);
+                }
+                Ok(Value::handle(TAG_ARRAY, handle))
+            }
+            TAG_MAP => {
+                let source = value.payload as usize;
+                let values = self.maps.get(source).ok_or(VmError::Bounds)?.clone();
+                let handle = self.maps.len();
+                self.allocations_since_gc += 1;
+                self.maps.push(Vec::with_capacity(values.len()));
+                for (key, entry_value) in values {
+                    let snapshot_key = self.snapshot_hash_key(key)?;
+                    let snapshot_value = self.snapshot_hash_key(entry_value)?;
+                    let position = self.maps.get(handle).ok_or(VmError::Bounds)?.iter().position(|(candidate, _)| self.value_equals(*candidate, snapshot_key));
+                    if let Some(index) = position { self.maps[handle][index].1 = snapshot_value; } else { self.maps[handle].push((snapshot_key, snapshot_value)); }
+                }
+                Ok(Value::handle(TAG_MAP, handle))
+            }
+            TAG_SET => {
+                let source = value.payload as usize;
+                let values = self.sets.get(source).ok_or(VmError::Bounds)?.clone();
+                let handle = self.sets.len();
+                self.allocations_since_gc += 1;
+                self.sets.push(Vec::with_capacity(values.len()));
+                for item in values {
+                    let snapshot = self.snapshot_hash_key(item)?;
+                    if !self.sets.get(handle).ok_or(VmError::Bounds)?.iter().any(|candidate| self.value_equals(*candidate, snapshot)) {
+                        self.sets.get_mut(handle).ok_or(VmError::Bounds)?.push(snapshot);
+                    }
+                }
+                Ok(Value::handle(TAG_SET, handle))
+            }
+            TAG_QUEUE => {
+                let source = value.payload as usize;
+                let values = self.queues.get(source).ok_or(VmError::Bounds)?.clone();
+                let head = self.queue_heads.get(source).copied().unwrap_or(0).min(values.len());
+                let handle = self.queues.len();
+                self.allocations_since_gc += 1;
+                self.queues.push(Vec::with_capacity(values.len().saturating_sub(head)));
+                self.queue_heads.push(0);
+                for item in values[head..].iter().copied() {
+                    let snapshot = self.snapshot_hash_key(item)?;
+                    self.queues.get_mut(handle).ok_or(VmError::Bounds)?.push(snapshot);
+                }
+                Ok(Value::handle(TAG_QUEUE, handle))
+            }
+            TAG_STACK => {
+                let source = value.payload as usize;
+                let values = self.value_stacks.get(source).ok_or(VmError::Bounds)?.clone();
+                let handle = self.value_stacks.len();
+                self.allocations_since_gc += 1;
+                self.value_stacks.push(Vec::with_capacity(values.len()));
+                for item in values {
+                    let snapshot = self.snapshot_hash_key(item)?;
+                    self.value_stacks.get_mut(handle).ok_or(VmError::Bounds)?.push(snapshot);
+                }
+                Ok(Value::handle(TAG_STACK, handle))
+            }
+            _ => Ok(value),
         }
     }
 
@@ -851,8 +980,9 @@ impl Vm {
                     let value = self.pop()?; let key = self.pop()?; let map_value = self.pop()?;
                     if map_value.tag != TAG_MAP { return Err(VmError::Bounds); }
                     let handle = map_value.payload as usize;
-                    let position = self.maps.get(handle).ok_or(VmError::Bounds)?.iter().position(|(candidate, _)| self.value_equals(*candidate, key));
-                    if let Some(index) = position { self.maps[handle][index].1 = value; } else { self.maps[handle].push((key, value)); }
+                    let snapshot_key = self.snapshot_hash_key(key)?;
+                    let position = self.maps.get(handle).ok_or(VmError::Bounds)?.iter().position(|(candidate, _)| self.value_equals(*candidate, snapshot_key));
+                    if let Some(index) = position { self.maps[handle][index].1 = value; } else { self.maps[handle].push((snapshot_key, value)); }
                     self.push(value)?;
                 }
                 0x30 => {
@@ -874,7 +1004,8 @@ impl Vm {
                     let value = self.pop()?; let set_value = self.pop()?;
                     if set_value.tag != TAG_SET { return Err(VmError::Bounds); }
                     let handle = set_value.payload as usize;
-                    if !self.sets.get(handle).ok_or(VmError::Bounds)?.iter().any(|candidate| self.value_equals(*candidate, value)) { self.sets[handle].push(value); }
+                    let snapshot = self.snapshot_hash_key(value)?;
+                    if !self.sets.get(handle).ok_or(VmError::Bounds)?.iter().any(|candidate| self.value_equals(*candidate, snapshot)) { self.sets[handle].push(snapshot); }
                     self.push(Value::number(0.0))?;
                 }
                 0x34 => {
@@ -1180,7 +1311,14 @@ fn parse_metadata(bytes: &[u8], offset: usize) -> Result<ParsedMetadata, VmError
         for _ in 0..declared {
             if reader.count()? >= field_count { return Err(VmError::InvalidMetadata); }
         }
-        types.push(TypeInfo { name: strings[name].clone(), is_record: kind == 1 });
+        let hash_field_count = reader.count()?;
+        let mut hash_field_slots = Vec::with_capacity(hash_field_count);
+        for _ in 0..hash_field_count {
+            let slot = reader.count()?;
+            if slot >= field_count { return Err(VmError::InvalidMetadata); }
+            hash_field_slots.push(slot);
+        }
+        types.push(TypeInfo { name: strings[name].clone(), is_record: kind == 1, hash_field_slots });
     }
     let callable_count = reader.count()?;
     let mut callables = Vec::with_capacity(callable_count);
@@ -1327,7 +1465,7 @@ pub unsafe extern "C" fn code_dealloc(pointer: *mut u8, length: usize) {
     }
 }
 
-/// Decode and execute one bytecode-v10 artifact. Zero indicates success.
+/// Decode and execute one bytecode-v11 artifact. Zero indicates success.
 ///
 /// # Safety
 /// The caller must provide a readable linear-memory range of `length` bytes.
@@ -1575,7 +1713,7 @@ mod tests {
 
     fn artifact(code: &[u8]) -> Vec<u8> {
         let mut bytes = b"CODE".to_vec();
-        bytes.push(10);
+        bytes.push(BYTECODE_VERSION);
         bytes.extend_from_slice(&(code.len() as i32).to_le_bytes());
         bytes.extend_from_slice(&0i32.to_le_bytes());
         bytes.extend_from_slice(code);
@@ -1591,7 +1729,7 @@ mod tests {
     }
 
     #[test]
-    fn parses_and_executes_minimal_v10_artifact() {
+    fn parses_and_executes_minimal_v11_artifact() {
         let parsed = parse(&artifact(&[0x01, 42, 0, 0, 0, 0xFF])).unwrap();
         let mut vm = Vm::new(parsed);
         vm.run().unwrap();

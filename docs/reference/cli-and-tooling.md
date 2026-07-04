@@ -61,6 +61,32 @@ compiler --native --compile-only -o .tmp/demo.bytecode ConsoleApp1/examples/arit
 | `--version` | Print compiler version |
 | `--help` / `-h` | Print public help |
 
+## Editor Support
+
+Release builds include a VS Code syntax-highlighting extension as a `.vsix`
+artifact:
+
+```powershell
+code --install-extension code-language-vscode-<version>.vsix
+```
+
+The Windows public installer supports opt-in extension installation:
+
+```powershell
+iex "& { $(irm https://raw.githubusercontent.com/James-Calvin/Code-Language/master/install.ps1) } -InstallVsCodeExtension"
+```
+
+Maintainers can package and install the current extension locally with:
+
+```powershell
+./scripts/package-editor-extension.ps1
+./scripts/install-local.ps1 -SkipTests -InstallVsCodeExtension
+```
+
+The installer never modifies VS Code unless `-InstallVsCodeExtension` is passed.
+If the `code` command is missing, it prints the manual install command and keeps
+the compiler install successful.
+
 ## Advanced And Maintainer Commands
 
 These flags remain supported for compatibility and compiler development, but they are not part of the public quickstart.

@@ -186,6 +186,7 @@ Common mistakes:
 
 - `foreach` currently supports numeric counts and arrays, not `map`, `set`, `queue`, or `stack`; planned map iteration should yield entry values.
 - Reading a missing map key raises a runtime error.
+- Compound assignment on a missing map key, such as `scores["coins"] += 1`, uses the value type's default as the old value and stores the result.
 - `dequeue`, `pop`, and `peek` on an empty queue or stack raise runtime errors.
 
 ## Optionals
@@ -357,4 +358,5 @@ Output:
 5
 ```
 
-See [Objects, Records, and Interfaces](objects-records-interfaces.md) for the full object model.
+See [Objects, Records, and Interfaces](objects-records-interfaces.md) for the full object model and
+[Record Equality and Hashing](record-equality-and-hashing.md) for record key behavior.

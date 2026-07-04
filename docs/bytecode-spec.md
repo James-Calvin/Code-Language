@@ -1,12 +1,12 @@
 # Bytecode Specification (draft)
 
-Version: 0.15 (2026-06-20)
+Version: 0.16 (2026-07-04)
 
 ## File format
-- Header: `CODE` ASCII (4 bytes) + version byte (`0x0A`) + int32 `codeSize` + int32 `debugCount`. The header remains 13 bytes.
+- Header: `CODE` ASCII (4 bytes) + version byte (`0x0B`) + int32 `codeSize` + int32 `debugCount`. The header remains 13 bytes.
 - Encoding: little-endian integers and IEEE-754 `real` operands.
 - Layout: header, `codeSize` bytes of opcodes/operands, `debugCount` debug entries (`ip`, `line`, `column`; each int32), then a required `META` section.
-- `META` is ASCII `META`, int32 payload size, then ordered tables for pooled UTF-8 strings, global field slots, host bindings (symbol and arity), type layouts (name, record flag, declared field slots), and callables (byte target, frame size, name). Counts, indexes, targets, and exact payload length are validated while loading.
+- `META` is ASCII `META`, int32 payload size, then ordered tables for pooled UTF-8 strings, global field slots, host bindings (symbol and arity), type layouts (name, record flag, declared field slots, hash/equality field slots), and callables (byte target, frame size, name). Counts, indexes, targets, and exact payload length are validated while loading.
 - Version 9 artifacts are rejected; alpha builds do not provide bytecode backward compatibility.
 - Produced files should use the `.bytecode` extension.
 
@@ -30,7 +30,7 @@ Version: 0.15 (2026-06-20)
 - Operand stack stores numeric values as `int`, `long`, or `double`; most numeric ops coerce to double math, while `INT_DIV` truncates integral division toward zero. Strings, runtime object/record values, and fallible success/error values are boxed.
 - Locals are indexed slots separate from the operand stack; they auto-grow on demand. Functions record a high-water mark for frame size.
 - The generated-web Rust/Wasm VM predecodes instructions and numeric targets and uses contiguous operand, local, global, and call stacks. Values use a 16-byte tagged representation; heap values are stable handles traced from stacks and globals. `RET` restores the caller frame while leaving the return value on the operand stack. The JavaScript VM implements the same contract as a reference path.
-- The experimental typed direct-Wasm backend consumes the same checked source model but does not execute bytecode. Bytecode v10 remains the native/reference artifact contract while that backend is gated.
+- The experimental typed direct-Wasm backend consumes the same checked source model but does not execute bytecode. Bytecode v11 remains the native/reference artifact contract while that backend is gated.
 - `CALL` and `INTERFACE_CALL` frame-size operands are finalized after all callable bodies have been emitted. This is required for forward calls whose parameter count is smaller than their eventual local-slot high-water mark.
 
 ## Opcodes

@@ -1,0 +1,299 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Code",
+  "scopeName": "source.code",
+  "fileTypes": [
+    "code"
+  ],
+  "patterns": [
+    {
+      "include": "#comments"
+    },
+    {
+      "include": "#strings"
+    },
+    {
+      "include": "#numbers"
+    },
+    {
+      "include": "#declarations"
+    },
+    {
+      "include": "#engineNamespaces"
+    },
+    {
+      "include": "#keywords"
+    },
+    {
+      "include": "#builtinFunctions"
+    },
+    {
+      "include": "#members"
+    },
+    {
+      "include": "#functionCalls"
+    },
+    {
+      "include": "#types"
+    },
+    {
+      "include": "#operators"
+    },
+    {
+      "include": "#punctuation"
+    }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.double-slash.code",
+          "match": "//.*$"
+        },
+        {
+          "name": "comment.block.code",
+          "begin": "/\\*",
+          "end": "\\*/"
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.code",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "name": "constant.character.escape.code",
+              "match": "\\\\(?:[\\\\\"nrt{}])"
+            },
+            {
+              "name": "meta.interpolation.code",
+              "begin": "\\{",
+              "beginCaptures": {
+                "0": {
+                  "name": "punctuation.section.interpolation.begin.code"
+                }
+              },
+              "end": "\\}",
+              "endCaptures": {
+                "0": {
+                  "name": "punctuation.section.interpolation.end.code"
+                }
+              },
+              "patterns": [
+                {
+                  "include": "$self"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.real.code",
+          "match": "(?<![\\w.])(?:\\d+\\.\\d*|\\.\\d+)(?![\\w.])"
+        },
+        {
+          "name": "constant.numeric.integer.binary.code",
+          "match": "\\b0[bB][01]+\\b"
+        },
+        {
+          "name": "constant.numeric.integer.octal.code",
+          "match": "\\b0[oO][0-7]+\\b"
+        },
+        {
+          "name": "constant.numeric.integer.hexadecimal.code",
+          "match": "\\b0[xX][0-9a-fA-F]+\\b"
+        },
+        {
+          "name": "constant.numeric.integer.decimal.code",
+          "match": "\\b\\d+\\b"
+        }
+      ]
+    },
+    "declarations": {
+      "patterns": [
+        {
+          "name": "meta.function.code",
+          "match": "\\b(function)(?:\\s*<[^>]+>)?\\s+([a-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": {
+              "name": "keyword.declaration.function.code"
+            },
+            "2": {
+              "name": "entity.name.function.code"
+            }
+          }
+        },
+        {
+          "name": "meta.type.declaration.code",
+          "match": "\\b(object|record|interface|enum)\\s+([A-Z][A-Za-z0-9_]*)",
+          "captures": {
+            "1": {
+              "name": "keyword.declaration.type.code"
+            },
+            "2": {
+              "name": "entity.name.type.code"
+            }
+          }
+        },
+        {
+          "name": "meta.constructor.code",
+          "match": "\\b(constructor)\\b",
+          "captures": {
+            "1": {
+              "name": "keyword.declaration.constructor.code"
+            }
+          }
+        },
+        {
+          "name": "meta.implement.inline.code",
+          "match": "\\b(implement)\\s+([A-Z][A-Za-z0-9_]*)(\\.)([a-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": {
+              "name": "keyword.declaration.implement.code"
+            },
+            "2": {
+              "name": "entity.name.type.interface.code"
+            },
+            "3": {
+              "name": "punctuation.accessor.code"
+            },
+            "4": {
+              "name": "entity.name.function.member.code"
+            }
+          }
+        }
+      ]
+    },
+    "engineNamespaces": {
+      "patterns": [
+        {
+          "name": "support.namespace.engine.code",
+          "match": "\\b(?:Draw|Input|Viewport|Colors|Diagnostics|Runtime|Audio)(?=\\.)"
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "storage.type.primitive.code",
+          "match": "\\b(?:integer|whole|real|byte|integer8|integer16|integer32|whole8|whole16|whole32|real32|real64|boolean|void|string|optional|fallible|array|map|set|queue|stack)\\b"
+        },
+        {
+          "name": "storage.modifier.code",
+          "match": "\\b(?:public|private|package|export|constant)\\b"
+        },
+        {
+          "name": "keyword.declaration.code",
+          "match": "\\b(?:object|record|interface|enum|function|constructor|implement|via|import|from|as|new)\\b"
+        },
+        {
+          "name": "keyword.control.code",
+          "match": "\\b(?:if|then|else|switch|case|default|while|for|foreach|in|break|continue|return|panic|error|on|yield)\\b"
+        },
+        {
+          "name": "keyword.operator.logical.code",
+          "match": "\\b(?:and|or|not)\\b"
+        },
+        {
+          "name": "constant.language.boolean.code",
+          "match": "\\b(?:true|false)\\b"
+        },
+        {
+          "name": "constant.language.none.code",
+          "match": "\\bnone\\b"
+        }
+      ]
+    },
+    "builtinFunctions": {
+      "patterns": [
+        {
+          "name": "support.function.builtin.code",
+          "match": "\\b(?:print|readLine|unixMilliseconds|unixMicroseconds|monotonicNanoseconds|monotonicTicks|monotonicTicksPerSecond|sleepMilliseconds|minimum|maximum|absolute|sign|lerp|sine|cosine|squareRoot|random)\\b(?=\\s*\\()"
+        }
+      ]
+    },
+    "members": {
+      "patterns": [
+        {
+          "name": "support.function.member.code",
+          "match": "(?<=\\.)[a-z_][A-Za-z0-9_]*(?=\\s*\\()"
+        },
+        {
+          "name": "variable.other.member.code",
+          "match": "(?<=\\.)[a-z_][A-Za-z0-9_]*\\b"
+        },
+        {
+          "name": "constant.other.enum.member.code",
+          "match": "(?<=\\.)[A-Z][A-Za-z0-9_]*\\b"
+        }
+      ]
+    },
+    "functionCalls": {
+      "patterns": [
+        {
+          "name": "entity.name.function.call.code",
+          "match": "\\b[a-z_][A-Za-z0-9_]*(?=\\s*\\()"
+        }
+      ]
+    },
+    "types": {
+      "patterns": [
+        {
+          "name": "entity.name.type.code",
+          "match": "\\b[A-Z][A-Za-z0-9_]*\\b"
+        }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.assignment.code",
+          "match": "\\+=|-=|\\*=|/=|%=|="
+        },
+        {
+          "name": "keyword.operator.comparison.code",
+          "match": "==|!=|<=|>=|<|>"
+        },
+        {
+          "name": "keyword.operator.arithmetic.code",
+          "match": "\\+\\+|--|\\+|-|\\*|/|%"
+        }
+      ]
+    },
+    "punctuation": {
+      "patterns": [
+        {
+          "name": "punctuation.terminator.statement.code",
+          "match": ";"
+        },
+        {
+          "name": "punctuation.separator.comma.code",
+          "match": ","
+        },
+        {
+          "name": "punctuation.accessor.code",
+          "match": "\\."
+        },
+        {
+          "name": "punctuation.section.block.code",
+          "match": "[{}]"
+        },
+        {
+          "name": "punctuation.section.group.code",
+          "match": "[()]"
+        },
+        {
+          "name": "punctuation.section.brackets.code",
+          "match": "[\\[\\]]"
+        }
+      ]
+    }
+  }
+}

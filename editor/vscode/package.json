@@ -1,0 +1,36 @@
+{
+  "name": "code-language",
+  "displayName": "Code Language",
+  "description": "Syntax highlighting for the Code programming language.",
+  "version": "0.0.0",
+  "publisher": "james-calvin",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "code",
+        "aliases": [
+          "Code",
+          "code"
+        ],
+        "extensions": [
+          ".code"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "code",
+        "scopeName": "source.code",
+        "path": "../textmate/code.tmLanguage.json"
+      }
+    ]
+  }
+}

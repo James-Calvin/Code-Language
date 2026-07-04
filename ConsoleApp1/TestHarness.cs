@@ -192,13 +192,13 @@ internal static class TestHarness
         byte[] valid = BytecodeBuilder.New().PushString("pooled").Print().Halt().ToArray();
 
         failures += ExpectBytecodeFailure("bytecode-v9-rejected", Mutate(valid, bytes => bytes[4] = 9), "Unsupported bytecode version 9");
-        failures += ExpectBytecodeFailure("bytecode-v10-truncated-metadata", valid[..^1], "metadata size is invalid");
-        failures += ExpectBytecodeFailure("bytecode-v10-missing-metadata-magic", Mutate(valid, bytes =>
+        failures += ExpectBytecodeFailure("bytecode-v11-truncated-metadata", valid[..^1], "metadata size is invalid");
+        failures += ExpectBytecodeFailure("bytecode-v11-missing-metadata-magic", Mutate(valid, bytes =>
         {
             var header = BytecodeFormat.ReadHeader(bytes);
             bytes[BytecodeFormat.GetMetadataOffset(header)] = (byte)'X';
         }), "metadata magic is missing");
-        failures += ExpectBytecodeFailure("bytecode-v10-invalid-string-id", Mutate(valid, bytes =>
+        failures += ExpectBytecodeFailure("bytecode-v11-invalid-string-id", Mutate(valid, bytes =>
         {
             BitConverter.GetBytes(int.MaxValue).CopyTo(bytes, BytecodeFormat.HeaderSize + 1);
         }), "string index");
@@ -207,12 +207,12 @@ internal static class TestHarness
         {
             string text = Disassembler.Disassemble(valid);
             if (!text.Contains("#0 \"pooled\"", StringComparison.Ordinal)) throw new Exception("pooled string was not resolved");
-            Console.WriteLine("[PASS] bytecode-v10-disassembler-metadata");
+            Console.WriteLine("[PASS] bytecode-v11-disassembler-metadata");
         }
         catch (Exception ex)
         {
             failures++;
-            Console.WriteLine($"[FAIL] bytecode-v10-disassembler-metadata: {ex.Message}");
+            Console.WriteLine($"[FAIL] bytecode-v11-disassembler-metadata: {ex.Message}");
         }
         return failures;
     }
@@ -271,6 +271,35 @@ internal static class TestHarness
                 });
                 if (result.DirectWasm is null || result.DirectWasm.Module.Length < 32) throw new Exception("direct module was not emitted");
                 if (result.DirectWasm.FunctionCount < 2) throw new Exception("typed functions were not emitted");
+            }
+            finally { try { Directory.Delete(root, recursive: true); } catch { } }
+        });
+        Check("direct-wasm-record-map-key-guard", () =>
+        {
+            string root = Path.Combine(Path.GetTempPath(), "code-direct-wasm-record-key-test-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(root);
+            try
+            {
+                string source = Path.Combine(root, "main.code");
+                File.WriteAllText(source,
+@"record Point {
+  integer x;
+}
+map<Point, integer> values = new map<Point, integer>();
+Point point = Point(1);
+values[point] = 2;");
+                try
+                {
+                    Compiler.ModuleCompiler.CompileFromFileWithMetadata(source, new Compiler.ModuleCompileOptions
+                    {
+                        Target = Compiler.CompileTarget.VmWeb,
+                        EmitDirectWasm = true
+                    });
+                    throw new Exception("expected direct-Wasm record key guard");
+                }
+                catch (Compiler.CompilerException ex) when (ex.Message.Contains("structural map/set keys in direct-Wasm", StringComparison.Ordinal))
+                {
+                }
             }
             finally { try { Directory.Delete(root, recursive: true); } catch { } }
         });
@@ -714,6 +743,103 @@ print(left_optional == right_optional);
 print(points.contains(right));
 print(scores[right]);", "0\n1\n1\n7\n")
             ,
+            ("record-collection-field-hashable-map-key",
+@"record Stat {
+  string name;
+}
+record Substance {
+  string name;
+  map<Stat, real> statsPerCm3;
+}
+map<Stat, real> firstStats = new map<Stat, real>();
+firstStats[Stat(""Action"")] = 1.;
+map<Stat, real> secondStats = new map<Stat, real>();
+secondStats[Stat(""Action"")] = 1.;
+Substance first = Substance(""Iron"", firstStats);
+Substance second = Substance(""Iron"", secondStats);
+map<Substance, integer> values = new map<Substance, integer>();
+values[first] = 12;
+print(first == second);
+firstStats[Stat(""Action"")] = 4.;
+print(values[second]);", "1\n12\n")
+            ,
+            ("record-key-fields-ignore-payload",
+@"record Stat {
+  string name;
+}
+record Substance {
+  key string name;
+  map<Stat, real> statsPerCm3;
+}
+map<Stat, real> firstStats = new map<Stat, real>();
+firstStats[Stat(""Action"")] = 1.;
+map<Stat, real> secondStats = new map<Stat, real>();
+secondStats[Stat(""Action"")] = 9.;
+Substance first = Substance(""Iron"", firstStats);
+Substance second = Substance(""Iron"", secondStats);
+map<Substance, integer> values = new map<Substance, integer>();
+values[first] = 7;
+print(first == second);
+print(values[second]);", "1\n7\n")
+            ,
+            ("record-ignore-key-excludes-payload",
+@"record Stat {
+  string name;
+}
+record Substance {
+  string name;
+  ignore key map<Stat, real> statsPerCm3;
+}
+map<Stat, real> firstStats = new map<Stat, real>();
+firstStats[Stat(""Action"")] = 1.;
+map<Stat, real> secondStats = new map<Stat, real>();
+secondStats[Stat(""Action"")] = 9.;
+Substance first = Substance(""Iron"", firstStats);
+Substance second = Substance(""Iron"", secondStats);
+map<Substance, integer> values = new map<Substance, integer>();
+values[first] = 8;
+print(first == second);
+print(values[second]);", "1\n8\n")
+            ,
+            ("record-ignore-key-nonhashable-field",
+@"interface Thing {
+}
+object Tool {
+  constructor() {
+  }
+}
+implement Thing for Tool {
+}
+record Stats {
+  string name;
+  ignore key Thing thing;
+}
+Thing firstThing = new Tool();
+Thing secondThing = new Tool();
+Stats first = Stats(""same"", firstThing);
+Stats second = Stats(""same"", secondThing);
+map<Stats, integer> values = new map<Stats, integer>();
+values[first] = 5;
+print(first == second);
+print(values[second]);", "1\n5\n")
+            ,
+            ("record-key-contextual-identifier",
+@"integer key = 3;
+object Key {
+  integer amount;
+  constructor() {
+    amount = 4;
+  }
+}
+record Lock {
+  integer key;
+}
+Lock lock = Lock(5);
+Key objectKey = new Key();
+print(key);
+print(lock.key);
+print(objectKey.amount);", "3\n5\n4\n")
+            ,
             ("modulo-op", @"integer value = 8 % 3; print(value);", "2\n"),
             ("function-void",
 @"function printHello() {
@@ -1010,6 +1136,11 @@ print(history.peek());
 print(history.pop());
 print(history.length);",
                 "1\n1\n15\n0\n0\n2\n1\n0\n2\n3\n3\n1\n2\nplay\nplay\n1\n"),
+            ("map-compound-missing-key-defaults-to-zero",
+@"map<string, real> weights = new map<string, real>();
+weights[""iron""] += 7.5;
+weights[""iron""] += 2.5;
+print(weights[""iron""]);", "10\n"),
             ("optional-hasvalue", @"optional<integer> v; print(v.hasValue);", "0\n"),
             ("optional-or", @"optional<integer> v; print(v.or(42));", "42\n"),
             ("optional-some", @"optional<integer> v = 5; print(v.hasValue); print(v.value);", "1\n5\n")
@@ -1067,6 +1198,62 @@ Point moved = start.moved(5);
 print(start.x);
 print(moved.x);
 print(moved.y);", "2\n7\n8\n"),
+            ("record-implicit-constructor",
+@"record Stat {
+  string name;
+}
+Stat action = Stat(""Action"");
+Stat base = new Stat(""Base"");
+print(action.name);
+print(base.name);", "Action\nBase\n"),
+            ("record-implicit-constructor-skips-defaulted-fields",
+@"record Substance {
+  string name;
+  real density = 1.;
+}
+Substance water = Substance(""Water"");
+print(water.name);
+print(water.density);", "Water\n1\n"),
+            ("object-primary-constructor-and-implicit-new-chain",
+@"record Substance {
+  string name;
+  real density;
+}
+object SubstanceBuilder(string name, real density) {
+  string name;
+  real density;
+
+  function<SubstanceBuilder> addDensity(real value = 1.) {
+    density += value;
+    return this;
+  }
+
+  function<Substance> build() {
+    return Substance(name, density);
+  }
+}
+Substance iron = SubstanceBuilder(""Iron"", 7.86).addDensity().addDensity(2.).build();
+print(iron.name);
+print(iron.density);", "Iron\n10.86\n"),
+            ("function-method-and-constructor-default-parameters",
+@"function<integer> add(integer left, integer right = 3) {
+  return left + right;
+}
+object Counter {
+  integer count;
+  constructor(integer start = 2) {
+    count = start;
+  }
+  function<integer> plus(integer amount = 5) {
+    return count + amount;
+  }
+}
+Counter first = Counter();
+Counter second = Counter(10);
+print(add(4));
+print(add(4, 6));
+print(first.plus());
+print(second.plus(1));", "7\n10\n7\n11\n"),
             ("object-field-set",
 @"object Counter {
   integer count;
@@ -2532,6 +2719,13 @@ print(value);", "RuntimeError"),
             ("object-method-missing-return", @"object A { integer x; constructor(integer v){ this.x = v; } function<integer> f() { integer y = 1; } }", "may not return"),
             ("object-method-undefined", @"object A { integer x; constructor(integer v){ this.x = v; } } A a = new A(1); print(a.nope());", "no matching method overload"),
             ("object-method-duplicate-arity", @"object A { integer x; constructor(integer v){ this.x = v; } function<integer> f(integer v) { return v; } function<integer> f(integer z) { return z; } }", "already defined"),
+            ("object-primary-constructor-missing-field", @"object Person(integer age) { string name; }", "has no field 'age'"),
+            ("object-primary-constructor-duplicate-explicit-constructor", @"object Person(integer age) { integer age; constructor(integer value) { age = value; } }", "already defined"),
+            ("function-default-parameter-non-trailing", @"function<integer> add(integer left = 1, integer right) { return left + right; } print(add(2));", "must declare a default value"),
+            ("function-default-parameter-type-mismatch", @"function<integer> add(integer value = ""bad"") { return value; } print(add());", "Default value type mismatch"),
+            ("interface-default-parameter-rejected", @"interface Named { function<string> name(integer index = 0); }", "cannot declare default values"),
+            ("implement-default-parameter-rejected", @"interface Named { function<string> name(integer index); } object Thing { function<string> name(integer index) { return ""x""; } } implement Named for Thing { name(integer index = 0) via Thing.name; }", "cannot declare default values"),
+            ("type-member-call-does-not-construct", @"object Builder { integer count = 1; function<integer> build() { return count; } } print(Builder.build());", "cannot be used as a value"),
             ("object-method-no-compatible-overload",
 @"object A {
   integer x;
@@ -2612,8 +2806,8 @@ bump();", "Cannot assign to constant 'limit'"),
             ("built-in-constant-reassign",
 @"pi = 4.;", "Cannot assign to constant 'pi'"),
             ("constant-missing-init", @"constant integer value;", "must be initialized"),
-            ("time-intrinsic-arity", @"print(unixMilliseconds(1));", "expects 0 args"),
-            ("math-intrinsic-arity", @"print(minimum(1));", "expects 2 args"),
+            ("time-intrinsic-arity", @"print(unixMilliseconds(1));", "expects 0 to 0 args"),
+            ("math-intrinsic-arity", @"print(minimum(1));", "expects 2 to 2 args"),
             ("old-read-line-name-rejected", @"print(read_line());", "Undefined function 'read_line'"),
             ("old-sleep-ms-name-rejected", @"sleep_ms(0);", "Undefined function 'sleep_ms'"),
             ("old-remove-at-name-rejected", @"array<integer> items = {1}; items.remove_at(0);", "Array has no method 'remove_at'"),
@@ -2972,31 +3166,53 @@ items.enqueue();", "expects 1 argument"),
 @"stack<integer> items = new stack<integer>();
 items.push(""oops"");", "Stack element type mismatch"),
             ("record-nonhashable-set-element",
-@"record Stats {
-  array<integer> history;
-  constructor() {
-    history = {1, 2};
-  }
+@"interface Thing {
 }
-set<Stats> items = new set<Stats>();", "must be hashable"),
+record Stats {
+  Thing thing;
+}
+set<Stats> items = new set<Stats>();", "hash field 'thing'"),
             ("record-nonhashable-map-key",
-@"record Stats {
-  array<integer> history;
-  constructor() {
-    history = {1, 2};
-  }
+@"interface Thing {
 }
-map<Stats, integer> values = new map<Stats, integer>();", "must be hashable"),
+record Stats {
+  Thing thing;
+}
+map<Stats, integer> values = new map<Stats, integer>();", "hash field 'thing'"),
             ("record-nonhashable-equality",
-@"record Stats {
-  array<integer> history;
-  constructor() {
-    history = {1, 2};
-  }
+@"interface Thing {
 }
-Stats left = new Stats();
-Stats right = new Stats();
-print(left == right);", "Equality requires compatible types"),
+record Stats {
+  Thing thing;
+}
+Thing thing = none;
+Stats left = Stats(thing);
+Stats right = Stats(thing);
+print(left == right);", "hash field 'thing'"),
+            ("record-key-field-nonhashable",
+@"interface Thing {
+}
+record Stats {
+  key Thing thing;
+}", "hash field 'thing'"),
+            ("record-mixed-key-and-ignore-key",
+@"record Stats {
+  key string name;
+  ignore key integer amount;
+}", "cannot mix 'key' and 'ignore key'"),
+            ("record-key-field-mutation",
+@"record Stats {
+  key string name;
+}
+Stats stats = Stats(""first"");
+stats.name = ""second"";", "Cannot assign to key field 'name'"),
+            ("object-key-field-modifier-rejected",
+@"object Stats {
+  key string name;
+  constructor() {
+    name = ""first"";
+  }
+}", "Record hash field modifiers are only valid on record fields"),
             ("record-cycle-not-supported",
 @"record Node {
   optional<Node> next;
@@ -4555,6 +4771,7 @@ function draw() {
             ("example-math-random-runnable", @"ConsoleApp1/examples/math_random.code", Compiler.CompileTarget.VmNative),
             ("example-sized-numerics-runnable", @"ConsoleApp1/examples/sized_numerics.code", Compiler.CompileTarget.VmNative),
             ("example-collections-runnable", @"ConsoleApp1/examples/collections.code", Compiler.CompileTarget.VmNative),
+            ("example-builder-runnable", @"ConsoleApp1/examples/builder.code", Compiler.CompileTarget.VmNative),
             ("example-object-runnable", @"ConsoleApp1/examples/object.code", Compiler.CompileTarget.VmNative),
             ("example-implicit-this-runnable", @"ConsoleApp1/examples/implicit_this.code", Compiler.CompileTarget.VmNative),
             ("example-interface-dispatch-runnable", @"ConsoleApp1/examples/interface_dispatch.code", Compiler.CompileTarget.VmNative),

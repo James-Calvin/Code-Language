@@ -1,6 +1,6 @@
 # Example Catalog
 
-Last updated: 2026-06-28
+Last updated: 2026-07-04
 
 This catalog is implementation-truthful.
 
@@ -40,6 +40,7 @@ Use this document as the primary answer to "does this exist yet?"
 
 | Status | Path | Use | Notes |
 | --- | --- | --- | --- |
+| `runnable` | `ConsoleApp1/examples/builder.code` | `run` | Builder pattern with primary constructors, implicit record construction, implicit `new`, default parameters, and map compound accumulation |
 | `runnable` | `ConsoleApp1/examples/object.code` | `run` | Object fields, field defaults, constructors, and methods |
 | `runnable` | `ConsoleApp1/examples/implicit_this.code` | `run` | Implicit field access and bare method calls inside object bodies |
 | `runnable` | `ConsoleApp1/examples/interface_dispatch.code` | `run` | Interface dispatch across object values |
@@ -80,4 +81,5 @@ No checked-in runnable examples exist yet for these planned features:
 Record notes:
 - Record methods are value-helper methods: `this` is cloned at method entry.
 - Hashable records support structural equality and may be used as `map` keys or `set` elements.
-- Records with non-hashable fields still work as data types, but equality and key/set usage are rejected at compile time.
+- Record equality/hash uses all fields by default, or contextual `key` / `ignore key` field selection when declared.
+- Collections are structural hash participants when their contained types are hashable.

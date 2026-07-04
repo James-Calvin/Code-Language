@@ -14,11 +14,12 @@ For deeper design notes, see [Code Language Specification](../code-language-spec
 4. [Control Flow and Errors](control-flow-and-errors.md)
 5. [Functions and Methods](functions-and-methods.md)
 6. [Objects, Records, and Interfaces](objects-records-interfaces.md)
-7. [Modules and Packages](modules-and-packages.md)
-8. [Standard and Host Intrinsics](standard-and-host-intrinsics.md)
-9. [Web Apps and Engine Modules](web-apps-and-engine.md)
-10. [CLI and Tooling](cli-and-tooling.md)
-11. [Planned and Draft-Only Features](planned-and-draft-only.md)
+7. [Record Equality and Hashing](record-equality-and-hashing.md)
+8. [Modules and Packages](modules-and-packages.md)
+9. [Standard and Host Intrinsics](standard-and-host-intrinsics.md)
+10. [Web Apps and Engine Modules](web-apps-and-engine.md)
+11. [CLI and Tooling](cli-and-tooling.md)
+12. [Planned and Draft-Only Features](planned-and-draft-only.md)
 
 ## Smallest Program
 

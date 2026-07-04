@@ -210,6 +210,8 @@ if (-not $SkipTests) {
         throw "Tests failed."
     }
 
+    Invoke-CheckedNative "Editor syntax tests failed." $nodeCommand @((Join-Path $repoRoot "scripts/test-editor-syntax.mjs"))
+
     Invoke-CheckedNative "Browser compatibility tests failed." $nodeCommand @((Join-Path $repoRoot "scripts/test-browser-compat.mjs"))
 }
 
@@ -246,6 +248,9 @@ foreach ($runtime in $Runtimes) {
         "lib/engine/drawing.code",
         "lib/engine/input.code",
         "lib/engine/viewport.code",
+        "editor/textmate/code.tmLanguage.json",
+        "editor/vscode/package.json",
+        "editor/vscode/language-configuration.json",
         "web-runtime/code-vm-web.js",
         "web-runtime/code-runtime.wasm"
     )
@@ -264,6 +269,15 @@ foreach ($runtime in $Runtimes) {
     Write-Host "Published $artifactName"
     Write-Host "Archive: $zipPath"
 }
+
+$editorPackageScript = Join-Path $repoRoot "scripts/package-editor-extension.ps1"
+& $editorPackageScript -Version $Version -OutputRoot $OutputRoot
+$vsixPath = Join-Path $outputRootPath "code-language-vscode-$Version.vsix"
+if (-not (Test-Path $vsixPath)) {
+    throw "VS Code extension package was not created: $vsixPath"
+}
+$vsixHash = Get-FileHash -Algorithm SHA256 -Path $vsixPath
+$checksumLines.Add("$($vsixHash.Hash.ToLowerInvariant())  $(Split-Path -Leaf $vsixPath)")
 
 $checksumPath = Join-Path $outputRootPath "SHA256SUMS.txt"
 Set-Content -Path $checksumPath -Value $checksumLines -Encoding ascii

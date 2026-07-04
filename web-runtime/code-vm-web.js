@@ -1,5 +1,5 @@
 const BYTECODE_MAGIC = "CODE";
-const BYTECODE_VERSION = 10;
+const BYTECODE_VERSION = 11;
 const HEADER_SIZE = 13;
 const DEBUG_ENTRY_SIZE = 12;
 
@@ -242,7 +242,10 @@ function readMetadata(bytes, view, offset, codeEnd) {
     const declaredCount = readInt("declared field count");
     const fieldSlots = [];
     for (let field = 0; field < declaredCount; field += 1) fieldSlots.push(readIndex(fields.length, "field slot"));
-    types.push({ name, isRecord: kind === 1, fieldSlots });
+    const hashCount = readInt("hash field count");
+    const hashFieldSlots = [];
+    for (let field = 0; field < hashCount; field += 1) hashFieldSlots.push(readIndex(fields.length, "hash field slot"));
+    types.push({ name, isRecord: kind === 1, fieldSlots, hashFieldSlots });
   }
   const callableCount = readInt("callable count");
   const callables = [];
@@ -549,7 +552,8 @@ function createVmObject(typeId, type, fieldCount) {
     typeName: type.name,
     isRecord: type.isRecord,
     fields: new Array(fieldCount).fill(0),
-    initializedFields: new Uint8Array(fieldCount)
+    initializedFields: new Uint8Array(fieldCount),
+    hashFieldSlots: type.hashFieldSlots ?? []
   };
 }
 
@@ -603,7 +607,8 @@ function valueEquals(left, right) {
       if (left.typeId !== right.typeId) {
         return false;
       }
-      for (let slot = 0; slot < left.fields.length; slot += 1) {
+      const hashSlots = left.hashFieldSlots ?? [];
+      for (const slot of hashSlots) {
         if (left.initializedFields[slot] !== right.initializedFields[slot]) {
           return false;
         }
@@ -616,6 +621,26 @@ function valueEquals(left, right) {
     }
 
     return false;
+  }
+
+  if (Array.isArray(left) && Array.isArray(right)) {
+    return orderedValuesEqual(left, right);
+  }
+
+  if (isVmQueue(left) && isVmQueue(right)) {
+    return orderedValuesEqual(left.items, right.items);
+  }
+
+  if (isVmStack(left) && isVmStack(right)) {
+    return orderedValuesEqual([...left.items].reverse(), [...right.items].reverse());
+  }
+
+  if (isVmSet(left) && isVmSet(right)) {
+    return vmSetsEqual(left, right);
+  }
+
+  if (isVmMap(left) && isVmMap(right)) {
+    return vmMapsEqual(left, right);
   }
 
   return left === right;
@@ -651,12 +676,39 @@ function valueHash(value) {
     }
 
     let hash = combineHash(2166136261, stringHash(`record:${value.typeName}`));
-    for (let slot = 0; slot < value.fields.length; slot += 1) {
+    const hashSlots = value.hashFieldSlots ?? [];
+    for (const slot of hashSlots) {
       if (!value.initializedFields[slot]) continue;
       hash = combineHash(hash, slot);
       hash = combineHash(hash, valueHash(value.fields[slot]));
     }
     return hash;
+  }
+
+  if (Array.isArray(value)) {
+    return orderedHash("array", value);
+  }
+
+  if (isVmQueue(value)) {
+    return orderedHash("queue", value.items);
+  }
+
+  if (isVmStack(value)) {
+    return orderedHash("stack", [...value.items].reverse());
+  }
+
+  if (isVmSet(value)) {
+    let entriesHash = 0;
+    for (const entry of iterateSetEntries(value)) entriesHash = (entriesHash + valueHash(entry)) | 0;
+    return combineHash(combineHash(stringHash("set"), value.size | 0), entriesHash);
+  }
+
+  if (isVmMap(value)) {
+    let entriesHash = 0;
+    for (const entry of iterateMapEntries(value)) {
+      entriesHash = (entriesHash + combineHash(valueHash(entry.key), valueHash(entry.value))) | 0;
+    }
+    return combineHash(combineHash(stringHash("map"), value.size | 0), entriesHash);
   }
 
   if (!Object.prototype.hasOwnProperty.call(value, "__identityHash")) {
@@ -669,6 +721,118 @@ function valueHash(value) {
   }
 
   return value.__identityHash;
+}
+
+function orderedValuesEqual(left, right) {
+  if (left.length !== right.length) return false;
+  for (let index = 0; index < left.length; index += 1) {
+    if (!valueEquals(left[index], right[index])) return false;
+  }
+  return true;
+}
+
+function orderedHash(kind, values) {
+  let hash = stringHash(kind);
+  for (const value of values) hash = combineHash(hash, valueHash(value));
+  return hash;
+}
+
+function* iterateMapEntries(map) {
+  for (const entries of map.buckets.values()) {
+    for (const entry of entries) yield entry;
+  }
+}
+
+function* iterateSetEntries(set) {
+  for (const entries of set.buckets.values()) {
+    for (const entry of entries) yield entry;
+  }
+}
+
+function vmMapsEqual(left, right) {
+  if (left.size !== right.size) return false;
+  for (const entry of iterateMapEntries(left)) {
+    const candidate = vmMapTryGet(right, entry.key);
+    if (!candidate.found || !valueEquals(entry.value, candidate.value)) return false;
+  }
+  return true;
+}
+
+function vmSetsEqual(left, right) {
+  if (left.size !== right.size) return false;
+  for (const entry of iterateSetEntries(left)) {
+    if (!vmSetContains(right, entry)) return false;
+  }
+  return true;
+}
+
+function snapshotHashKey(value, seen = new Map()) {
+  if (value == null || isNumberValue(value) || typeof value === "string" || typeof value === "boolean" || value === OptionalNone) {
+    return value;
+  }
+
+  if (isVmObject(value)) {
+    if (!value.isRecord) return value;
+    if (seen.has(value)) return seen.get(value);
+    const clone = {
+      __vmObject: true,
+      typeId: value.typeId,
+      typeName: value.typeName,
+      isRecord: true,
+      fields: new Array(value.fields.length).fill(0),
+      initializedFields: new Uint8Array(value.initializedFields.length),
+      hashFieldSlots: value.hashFieldSlots ?? []
+    };
+    seen.set(value, clone);
+    for (let slot = 0; slot < value.fields.length; slot += 1) {
+      if (!value.initializedFields[slot]) continue;
+      clone.fields[slot] = snapshotHashKey(value.fields[slot], seen);
+      clone.initializedFields[slot] = 1;
+    }
+    return clone;
+  }
+
+  if (Array.isArray(value)) {
+    if (seen.has(value)) return seen.get(value);
+    const clone = [];
+    seen.set(value, clone);
+    for (const item of value) clone.push(snapshotHashKey(item, seen));
+    return clone;
+  }
+
+  if (isVmQueue(value)) {
+    if (seen.has(value)) return seen.get(value);
+    const clone = { __vmQueue: true, items: [] };
+    seen.set(value, clone);
+    for (const item of value.items) clone.items.push(snapshotHashKey(item, seen));
+    return clone;
+  }
+
+  if (isVmStack(value)) {
+    if (seen.has(value)) return seen.get(value);
+    const clone = { __vmStack: true, items: [] };
+    seen.set(value, clone);
+    for (const item of value.items) clone.items.push(snapshotHashKey(item, seen));
+    return clone;
+  }
+
+  if (isVmSet(value)) {
+    if (seen.has(value)) return seen.get(value);
+    const clone = createVmSet();
+    seen.set(value, clone);
+    for (const entry of iterateSetEntries(value)) vmSetAdd(clone, snapshotHashKey(entry, seen));
+    return clone;
+  }
+
+  if (isVmMap(value)) {
+    if (seen.has(value)) return seen.get(value);
+    const clone = createVmMap();
+    seen.set(value, clone);
+    for (const entry of iterateMapEntries(value)) vmMapSet(clone, snapshotHashKey(entry.key, seen), snapshotHashKey(entry.value, seen));
+    return clone;
+  }
+
+  return value;
 }
 
 function getBucketEntries(container, key, createIfMissing = false) {
@@ -697,6 +861,7 @@ function vmMapTryGet(map, key) {
 }
 
 function vmMapSet(map, key, value) {
+  key = snapshotHashKey(key);
   const entries = getBucketEntries(map, key, true);
   for (const entry of entries) {
     if (valueEquals(entry.key, key)) {
@@ -731,6 +896,7 @@ function vmMapRemove(map, key) {
 }
 
 function vmSetAdd(set, value) {
+  value = snapshotHashKey(value);
   const entries = getBucketEntries(set, value, true);
   for (const entry of entries) {
     if (valueEquals(entry, value)) {

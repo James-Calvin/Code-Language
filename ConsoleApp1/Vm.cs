@@ -471,7 +471,7 @@ sealed class Vm
                         throwRuntimeType("MapSet expects map");
                         break;
                     }
-                    map.Entries[key] = value;
+                    map.Entries[VmValueSemantics.SnapshotHashKey(key) ?? OptionalNone.Value] = value;
                     _stack.Push(value);
                     break;
                 }
@@ -519,7 +519,7 @@ sealed class Vm
                         throwRuntimeType("SetAdd expects set");
                         break;
                     }
-                    set.Entries.Add(value);
+                    set.Entries.Add(VmValueSemantics.SnapshotHashKey(value) ?? OptionalNone.Value);
                     _stack.Push(0);
                     break;
                 }
@@ -655,7 +655,7 @@ sealed class Vm
                 {
                     int typeId = ReadMetadataIndex(_metadata.Types.Count, "type");
                     var type = _metadata.Types[typeId];
-                    _stack.Push(new VmObject(typeId, type.Name, isRecord: false, _metadata.Fields.Count));
+                    _stack.Push(new VmObject(typeId, type.Name, isRecord: false, _metadata.Fields.Count, type.HashFieldSlots));
                     break;
                 }
 
@@ -663,7 +663,7 @@ sealed class Vm
                 {
                     int typeId = ReadMetadataIndex(_metadata.Types.Count, "type");
                     var type = _metadata.Types[typeId];
-                    _stack.Push(new VmObject(typeId, type.Name, isRecord: true, _metadata.Fields.Count));
+                    _stack.Push(new VmObject(typeId, type.Name, isRecord: true, _metadata.Fields.Count, type.HashFieldSlots));
                     break;
                 }
 
@@ -1572,6 +1572,21 @@ file static class VmValueSemantics
             return ReferenceEquals(leftObject, rightObject);
         }
 
+        if (x is List<object> leftArray && y is List<object> rightArray)
+            return OrderedValuesEqual(leftArray, rightArray);
+
+        if (x is VmQueue leftQueue && y is VmQueue rightQueue)
+            return OrderedValuesEqual(leftQueue.Items, rightQueue.Items);
+
+        if (x is VmStack leftStack && y is VmStack rightStack)
+            return OrderedValuesEqual(leftStack.Items, rightStack.Items);
+
+        if (x is VmSet leftSet && y is VmSet rightSet)
+            return leftSet.Entries.SetEquals(rightSet.Entries);
+
+        if (x is VmMap leftMap && y is VmMap rightMap)
+            return MapsEqual(leftMap, rightMap);
+
         return EqualityComparer<object>.Default.Equals(x, y);
     }
 
@@ -1591,7 +1606,111 @@ file static class VmValueSemantics
             return RuntimeHelpers.GetHashCode(vmObject);
         }
 
+        if (value is List<object> array)
+            return OrderedHash("array", array);
+
+        if (value is VmQueue queue)
+            return OrderedHash("queue", queue.Items);
+
+        if (value is VmStack stack)
+            return OrderedHash("stack", stack.Items);
+
+        if (value is VmSet set)
+            return SetHash(set);
+
+        if (value is VmMap map)
+            return MapHash(map);
+
         return value.GetHashCode();
+    }
+
+    public static object? SnapshotHashKey(object? value)
+        => SnapshotHashKey(value, new Dictionary<object, object>(ReferenceEqualityComparer.Instance));
+
+    private static object? SnapshotHashKey(object? value, Dictionary<object, object> visited)
+    {
+        if (value is null)
+            return null;
+
+        if (value is int or long or double or string or bool || value == OptionalNone.Value)
+            return value;
+
+        if (value is VmObject vmObject)
+        {
+            if (!vmObject.IsRecord)
+                return vmObject;
+
+            if (visited.TryGetValue(vmObject, out var existing))
+                return existing;
+
+            var clone = new VmObject(vmObject.TypeId, vmObject.TypeName, isRecord: true, vmObject.Fields.Length, vmObject.HashFieldSlots);
+            visited[vmObject] = clone;
+            for (int slot = 0; slot < vmObject.Fields.Length; slot++)
+            {
+                if (!vmObject.InitializedFields[slot])
+                    continue;
+                clone.Fields[slot] = SnapshotHashKey(vmObject.Fields[slot], visited);
+                clone.InitializedFields[slot] = true;
+            }
+            return clone;
+        }
+
+        if (value is List<object> array)
+        {
+            if (visited.TryGetValue(array, out var existing))
+                return existing;
+            var clone = new List<object>(array.Count);
+            visited[array] = clone;
+            foreach (var item in array)
+                clone.Add(SnapshotHashKey(item, visited) ?? OptionalNone.Value);
+            return clone;
+        }
+
+        if (value is VmQueue queue)
+        {
+            if (visited.TryGetValue(queue, out var existing))
+                return existing;
+            var clone = new VmQueue();
+            visited[queue] = clone;
+            foreach (var item in queue.Items)
+                clone.Items.Enqueue(SnapshotHashKey(item, visited) ?? OptionalNone.Value);
+            return clone;
+        }
+
+        if (value is VmStack stack)
+        {
+            if (visited.TryGetValue(stack, out var existing))
+                return existing;
+            var clone = new VmStack();
+            visited[stack] = clone;
+            foreach (var item in stack.Items.Reverse())
+                clone.Items.Push(SnapshotHashKey(item, visited) ?? OptionalNone.Value);
+            return clone;
+        }
+
+        if (value is VmSet set)
+        {
+            if (visited.TryGetValue(set, out var existing))
+                return existing;
+            var clone = new VmSet();
+            visited[set] = clone;
+            foreach (var item in set.Entries)
+                clone.Entries.Add(SnapshotHashKey(item, visited) ?? OptionalNone.Value);
+            return clone;
+        }
+
+        if (value is VmMap map)
+        {
+            if (visited.TryGetValue(map, out var existing))
+                return existing;
+            var clone = new VmMap();
+            visited[map] = clone;
+            foreach (var entry in map.Entries)
+                clone.Entries[SnapshotHashKey(entry.Key, visited) ?? OptionalNone.Value] = SnapshotHashKey(entry.Value, visited) ?? OptionalNone.Value;
+            return clone;
+        }
+
+        return value;
     }
 
     private static bool RecordEquals(VmObject left, VmObject right)
@@ -1603,7 +1722,7 @@ file static class VmValueSemantics
         if (left.Fields.Length != right.Fields.Length)
             return false;
 
-        for (int slot = 0; slot < left.Fields.Length; slot++)
+        foreach (int slot in left.HashFieldSlots)
         {
             if (left.InitializedFields[slot] != right.InitializedFields[slot])
                 return false;
@@ -1619,13 +1738,77 @@ file static class VmValueSemantics
         var hash = new HashCode();
         hash.Add(record.TypeName, StringComparer.Ordinal);
 
-        for (int slot = 0; slot < record.Fields.Length; slot++)
+        foreach (int slot in record.HashFieldSlots)
         {
             if (!record.InitializedFields[slot]) continue;
             hash.Add(slot);
             hash.Add(ValueHash(record.Fields[slot]));
         }
 
+        return hash.ToHashCode();
+    }
+
+    private static bool OrderedValuesEqual(IEnumerable<object> left, IEnumerable<object> right)
+    {
+        using var leftEnumerator = left.GetEnumerator();
+        using var rightEnumerator = right.GetEnumerator();
+        while (true)
+        {
+            bool leftNext = leftEnumerator.MoveNext();
+            bool rightNext = rightEnumerator.MoveNext();
+            if (leftNext != rightNext)
+                return false;
+            if (!leftNext)
+                return true;
+            if (!ValuesEqual(leftEnumerator.Current, rightEnumerator.Current))
+                return false;
+        }
+    }
+
+    private static bool MapsEqual(VmMap left, VmMap right)
+    {
+        if (left.Entries.Count != right.Entries.Count)
+            return false;
+        foreach (var entry in left.Entries)
+        {
+            if (!right.Entries.TryGetValue(entry.Key, out var rightValue))
+                return false;
+            if (!ValuesEqual(entry.Value, rightValue))
+                return false;
+        }
+        return true;
+    }
+
+    private static int OrderedHash(string kind, IEnumerable<object> values)
+    {
+        var hash = new HashCode();
+        hash.Add(kind, StringComparer.Ordinal);
+        foreach (var value in values)
+            hash.Add(ValueHash(value));
+        return hash.ToHashCode();
+    }
+
+    private static int SetHash(VmSet set)
+    {
+        var hash = new HashCode();
+        hash.Add("set", StringComparer.Ordinal);
+        hash.Add(set.Entries.Count);
+        int entriesHash = 0;
+        foreach (var value in set.Entries)
+            entriesHash += ValueHash(value);
+        hash.Add(entriesHash);
+        return hash.ToHashCode();
+    }
+
+    private static int MapHash(VmMap map)
+    {
+        var hash = new HashCode();
+        hash.Add("map", StringComparer.Ordinal);
+        hash.Add(map.Entries.Count);
+        int entriesHash = 0;
+        foreach (var entry in map.Entries)
+            entriesHash += HashCode.Combine(ValueHash(entry.Key), ValueHash(entry.Value));
+        hash.Add(entriesHash);
         return hash.ToHashCode();
     }
 

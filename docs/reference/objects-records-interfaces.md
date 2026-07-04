@@ -31,19 +31,21 @@ hello Ada
 
 Behavior:
 
-- Use `new Type(...)` to construct.
+- Use `new Type(...)` or `Type(...)` to construct. The shorthand only applies when a normal function call does not exist.
 - Fields are read and written with `object.field`.
 - Fields may declare defaults with `Type name = expression;`.
 - Defaults run for each new instance before the constructor body.
 - Fields without defaults must still be definitely assigned by every constructor.
 - Methods are called with `object.method(...)`.
 - Object variables refer to runtime instances.
+- Primary constructor syntax is supported when constructor parameters match same-named fields, for example `object Player(string name) { string name; }`.
 
 Common mistakes:
 
 - Field names `length`, `hasValue`, `value`, and `or` are reserved.
 - Field defaults cannot read constructor parameters, `this`, or other fields. Use a constructor when one field depends on another.
 - Objects with fields that lack defaults need constructors that assign every non-defaulted field.
+- `TypeName.method(...)` does not construct a value; write `TypeName().method(...)` when chaining from a zero-argument builder.
 
 ## Records
 
@@ -82,21 +84,31 @@ Output:
 Record behavior:
 
 - Records copy on assignment, parameter passing, returns, and collection insertion.
+- Records without explicit constructors get an implicit field-order constructor for fields that lack defaults.
+- Record construction can use `new Type(...)` or `Type(...)`.
 - Record methods receive a copied `this`.
 - Persistent updates should return a record and assign it at the call site.
 - Hashable records support structural equality and may be used as `map` keys or `set` elements.
+- By default, every record field participates in equality and hashing.
+- Use contextual `key` fields when only selected fields define identity.
+- Use contextual `ignore key` fields when a payload field should not define identity.
+- See [Record Equality and Hashing](record-equality-and-hashing.md) for the full rules.
 
-Hashable record fields may contain:
+Participating hash fields may contain:
 
 - `whole`, `integer`, `real`, `boolean`, `string`
 - enums
+- object references, by identity
 - hashable records
 - `optional<T>` where `T` is hashable
+- collections whose contained types are hashable
 
 Common mistakes:
 
 - Mutating fields inside a record method changes the copied receiver, not the original caller value.
-- Records with non-hashable fields still work as values, but cannot use structural equality or serve as map keys or set elements.
+- Participating fields with interface or fallible types are not hashable in V1; use `key` or `ignore key` to define the hashable identity.
+- `key` record fields are constructor-only after initialization.
+- A record cannot mix `key` and `ignore key` fields.
 
 ## Interfaces
 

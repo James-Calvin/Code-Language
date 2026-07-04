@@ -2,7 +2,10 @@ using System.Collections.Generic;
 
 namespace ConsoleApp1.Compiler;
 
-abstract class Expr { }
+abstract class Expr
+{
+    public TypeRef? ResolvedImplicitOptionalUnwrapTypeRef { get; set; }
+}
 
 enum CastRuntimeKind
 {

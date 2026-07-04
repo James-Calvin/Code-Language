@@ -24,7 +24,7 @@ Use this document as the primary answer to "does this exist yet?"
 | `runnable` | `ConsoleApp1/examples/forloop.code` | `run` | Counted `for` loop |
 | `runnable` | `ConsoleApp1/examples/foreach.code` | `run` | Numeric `foreach` |
 | `runnable` | `ConsoleApp1/examples/arrayloop.code` | `run` | Array literals and array iteration |
-| `runnable` | `ConsoleApp1/examples/optional.code` | `run` | `optional<T>`, `none`, `.hasValue`, `.value`, `.or(...)` |
+| `runnable` | `ConsoleApp1/examples/optional.code` | `run` | `optional<T>` as `T` or `none`, `== none` / `!= none`, direct unwrap, and compatibility helpers |
 | `negative` | `ConsoleApp1/examples/constants.code` | `expected compile error` | Constant reassignment rejection |
 
 ## Stdlib and Runtime Helpers

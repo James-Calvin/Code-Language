@@ -41,7 +41,7 @@ Current state:
 - A higher-level wrapper layer now exists under `lib/engine/`: canonical modules `engine.colors`, `engine.drawing`, `engine.input`, `engine.viewport`, `engine.diagnostics`, `engine.audio`, and `engine.scene`, with compatibility re-export modules `engine.view` and `engine.loop`.
 - Scene composition is now supported through explicit child-object registration against `Scene`.
 - Generated apps prevent browser scroll/panning for app-control keys: arrows, Space, Page Up, Page Down, Home, and End.
-- Normal generated-app `print` output goes to the browser console by default; the on-screen overlay is reserved for fatal/runtime diagnostics.
+- Normal generated-app `print` output goes to the browser console by default; the on-screen overlay is reserved for fatal/runtime diagnostics with Code source file, line, column, phase, and stack frames when debug metadata is available.
 - Web builds embed bytecode in `index.html` by default and only emit `app.bytecode` when `--emit-web-bytecode` is used.
 - `web-runtime/index.html` still exists as a lower-level harness for loading raw `.bytecode` / `.codelib` files during debugging and bring-up.
 - Legacy window-handle engine host bindings still exist, but they are not the default scene-object workflow.

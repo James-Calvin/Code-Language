@@ -13,9 +13,11 @@ sealed class BytecodeBuilder
     private readonly Dictionary<string, int> _labels = new(StringComparer.Ordinal);
     private readonly List<(int position, string label)> _fixups = new();
     private readonly List<(int Position, string Label, int MinimumSize)> _frameSizeFixups = new();
-    private readonly List<(int ip, int line, int column)> _debug = new();
+    private readonly List<(int ip, int line, int column, int sourceId)> _debug = new();
     private readonly List<string> _strings = new();
     private readonly Dictionary<string, int> _stringIds = new(StringComparer.Ordinal);
+    private readonly List<string> _sources = new();
+    private readonly Dictionary<string, int> _sourceIds = new(StringComparer.Ordinal);
     private readonly List<string> _fields = new();
     private readonly Dictionary<string, int> _fieldSlots = new(StringComparer.Ordinal);
     private readonly List<(string Symbol, int Arity)> _hostBindings = new();
@@ -25,6 +27,7 @@ sealed class BytecodeBuilder
     private readonly List<(string Label, int FrameSize, string Name)> _callables = new();
     private int _currentLine;
     private int _currentColumn;
+    private int _currentSourceId = -1;
 
     public static BytecodeBuilder New() => new();
 
@@ -34,11 +37,16 @@ sealed class BytecodeBuilder
         _currentColumn = column;
     }
 
+    public void SetDebugSource(string? source)
+    {
+        _currentSourceId = string.IsNullOrWhiteSpace(source) ? -1 : InternSource(source);
+    }
+
     private void RecordDebug()
     {
         if (_currentLine <= 0) return;
         int ip = BytecodeFormat.HeaderSize + _bytes.Count;
-        _debug.Add((ip, _currentLine, _currentColumn));
+        _debug.Add((ip, _currentLine, _currentColumn, _currentSourceId));
     }
 
     public BytecodeBuilder PushInt(int value)
@@ -322,6 +330,7 @@ sealed class BytecodeBuilder
             BitConverter.GetBytes(entry.ip).CopyTo(result, offset);
             BitConverter.GetBytes(entry.line).CopyTo(result, offset + 4);
             BitConverter.GetBytes(entry.column).CopyTo(result, offset + 8);
+            BitConverter.GetBytes(entry.sourceId).CopyTo(result, offset + 12);
             offset += BytecodeFormat.DebugEntrySize;
         }
         Array.Copy(metadata, 0, result, offset, metadata.Length);
@@ -371,6 +380,17 @@ sealed class BytecodeBuilder
         return id;
     }
 
+    private int InternSource(string value)
+    {
+        value = value.Replace('\\', '/');
+        if (_sourceIds.TryGetValue(value, out int id)) return id;
+        id = _sources.Count;
+        _sources.Add(value);
+        _sourceIds[value] = id;
+        InternString(value);
+        return id;
+    }
+
     private int InternField(string name)
     {
         if (_fieldSlots.TryGetValue(name, out int slot)) return slot;
@@ -416,6 +436,8 @@ sealed class BytecodeBuilder
             writer.Write(utf8.Length);
             writer.Write(utf8);
         }
+        writer.Write(_sources.Count);
+        foreach (string source in _sources) writer.Write(_stringIds[source]);
         writer.Write(_fields.Count);
         foreach (string field in _fields) writer.Write(_stringIds[field]);
         writer.Write(_hostBindings.Count);

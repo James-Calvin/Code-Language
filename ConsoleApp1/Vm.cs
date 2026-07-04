@@ -106,7 +106,7 @@ sealed class Vm
     private readonly TextWriter _output;
     private readonly TextReader _input;
     private readonly Stack<(int returnIp, int callIp, object[] locals)> _callStack = new();
-    private readonly Dictionary<int, (int line, int column)> _debug = new();
+    private readonly Dictionary<int, (int line, int column, string? source)> _debug = new();
     private readonly Dictionary<int, InterfaceDispatchTable> _interfaceDispatchCache = new();
     private readonly Dictionary<string, HostBinding> _hostBindings = new(StringComparer.Ordinal);
     private readonly BytecodeMetadata _metadata;
@@ -142,7 +142,9 @@ sealed class Vm
             int ip = BinaryPrimitives.ReadInt32LittleEndian(code.AsSpan(debugOffset, 4));
             int line = BinaryPrimitives.ReadInt32LittleEndian(code.AsSpan(debugOffset + 4, 4));
             int col = BinaryPrimitives.ReadInt32LittleEndian(code.AsSpan(debugOffset + 8, 4));
-            _debug[ip] = (line, col);
+            int sourceId = BinaryPrimitives.ReadInt32LittleEndian(code.AsSpan(debugOffset + 12, 4));
+            string? source = sourceId >= 0 && sourceId < _metadata.Sources.Count ? _metadata.Sources[sourceId] : null;
+            _debug[ip] = (line, col, source);
             debugOffset += BytecodeFormat.DebugEntrySize;
         }
     }
@@ -789,7 +791,7 @@ sealed class Vm
                     EnsureStack(1);
                     var opt = _stack.Pop();
                     if (opt == OptionalNone.Value)
-                        ThrowRuntime("Optional has no value");
+                        ThrowRuntime("Optional value is none");
                     _stack.Push(opt);
                     break;
                 }
@@ -1459,22 +1461,26 @@ sealed class Vm
         foreach (var frame in _callStack)
         {
             int frameLine = -1, frameCol = -1;
+            string? frameSource = null;
             if (_debug.TryGetValue(frame.callIp, out var locFrame))
             {
                 frameLine = locFrame.line;
                 frameCol = locFrame.column;
+                frameSource = locFrame.source;
             }
-            calls.Add(new VmFrame(frame.callIp, frameLine, frameCol));
+            calls.Add(new VmFrame(frame.callIp, frameLine, frameCol, frameSource));
         }
         int faultIp = _ip - 1;
         int faultLine = -1, faultCol = -1;
+        string? faultSource = null;
         if (_debug.TryGetValue(faultIp, out var loc))
         {
             faultLine = loc.line;
             faultCol = loc.column;
+            faultSource = loc.source;
         }
-        var error = new VmError(type, message, faultLine, faultCol, calls.ToArray());
-        throw new VmRuntimeException(message, faultIp, calls.ToArray(), faultLine, faultCol, error);
+        var error = new VmError(type, message, faultLine, faultCol, faultSource, calls.ToArray());
+        throw new VmRuntimeException(message, faultIp, calls.ToArray(), faultLine, faultCol, faultSource, error);
     }
 
     private InterfaceDispatchTable ReadInterfaceDispatchTable()

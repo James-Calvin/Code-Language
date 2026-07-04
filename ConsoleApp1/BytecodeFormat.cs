@@ -7,12 +7,12 @@ namespace ConsoleApp1;
 static class BytecodeFormat
 {
     public const string MagicText = "CODE";
-    public const byte Version = 11;
+    public const byte Version = 12;
     public const string MetadataMagicText = "META";
 
     // magic (4) + version (1) + codeSize (4) + debugCount (4)
     public const int HeaderSize = 4 + 1 + 4 + 4;
-    public const int DebugEntrySize = 12; // ip, line, column (3 * 4 bytes)
+    public const int DebugEntrySize = 16; // ip, line, column, sourceId (4 * 4 bytes)
 
     public readonly record struct Header(int CodeSize, int DebugCount);
 

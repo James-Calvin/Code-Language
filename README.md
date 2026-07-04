@@ -106,7 +106,7 @@ Implemented today:
 
 - typed variables/functions; primitives: `integer`, `whole`, `real`, `boolean`, `string`, sized numeric boundary types, and `byte`
 - same-module global variables/constants plus built-in real constants `pi` and `tau`
-- objects, records, record key selection (`key` / `ignore key`), field/method interfaces, arrays, maps, sets, queues, stacks, optionals, and typed recoverable `fallible` errors
+- objects, records, record key selection (`key` / `ignore key`), field/method interfaces, arrays, maps, sets, queues, stacks, optionals as `T` or `none`, and typed recoverable `fallible` errors
 - default parameters for functions, methods, and constructors, plus implicit `TypeName(...)` construction as readable builder-pattern sugar
 - `if`, `switch`, `while`, `for`, `foreach`, `break`, `continue`, functions, methods, modules, package manifests, lockfiles, and library artifacts
 - web app lifecycle entry through top-level `start()`, `update()`, `draw()`, and optional `drawHud()`
@@ -131,11 +131,15 @@ node scripts/benchmark-runtime.mjs
 
 See [benchmarks/README.md](benchmarks/README.md) for baseline comparison rules.
 
-Generated web apps use bytecode v11 and run the Rust/Wasm VM, lifecycle methods,
+Generated web apps use bytecode v12 and run the Rust/Wasm VM, lifecycle methods,
 and updates in a dedicated worker. Fixed 60 Hz updates are the default. Drawing is
 encoded by the worker, replayed on the main-thread canvas, and remains limited
 by browser/display refresh. `Runtime.useContinuousUpdates()` is an explicit
 opt-in for applications designed around measured update deltas.
+
+Runtime failures in generated apps include Code source file, line, column, phase,
+and call stack when debug metadata is available; the on-screen overlay is reserved
+for fatal/runtime diagnostics while normal `print` output goes to the console.
 
 Maintainers can select the gated typed backend with `--web-backend direct-wasm`.
 It emits `code-app.wasm` beside `code-runtime.wasm` and compiles application

@@ -1,7 +1,7 @@
 const BYTECODE_MAGIC = "CODE";
-const BYTECODE_VERSION = 11;
+const BYTECODE_VERSION = 12;
 const HEADER_SIZE = 13;
-const DEBUG_ENTRY_SIZE = 12;
+const DEBUG_ENTRY_SIZE = 16;
 
 const OptionalNone = Symbol("optional-none");
 
@@ -186,11 +186,17 @@ function readHeader(bytes) {
     const ip = view.getInt32(debugOffset, true);
     const line = view.getInt32(debugOffset + 4, true);
     const column = view.getInt32(debugOffset + 8, true);
-    debugMap.set(ip, { line, column });
+    const sourceId = view.getInt32(debugOffset + 12, true);
+    debugMap.set(ip, { line, column, sourceId, source: null });
     debugOffset += DEBUG_ENTRY_SIZE;
   }
 
   const metadata = readMetadata(bytes, view, debugEnd, codeEnd);
+  for (const location of debugMap.values()) {
+    if (location.sourceId >= 0 && location.sourceId < metadata.sources.length) {
+      location.source = metadata.sources[location.sourceId];
+    }
+  }
   return { codeEnd, debugMap, view, metadata };
 }
 
@@ -224,6 +230,9 @@ function readMetadata(bytes, view, offset, codeEnd) {
     strings.push(Utf8Decoder.decode(bytes.subarray(cursor, cursor + length)));
     cursor += length;
   }
+  const sourceCount = readInt("source count");
+  const sources = [];
+  for (let i = 0; i < sourceCount; i += 1) sources.push(strings[readIndex(strings.length, "source string")]);
   const fieldCount = readInt("field count");
   const fields = [];
   for (let i = 0; i < fieldCount; i += 1) fields.push(strings[readIndex(strings.length, "field string")]);
@@ -259,7 +268,7 @@ function readMetadata(bytes, view, offset, codeEnd) {
     functionNames.set(targetIp, name);
   }
   if (cursor !== end) throw new Error("Bytecode metadata has trailing data.");
-  return { strings, fields, hostBindings, types, callables, functionNames };
+  return { strings, sources, fields, hostBindings, types, callables, functionNames };
 }
 
 function decodeInstructions(bytes, view, codeEnd, metadata) {
@@ -420,7 +429,7 @@ class RuntimeProfiler {
   sourceLabel(ip) {
     const name = this.vm.functionNames.get(ip);
     const exact = this.vm.debugMap.get(ip);
-    if (exact) return `${name ?? `ip ${ip}`} (${exact.line}:${exact.column})`;
+    if (exact) return `${name ?? `ip ${ip}`} (${formatRuntimeLocation(exact.source, exact.line, exact.column)})`;
     let nearestIp = -1;
     let nearest = null;
     for (const [candidateIp, location] of this.vm.debugMap) {
@@ -429,7 +438,7 @@ class RuntimeProfiler {
         nearest = location;
       }
     }
-    return nearest ? `${name ?? `ip ${ip}`} (${nearest.line}:${nearest.column})` : (name ?? `ip ${ip}`);
+    return nearest ? `${name ?? `ip ${ip}`} (${formatRuntimeLocation(nearest.source, nearest.line, nearest.column)})` : (name ?? `ip ${ip}`);
   }
 
   report() {
@@ -956,7 +965,22 @@ function tryGetCollectionLength(value) {
 function formatVmError(errorObject) {
   const line = Number.isInteger(errorObject.line) ? errorObject.line : -1;
   const column = Number.isInteger(errorObject.column) ? errorObject.column : -1;
-  return `${errorObject.type}: ${errorObject.message} at ${line}:${column}`;
+  return `${errorObject.type}: ${errorObject.message} at ${formatRuntimeLocation(errorObject.source, line, column)}`;
+}
+
+function formatRuntimeLocation(source, line, column) {
+  if (!Number.isInteger(line) || !Number.isInteger(column) || line <= 0 || column <= 0) {
+    return "unknown source";
+  }
+  return source ? `${source}:${line}:${column}` : `${line}:${column}`;
+}
+
+function formatRuntimeMessage(message, source, line, column, operation = null) {
+  const prefix = operation ? `${message} during ${operation}` : message;
+  if (!Number.isInteger(line) || !Number.isInteger(column) || line <= 0 || column <= 0) {
+    return prefix;
+  }
+  return `${prefix} at ${formatRuntimeLocation(source, line, column)}`;
 }
 
 function isVmError(value) {
@@ -1395,7 +1419,7 @@ export class CanvasSceneRuntime {
       if (frames.length > 0) {
         this.appendOutput("Stack trace (most recent call first):");
         for (const frame of frames) {
-          this.appendOutput(`  at ip ${frame.ip} (${frame.line}:${frame.column})`);
+          this.appendOutput(`  at ip ${frame.ip} (${formatRuntimeLocation(frame.source, frame.line, frame.column)})`);
         }
       }
     }
@@ -3554,7 +3578,7 @@ export class WebVm {
           this.ensureStack(1);
           const value = this.stack.pop();
           if (value === OptionalNone) {
-            this.throwRuntime("Optional has no value");
+            this.throwRuntime("Optional value is none");
           }
           this.stack.push(value);
           break;
@@ -3961,7 +3985,8 @@ export class WebVm {
       frames.push({
         ip: frame.callIp,
         line: loc ? loc.line : -1,
-        column: loc ? loc.column : -1
+        column: loc ? loc.column : -1,
+        source: loc ? loc.source : null
       });
     }
 
@@ -3969,19 +3994,22 @@ export class WebVm {
     const faultLoc = this.debugMap.get(faultIp);
     const line = faultLoc ? faultLoc.line : -1;
     const column = faultLoc ? faultLoc.column : -1;
+    const source = faultLoc ? faultLoc.source : null;
     const errorObject = {
       __vmError: true,
       type,
       message,
       line,
       column,
+      source,
       frames
     };
 
-    throw new VmRuntimeError(message, {
+    throw new VmRuntimeError(formatRuntimeMessage(message, source, line, column), {
       ip: faultIp,
       line,
       column,
+      source,
       callStack: frames,
       error: errorObject
     });
@@ -4118,13 +4146,43 @@ export class WasmWebVm {
       7: "Unsupported bytecode opcode.", 8: "Unsupported host binding.", 9: "Expected numeric value.",
       10: "Expected array value.", 11: "Expected object value.", 12: "Operand stack underflow.",
       13: "Runtime value is out of range.", 14: "Runtime storage capacity exceeded.",
-      15: "Division by zero in bytecode.", 16: "Modulo by zero in bytecode.", 17: "User error."
+      15: "Division by zero in bytecode.", 16: "Modulo by zero in bytecode.", 17: "User error.",
+      18: "Map key not found.", 19: "Array index out of range.", 20: "Queue is empty.",
+      21: "Stack is empty.", 22: "Optional value is none."
     };
     const ip = this.exports.code_vm_last_error_metric(this.vmHandle, 1);
     const line = this.exports.code_vm_last_error_metric(this.vmHandle, 2);
     const column = this.exports.code_vm_last_error_metric(this.vmHandle, 3);
+    const sourceId = this.exports.code_vm_last_error_metric(this.vmHandle, 4);
+    const source = this.decodeSource(sourceId);
+    const callStack = [];
+    const frameCount = typeof this.exports.code_vm_last_error_frame_count === "function"
+      ? this.exports.code_vm_last_error_frame_count(this.vmHandle)
+      : 0;
+    for (let frame = 0; frame < frameCount; frame += 1) {
+      const frameIp = this.exports.code_vm_last_error_frame_metric(this.vmHandle, frame, 0);
+      const frameLine = this.exports.code_vm_last_error_frame_metric(this.vmHandle, frame, 1);
+      const frameColumn = this.exports.code_vm_last_error_frame_metric(this.vmHandle, frame, 2);
+      const frameSourceId = this.exports.code_vm_last_error_frame_metric(this.vmHandle, frame, 3);
+      callStack.push({ ip: frameIp, line: frameLine, column: frameColumn, source: this.decodeSource(frameSourceId) });
+    }
     const message = messages[status] ?? `VM status ${status}.`;
-    throw new VmRuntimeError(`${message} (${operation})`, { ip, line, column, callStack: [], error: { type: "RuntimeError", message, line, column } });
+    throw new VmRuntimeError(formatRuntimeMessage(message, source, line, column, operation), {
+      ip,
+      line,
+      column,
+      source,
+      callStack,
+      error: { type: "RuntimeError", message, line, column, source, frames: callStack }
+    });
+  }
+
+  decodeSource(sourceId) {
+    if (!Number.isInteger(sourceId) || sourceId < 0 || typeof this.exports.code_vm_source_pointer !== "function") return null;
+    const pointer = this.exports.code_vm_source_pointer(this.vmHandle, sourceId);
+    const length = this.exports.code_vm_source_length(this.vmHandle, sourceId);
+    if (!pointer || length <= 0) return null;
+    return Utf8Decoder.decode(new Uint8Array(this.exports.memory.buffer, pointer, length));
   }
 
   readValue(pointer) {

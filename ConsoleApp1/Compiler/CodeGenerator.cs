@@ -59,6 +59,7 @@ sealed class CodeGenerationResult
 sealed class CodeGenerator
 {
     private readonly BytecodeBuilder _builder = BytecodeBuilder.New();
+    private readonly string? _displayRoot;
     private Dictionary<string, int> _locals = new(StringComparer.Ordinal);
     private Dictionary<string, TypeRef> _localDeclaredTypes = new(StringComparer.Ordinal);
     private int _nextLocalIndex;
@@ -91,6 +92,11 @@ sealed class CodeGenerator
     private readonly Stack<string> _breakTargetLabels = new();
     private readonly Stack<string> _continueTargetLabels = new();
     private int _labelCounter;
+
+    public CodeGenerator(string? displayRoot = null)
+    {
+        _displayRoot = string.IsNullOrWhiteSpace(displayRoot) ? null : System.IO.Path.GetFullPath(displayRoot);
+    }
 
     public byte[] Generate(IList<Stmt> statements) => GenerateWithMetadata(statements).Bytecode;
 
@@ -224,6 +230,31 @@ sealed class CodeGenerator
     private void SetLoc(Token token) => _builder.SetDebugLocation(token.Line, token.Column);
     private void SetLoc(int line, int column) => _builder.SetDebugLocation(line, column);
 
+    private void SetSource(string? modulePath)
+    {
+        if (string.IsNullOrWhiteSpace(modulePath))
+            return;
+        _builder.SetDebugSource(FormatSourcePath(modulePath));
+    }
+
+    private string FormatSourcePath(string modulePath)
+    {
+        if (string.Equals(modulePath, "<source>", StringComparison.Ordinal))
+            return modulePath;
+
+        string fullPath = System.IO.Path.GetFullPath(modulePath);
+        if (_displayRoot is not null)
+        {
+            string rootPrefix = _displayRoot.EndsWith(System.IO.Path.DirectorySeparatorChar)
+                ? _displayRoot
+                : _displayRoot + System.IO.Path.DirectorySeparatorChar;
+            if (fullPath.StartsWith(rootPrefix, StringComparison.OrdinalIgnoreCase))
+                return System.IO.Path.GetRelativePath(_displayRoot, fullPath).Replace('\\', '/');
+        }
+
+        return System.IO.Path.GetFileName(fullPath);
+    }
+
     private int FindCallableFrameSize(string label)
     {
         foreach (var value in _functions.Values) if (value.Label == label) return value.LocalCount;
@@ -234,6 +265,7 @@ sealed class CodeGenerator
 
     private void EmitFunction(FunctionDecl fn)
     {
+        SetSource(fn.OriginModulePath);
         string label = _functions[fn.Name.Lexeme].Label;
         _builder.Label(label);
         var previousReturnTypeRef = _currentCallableReturnTypeRef;
@@ -245,7 +277,8 @@ sealed class CodeGenerator
         _freeTemps.Clear();
         _freeTempSet.Clear();
         PushScope();
-        // Parameters occupy leading slots
+        // Parameters occupy leading slots. Reserve every parameter slot before
+        // cloning value types; clone lowering uses temporary locals.
         for (int i = 0; i < fn.Parameters.Count; i++)
         {
             var param = fn.Parameters[i];
@@ -253,6 +286,10 @@ sealed class CodeGenerator
             if (param.Type is not null)
                 _localDeclaredTypes[param.Name.Lexeme] = param.Type;
             _functionLocalHighWater = Math.Max(_functionLocalHighWater, _nextLocalIndex);
+        }
+        for (int i = 0; i < fn.Parameters.Count; i++)
+        {
+            var param = fn.Parameters[i];
             if (param.Type is not null && RequiresCopyOnAssignment(param.Type))
             {
                 _builder.Load(_locals[param.Name.Lexeme]);
@@ -330,6 +367,7 @@ sealed class CodeGenerator
 
     private void EmitConstructor(ObjectDecl obj, ConstructorDecl ctor)
     {
+        SetSource(obj.OriginModulePath);
         string key = ConstructorKey(obj.Name.Lexeme, ctor.Parameters);
         var info = _constructors[key];
         _builder.Label(info.Label);
@@ -354,6 +392,10 @@ sealed class CodeGenerator
             if (param.Type is not null)
                 _localDeclaredTypes[param.Name.Lexeme] = param.Type;
             _functionLocalHighWater = Math.Max(_functionLocalHighWater, _nextLocalIndex);
+        }
+        for (int i = 0; i < ctor.Parameters.Count; i++)
+        {
+            var param = ctor.Parameters[i];
             if (param.Type is not null && RequiresCopyOnAssignment(param.Type))
             {
                 _builder.Load(_locals[param.Name.Lexeme]);
@@ -374,6 +416,7 @@ sealed class CodeGenerator
 
     private void EmitMethod(ObjectDecl obj, MethodDecl method)
     {
+        SetSource(obj.OriginModulePath);
         string key = MethodKey(obj.Name.Lexeme, method.Name.Lexeme, method.Parameters);
         var info = _methods[key];
         _builder.Label(info.Label);
@@ -397,6 +440,10 @@ sealed class CodeGenerator
             if (param.Type is not null)
                 _localDeclaredTypes[param.Name.Lexeme] = param.Type;
             _functionLocalHighWater = Math.Max(_functionLocalHighWater, _nextLocalIndex);
+        }
+        for (int i = 0; i < method.Parameters.Count; i++)
+        {
+            var param = method.Parameters[i];
             if (param.Type is not null && RequiresCopyOnAssignment(param.Type))
             {
                 _builder.Load(_locals[param.Name.Lexeme]);
@@ -424,6 +471,7 @@ sealed class CodeGenerator
 
     private void Emit(Stmt stmt)
     {
+        SetSource(stmt.OriginModulePath);
         switch (stmt)
         {
             case VarDecl v:
@@ -914,6 +962,13 @@ sealed class CodeGenerator
             default:
                 throw new NotSupportedException($"Unhandled expression type {expr.GetType().Name}");
         }
+
+        if (expr.ResolvedImplicitOptionalUnwrapTypeRef is not null)
+        {
+            var (line, column) = ExpressionLocation(expr);
+            SetLoc(line, column);
+            _builder.OptionalValue();
+        }
     }
 
     private void RegisterGlobal(VarDecl variable)
@@ -930,6 +985,7 @@ sealed class CodeGenerator
 
     private void EmitGlobalDeclaration(VarDecl variable)
     {
+        SetSource(variable.OriginModulePath);
         SetLoc(variable.Name);
         int slot = _globalSlots[GlobalKey(variable.OriginModulePath, variable.Name.Lexeme)];
         if (variable.Initializer is not null)
@@ -1220,6 +1276,9 @@ sealed class CodeGenerator
 
     private TypeRef? TryResolveTypeRef(Expr expr)
     {
+        if (expr.ResolvedImplicitOptionalUnwrapTypeRef is not null)
+            return expr.ResolvedImplicitOptionalUnwrapTypeRef;
+
         switch (expr)
         {
             case DefaultValueExpr d:
@@ -1338,6 +1397,36 @@ sealed class CodeGenerator
 
     private static bool ExpressionLeavesValue(Expr expr)
         => expr is not Assign;
+
+    private static (int Line, int Column) ExpressionLocation(Expr expr) => expr switch
+    {
+        DefaultValueExpr d => (d.Line, d.Column),
+        Literal literal => (literal.Line, literal.Column),
+        InterpString interpolated => (interpolated.Line, interpolated.Column),
+        ArrayLiteral array => (array.Line, array.Column),
+        NewArrayExpr array => (array.Line, array.Column),
+        NewCollectionExpr collection => (collection.Line, collection.Column),
+        ArrayLengthExpr length => (length.DotToken.Line, length.DotToken.Column),
+        Variable variable => (variable.Name.Line, variable.Name.Column),
+        Assign assignment => (assignment.Name.Line, assignment.Name.Column),
+        Call call => (call.Callee.Line, call.Callee.Column),
+        MethodCallExpr call => (call.MethodName.Line, call.MethodName.Column),
+        NewObjectExpr instance => (instance.TypeName.Line, instance.TypeName.Column),
+        FieldAccessExpr field => (field.Name.Line, field.Name.Column),
+        Binary binary => (binary.Operator.Line, binary.Operator.Column),
+        Unary unary => (unary.Operator.Line, unary.Operator.Column),
+        CastExpr cast => (cast.AsToken.Line, cast.AsToken.Column),
+        OptionalValueExpr optional => ExpressionLocation(optional.Target),
+        OptionalHasValueExpr optional => ExpressionLocation(optional.Target),
+        OptionalOrExpr optional => ExpressionLocation(optional.Optional),
+        ArrayIndexExpr index => ExpressionLocation(index.Array),
+        ArraySetExpr set => ExpressionLocation(set.Target),
+        FieldSetExpr set => ExpressionLocation(set.Target),
+        CompoundAssignExpr compound => ExpressionLocation(compound.Target),
+        FallibleErrorExpr error => (error.ErrorToken.Line, error.ErrorToken.Column),
+        OnErrorExpr error => ExpressionLocation(error.Fallible),
+        _ => (0, 0)
+    };
 
     private void EmitCompoundAssignment(CompoundAssignExpr expr)
     {

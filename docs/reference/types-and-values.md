@@ -191,49 +191,60 @@ Common mistakes:
 
 ## Optionals
 
-Syntax:
+`optional<T>` holds either a `T` value or `none`.
+
+Preferred presence checks compare directly with `none`:
 
 ```code
-optional<integer> maybe_count = none;
-print(maybe_count.hasValue);
-print(maybe_count.or(42));
-```
+optional<integer> maybeCount = none;
 
-Output:
-
-```text
-0
-42
-```
-
-A present optional can be initialized from a plain value:
-
-```code
-optional<integer> actual = 7;
-if actual.hasValue then {
-  print(actual.value);
+if maybeCount == none then {
+  print("missing");
 }
 ```
 
 Output:
 
 ```text
-7
+missing
 ```
+
+A present optional can be initialized from a plain value:
+
+```code
+optional<integer> maybeCount = 7;
+
+if maybeCount != none then {
+  integer actual = maybeCount;
+  print(actual + 1);
+}
+```
+
+Output:
+
+```text
+8
+```
+
+When a context requires `T`, an `optional<T>` is implicitly unwrapped. This works for assignment, returns, function and method arguments, arithmetic, field access, method calls, and collection insertion. If the optional is `none`, runtime throws `Optional value is none` with source location when debug metadata is available.
 
 Optional operations:
 
 | Operation | Returns |
 | --- | --- |
 | `none` | empty optional value |
-| `maybe.hasValue` | `boolean` |
-| `maybe.value` | contained value, or panic if empty |
-| `maybe.or(fallback)` | contained value or fallback |
+| `maybe == none` / `none == maybe` | `boolean` presence check |
+| `maybe != none` / `none != maybe` | `boolean` presence check |
+| `maybe` where `T` is required | contained value, or runtime error if empty |
+| `maybe.hasValue` | compatibility boolean helper |
+| `maybe.value` | compatibility unwrap helper; runtime error if empty |
+| `maybe.or(fallback)` | compatibility fallback helper |
 
 Common mistakes:
 
-- `.value` on `none` panics at runtime.
-- Use `.or(fallback)` when an empty optional should become a default value.
+- `optional<T> == value` is not supported in V1. Check `maybe != none` first, then use `maybe` as a normal `T`.
+- `if maybe then` is invalid. Write `if maybe != none then`.
+- Direct use of `none` where `T` is required raises `Optional value is none` at runtime.
 
 ## Fallible Values
 

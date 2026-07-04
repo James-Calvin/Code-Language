@@ -292,7 +292,7 @@ static class ModuleCompiler
             semanticModel = typeChecker.CheckWithModel(loweredStatements);
         else
             typeChecker.Check(loweredStatements);
-        var generator = new CodeGenerator();
+        var generator = new CodeGenerator(projectRoot);
         var generated = generator.GenerateWithMetadata(loweredStatements);
         var bytecode = generated.Bytecode;
         DirectWasmCompilation? directWasm = null;

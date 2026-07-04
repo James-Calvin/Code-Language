@@ -16,7 +16,7 @@ Current note:
 - The generated `index.html` embeds the bytecode for direct opening. Maintainer builds can pass `--emit-web-bytecode` to also write `app.bytecode` for debugging or inspection.
 - Maintainer builds can pass `--web-backend direct-wasm` to emit `code-app.wasm` and run app code as direct Wasm while the Rust/Wasm VM remains the public default.
 - `--disable-garbage-collection` is valid only with `--web-backend direct-wasm`; it is a diagnostic no-GC mode that may leak memory.
-- Generated apps route normal `print` output to the browser console. The on-screen overlay is reserved for fatal/runtime diagnostics.
+- Generated apps route normal `print` output to the browser console. The on-screen overlay is reserved for fatal/runtime diagnostics, including Code source file, line, column, phase, and stack frames when debug metadata is available.
 - Generated apps prevent browser scroll/panning for app-control keys such as arrows, Space, Page Up, Page Down, Home, and End.
 
 Default output:

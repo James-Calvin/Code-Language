@@ -1,10 +1,14 @@
-// Demonstrate optional<T> semantics
+// Demonstrate optional<T> as either T or none
 
 optional<integer> maybeCount = none;
-print(maybeCount.hasValue);        // 0
-print(maybeCount.or(42));          // fallback 42
+print(maybeCount == none);         // 1
+print(none != maybeCount);         // 0
 
 optional<integer> actual = 7;
-print(actual.hasValue);            // 1
-print(actual.value);               // 7
-print(actual.or(99));              // 7 (ignores fallback)
+if actual != none then {
+  integer count = actual;          // direct unwrap where integer is required
+  print(count + 1);                // 8
+}
+
+// Compatibility helpers still exist, but new code should prefer checks above.
+print(actual.or(99));              // 7

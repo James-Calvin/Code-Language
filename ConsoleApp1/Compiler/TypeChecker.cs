@@ -1274,6 +1274,73 @@ sealed class TypeChecker
         return type;
     }
 
+    private bool TryMarkImplicitOptionalUnwrap(
+        Expr expression,
+        TypeSymbol actualType,
+        TypeRef? actualTypeRef,
+        TypeSymbol expectedType,
+        TypeRef? expectedTypeRef,
+        out TypeSymbol unwrappedType,
+        out TypeRef? unwrappedTypeRef)
+    {
+        unwrappedType = actualType;
+        unwrappedTypeRef = actualTypeRef;
+        if (actualType != TypeSymbol.Optional ||
+            actualTypeRef is null ||
+            !actualTypeRef.IsOptional ||
+            actualTypeRef.TypeArguments.Count != 1 ||
+            expectedType == TypeSymbol.Optional)
+        {
+            return false;
+        }
+
+        var innerRef = actualTypeRef.TypeArguments[0];
+        var innerType = MapType(innerRef);
+        if (expectedTypeRef is not null)
+        {
+            if (!TryConversionCost(expectedType, expectedTypeRef, innerType, innerRef, out _))
+                return false;
+        }
+        else if (innerType != expectedType && !(IsNumeric(innerType) && IsNumeric(expectedType) && CanWiden(innerType, expectedType)))
+        {
+            return false;
+        }
+
+        expression.ResolvedImplicitOptionalUnwrapTypeRef = innerRef;
+        unwrappedType = innerType;
+        unwrappedTypeRef = innerRef;
+        return true;
+    }
+
+    private bool TryMarkImplicitOptionalUnwrapForPredicate(
+        Expr expression,
+        TypeSymbol actualType,
+        TypeRef? actualTypeRef,
+        Func<TypeSymbol, bool> predicate,
+        out TypeSymbol unwrappedType,
+        out TypeRef? unwrappedTypeRef)
+    {
+        unwrappedType = actualType;
+        unwrappedTypeRef = actualTypeRef;
+        if (actualType != TypeSymbol.Optional ||
+            actualTypeRef is null ||
+            !actualTypeRef.IsOptional ||
+            actualTypeRef.TypeArguments.Count != 1)
+        {
+            return false;
+        }
+
+        var innerRef = actualTypeRef.TypeArguments[0];
+        var innerType = MapType(innerRef);
+        if (!predicate(innerType))
+            return false;
+
+        expression.ResolvedImplicitOptionalUnwrapTypeRef = innerRef;
+        unwrappedType = innerType;
+        unwrappedTypeRef = innerRef;
+        return true;
+    }
+
     private TypeSymbol CheckExprCore(Expr expr, TypeEnvironment env, TypeSymbol? currentReturn)
     {
         switch (expr)
@@ -1283,6 +1350,7 @@ sealed class TypeChecker
             case Literal lit:
                 return lit.Value switch
                 {
+                    var value when ReferenceEquals(value, OptionalNone.Value) => TypeSymbol.Optional,
                     bool => TypeSymbol.Boolean,
                     string => TypeSymbol.String,
                     IList<Expr> => TypeSymbol.Array,
@@ -1302,6 +1370,13 @@ sealed class TypeChecker
                 return TypeSymbol.Array;
             case NewArrayExpr na:
                 var sizeType = CheckExpr(na.Size, env, currentReturn);
+                TryMarkImplicitOptionalUnwrapForPredicate(
+                    na.Size,
+                    sizeType,
+                    ResolveExprTypeRef(na.Size, env),
+                    IsNumeric,
+                    out sizeType,
+                    out _);
                 Require(IsNumeric(sizeType), na.Size, "Array size must be numeric");
                 return TypeSymbol.Array;
             case NewCollectionExpr nc:
@@ -1334,16 +1409,49 @@ sealed class TypeChecker
 
                 no.ResolvedConstructorKey = ctor!.DispatchKey;
                 no.ResolvedDefaultArguments = ResolveDefaultArguments(ctor.DefaultValues, no.Arguments.Count);
+                for (int i = 0; i < no.Arguments.Count; i++)
+                {
+                    RequireAssignable(
+                        ctor.Params[i],
+                        ctor.ParamTypeRefs[i],
+                        argTypes[i].Symbol,
+                        argTypes[i].Ref,
+                        no.TypeName.Line,
+                        no.TypeName.Column,
+                        $"Argument {i} type mismatch for constructor '{no.TypeName.Lexeme}'",
+                        no.Arguments[i]);
+                }
                 return obj.IsRecord ? TypeSymbol.Record : TypeSymbol.Object;
             }
             case ArrayLengthExpr alen:
                 var targType = CheckExpr(alen.Target, env, currentReturn);
+                TryMarkImplicitOptionalUnwrapForPredicate(
+                    alen.Target,
+                    targType,
+                    ResolveExprTypeRef(alen.Target, env),
+                    IsBuiltInCollection,
+                    out targType,
+                    out _);
                 Require(IsBuiltInCollection(targType), alen.Target, "'.length' is only valid on arrays, maps, sets, queues, and stacks");
                 return TypeSymbol.Integer;
             case ArrayIndexExpr aidx:
                 var arrType = CheckExpr(aidx.Array, env, currentReturn);
                 var idxType = CheckExpr(aidx.Index, env, currentReturn);
-                var arrayTypeRef = ResolveExprTypeRef(aidx.Array, env);
+                TryMarkImplicitOptionalUnwrapForPredicate(
+                    aidx.Array,
+                    arrType,
+                    ResolveExprTypeRef(aidx.Array, env),
+                    IsBuiltInCollection,
+                    out arrType,
+                    out var unwrappedArrayTypeRef);
+                TryMarkImplicitOptionalUnwrapForPredicate(
+                    aidx.Index,
+                    idxType,
+                    ResolveExprTypeRef(aidx.Index, env),
+                    IsNumeric,
+                    out idxType,
+                    out _);
+                var arrayTypeRef = unwrappedArrayTypeRef ?? ResolveExprTypeRef(aidx.Array, env);
                 if (arrayTypeRef is null)
                     throw new CompilerException("Could not resolve indexed collection type", GetLine(aidx.Array), GetCol(aidx.Array));
 
@@ -1410,6 +1518,13 @@ sealed class TypeChecker
                 fa.ResolvedInterfaceFieldName = null;
                 fa.ResolvedInterfaceFieldTypeRef = null;
                 var targetType = CheckExpr(fa.Target, env, currentReturn);
+                TryMarkImplicitOptionalUnwrapForPredicate(
+                    fa.Target,
+                    targetType,
+                    ResolveExprTypeRef(fa.Target, env),
+                    type => type is TypeSymbol.Object or TypeSymbol.Record or TypeSymbol.Interface,
+                    out targetType,
+                    out _);
                 if (targetType == TypeSymbol.Error)
                 {
                     var targetTypeRef = ResolveExprTypeRef(fa.Target, env);
@@ -1438,7 +1553,21 @@ sealed class TypeChecker
                 var arrT = CheckExpr(aset.Target.Array, env, currentReturn);
                 var idxT = CheckExpr(aset.Target.Index, env, currentReturn);
                 var valT = CheckExpr(aset.Value, env, currentReturn);
-                var collectionTypeRef = ResolveExprTypeRef(aset.Target.Array, env);
+                TryMarkImplicitOptionalUnwrapForPredicate(
+                    aset.Target.Array,
+                    arrT,
+                    ResolveExprTypeRef(aset.Target.Array, env),
+                    IsBuiltInCollection,
+                    out arrT,
+                    out var unwrappedCollectionTypeRef);
+                TryMarkImplicitOptionalUnwrapForPredicate(
+                    aset.Target.Index,
+                    idxT,
+                    ResolveExprTypeRef(aset.Target.Index, env),
+                    IsNumeric,
+                    out idxT,
+                    out _);
+                var collectionTypeRef = unwrappedCollectionTypeRef ?? ResolveExprTypeRef(aset.Target.Array, env);
                 if (collectionTypeRef is null)
                     throw new CompilerException("Could not resolve indexed collection type", GetLine(aset.Target.Array), GetCol(aset.Target.Array));
 
@@ -1478,6 +1607,13 @@ sealed class TypeChecker
                     throw new CompilerException("Enum members are constants and cannot be assigned", fset.Target.Name.Line, fset.Target.Name.Column);
 
                 var targetType = CheckExpr(fset.Target.Target, env, currentReturn);
+                TryMarkImplicitOptionalUnwrapForPredicate(
+                    fset.Target.Target,
+                    targetType,
+                    ResolveExprTypeRef(fset.Target.Target, env),
+                    type => type is TypeSymbol.Object or TypeSymbol.Record or TypeSymbol.Interface,
+                    out targetType,
+                    out _);
                 Require(targetType == TypeSymbol.Object || targetType == TypeSymbol.Record || targetType == TypeSymbol.Interface, fset.Target.Target, "Field assignment requires object, record, or interface target");
                 var rhsType = CheckExpr(fset.Value, env, currentReturn);
                 var field = ResolveFieldSignature(fset.Target, env, out _);
@@ -1495,7 +1631,14 @@ sealed class TypeChecker
             case MethodCallExpr mc:
             {
                 var targetType = CheckExpr(mc.Target, env, currentReturn);
-                var targetTypeRef = ResolveExprTypeRef(mc.Target, env);
+                TryMarkImplicitOptionalUnwrapForPredicate(
+                    mc.Target,
+                    targetType,
+                    ResolveExprTypeRef(mc.Target, env),
+                    type => IsBuiltInCollection(type) || type is TypeSymbol.Object or TypeSymbol.Record or TypeSymbol.Interface,
+                    out targetType,
+                    out var unwrappedMethodTargetTypeRef);
+                var targetTypeRef = unwrappedMethodTargetTypeRef ?? ResolveExprTypeRef(mc.Target, env);
                 if (targetTypeRef is null)
                     throw new CompilerException("Could not resolve method target type", mc.MethodName.Line, mc.MethodName.Column);
 
@@ -1529,6 +1672,18 @@ sealed class TypeChecker
                     mc.ResolvedInterfaceMethodKey = resolvedInterfaceMethod.SignatureKey;
                     mc.ResolvedReturnTypeRef = resolvedInterfaceMethod.ReturnTypeRef;
                     mc.ResolvedDefaultArguments = [];
+                    for (int i = 0; i < mc.Arguments.Count; i++)
+                    {
+                        RequireAssignable(
+                            resolvedInterfaceMethod.ParamTypes[i],
+                            resolvedInterfaceMethod.ParamTypeRefs[i],
+                            argTypes[i].Symbol,
+                            argTypes[i].Ref,
+                            mc.MethodName.Line,
+                            mc.MethodName.Column,
+                            $"Argument {i} type mismatch for '{mc.MethodName.Lexeme}'",
+                            mc.Arguments[i]);
+                    }
                     return resolvedInterfaceMethod.ReturnType;
                 }
 
@@ -1549,6 +1704,18 @@ sealed class TypeChecker
                 mc.ResolvedInterfaceMethodKey = null;
                 mc.ResolvedReturnTypeRef = method.ReturnTypeRef;
                 mc.ResolvedDefaultArguments = ResolveDefaultArguments(method.DefaultValues, mc.Arguments.Count);
+                for (int i = 0; i < mc.Arguments.Count; i++)
+                {
+                    RequireAssignable(
+                        method.ParamTypes[i],
+                        method.ParamTypeRefs[i],
+                        argTypes[i].Symbol,
+                        argTypes[i].Ref,
+                        mc.MethodName.Line,
+                        mc.MethodName.Column,
+                        $"Argument {i} type mismatch for '{mc.MethodName.Lexeme}'",
+                        mc.Arguments[i]);
+                }
                 return method.ReturnType;
             }
             case Variable v:
@@ -1681,6 +1848,18 @@ sealed class TypeChecker
                     c.ResolvedConstructorTypeName = null;
                     c.ResolvedConstructorKey = null;
                     c.ResolvedConstructorTypeRef = null;
+                    for (int i = 0; i < c.Arguments.Count; i++)
+                    {
+                        RequireAssignable(
+                            method.ParamTypes[i],
+                            method.ParamTypeRefs[i],
+                            argTypes[i].Symbol,
+                            argTypes[i].Ref,
+                            c.Callee.Line,
+                            c.Callee.Column,
+                            $"Argument {i} type mismatch for '{c.Callee.Lexeme}'",
+                            c.Arguments[i]);
+                    }
                     return method.ReturnType;
                 }
 
@@ -1715,6 +1894,18 @@ sealed class TypeChecker
                         c.ResolvedConstructorTypeName = constructorType.Name.Lexeme;
                         c.ResolvedConstructorKey = ctor.DispatchKey;
                         c.ResolvedConstructorTypeRef = new TypeRef(constructorType.Name.Lexeme, null, c.Callee.Line, c.Callee.Column);
+                        for (int i = 0; i < c.Arguments.Count; i++)
+                        {
+                            RequireAssignable(
+                                ctor.Params[i],
+                                ctor.ParamTypeRefs[i],
+                                argTypes[i].Symbol,
+                                argTypes[i].Ref,
+                                c.Callee.Line,
+                                c.Callee.Column,
+                                $"Argument {i} type mismatch for constructor '{c.Callee.Lexeme}'",
+                                c.Arguments[i]);
+                        }
                         return constructorType.IsRecord ? TypeSymbol.Record : TypeSymbol.Object;
                     }
 
@@ -1747,6 +1938,13 @@ sealed class TypeChecker
             }
             case Unary u:
                 var ut = CheckExpr(u.Right, env, currentReturn);
+                TryMarkImplicitOptionalUnwrapForPredicate(
+                    u.Right,
+                    ut,
+                    ResolveExprTypeRef(u.Right, env),
+                    u.Operator.Type == TokenType.Not ? type => type == TypeSymbol.Boolean : IsNumeric,
+                    out ut,
+                    out _);
                 if (u.Operator.Type == TokenType.Not)
                     Require(ut == TypeSymbol.Boolean, u.Right, "'not' requires boolean");
                 else
@@ -1770,27 +1968,44 @@ sealed class TypeChecker
                 {
                     case TokenType.And:
                     case TokenType.Or:
+                        TryMarkImplicitOptionalUnwrapForPredicate(b.Left, lt, leftRef, type => type == TypeSymbol.Boolean, out lt, out leftRef);
+                        TryMarkImplicitOptionalUnwrapForPredicate(b.Right, rt, rightRef, type => type == TypeSymbol.Boolean, out rt, out rightRef);
                         Require(lt == TypeSymbol.Boolean && rt == TypeSymbol.Boolean, b.Left, "Logical ops require boolean");
                         return TypeSymbol.Boolean;
                     case TokenType.Plus:
                         if (lt == TypeSymbol.String || rt == TypeSymbol.String)
                             return TypeSymbol.String; // string concatenation
+                        TryMarkImplicitOptionalUnwrapForPredicate(b.Left, lt, leftRef, IsNumeric, out lt, out leftRef);
+                        TryMarkImplicitOptionalUnwrapForPredicate(b.Right, rt, rightRef, IsNumeric, out rt, out rightRef);
                         Require(IsNumeric(lt) && IsNumeric(rt), b.Left, "Arithmetic requires numeric");
                         return Promote(lt, rt);
                     case TokenType.Minus:
                     case TokenType.Star:
                     case TokenType.Slash:
                     case TokenType.Percent:
+                        TryMarkImplicitOptionalUnwrapForPredicate(b.Left, lt, leftRef, IsNumeric, out lt, out leftRef);
+                        TryMarkImplicitOptionalUnwrapForPredicate(b.Right, rt, rightRef, IsNumeric, out rt, out rightRef);
                         Require(IsNumeric(lt) && IsNumeric(rt), b.Left, "Arithmetic requires numeric");
                         return Promote(lt, rt);
                     case TokenType.EqualEqual:
                     case TokenType.BangEqual:
+                        if (IsNoneLiteral(b.Left) || IsNoneLiteral(b.Right))
+                        {
+                            bool leftIsNone = IsNoneLiteral(b.Left);
+                            var otherType = leftIsNone ? rt : lt;
+                            Require(otherType == TypeSymbol.Optional, leftIsNone ? b.Right : b.Left, "Only optional values can be compared with none");
+                            return TypeSymbol.Boolean;
+                        }
+                        if (lt == TypeSymbol.Optional ^ rt == TypeSymbol.Optional)
+                            throw new CompilerException("Optional values can only be compared with none or another optional of the same type", b.Operator.Line, b.Operator.Column);
                         Require(CanCompareForEquality(lt, leftRef, rt, rightRef), b.Left, "Equality requires compatible types");
                         return TypeSymbol.Boolean;
                     case TokenType.Less:
                     case TokenType.Greater:
                     case TokenType.LessEqual:
                     case TokenType.GreaterEqual:
+                        TryMarkImplicitOptionalUnwrapForPredicate(b.Left, lt, leftRef, IsNumeric, out lt, out leftRef);
+                        TryMarkImplicitOptionalUnwrapForPredicate(b.Right, rt, rightRef, IsNumeric, out rt, out rightRef);
                         Require(IsNumeric(lt) && IsNumeric(rt), b.Left, "Comparison requires numeric");
                         return TypeSymbol.Boolean;
                     default:
@@ -2547,6 +2762,20 @@ sealed class TypeChecker
             return true;
         }
 
+        if (actual == TypeSymbol.Optional &&
+            actualRef is not null &&
+            actualRef.IsOptional &&
+            actualRef.TypeArguments.Count == 1)
+        {
+            var innerRef = actualRef.TypeArguments[0];
+            var innerType = MapType(innerRef);
+            if (TryConversionCost(expected, expectedRef, innerType, innerRef, out var innerCost))
+            {
+                cost = innerCost + 4;
+                return true;
+            }
+        }
+
         if (IsNumeric(expected) && IsNumeric(actual))
         {
             if (CanWiden(actual, expected))
@@ -2673,7 +2902,7 @@ sealed class TypeChecker
 
     private FieldSignature ResolveFieldSignature(FieldAccessExpr fieldAccess, TypeEnvironment env, out ObjectSymbol ownerSymbol)
     {
-        var targetType = ResolveExprTypeRef(fieldAccess.Target, env);
+        var targetType = fieldAccess.Target.ResolvedImplicitOptionalUnwrapTypeRef ?? ResolveExprTypeRef(fieldAccess.Target, env);
         if (targetType is null)
             throw new CompilerException("Could not resolve field target type", fieldAccess.Name.Line, fieldAccess.Name.Column);
 
@@ -2820,6 +3049,8 @@ sealed class TypeChecker
             case DefaultValueExpr d:
                 return d.Type;
             case Literal literal:
+                if (ReferenceEquals(literal.Value, OptionalNone.Value))
+                    return new TypeRef("optional", [new TypeRef("integer", null, literal.Line, literal.Column)], literal.Line, literal.Column);
                 return literal.Value switch
                 {
                     bool => new TypeRef("boolean", null, literal.Line, literal.Column),
@@ -2912,6 +3143,9 @@ sealed class TypeChecker
             return value.ToUpperInvariant();
         return char.ToUpperInvariant(value[0]) + value[1..];
     }
+
+    private static bool IsNoneLiteral(Expr expression)
+        => expression is Literal literal && ReferenceEquals(literal.Value, OptionalNone.Value);
 
     private (TypeSymbol Type, TypeRef? TypeRef, Token AssignmentToken) CheckCompoundAssignmentTarget(
         Expr target,
@@ -3374,6 +3608,18 @@ sealed class TypeChecker
 
         if (target == value) return;
         if (target == TypeSymbol.Optional) return; // allow any value into optional
+        if (valueExpr is not null &&
+            TryMarkImplicitOptionalUnwrap(
+                valueExpr,
+                value,
+                valueRef,
+                target,
+                targetRef,
+                out _,
+                out _))
+        {
+            return;
+        }
         if (IsNumeric(target) && IsNumeric(value) && IsLiteralAssignableToNumeric(target, valueExpr)) return;
         if (IsNumeric(target) && IsNumeric(value) && CanWiden(value, target)) return;
         throw new CompilerException(message, line, col);

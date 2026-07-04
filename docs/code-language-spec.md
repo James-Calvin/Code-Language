@@ -159,17 +159,22 @@ if difficulty == Difficulty.Easy then {
 
 ## 5. Nullability and Optionals
 - `null` is not part of the language model.
-- Absence is represented with `optional<T>`.
-- Optionals expose `hasValue` for presence checks.
-- Flow narrowing: inside `if maybe.hasValue then { ... }`, `maybe` is treated as the contained `T`; outside it remains `optional<T>`.
-- Accessors:
-  - `maybe.value` unwraps and panics if empty.
-  - `maybe.or(fallbackExpression)` returns the value or the fallback without panicking.
+- Absence is represented with `optional<T>`, which holds either a `T` value or `none`.
+- Preferred presence checks are `maybe == none`, `none == maybe`, `maybe != none`, and `none != maybe`.
+- When a context requires `T`, an `optional<T>` is implicitly unwrapped. This applies to assignment, return values, arguments, arithmetic, field access, method calls, and collection insertion.
+- If implicit unwrap sees `none`, runtime raises `Optional value is none` with source location when debug metadata is available.
+- Compatibility helpers remain available for now:
+  - `maybe.hasValue` returns a boolean presence flag.
+  - `maybe.value` unwraps and raises a runtime error if empty.
+  - `maybe.or(fallbackExpression)` returns the value or the fallback without raising.
+- `optional<T> == value` is not supported in V1; compare to `none` first and then use the optional where `T` is required.
+- `if maybe then` is invalid; write `if maybe != none then`.
 
 ```code
 optional<integer> maybeCount = getCount();
-if maybeCount.hasValue then {
-  // use value
+if maybeCount != none then {
+  integer count = maybeCount;
+  print(count);
 }
 ```
 
@@ -324,7 +329,7 @@ while value != someValue then {
   - `queue<Value>` uses `new queue<Value>()`, supports `.length`, `enqueue(value)`, `dequeue()`, and `peek()`.
   - `stack<Value>` uses `new stack<Value>()`, supports `.length`, `push(value)`, `pop()`, and `peek()`.
   - `foreach` support for these newer built-in collections is not implemented yet; planned map iteration should yield entry values.
-- Optionals (current impl): `optional<T>` types store `none` or a value; `none` literal; `opt.hasValue` returns boolean; `opt.value` returns contained value or panics if empty; `opt.or(fallback)` returns value or fallback without panicking.
+- Optionals: `optional<T>` types store `none` or a value; `none` literal; compare with `none` for presence; direct use in `T` contexts unwraps or raises `Optional value is none`; compatibility helpers `opt.hasValue`, `opt.value`, and `opt.or(fallback)` remain available.
 
 ```code
 foreach number in numbers then {
@@ -710,7 +715,7 @@ public function<integer> add(integer left, integer right) {
 - User-facing unrecoverable error syntax is `panic(expression);`.
 - `panic(...)` raises a `UserError` with a message and stack information.
 - User-facing recoverable errors use `fallible<Value, ErrorCode>` and `on error` as described in section 5.1.
-- Runtime and host failures also surface as VM/runtime errors with line/column information and a bytecode-derived call stack when debug data is available.
+- Runtime and host failures also surface as VM/runtime errors with source file, line, column, phase, and a bytecode-derived call stack when debug data is available.
 - The VM has internal typed error objects (`type`, `message`, `stacktrace`) for diagnostics.
 - Recoverable fallible values are VM-managed success/error wrappers and are not the same as thrown VM/runtime errors.
 
@@ -724,7 +729,7 @@ if x > 3 then panic("x too large");
 - Constants are immutable after initialization (`constant Type name = value;`).
 - Module-scope variables and constants use persistent VM global storage. Same-module code may read mutable or constant globals, may mutate mutable globals, and may not mutate constants. Global initializers run in source order before function or scene entry execution.
 - Compile-time constant folding for literal arithmetic (`+`, `-`, `*`) and string literal concatenation reduces runtime work without changing semantics.
-- Runtime errors include line/column mapping and a bytecode call stack derived from embedded debug info in the compiled `.bytecode` file.
+- Runtime errors include source file, line/column mapping, and a bytecode call stack derived from embedded debug info in the compiled `.bytecode` file.
 - Type syntax is parsed through structured type references (`TypeRef`) including generic forms; named object types resolve through the object symbol table.
 - Object symbols are collected before function/body checking, enabling duplicate object/field checks and forward references in object field types.
 - Constructor symbols are collected and used for `new Type(...)` arity/type validation.

@@ -10,7 +10,7 @@ use std::cell::RefCell;
 use std::collections::HashSet;
 
 const HEADER_SIZE: usize = 13;
-const BYTECODE_VERSION: u8 = 11;
+const BYTECODE_VERSION: u8 = 12;
 const ROOT_FRAME_SIZE: usize = 32;
 
 const TAG_NUMBER: u32 = 0;
@@ -99,6 +99,7 @@ struct TimingFrame { function: usize, started_ms: f64, child_ms: f64 }
 #[derive(Clone, Copy, Default)]
 struct CallFrame {
     return_ip: usize,
+    call_byte_ip: usize,
     frame_base: usize,
     frame_size: usize,
     locals_top: usize,
@@ -123,6 +124,11 @@ enum VmError {
     DivisionByZero,
     ModuloByZero,
     UserError,
+    MapKeyNotFound,
+    ArrayIndexOutOfRange,
+    QueueEmpty,
+    StackEmpty,
+    OptionalNone,
 }
 
 impl VmError {
@@ -145,6 +151,11 @@ impl VmError {
             Self::DivisionByZero => 15,
             Self::ModuloByZero => 16,
             Self::UserError => 17,
+            Self::MapKeyNotFound => 18,
+            Self::ArrayIndexOutOfRange => 19,
+            Self::QueueEmpty => 20,
+            Self::StackEmpty => 21,
+            Self::OptionalNone => 22,
         }
     }
 }
@@ -158,7 +169,8 @@ struct Artifact {
     field_count: usize,
     strings: Vec<Vec<u8>>,
     types: Vec<TypeInfo>,
-    debug_entries: Vec<(usize, i32, i32)>,
+    source_paths: Vec<Vec<u8>>,
+    debug_entries: Vec<(usize, i32, i32, i32)>,
     callables: Vec<CallableInfo>,
 }
 
@@ -214,7 +226,8 @@ struct Vm {
     profile_host_calls_by_binding: Vec<u64>,
     profile_host_ms_by_binding: Vec<f64>,
     callables: Vec<CallableInfo>,
-    debug_entries: Vec<(usize, i32, i32)>,
+    source_paths: Vec<Vec<u8>>,
+    debug_entries: Vec<(usize, i32, i32, i32)>,
     current_byte_ip: usize,
     last_error: Option<VmError>,
     output: Value,
@@ -245,6 +258,7 @@ impl Vm {
             free_strings: Vec::new(),
             string_free,
             types: artifact.types,
+            source_paths: artifact.source_paths,
             debug_entries: artifact.debug_entries,
             profile_functions: vec![FunctionProfile::default(); function_count],
             profile_timing_stack: Vec::with_capacity(256),
@@ -363,6 +377,22 @@ impl Vm {
         self.profile_functions[frame.function].inclusive_ms += elapsed;
         self.profile_functions[frame.function].self_ms += elapsed - frame.child_ms;
         if let Some(parent) = self.profile_timing_stack.last_mut() { parent.child_ms += elapsed; }
+    }
+
+    fn debug_location(&self, byte_ip: usize) -> (i32, i32, i32) {
+        if let Some((_, line, column, source_id)) = self.debug_entries.iter().find(|(ip, _, _, _)| *ip == byte_ip) {
+            return (*line, *column, *source_id);
+        }
+
+        let mut nearest_ip = 0usize;
+        let mut nearest = (-1, -1, -1);
+        for (ip, line, column, source_id) in &self.debug_entries {
+            if *ip <= byte_ip && *ip >= nearest_ip {
+                nearest_ip = *ip;
+                nearest = (*line, *column, *source_id);
+            }
+        }
+        nearest
     }
 
     fn value_equals(&self, left: Value, right: Value) -> bool {
@@ -756,6 +786,7 @@ impl Vm {
                     }
                     self.call_frames[self.frame_pointer] = CallFrame {
                         return_ip: ip,
+                        call_byte_ip: self.current_byte_ip,
                         frame_base: self.frame_base,
                         frame_size: self.frame_size,
                         locals_top: self.locals_top,
@@ -812,7 +843,7 @@ impl Vm {
                 0x18 => {
                     let index = self.pop_number()? as usize;
                     let handle = self.pop_handle(TAG_ARRAY)?;
-                    let value = *self.arrays.get(handle).and_then(|array| array.get(index)).ok_or(VmError::Bounds)?;
+                    let value = *self.arrays.get(handle).and_then(|array| array.get(index)).ok_or(VmError::ArrayIndexOutOfRange)?;
                     self.push(value)?;
                 }
                 0x19 => {
@@ -832,7 +863,7 @@ impl Vm {
                 }
                 0x1C => {
                     let value = self.pop()?;
-                    if value.tag == TAG_OPTIONAL_NONE { return Err(VmError::Bounds); }
+                    if value.tag == TAG_OPTIONAL_NONE { return Err(VmError::OptionalNone); }
                     self.push(value)?;
                 }
                 0x1D => {
@@ -844,7 +875,7 @@ impl Vm {
                     let value = self.pop()?;
                     let index = self.pop_number()? as usize;
                     let handle = self.pop_handle(TAG_ARRAY)?;
-                    *self.arrays.get_mut(handle).and_then(|array| array.get_mut(index)).ok_or(VmError::Bounds)? = value;
+                    *self.arrays.get_mut(handle).and_then(|array| array.get_mut(index)).ok_or(VmError::ArrayIndexOutOfRange)? = value;
                     self.push(value)?;
                 }
                 0x1F => {
@@ -916,7 +947,7 @@ impl Vm {
                     self.locals[new_frame_base..new_top].fill(Value::default());
                     self.locals[new_frame_base] = target;
                     self.locals[new_frame_base + 1..new_frame_base + total_count].copy_from_slice(&arguments);
-                    self.call_frames[self.frame_pointer] = CallFrame { return_ip: ip, frame_base: self.frame_base, frame_size: self.frame_size, locals_top: self.locals_top };
+                    self.call_frames[self.frame_pointer] = CallFrame { return_ip: ip, call_byte_ip: self.current_byte_ip, frame_base: self.frame_base, frame_size: self.frame_size, locals_top: self.locals_top };
                     self.frame_pointer += 1;
                     self.frame_base = new_frame_base;
                     self.frame_size = new_frame_size;
@@ -965,7 +996,7 @@ impl Vm {
                 0x2C => {
                     let index = self.pop_number()?.trunc() as usize; let handle = self.pop_handle(TAG_ARRAY)?;
                     let array = self.arrays.get_mut(handle).ok_or(VmError::Bounds)?;
-                    if index >= array.len() { return Err(VmError::Bounds); }
+                    if index >= array.len() { return Err(VmError::ArrayIndexOutOfRange); }
                     array.remove(index); self.push(Value::number(0.0))?;
                 }
                 0x2D => { let handle = self.maps.len(); self.allocations_since_gc += 1; self.maps.push(Vec::new()); self.push(Value::handle(TAG_MAP, handle))?; }
@@ -973,7 +1004,7 @@ impl Vm {
                     let key = self.pop()?; let map_value = self.pop()?;
                     if map_value.tag != TAG_MAP { return Err(VmError::Bounds); }
                     let value = self.maps.get(map_value.payload as usize).ok_or(VmError::Bounds)?.iter()
-                        .find(|(candidate, _)| self.value_equals(*candidate, key)).map(|(_, value)| *value).ok_or(VmError::Bounds)?;
+                        .find(|(candidate, _)| self.value_equals(*candidate, key)).map(|(_, value)| *value).ok_or(VmError::MapKeyNotFound)?;
                     self.push(value)?;
                 }
                 0x2F => {
@@ -1032,7 +1063,7 @@ impl Vm {
                     let queue = self.pop()?;
                     if queue.tag != TAG_QUEUE { return Err(VmError::Bounds); }
                     let handle = queue.payload as usize; let head = *self.queue_heads.get(handle).ok_or(VmError::Bounds)?;
-                    let value = *self.queues.get(handle).and_then(|items| items.get(head)).ok_or(VmError::Bounds)?;
+                    let value = *self.queues.get(handle).and_then(|items| items.get(head)).ok_or(VmError::QueueEmpty)?;
                     if instruction.op == 0x38 { self.queue_heads[handle] += 1; }
                     self.push(value)?;
                 }
@@ -1046,7 +1077,7 @@ impl Vm {
                     let stack = self.pop()?;
                     if stack.tag != TAG_STACK { return Err(VmError::Bounds); }
                     let values = self.value_stacks.get_mut(stack.payload as usize).ok_or(VmError::Bounds)?;
-                    let value = if instruction.op == 0x3C { values.pop() } else { values.last().copied() }.ok_or(VmError::Bounds)?;
+                    let value = if instruction.op == 0x3C { values.pop() } else { values.last().copied() }.ok_or(VmError::StackEmpty)?;
                     self.push(value)?;
                 }
                 0x3E => { let value = self.allocate_object(instruction.a as usize, true)?; self.push(value)?; }
@@ -1151,7 +1182,7 @@ fn parse(bytes: &[u8]) -> Result<Artifact, VmError> {
     if code_size < 0 || debug_count < 0 { return Err(VmError::InvalidArtifact); }
     let code_end = HEADER_SIZE.checked_add(code_size as usize).ok_or(VmError::Truncated)?;
     let metadata_offset = code_end
-        .checked_add((debug_count as usize).checked_mul(12).ok_or(VmError::Truncated)?)
+        .checked_add((debug_count as usize).checked_mul(16).ok_or(VmError::Truncated)?)
         .ok_or(VmError::Truncated)?;
     if metadata_offset > bytes.len() { return Err(VmError::Truncated); }
     let mut debug_entries = Vec::with_capacity(debug_count as usize);
@@ -1161,8 +1192,9 @@ fn parse(bytes: &[u8]) -> Result<Artifact, VmError> {
             read_i32(bytes, debug_offset)? as usize,
             read_i32(bytes, debug_offset + 4)?,
             read_i32(bytes, debug_offset + 8)?,
+            read_i32(bytes, debug_offset + 12)?,
         ));
-        debug_offset += 12;
+        debug_offset += 16;
     }
     let metadata = parse_metadata(bytes, metadata_offset)?;
     let (instructions, instruction_byte_ips, byte_targets, interface_tables) = decode(bytes, code_end)?;
@@ -1179,6 +1211,7 @@ fn parse(bytes: &[u8]) -> Result<Artifact, VmError> {
         hosts: metadata.hosts,
         field_count: metadata.field_count,
         strings: metadata.strings,
+        source_paths: metadata.source_paths,
         types: metadata.types,
         debug_entries,
         callables,
@@ -1265,6 +1298,7 @@ fn decode(bytes: &[u8], code_end: usize) -> Result<(Vec<Instruction>, Vec<usize>
 
 struct ParsedMetadata {
     strings: Vec<Vec<u8>>,
+    source_paths: Vec<Vec<u8>>,
     hosts: Vec<HostBinding>,
     field_count: usize,
     types: Vec<TypeInfo>,
@@ -1282,6 +1316,12 @@ fn parse_metadata(bytes: &[u8], offset: usize) -> Result<ParsedMetadata, VmError
     let string_count = reader.count()?;
     let mut strings = Vec::with_capacity(string_count);
     for _ in 0..string_count { strings.push(reader.string()?); }
+    let source_count = reader.count()?;
+    let mut source_paths = Vec::with_capacity(source_count);
+    for _ in 0..source_count {
+        let index = reader.count()?;
+        source_paths.push(strings.get(index).ok_or(VmError::InvalidMetadata)?.clone());
+    }
     let field_count = reader.count()?;
     for _ in 0..field_count {
         let index = reader.count()?;
@@ -1332,7 +1372,7 @@ fn parse_metadata(bytes: &[u8], offset: usize) -> Result<ParsedMetadata, VmError
         callables.push(CallableInfo { target, name: strings[name].clone() });
     }
     if !reader.at_end() { return Err(VmError::InvalidMetadata); }
-    Ok(ParsedMetadata { strings, hosts, field_count, types, callables })
+    Ok(ParsedMetadata { strings, source_paths, hosts, field_count, types, callables })
 }
 
 struct Reader<'a> {
@@ -1660,13 +1700,53 @@ pub extern "C" fn code_vm_profile_host_metric(handle: i32, index: i32, metric: i
 #[no_mangle]
 pub extern "C" fn code_vm_last_error_metric(handle: i32, metric: i32) -> i32 {
     with_vm_mut(handle, |vm| {
-        let (line, column) = vm.debug_entries.iter().find(|(ip, _, _)| *ip == vm.current_byte_ip)
-            .map(|(_, line, column)| (*line, *column)).unwrap_or((-1, -1));
+        let (line, column, source_id) = vm.debug_location(vm.current_byte_ip);
         Ok(match metric {
             0 => vm.last_error.map(VmError::status).unwrap_or(0),
             1 => vm.current_byte_ip as i32,
             2 => line,
             3 => column,
+            4 => source_id,
+            _ => -1,
+        })
+    }).unwrap_or(-1)
+}
+
+#[no_mangle]
+pub extern "C" fn code_vm_source_pointer(handle: i32, source_id: i32) -> *const u8 {
+    with_vm_mut(handle, |vm| {
+        if source_id < 0 { return Ok(std::ptr::null()); }
+        Ok(vm.source_paths.get(source_id as usize).map_or(std::ptr::null(), Vec::as_ptr))
+    }).unwrap_or(std::ptr::null())
+}
+
+#[no_mangle]
+pub extern "C" fn code_vm_source_length(handle: i32, source_id: i32) -> usize {
+    with_vm_mut(handle, |vm| {
+        if source_id < 0 { return Ok(0); }
+        Ok(vm.source_paths.get(source_id as usize).map_or(0, Vec::len))
+    }).unwrap_or(0)
+}
+
+#[no_mangle]
+pub extern "C" fn code_vm_last_error_frame_count(handle: i32) -> i32 {
+    with_vm_mut(handle, |vm| Ok(vm.frame_pointer as i32)).unwrap_or(0)
+}
+
+#[no_mangle]
+pub extern "C" fn code_vm_last_error_frame_metric(handle: i32, frame_from_top: i32, metric: i32) -> i32 {
+    with_vm_mut(handle, |vm| {
+        if frame_from_top < 0 || frame_from_top as usize >= vm.frame_pointer {
+            return Ok(-1);
+        }
+        let index = vm.frame_pointer - 1 - frame_from_top as usize;
+        let frame = vm.call_frames[index];
+        let (line, column, source_id) = vm.debug_location(frame.call_byte_ip);
+        Ok(match metric {
+            0 => frame.call_byte_ip as i32,
+            1 => line,
+            2 => column,
+            3 => source_id,
             _ => -1,
         })
     }).unwrap_or(-1)
@@ -1718,8 +1798,8 @@ mod tests {
         bytes.extend_from_slice(&0i32.to_le_bytes());
         bytes.extend_from_slice(code);
         bytes.extend_from_slice(b"META");
-        bytes.extend_from_slice(&20i32.to_le_bytes());
-        for _ in 0..5 { bytes.extend_from_slice(&0i32.to_le_bytes()); }
+        bytes.extend_from_slice(&24i32.to_le_bytes());
+        for _ in 0..6 { bytes.extend_from_slice(&0i32.to_le_bytes()); }
         bytes
     }
 
@@ -1729,7 +1809,7 @@ mod tests {
     }
 
     #[test]
-    fn parses_and_executes_minimal_v11_artifact() {
+    fn parses_and_executes_minimal_v12_artifact() {
         let parsed = parse(&artifact(&[0x01, 42, 0, 0, 0, 0xFF])).unwrap();
         let mut vm = Vm::new(parsed);
         vm.run().unwrap();

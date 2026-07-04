@@ -7,7 +7,7 @@ This folder contains the current preview browser runtime harness for Code byteco
 
 Current contents:
 - `code-vm-web.js`: worker scheduling, browser host bindings, Wasm adapter, and reference JavaScript VM
-- `code-runtime.wasm`: required Rust bytecode-v11 VM for generated applications
+- `code-runtime.wasm`: required Rust bytecode-v12 VM for generated applications
 - `index.html`: load and run `.bytecode` or `.codelib` files in a browser
 
 Current VM data-structure support:
@@ -101,7 +101,8 @@ The generated web app path is now the main workflow for browser apps.
 - Generated apps enable the opt-in VM profiler with `?code-profile=1`; worker-backed `CodeRuntime.profile.start()`, `stop()`, `reset()`, `report()`, and `json()` return promises. `await CodeRuntime.profile.report()` prints instruction, function, host-call, allocation, stack, and direct-Wasm GC-mode metrics where available.
 - Generated web builds emit a cacheable `code-runtime.wasm`, embed a base64 fallback for direct-file execution, and embed bytecode in `index.html`. Maintainer builds can use `--emit-web-bytecode` to also write `app.bytecode`.
 - The repo also ships a wrapper layer in `lib/engine/` including `engine.runtime` for update/render scheduling.
-- The generated runtime is a bytecode-v11 Rust/Wasm VM with predecoded instructions, contiguous stacks, 16-byte tagged values, handle-backed collections, slot-backed fields, record hash-field metadata, and tracing garbage collection. The JavaScript VM remains a reference/conformance path.
+- The generated runtime is a bytecode-v12 Rust/Wasm VM with predecoded instructions, contiguous stacks, 16-byte tagged values, handle-backed collections, slot-backed fields, record hash-field metadata, source-aware runtime diagnostics, and tracing garbage collection. The JavaScript VM remains a reference/conformance path.
+- Fatal/runtime diagnostics in generated apps report Code source file, line, column, phase, and stack frames when bytecode debug metadata is available; raw harness runs fall back to bytecode instruction pointers when source metadata is absent.
 - Maintainer builds can select `--web-backend direct-wasm` to emit `code-app.wasm`. Direct-Wasm is the active performance/runtime focus but remains gated behind compatibility and parity checks. Diagnostic direct-Wasm builds may use `--disable-garbage-collection`; that mode is reported by the direct-Wasm profiler and may leak memory.
 - Browser compatibility validation lives in `scripts/test-browser-compat.mjs`. It automates local Chromium-family desktop browsers and writes `mobile-report.html` for manual iOS/Android browser reports.
 

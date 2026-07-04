@@ -1705,7 +1705,16 @@ sealed class DirectWasmCompiler
             context.Body.I32Const(0);
             return;
         }
-        var actual = GetType(expression);
+        var actual = GetStoredType(expression);
+        if (!IsOptional(expected) &&
+            IsOptional(actual) &&
+            actual.TypeArguments.Count == 1)
+        {
+            var valueType = actual.TypeArguments[0];
+            EmitOptionalUnwrap(expression, actual, context);
+            EmitConversion(MapType(valueType), MapType(expected), context.Body);
+            return;
+        }
         if (IsFallible(expected) && !IsFallible(actual))
         {
             EmitFallibleSuccess(expression, expected, context);
@@ -1841,17 +1850,30 @@ sealed class DirectWasmCompiler
 
     private void EmitOptionalValue(OptionalValueExpr optional, FunctionContext context)
     {
-        var optionalType = GetType(optional.Target).NormalizeBuiltInShorthands();
-        var valueType = optionalType.TypeArguments[0];
-        EmitExpressionAs(optional.Target, optionalType, context);
+        var optionalType = GetStoredType(optional.Target).NormalizeBuiltInShorthands();
+        EmitOptionalUnwrap(optional.Target, optionalType, context);
+    }
+
+    private void EmitOptionalUnwrap(Expr expression, TypeRef optionalType, FunctionContext context)
+    {
+        var valueType = optionalType.NormalizeBuiltInShorthands().TypeArguments[0];
+        int pointer = context.AddTemporary(DirectWasmValueType.I32);
+        EmitExpressionAs(expression, optionalType, context);
+        context.Body.LocalTee(pointer);
+        context.Body.Op(0x04);
+        context.Body.Op((byte)DirectWasmValueType.I32);
+        context.Body.LocalGet(pointer);
         context.Body.I32Const(8);
         context.Body.Op(0x6a);
         EmitMemoryLoad(valueType, context.Body);
+        context.Body.Op(0x05);
+        context.Body.Op(0x00);
+        context.Body.Op(0x0b);
     }
 
     private void EmitOptionalOr(OptionalOrExpr optional, FunctionContext context)
     {
-        var optionalType = GetType(optional.Optional).NormalizeBuiltInShorthands();
+        var optionalType = GetStoredType(optional.Optional).NormalizeBuiltInShorthands();
         var valueType = optionalType.TypeArguments[0];
         int pointer = context.AddTemporary(DirectWasmValueType.I32);
         EmitExpressionAs(optional.Optional, optionalType, context);
@@ -1884,7 +1906,10 @@ sealed class DirectWasmCompiler
         EmitExpressionAs(expression, BooleanType(), context);
     }
 
-    private TypeRef GetType(Expr expression) => _program.Semantics.Get(expression).TypeRef.NormalizeBuiltInShorthands();
+    private TypeRef GetType(Expr expression)
+        => (expression.ResolvedImplicitOptionalUnwrapTypeRef ?? GetStoredType(expression)).NormalizeBuiltInShorthands();
+
+    private TypeRef GetStoredType(Expr expression) => _program.Semantics.Get(expression).TypeRef.NormalizeBuiltInShorthands();
 
     private static TypeRef Promote(TypeRef left, TypeRef right)
     {

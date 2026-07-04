@@ -387,14 +387,14 @@ internal static class Program
         }
         catch (VmRuntimeException vex)
         {
-            Console.Error.WriteLine($"Runtime error: {vex.Message}");
-            PrintRuntimeLocation(path, vex.Line, vex.Column);
+            Console.Error.WriteLine($"Runtime error: {FormatRuntimeErrorMessage(vex.Message, vex.SourcePath, vex.Line, vex.Column)}");
+            PrintRuntimeLocation(path, vex.SourcePath, vex.Line, vex.Column);
             if (vex.CallStack.Length > 0)
             {
                 Console.Error.WriteLine("Stack trace (most recent call first):");
                 foreach (var frame in vex.CallStack)
                 {
-                    var locText = FormatLocation(path, frame.Line, frame.Column);
+                    var locText = FormatLocation(path, frame.Source, frame.Line, frame.Column);
                     Console.Error.WriteLine($"  at ip {frame.Ip}{locText}");
                 }
             }
@@ -504,14 +504,22 @@ Examples:
         }
     }
 
-    private static void PrintRuntimeLocation(string bytecodePath, int line, int column)
+    private static string FormatRuntimeErrorMessage(string message, string? source, int line, int column)
+    {
+        if (line <= 0 || column <= 0)
+            return message;
+        string location = string.IsNullOrWhiteSpace(source) ? $"{line}:{column}" : $"{source}:{line}:{column}";
+        return $"{message} at {location}";
+    }
+
+    private static void PrintRuntimeLocation(string bytecodePath, string? source, int line, int column)
     {
         if (line <= 0 || column <= 0) return;
-        string sourcePath = Path.ChangeExtension(bytecodePath, ".code");
+        string sourcePath = ResolveRuntimeSourcePath(bytecodePath, source);
         if (File.Exists(sourcePath))
         {
-            var source = File.ReadAllText(sourcePath);
-            DiagnosticPrinter.PrintSnippet(sourcePath, source, line, column);
+            var sourceText = File.ReadAllText(sourcePath);
+            DiagnosticPrinter.PrintSnippet(sourcePath, sourceText, line, column);
         }
         else
         {
@@ -519,11 +527,24 @@ Examples:
         }
     }
 
-    private static string FormatLocation(string bytecodePath, int line, int column)
+    private static string FormatLocation(string bytecodePath, string? source, int line, int column)
     {
         if (line <= 0 || column <= 0) return string.Empty;
-        string sourcePath = Path.ChangeExtension(bytecodePath, ".code");
-        string displayPath = File.Exists(sourcePath) ? sourcePath : Path.GetFileName(sourcePath);
+        string sourcePath = ResolveRuntimeSourcePath(bytecodePath, source);
+        string displayPath = File.Exists(sourcePath) ? sourcePath : (source ?? Path.GetFileName(sourcePath));
         return $" ({displayPath}:{line}:{column})";
+    }
+
+    private static string ResolveRuntimeSourcePath(string bytecodePath, string? source)
+    {
+        if (!string.IsNullOrWhiteSpace(source))
+        {
+            if (Path.IsPathRooted(source))
+                return source;
+            string directory = Path.GetDirectoryName(Path.GetFullPath(bytecodePath)) ?? Directory.GetCurrentDirectory();
+            return Path.GetFullPath(Path.Combine(directory, source));
+        }
+
+        return Path.ChangeExtension(bytecodePath, ".code");
     }
 }

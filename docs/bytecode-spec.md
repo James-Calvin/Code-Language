@@ -1,12 +1,12 @@
 # Bytecode Specification (draft)
 
-Version: 0.16 (2026-07-04)
+Version: 0.17 (2026-07-04)
 
 ## File format
-- Header: `CODE` ASCII (4 bytes) + version byte (`0x0B`) + int32 `codeSize` + int32 `debugCount`. The header remains 13 bytes.
+- Header: `CODE` ASCII (4 bytes) + version byte (`0x0C`) + int32 `codeSize` + int32 `debugCount`. The header remains 13 bytes.
 - Encoding: little-endian integers and IEEE-754 `real` operands.
-- Layout: header, `codeSize` bytes of opcodes/operands, `debugCount` debug entries (`ip`, `line`, `column`; each int32), then a required `META` section.
-- `META` is ASCII `META`, int32 payload size, then ordered tables for pooled UTF-8 strings, global field slots, host bindings (symbol and arity), type layouts (name, record flag, declared field slots, hash/equality field slots), and callables (byte target, frame size, name). Counts, indexes, targets, and exact payload length are validated while loading.
+- Layout: header, `codeSize` bytes of opcodes/operands, `debugCount` debug entries (`ip`, `line`, `column`, `sourceId`; each int32), then a required `META` section.
+- `META` is ASCII `META`, int32 payload size, then ordered tables for pooled UTF-8 strings, source display paths, global field slots, host bindings (symbol and arity), type layouts (name, record flag, declared field slots, hash/equality field slots), and callables (byte target, frame size, name). Counts, indexes, targets, and exact payload length are validated while loading.
 - Version 9 artifacts are rejected; alpha builds do not provide bytecode backward compatibility.
 - Produced files should use the `.bytecode` extension.
 
@@ -30,7 +30,7 @@ Version: 0.16 (2026-07-04)
 - Operand stack stores numeric values as `int`, `long`, or `double`; most numeric ops coerce to double math, while `INT_DIV` truncates integral division toward zero. Strings, runtime object/record values, and fallible success/error values are boxed.
 - Locals are indexed slots separate from the operand stack; they auto-grow on demand. Functions record a high-water mark for frame size.
 - The generated-web Rust/Wasm VM predecodes instructions and numeric targets and uses contiguous operand, local, global, and call stacks. Values use a 16-byte tagged representation; heap values are stable handles traced from stacks and globals. `RET` restores the caller frame while leaving the return value on the operand stack. The JavaScript VM implements the same contract as a reference path.
-- The experimental typed direct-Wasm backend consumes the same checked source model but does not execute bytecode. Bytecode v11 remains the native/reference artifact contract while that backend is gated.
+- The experimental typed direct-Wasm backend consumes the same checked source model but does not execute bytecode. Bytecode v12 remains the native/reference artifact contract while that backend is gated.
 - `CALL` and `INTERFACE_CALL` frame-size operands are finalized after all callable bodies have been emitted. This is required for forward calls whose parameter count is smaller than their eventual local-slot high-water mark.
 
 ## Opcodes
@@ -124,7 +124,7 @@ Version: 0.16 (2026-07-04)
 - Integer operands are 4-byte little-endian offsets or indices; `PUSH_REAL` uses one 8-byte little-endian IEEE-754 operand; `PUSH_WIDE_INTEGER` uses one 8-byte little-endian signed integer operand.
 - Comparisons return `1.0` for true and `0.0` for false; logical `and` / `or` short-circuit in codegen.
 - Locals grow dynamically when `STORE` / `LOAD` targets exceed current length; functions track max locals for `CALL` frame sizing. Module globals use separate deterministic slots addressed by `LOAD_GLOBAL` / `STORE_GLOBAL`.
-- Debug entries map instruction-pointer offsets back to source line/column for runtime stack traces.
+- Debug entries map instruction-pointer offsets back to source display path, line, and column for runtime diagnostics and stack traces. Source display paths are stored in the metadata source table and should be project-relative/display paths, not absolute local paths.
 - Arrays are VM-managed lists. `NEW_ARRAY` pops pre-pushed elements, `NEW_ARRAY_N` allocates default-filled arrays, `ARRAY_GET` / `ARRAY_SET` index them, and `ARRAY_APPEND` / `ARRAY_removeAt` mutate them in place.
 - `ARRAY_LENGTH` also reports the size of VM-managed `map`, `set`, `queue`, and `stack` values.
 - Maps and sets use VM-managed keyed containers. `MAP_GET` throws on missing keys. `MAP_CONTAINS` / `SET_CONTAINS` return `1` or `0`. Remove operations are no-ops when the entry is absent.

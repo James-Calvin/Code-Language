@@ -51,7 +51,7 @@ This roadmap is implementation-truthful: items marked below are gaps from the cu
 | `[x]` | Core language | Void functions | `void` return type + implicit-void `function name(...)` supported |
 | `[x]` | Core language | Return statements (implicit 0 if missing) | Implemented |
 | `[x]` | Core language | Collections: literals + foreach over collections | Array literals + array foreach + typed array declarations/new(size) + `.length` + indexing + mutation + `append` / `removeAt` with preserved element typing |
-| `[x]` | Core language | Optionals | `optional<T>` with `none`, `.hasValue`, `.value`, `.or(fallback)` |
+| `[x]` | Core language | Optionals | `optional<T>` as `T` or `none`, `== none` / `!= none` presence checks, implicit unwrap in `T` contexts, and compatibility helpers |
 | `[x]` | Core language | Enumerations | Implemented: `enum Name { Member; Other = 5; }`, strongly typed equality/assignment, and module export/import/re-export support |
 | `[x]` | Core language | `switch` | Implemented: `switch value then { case expr then statement ... default then statement }`, no fallthrough, single evaluation of the switch value |
 | `[x]` | Core language | Structs/records (user types) | Baseline `record` support implemented with copy-on-assignment/pass/return semantics |
@@ -60,7 +60,7 @@ This roadmap is implementation-truthful: items marked below are gaps from the cu
 | `[x]` | Type system | Integer division semantics | Implemented: integral `/` truncates toward zero; use a `real` operand such as `1. / 2` or `1 as real / 2` for real division |
 | `[x]` | Type system | Sized numeric boundary types | Implemented source-level types `integer8`, `integer16`, `integer32`, `whole8`, `whole16`, `whole32`, `real32`, `real64`; `byte` aliases `whole8`, `real64` aliases `real`, dynamic narrowing and sized stores are range-checked |
 | `[~]` | Type system | Exact wide numerics, exponent real literals & literal suffixes (`i8/w8/r32` etc.) | `integer64` / `whole64`, exponent forms, and suffix literals remain deferred |
-| `[~]` | Type system | Optional/`optional<T>` semantics | Baseline works; flow narrowing and stricter typing rules pending |
+| `[x]` | Type system | Optional/`optional<T>` semantics | Implemented V1 direct-value model; `optional<T>` unwraps where `T` is required and raises `Optional value is none` at runtime when empty |
 | `[_]` | Type system | Overload resolution rules (spec’d) | Engine not implemented |
 | `[x]` | Error model | Runtime IP + call stack + snippets | Debug-map backed |
 | `[x]` | Error model | Typed errors / exception objects in VM | VmError objects, THROW opcode, panic statement, tests |
@@ -69,7 +69,7 @@ This roadmap is implementation-truthful: items marked below are gaps from the cu
 | `[x]` | Object model | Type references in AST/type checker (`TypeRef`) for named/generic user types | Implemented; parser/type-checker now use `TypeRef` instead of token-only types |
 | `[x]` | Object model | Object symbol table pass (object names + fields + forward refs) | Implemented; duplicate checks + field type validation in place |
 | `[x]` | Object model | Constructor symbol collection (typed signatures) | Implemented with signature-based overload resolution |
-| `[x]` | Object model | VM heap object representation + opcodes (`NEW_OBJECT`, `GET_FIELD`, `SET_FIELD`) | Implemented with bytecode-v11 type layouts, numeric field slots, and record hash-field metadata |
+| `[x]` | Object model | VM heap object representation + opcodes (`NEW_OBJECT`, `GET_FIELD`, `SET_FIELD`) | Implemented with bytecode-v12 type layouts, numeric field slots, and record hash-field metadata |
 | `[x]` | Object model | Parse + lower `new Type(...)`, `obj.field`, `obj.field = value` | Implemented for object construction + field read/write |
 | `[x]` | Object model | Constructors + definite field initialization rules | Implemented: fields may use declaration defaults or constructor assignment; non-defaulted fields require definite constructor assignment |
 | `[x]` | Object model | Field defaults | Implemented for object/record fields with `Type name = expression;`; defaults run before constructor bodies, and dependent initialization still belongs in constructors |
@@ -93,7 +93,7 @@ This roadmap is implementation-truthful: items marked below are gaps from the cu
 | `[x]` | Modules/imports | Import-chain diagnostics | Circular/missing-export/import resolution errors include module chain (`a -> b -> c`) |
 | `[~]` | Modules/imports | Import ergonomics expansion | Alias support for object/interface/enum exports, grouped/selective import forms, namespace imports for function-only module surfaces, and re-export imports |
 | `[x]` | Modules/imports | Module graph tooling | `--dump-module-graph [outputPath]` emits module graph (entry/modules/import edges) in text/json/dot; `--trace-linker` emits linker step trace |
-| `[x]` | Bytecode/VM | Header v0x0B + debug table + `META` trailer | Implemented; older alpha bytecode is rejected during alpha |
+| `[x]` | Bytecode/VM | Header v0x0C + source-aware debug table + `META` trailer | Implemented; older alpha bytecode is rejected during alpha |
 | `[x]` | Bytecode/VM | Core opcodes (arith/stack/jump/load/store/PRINT/CALL/RET/PUSH_STRING) | Implemented; includes object/array/optional/error primitives and `GET_TYPE_NAME` for interface dispatch lowering |
 | `[~]` | Bytecode/VM | Constant pool for literals | String pool implemented; additional literal kinds remain |
 | `[x]` | Bytecode/VM | Recoverable fallible values | Implemented with VM-managed success/error variants and native/web opcode parity |
@@ -113,7 +113,7 @@ This roadmap is implementation-truthful: items marked below are gaps from the cu
 | `[~]` | Platform/targets | Host ABI baseline | Implemented baseline `HOST_CALL` opcode + host binding tables for native/web modes (`standard.input_output.print`, `std.time.*`, native-only source calls `readLine()` / `sleepMilliseconds()` with diagnostics) and engine stubs (`engine.window/input/gfx`); compile-time capability inference includes host-lowered intrinsics |
 | `[x]` | Platform/targets | Static-site web build workflow | Implemented: public `.code` input emits `index.html`, `code-runtime.wasm`, embedded bytecode/direct-file fallback, copied assets, and optional `app.bytecode` via `--emit-web-bytecode` |
 | `[x]` | Platform/targets | Web build artifact polish | Implemented notes-derived change: bytecode is embedded in `index.html` by default for direct opening, and `app.bytecode` is emitted only with `--emit-web-bytecode` |
-| `[~]` | Platform/targets | Browser-backed web app runtime | Implemented current slice: a dedicated worker hosts the Rust/Wasm bytecode-v11 VM, fixed/continuous update scheduling, lifecycle, profiling, and draw encoding; the main thread owns Canvas, input, audio, visibility, and `requestAnimationFrame`; direct `file://` uses the embedded Wasm fallback |
+| `[~]` | Platform/targets | Browser-backed web app runtime | Implemented current slice: a dedicated worker hosts the Rust/Wasm bytecode-v12 VM, fixed/continuous update scheduling, lifecycle, profiling, source-aware runtime diagnostics, and draw encoding; the main thread owns Canvas, input, audio, visibility, and `requestAnimationFrame`; direct `file://` uses the embedded Wasm fallback |
 | `[~]` | Platform/targets | Graphical app profile | Implemented first web-entry slice: top-level `start` / `update` / `draw` / optional `drawHud`, same-module global app state, usage-based implied engine imports across web-app modules (`Draw` / `Input` / `Viewport` / `Colors` / `Diagnostics` / `Runtime` / `Audio` plus direct `Color` and canonical `engine.scene` types), synthesized `MainScene`, and explicit `MainScene` compatibility; broader target-agnostic reuse remains pending |
 | `[~]` | Platform/targets | Web engine host bindings | Implemented current scene-runtime bindings for `inputKeyDown`, `inputPointerWorldX`, `inputPointerWorldY`, `inputPointerScreenX`, `inputPointerScreenY`, `inputPointerIsDown`, `inputPointerWasPressed`, `inputPointerWasReleased`, `clear`, `drawRectangle`, `drawRectangleOutline`, `drawLine`, `drawCircle`, `drawCircleOutline`, `drawPolygon`, `drawPolygonOutline`, `drawText`, `drawImage`, `drawSprite`, `cameraView*`, `cameraSafe*`, `screenWidth` / `screenHeight`, `diagnosticsLast*`, and `audio*`; legacy window/input/gfx handle-based stubs still need real browser-backed behavior or wrappers |
 | `[!]` | Platform/targets | Backend-agnostic engine API contract | Lock capability-query + fallback semantics so Code source remains portable across web/native backends |

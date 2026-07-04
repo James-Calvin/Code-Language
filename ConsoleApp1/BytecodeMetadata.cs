@@ -10,6 +10,7 @@ sealed record BytecodeCallableMetadata(int TargetIp, int FrameSize, string Name)
 sealed class BytecodeMetadata
 {
     public IReadOnlyList<string> Strings { get; }
+    public IReadOnlyList<string> Sources { get; }
     public IReadOnlyList<string> Fields { get; }
     public IReadOnlyList<BytecodeHostBindingMetadata> HostBindings { get; }
     public IReadOnlyList<BytecodeTypeMetadata> Types { get; }
@@ -17,12 +18,14 @@ sealed class BytecodeMetadata
 
     public BytecodeMetadata(
         IReadOnlyList<string> strings,
+        IReadOnlyList<string> sources,
         IReadOnlyList<string> fields,
         IReadOnlyList<BytecodeHostBindingMetadata> hostBindings,
         IReadOnlyList<BytecodeTypeMetadata> types,
         IReadOnlyList<BytecodeCallableMetadata> callables)
     {
         Strings = strings;
+        Sources = sources;
         Fields = fields;
         HostBindings = hostBindings;
         Types = types;
@@ -44,6 +47,10 @@ sealed class BytecodeMetadata
         int stringCount = reader.ReadCount("string");
         var strings = new List<string>(stringCount);
         for (int i = 0; i < stringCount; i++) strings.Add(reader.ReadString());
+
+        int sourceCount = reader.ReadCount("source");
+        var sources = new List<string>(sourceCount);
+        for (int i = 0; i < sourceCount; i++) sources.Add(strings[reader.ReadIndex(strings.Count, "source string")]);
 
         int fieldCount = reader.ReadCount("field");
         var fields = new List<string>(fieldCount);
@@ -93,7 +100,7 @@ sealed class BytecodeMetadata
         }
 
         reader.EnsureEnd();
-        return new BytecodeMetadata(strings, fields, hosts, types, callables);
+        return new BytecodeMetadata(strings, sources, fields, hosts, types, callables);
     }
 
     private ref struct MetadataReader

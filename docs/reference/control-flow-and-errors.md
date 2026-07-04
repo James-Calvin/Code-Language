@@ -224,12 +224,25 @@ if lives <= 0 then panic("no lives left");
 Behavior:
 
 - Raises a `UserError`.
-- Runtime diagnostics include line/column and a call stack when debug data is available.
+- Runtime diagnostics include source file, line, column, phase, and a call stack when debug data is available.
 
 Common mistakes:
 
 - Use `fallible<Value, ErrorCode>` for expected recoverable failures.
 - Use `panic` for bugs or impossible states.
+
+## Runtime Error Diagnostics
+
+Generated web apps and native runs use bytecode debug metadata to report where a runtime error happened in Code source when that metadata is available.
+
+Example shape:
+
+```text
+Runtime error during module initialization: Map key not found at blacksmithing.code:36:12
+  at blacksmithing.code:36:12
+```
+
+Diagnostic coverage includes common runtime failures such as missing map keys, array index errors, empty queue/stack access, optional `none` unwraps, and type expectation failures. If source metadata is missing, the runtime falls back to the bytecode instruction pointer.
 
 ## Recoverable Errors
 

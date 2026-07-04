@@ -192,13 +192,13 @@ internal static class TestHarness
         byte[] valid = BytecodeBuilder.New().PushString("pooled").Print().Halt().ToArray();
 
         failures += ExpectBytecodeFailure("bytecode-v9-rejected", Mutate(valid, bytes => bytes[4] = 9), "Unsupported bytecode version 9");
-        failures += ExpectBytecodeFailure("bytecode-v11-truncated-metadata", valid[..^1], "metadata size is invalid");
-        failures += ExpectBytecodeFailure("bytecode-v11-missing-metadata-magic", Mutate(valid, bytes =>
+        failures += ExpectBytecodeFailure("bytecode-v12-truncated-metadata", valid[..^1], "metadata size is invalid");
+        failures += ExpectBytecodeFailure("bytecode-v12-missing-metadata-magic", Mutate(valid, bytes =>
         {
             var header = BytecodeFormat.ReadHeader(bytes);
             bytes[BytecodeFormat.GetMetadataOffset(header)] = (byte)'X';
         }), "metadata magic is missing");
-        failures += ExpectBytecodeFailure("bytecode-v11-invalid-string-id", Mutate(valid, bytes =>
+        failures += ExpectBytecodeFailure("bytecode-v12-invalid-string-id", Mutate(valid, bytes =>
         {
             BitConverter.GetBytes(int.MaxValue).CopyTo(bytes, BytecodeFormat.HeaderSize + 1);
         }), "string index");
@@ -207,12 +207,12 @@ internal static class TestHarness
         {
             string text = Disassembler.Disassemble(valid);
             if (!text.Contains("#0 \"pooled\"", StringComparison.Ordinal)) throw new Exception("pooled string was not resolved");
-            Console.WriteLine("[PASS] bytecode-v11-disassembler-metadata");
+            Console.WriteLine("[PASS] bytecode-v12-disassembler-metadata");
         }
         catch (Exception ex)
         {
             failures++;
-            Console.WriteLine($"[FAIL] bytecode-v11-disassembler-metadata: {ex.Message}");
+            Console.WriteLine($"[FAIL] bytecode-v12-disassembler-metadata: {ex.Message}");
         }
         return failures;
     }
@@ -632,6 +632,36 @@ Stats original = new Stats(4);
 Stats result = boost(original);
 print(original.strength);
 print(result.strength);", "4\n6\n")
+            ,
+            ("record-multiple-record-parameter-slots",
+@"record LeftValue {
+  string name;
+}
+record RightValue {
+  string name;
+}
+record PairValue {
+  LeftValue left;
+  RightValue right;
+}
+function<string> readRight(LeftValue left, RightValue right) {
+  return right.name;
+}
+object ReaderObject {
+  function<string> read(LeftValue left, RightValue right) {
+    return right.name;
+  }
+}
+LeftValue left = LeftValue(""left"");
+RightValue right = RightValue(""right"");
+PairValue pair = PairValue(left, right);
+ReaderObject reader = ReaderObject();
+left.name = ""changed left"";
+right.name = ""changed right"";
+print(pair.left.name);
+print(pair.right.name);
+print(readRight(left, right));
+print(reader.read(left, right));", "left\nright\nchanged right\nchanged right\n")
             ,
             ("record-nested-and-optional-copy",
 @"record Stats {
@@ -1143,7 +1173,25 @@ weights[""iron""] += 2.5;
 print(weights[""iron""]);", "10\n"),
             ("optional-hasvalue", @"optional<integer> v; print(v.hasValue);", "0\n"),
             ("optional-or", @"optional<integer> v; print(v.or(42));", "42\n"),
-            ("optional-some", @"optional<integer> v = 5; print(v.hasValue); print(v.value);", "1\n5\n")
+            ("optional-some", @"optional<integer> v = 5; print(v.hasValue); print(v.value);", "1\n5\n"),
+            ("optional-direct-value",
+@"optional<integer> maybe = 5;
+integer value = maybe;
+print(value + 2);", "7\n"),
+            ("optional-none-comparison",
+@"optional<integer> maybe = none;
+print(maybe == none);
+maybe = 4;
+print(none != maybe);", "1\n1\n"),
+            ("optional-direct-field-and-method",
+@"object Counter {
+  integer count;
+  constructor(integer value) { count = value; }
+  function<integer> read() { return count; }
+}
+optional<Counter> maybe = Counter(9);
+print(maybe.count);
+print(maybe.read());", "9\n9\n")
         };
         var objectCases = new List<(string Name, string Source, string Expected)>
         {
@@ -2704,6 +2752,10 @@ print(items.peek());", "RuntimeError"),
 @"byte value = 250;
 value += 6;
 print(value);", "RuntimeError"),
+            ("optional-none-implicit-unwrap-runtime",
+@"optional<integer> maybe = none;
+integer value = maybe;
+print(value);", "RuntimeError"),
         };
         var compileErrorCases = new List<(string Name, string Source, string ErrorContains)>
         {
@@ -3159,6 +3211,12 @@ Direction direction = Direction.Up;", "has no member"),
             ("map-key-type-mismatch",
 @"map<string, integer> scores = new map<string, integer>();
 scores[1] = 2;", "Map key type mismatch"),
+            ("optional-compare-to-value-rejected",
+@"optional<integer> maybe = 3;
+print(maybe == 3);", "Optional values can only be compared with none"),
+            ("optional-condition-rejected",
+@"optional<boolean> maybe = true;
+if maybe then print(1);", "Condition must be boolean"),
             ("queue-enqueue-arity",
 @"queue<integer> items = new queue<integer>();
 items.enqueue();", "expects 1 argument"),
@@ -3858,6 +3916,40 @@ export function<string> readText() { return ""ok""; }",
                 failures++;
                 Console.WriteLine($"[FAIL] {name}: {ex.GetType().Name} - {ex.Message}");
             }
+        }
+
+        try
+        {
+            var error = CompileModulesExpectRuntimeError(
+                new Dictionary<string, string>
+                {
+                    ["main.code"] =
+@"import { readMissing } from ""lib.code"";
+print(readMissing());",
+                    ["lib.code"] =
+@"export function<integer> readMissing() {
+  map<string, integer> values = new map<string, integer>();
+  return values[""missing""];
+}"
+                },
+                "main.code");
+            if (error.Line != 3 ||
+                error.SourcePath is null ||
+                !error.SourcePath.Replace('\\', '/').EndsWith("/lib.code", StringComparison.Ordinal) ||
+                !error.Message.Contains("Map key not found", StringComparison.Ordinal))
+            {
+                failures++;
+                Console.WriteLine($"[FAIL] runtime-error-source-location: unexpected {error.Message} at {error.SourcePath}:{error.Line}:{error.Column}");
+            }
+            else
+            {
+                Console.WriteLine("[PASS] runtime-error-source-location");
+            }
+        }
+        catch (Exception ex)
+        {
+            failures++;
+            Console.WriteLine($"[FAIL] runtime-error-source-location: {ex.GetType().Name} - {ex.Message}");
         }
 
         foreach (var (name, src, errorContains) in compileErrorCases)
@@ -6329,6 +6421,39 @@ print(sum);";
                 if (!ex.Message.Contains(expectedContains, StringComparison.Ordinal))
                     throw new Exception($"Expected compile error containing '{expectedContains}', got '{ex.Message}'");
             }
+        }
+        finally
+        {
+            try { Directory.Delete(tempRoot, recursive: true); }
+            catch { }
+        }
+    }
+
+    private static VmRuntimeException CompileModulesExpectRuntimeError(
+        IReadOnlyDictionary<string, string> files,
+        string entryRelativePath,
+        Compiler.CompileTarget target = Compiler.CompileTarget.VmNative)
+    {
+        string tempRoot = Path.Combine(Path.GetTempPath(), "code-mod-runtime-tests-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+        try
+        {
+            PopulateWorkspace(tempRoot, files);
+            string entryPath = Path.Combine(tempRoot, entryRelativePath);
+            var options = new Compiler.ModuleCompileOptions { Target = target };
+            var bytes = Compiler.ModuleCompiler.CompileFromFile(entryPath, options);
+            using var sw = new StringWriter();
+            var vm = new Vm(bytes, sw);
+            try
+            {
+                vm.Run();
+            }
+            catch (VmRuntimeException vex)
+            {
+                return vex;
+            }
+
+            throw new Exception("Expected runtime error was not thrown");
         }
         finally
         {

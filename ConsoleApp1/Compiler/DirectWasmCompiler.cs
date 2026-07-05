@@ -90,6 +90,7 @@ sealed class DirectWasmCompiler
             {
                 case ObjectDecl type:
                     RegisterObject(type);
+                    _topLevel.Add(statement);
                     break;
                 case FunctionDecl function:
                     RegisterFunction(function);
@@ -215,7 +216,7 @@ sealed class DirectWasmCompiler
     {
         int offset = 8;
         var fields = new Dictionary<string, DirectField>(StringComparer.Ordinal);
-        foreach (var field in declaration.Fields)
+        foreach (var field in declaration.Fields.Where(field => !field.IsStatic))
         {
             var type = MapType(field.Type);
             int alignment = StorageSize(type);
@@ -225,6 +226,8 @@ sealed class DirectWasmCompiler
         }
         var layout = new DirectObjectLayout(declaration.Name.Lexeme, declaration, fields, Align(offset, 8));
         _objects.Add(layout.Name, layout);
+        foreach (var field in declaration.Fields.Where(field => field.IsStatic))
+            RegisterStaticField(declaration, field);
         foreach (var constructor in declaration.Constructors)
         {
             string key = ConstructorKey(declaration.Name.Lexeme, constructor.Parameters);
@@ -234,7 +237,7 @@ sealed class DirectWasmCompiler
         {
             string key = MethodKey(declaration.Name.Lexeme, method.Name.Lexeme, method.Parameters);
             var returnType = method.ReturnType ?? VoidType(method.Name);
-            _functions.Add(key, new DirectFunction(key, $"{declaration.Name.Lexeme}.{method.Name.Lexeme}", method.Parameters, returnType, method.Body, layout, false));
+            _functions.Add(key, new DirectFunction(key, $"{declaration.Name.Lexeme}.{method.Name.Lexeme}", method.Parameters, returnType, method.Body, method.IsStatic ? null : layout, false));
         }
     }
 
@@ -253,10 +256,34 @@ sealed class DirectWasmCompiler
 
     private void RegisterGlobal(VarDecl declaration)
     {
+        string key = GlobalKey(declaration.OriginModulePath, declaration.Name.Lexeme);
         var wasmType = MapType(declaration.Type);
         int index = _module.AddGlobal(wasmType);
-        var global = new DirectGlobal(declaration.Name.Lexeme, declaration.Type, wasmType, index, declaration);
-        _globals.Add(declaration.Name.Lexeme, global);
+        var global = new DirectGlobal(key, declaration.Type, wasmType, index);
+        _globals.Add(key, global);
+    }
+
+    private void RegisterStaticField(ObjectDecl declaration, FieldDecl field)
+    {
+        string key = StaticFieldGlobalKey(declaration, field);
+        var wasmType = MapType(field.Type);
+        int index = _module.AddGlobal(wasmType);
+        _globals.Add(key, new DirectGlobal(key, field.Type, wasmType, index));
+    }
+
+    private void EmitStaticFieldInitializer(ObjectDecl declaration, FieldDecl field, FunctionContext context)
+    {
+        string key = StaticFieldGlobalKey(declaration, field);
+        if (!_globals.TryGetValue(key, out var global))
+            throw new InvalidOperationException($"Missing direct-Wasm static field global '{key}'.");
+
+        if (field.Initializer is null)
+            EmitDefaultToGlobal(global, context.Body);
+        else
+        {
+            EmitExpressionAs(field.Initializer, field.Type, context);
+            context.Body.GlobalSet(global.Index);
+        }
     }
 
     private void ReserveProgramFunctions()
@@ -401,7 +428,7 @@ sealed class DirectWasmCompiler
                 break;
             case VarDecl variable:
             {
-                if (context.IsRun && _globals.TryGetValue(variable.Name.Lexeme, out var global))
+                if (context.IsRun && _globals.TryGetValue(GlobalKey(variable.OriginModulePath, variable.Name.Lexeme), out var global))
                 {
                     if (variable.Initializer is not null)
                     {
@@ -416,6 +443,10 @@ sealed class DirectWasmCompiler
                 context.Body.LocalSet(local);
                 break;
             }
+            case ObjectDecl type:
+                foreach (var field in type.Fields.Where(field => field.IsStatic))
+                    EmitStaticFieldInitializer(type, field, context);
+                break;
             case ExprStmt expressionStatement:
             {
                 bool leavesValue = EmitExpression(expressionStatement.Expression, context);
@@ -720,11 +751,19 @@ sealed class DirectWasmCompiler
                     EmitInterfaceFieldGet(field, context);
                     return true;
                 }
+                if (field.ResolvesToStaticField)
+                {
+                    var global = _globals[field.ResolvedStaticFieldGlobalKey!];
+                    context.Body.GlobalGet(global.Index);
+                    return true;
+                }
                 EmitFieldAddress(field, context);
                 EmitMemoryLoad(GetType(field), context.Body);
                 return true;
             case FieldSetExpr set:
-                if (set.Target.ResolvesToInterfaceField)
+                if (set.Target.ResolvesToStaticField)
+                    EmitStaticFieldSet(set.Target, set.Value, context);
+                else if (set.Target.ResolvesToInterfaceField)
                     EmitInterfaceFieldSet(set.Target, set.Value, context);
                 else
                     EmitFieldSet(set.Target, set.Value, context);
@@ -773,14 +812,20 @@ sealed class DirectWasmCompiler
             EmitMemoryLoad(variable.ResolvedImplicitFieldTypeRef!, context.Body);
             return;
         }
+        if (variable.ResolvesToImplicitStaticField)
+        {
+            var implicitStaticGlobal = _globals[variable.ResolvedImplicitStaticFieldGlobalKey!];
+            context.Body.GlobalGet(implicitStaticGlobal.Index);
+            return;
+        }
         if (context.TryLookup(variable.Name.Lexeme, out var local))
         {
             context.Body.LocalGet(local.Index);
             return;
         }
-        if (_globals.TryGetValue(variable.Name.Lexeme, out var global))
+        if (variable.ResolvedGlobalKey is not null && _globals.TryGetValue(variable.ResolvedGlobalKey, out var moduleGlobal))
         {
-            context.Body.GlobalGet(global.Index);
+            context.Body.GlobalGet(moduleGlobal.Index);
             return;
         }
         if (variable.ResolvedBuiltInConstant)
@@ -802,16 +847,23 @@ sealed class DirectWasmCompiler
             EmitMemoryStore(assignment.ResolvedImplicitFieldTypeRef!, context.Body);
             return;
         }
+        if (assignment.ResolvesToImplicitStaticField)
+        {
+            var implicitStaticGlobal = _globals[assignment.ResolvedImplicitStaticFieldGlobalKey!];
+            EmitExpressionAs(assignment.Value, assignment.ResolvedImplicitStaticFieldTypeRef!, context);
+            context.Body.GlobalSet(implicitStaticGlobal.Index);
+            return;
+        }
         if (context.TryLookup(assignment.Name.Lexeme, out var local))
         {
             EmitExpressionAs(assignment.Value, local.Type, context);
             context.Body.LocalSet(local.Index);
             return;
         }
-        if (_globals.TryGetValue(assignment.Name.Lexeme, out var global))
+        if (assignment.ResolvedGlobalKey is not null && _globals.TryGetValue(assignment.ResolvedGlobalKey, out var moduleGlobal))
         {
-            EmitExpressionAs(assignment.Value, global.Type, context);
-            context.Body.GlobalSet(global.Index);
+            EmitExpressionAs(assignment.Value, moduleGlobal.Type, context);
+            context.Body.GlobalSet(moduleGlobal.Index);
             return;
         }
         throw Unsupported(assignment, $"assignment '{assignment.Name.Lexeme}'");
@@ -974,13 +1026,25 @@ sealed class DirectWasmCompiler
                 context.Body.LocalGet(result);
                 break;
             }
+            case Variable variable when variable.ResolvesToImplicitStaticField:
+            {
+                var global = _globals[variable.ResolvedImplicitStaticFieldGlobalKey!];
+                context.Body.GlobalGet(global.Index);
+                EmitExpressionAs(expression.Value, global.Type, context);
+                context.Body.Op(BinaryOpcode(expression.Operator.Type, global.WasmType));
+                int value = context.AddTemporary(global.WasmType);
+                context.Body.LocalTee(value);
+                context.Body.GlobalSet(global.Index);
+                context.Body.LocalGet(value);
+                break;
+            }
             case Variable variable when context.TryLookup(variable.Name.Lexeme, out var local):
                 context.Body.LocalGet(local.Index);
                 EmitExpressionAs(expression.Value, local.Type, context);
                 context.Body.Op(BinaryOpcode(expression.Operator.Type, local.WasmType));
                 context.Body.LocalTee(local.Index);
                 break;
-            case Variable variable when _globals.TryGetValue(variable.Name.Lexeme, out var global):
+            case Variable variable when variable.ResolvedGlobalKey is not null && _globals.TryGetValue(variable.ResolvedGlobalKey, out var global):
             {
                 context.Body.GlobalGet(global.Index);
                 EmitExpressionAs(expression.Value, global.Type, context);
@@ -992,7 +1056,9 @@ sealed class DirectWasmCompiler
                 break;
             }
             case FieldAccessExpr field:
-                if (field.ResolvesToInterfaceField)
+                if (field.ResolvesToStaticField)
+                    EmitCompoundStaticField(field, expression.Value, expression.Operator.Type, context);
+                else if (field.ResolvesToInterfaceField)
                     EmitCompoundInterfaceField(field, expression.Value, expression.Operator.Type, context);
                 else
                     EmitCompoundField(field, expression.Value, expression.Operator.Type, context);
@@ -1019,6 +1085,19 @@ sealed class DirectWasmCompiler
         context.Body.LocalGet(address);
         context.Body.LocalGet(result);
         EmitMemoryStore(type, context.Body);
+        context.Body.LocalGet(result);
+    }
+
+    private void EmitCompoundStaticField(FieldAccessExpr field, Expr value, TokenType operation, FunctionContext context)
+    {
+        var type = GetType(field);
+        var global = _globals[field.ResolvedStaticFieldGlobalKey!];
+        context.Body.GlobalGet(global.Index);
+        EmitExpressionAs(value, type, context);
+        context.Body.Op(BinaryOpcode(operation, MapType(type)));
+        int result = context.AddTemporary(MapType(type));
+        context.Body.LocalTee(result);
+        context.Body.GlobalSet(global.Index);
         context.Body.LocalGet(result);
     }
 
@@ -1401,6 +1480,17 @@ sealed class DirectWasmCompiler
         context.Body.LocalGet(result);
     }
 
+    private void EmitStaticFieldSet(FieldAccessExpr field, Expr value, FunctionContext context)
+    {
+        var type = GetType(field);
+        var global = _globals[field.ResolvedStaticFieldGlobalKey!];
+        int result = context.AddTemporary(global.WasmType);
+        EmitExpressionAs(value, type, context);
+        context.Body.LocalTee(result);
+        context.Body.GlobalSet(global.Index);
+        context.Body.LocalGet(result);
+    }
+
     private bool EmitCall(Call call, FunctionContext context)
     {
         if (EmitNativeMathCall(call, context, out bool nativeLeavesValue))
@@ -1416,6 +1506,10 @@ sealed class DirectWasmCompiler
         {
             function = _functions[call.ResolvedImplicitMethodKey!];
             context.Body.LocalGet(0);
+        }
+        else if (call.ResolvesToImplicitStaticMethod)
+        {
+            function = _functions[call.ResolvedImplicitStaticMethodKey!];
         }
         else if (_functions.TryGetValue(call.Callee.Lexeme, out function!))
         {
@@ -1471,6 +1565,8 @@ sealed class DirectWasmCompiler
 
     private bool EmitMethodCall(MethodCallExpr call, FunctionContext context)
     {
+        if (call.ResolvesToStaticMethod)
+            return EmitStaticMethodCall(call, context);
         if (call.ResolvesToBuiltInCollectionMethod)
             return EmitBuiltInCollectionCall(call, context);
         if (call.ResolvedInterfaceName is not null && call.ResolvedInterfaceMethodKey is not null)
@@ -1479,6 +1575,17 @@ sealed class DirectWasmCompiler
             throw Unsupported(call, $"method '{call.MethodName.Lexeme}'");
         if (IsRecord(GetType(call.Target))) EmitRecordClone(call.Target, GetType(call.Target), context);
         else EmitExpressionAs(call.Target, ReferenceType(), context);
+        var allArguments = CombineArguments(call.Arguments, call.ResolvedDefaultArguments);
+        for (int index = 0; index < allArguments.Count; index++)
+            EmitExpressionAs(allArguments[index], function.Parameters[index].Type!, context);
+        context.Body.Call(function.Index);
+        return !IsVoid(function.ReturnType);
+    }
+
+    private bool EmitStaticMethodCall(MethodCallExpr call, FunctionContext context)
+    {
+        if (call.ResolvedStaticMethodKey is null || !_functions.TryGetValue(call.ResolvedStaticMethodKey, out var function))
+            throw Unsupported(call, $"static method '{call.MethodName.Lexeme}'");
         var allArguments = CombineArguments(call.Arguments, call.ResolvedDefaultArguments);
         for (int index = 0; index < allArguments.Count; index++)
             EmitExpressionAs(allArguments[index], function.Parameters[index].Type!, context);
@@ -2154,6 +2261,10 @@ sealed class DirectWasmCompiler
         type = type.NormalizeBuiltInShorthands();
         return type.TypeArguments.Count == 0 ? type.Name : $"{type.Name}<{string.Join(",", type.TypeArguments.Select(TypeKey))}>";
     }
+    private static string StaticFieldGlobalKey(ObjectDecl declaration, FieldDecl field)
+        => GlobalKey(declaration.OriginModulePath, $"{declaration.Name.Lexeme}.{field.Name.Lexeme}");
+    private static string GlobalKey(string? modulePath, string name)
+        => $"{(string.IsNullOrWhiteSpace(modulePath) ? "<source>" : modulePath)}\u001F{name}";
     private static string ConstructorKey(string type, IReadOnlyList<Parameter> parameters)
         => $"{type}({string.Join(",", parameters.Select(parameter => TypeKey(parameter.Type!)))})";
     private static string ConstructorKey(string type, int arity) => $"{type}#arity:{arity}";
@@ -2208,7 +2319,7 @@ sealed class DirectWasmCompiler
 
     private sealed record DirectField(string Name, TypeRef Type, DirectWasmValueType WasmType, int Offset);
     private sealed record DirectObjectLayout(string Name, ObjectDecl Declaration, IReadOnlyDictionary<string, DirectField> Fields, int Size);
-    private sealed record DirectGlobal(string Name, TypeRef Type, DirectWasmValueType WasmType, int Index, VarDecl Declaration);
+    private sealed record DirectGlobal(string Name, TypeRef Type, DirectWasmValueType WasmType, int Index);
     private sealed record DirectHostFunction(HostAbiIntrinsic Intrinsic, int Index, TypeRef ReturnType);
     private sealed record DirectStringData(int Pointer, int Length);
     private sealed record DirectInterfaceTarget(DirectObjectLayout Owner, DirectFunction Function);

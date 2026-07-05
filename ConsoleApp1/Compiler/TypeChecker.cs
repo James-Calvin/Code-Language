@@ -71,7 +71,9 @@ sealed class TypeChecker
                 obj.OriginPackageName,
                 obj.OriginModulePath,
                 new Dictionary<string, FieldSignature>(StringComparer.Ordinal),
+                new Dictionary<string, FieldSignature>(StringComparer.Ordinal),
                 new List<ConstructorSignature>(),
+                new Dictionary<string, MethodSignature>(StringComparer.Ordinal),
                 new Dictionary<string, MethodSignature>(StringComparer.Ordinal));
         }
 
@@ -174,7 +176,7 @@ sealed class TypeChecker
                     throw new CompilerException("Interface members are public contract requirements and cannot declare visibility", field.Name.Line, field.Name.Column);
                 ValidateTypeRef(field.Type);
                 EnsureNotVoidTypeRef(field.Type, "Interface fields cannot be void", field.Name.Line, field.Name.Column);
-                ifaceSym.Fields[field.Name.Lexeme] = new FieldSignature(field.Name, field.Type, DeclarationVisibility.Public, false, FieldHashRole.Default);
+                ifaceSym.Fields[field.Name.Lexeme] = new FieldSignature(field.Name, field.Type, DeclarationVisibility.Public, false, FieldHashRole.Default, false);
             }
             foreach (var method in iface.Methods)
             {
@@ -208,15 +210,22 @@ sealed class TypeChecker
             string typeKind = obj.IsRecord ? "record" : "object";
             foreach (var field in obj.Fields)
             {
-                if (symbol.Fields.ContainsKey(field.Name.Lexeme))
-                    throw new CompilerException($"Field '{field.Name.Lexeme}' is already defined in {typeKind} '{obj.Name.Lexeme}'", field.Name.Line, field.Name.Column);
+                var fieldTable = field.IsStatic ? symbol.StaticFields : symbol.Fields;
+                if (fieldTable.ContainsKey(field.Name.Lexeme))
+                    throw new CompilerException($"{(field.IsStatic ? "Static field" : "Field")} '{field.Name.Lexeme}' is already defined in {typeKind} '{obj.Name.Lexeme}'", field.Name.Line, field.Name.Column);
                 if (IsReservedPropertyName(field.Name.Lexeme))
                     throw new CompilerException($"Field name '{field.Name.Lexeme}' is reserved for built-in properties", field.Name.Line, field.Name.Column);
                 if (field.Visibility == DeclarationVisibility.Package && string.IsNullOrWhiteSpace(symbol.PackageName))
                     throw new CompilerException("Package-visible members require a containing package declaration.", field.Name.Line, field.Name.Column);
+                if (field.IsStatic && field.HashRole != FieldHashRole.Default)
+                    throw new CompilerException("Record hash field modifiers are only valid on instance record fields.", field.Name.Line, field.Name.Column);
+                if (!field.IsStatic && field.IsConstant)
+                    throw new CompilerException("Object and record field constants must be static in V1.", field.Name.Line, field.Name.Column);
+                if (field.IsStatic && field.IsConstant && field.Initializer is null)
+                    throw new CompilerException($"Static constant field '{field.Name.Lexeme}' must be initialized", field.Name.Line, field.Name.Column);
                 ValidateTypeRef(field.Type);
                 EnsureNotVoidTypeRef(field.Type, $"{Capitalize(typeKind)} fields cannot be void", field.Name.Line, field.Name.Column);
-                symbol.Fields[field.Name.Lexeme] = new FieldSignature(field.Name, field.Type, field.Visibility, field.IsConstant, field.HashRole);
+                fieldTable[field.Name.Lexeme] = new FieldSignature(field.Name, field.Type, field.Visibility, field.IsConstant, field.HashRole, field.IsStatic);
             }
 
             ValidateRecordHashFieldRoles(obj, symbol);
@@ -267,10 +276,11 @@ sealed class TypeChecker
                     throw new CompilerException("Package-visible members require a containing package declaration.", method.Name.Line, method.Name.Column);
                 var paramTypes = method.Parameters.Select(p => MapType(p.Type!)).ToList();
                 var returnType = MapType(returnTypeRef);
-                symbol.Methods[methodKey] = new MethodSignature(method.Name, returnTypeRef, returnType, paramTypes, paramTypeRefs, method.Parameters.Select(p => p.DefaultValue).ToList(), methodKey, method.Body, method.Parameters, method.Visibility);
+                var methodTable = method.IsStatic ? symbol.StaticMethods : symbol.Methods;
+                methodTable[methodKey] = new MethodSignature(method.Name, returnTypeRef, returnType, paramTypes, paramTypeRefs, method.Parameters.Select(p => p.DefaultValue).ToList(), methodKey, method.Body, method.Parameters, method.Visibility, method.IsStatic);
             }
 
-            if (symbol.Fields.Count > 0 && symbol.Constructors.Count == 0 && obj.Fields.Any(field => field.Initializer is null))
+            if (symbol.Fields.Count > 0 && symbol.Constructors.Count == 0 && obj.Fields.Any(field => !field.IsStatic && field.Initializer is null))
             {
                 throw new CompilerException($"{Capitalize(typeKind)} '{obj.Name.Lexeme}' declares fields but has no constructor to initialize them", obj.Name.Line, obj.Name.Column);
             }
@@ -409,6 +419,7 @@ sealed class TypeChecker
         {
             if (stmt is not ObjectDecl obj)
                 continue;
+            CheckStaticFieldInitializers(obj);
             CheckFieldInitializers(obj);
             CheckObjectConstructors(obj);
             CheckObjectMethods(obj);
@@ -623,7 +634,7 @@ sealed class TypeChecker
             var env = new TypeEnvironment();
             foreach (var field in obj.Fields)
             {
-                if (field.Initializer is null)
+                if (field.IsStatic || field.Initializer is null)
                     continue;
 
                 var initializerType = CheckExpr(field.Initializer, env, currentReturn: null);
@@ -721,25 +732,36 @@ sealed class TypeChecker
 
         try
         {
-            foreach (var method in symbol.Methods.Values)
+            foreach (var method in symbol.Methods.Values.Concat(symbol.StaticMethods.Values))
             {
                 var env = new TypeEnvironment();
                 var thisType = new TypeRef(obj.Name.Lexeme, null, obj.Name.Line, obj.Name.Column);
-                env.Define("this", symbol.IsRecord ? TypeSymbol.Record : TypeSymbol.Object, thisType, method.Name.Line, method.Name.Column, assigned: true);
+                var previousAllowImplicitThisLookup = _allowImplicitThisLookup;
+                if (method.IsStatic)
+                    _allowImplicitThisLookup = false;
+                else
+                    env.Define("this", symbol.IsRecord ? TypeSymbol.Record : TypeSymbol.Object, thisType, method.Name.Line, method.Name.Column, assigned: true);
                 var previousReturnRef = _currentReturnTypeRef;
                 _currentReturnTypeRef = method.ReturnTypeRef;
 
-                for (int i = 0; i < method.Parameters.Count; i++)
+                try
                 {
-                    var paramDecl = method.Parameters[i];
-                    var pType = method.ParamTypes[i];
-                    env.Define(paramDecl.Name.Lexeme, pType, paramDecl.Type, paramDecl.Name.Line, paramDecl.Name.Column, assigned: true);
-                }
+                    for (int i = 0; i < method.Parameters.Count; i++)
+                    {
+                        var paramDecl = method.Parameters[i];
+                        var pType = method.ParamTypes[i];
+                        env.Define(paramDecl.Name.Lexeme, pType, paramDecl.Type, paramDecl.Name.Line, paramDecl.Name.Column, assigned: true);
+                    }
 
-                bool allPathsReturn = CheckStmt(method.Body, env, method.ReturnType);
-                _currentReturnTypeRef = previousReturnRef;
-                if (method.ReturnType != TypeSymbol.Void && !allPathsReturn)
-                    throw new CompilerException($"Method '{obj.Name.Lexeme}.{method.Name.Lexeme}' may not return a value on all paths", method.Name.Line, method.Name.Column);
+                    bool allPathsReturn = CheckStmt(method.Body, env, method.ReturnType);
+                    if (method.ReturnType != TypeSymbol.Void && !allPathsReturn)
+                        throw new CompilerException($"Method '{obj.Name.Lexeme}.{method.Name.Lexeme}' may not return a value on all paths", method.Name.Line, method.Name.Column);
+                }
+                finally
+                {
+                    _currentReturnTypeRef = previousReturnRef;
+                    _allowImplicitThisLookup = previousAllowImplicitThisLookup;
+                }
             }
         }
         finally
@@ -755,6 +777,7 @@ sealed class TypeChecker
     {
         var initiallyAssigned = new HashSet<string>(
             obj.Fields
+                .Where(field => !field.IsStatic)
                 .Where(field => field.Initializer is not null)
                 .Select(field => field.Name.Lexeme),
             StringComparer.Ordinal);
@@ -762,6 +785,8 @@ sealed class TypeChecker
         var missing = new List<string>();
         foreach (var field in obj.Fields)
         {
+            if (field.IsStatic)
+                continue;
             if (!assigned.Contains(field.Name.Lexeme))
                 missing.Add(field.Name.Lexeme);
         }
@@ -901,6 +926,53 @@ sealed class TypeChecker
         }
     }
 
+    private void CheckStaticFieldInitializers(ObjectDecl obj)
+    {
+        if (!_objects.TryGetValue(obj.Name.Lexeme, out var symbol))
+            return;
+
+        var previousObjectSymbol = _currentObjectSymbol;
+        var previousObjectTypeRef = _currentObjectTypeRef;
+        var previousAccessPackageName = _currentAccessPackageName;
+        var previousModulePath = _currentModulePath;
+        var previousAllowImplicitThisLookup = _allowImplicitThisLookup;
+        _currentObjectSymbol = symbol;
+        _currentObjectTypeRef = new TypeRef(obj.Name.Lexeme, null, obj.Name.Line, obj.Name.Column);
+        _currentAccessPackageName = obj.OriginPackageName;
+        _currentModulePath = obj.OriginModulePath;
+        _allowImplicitThisLookup = false;
+
+        try
+        {
+            var env = new TypeEnvironment();
+            foreach (var field in obj.Fields)
+            {
+                if (!field.IsStatic || field.Initializer is null)
+                    continue;
+
+                var initializerType = CheckExpr(field.Initializer, env, currentReturn: null);
+                var initializerTypeRef = ResolveExprTypeRef(field.Initializer, env);
+                RequireAssignable(
+                    MapType(field.Type),
+                    field.Type,
+                    initializerType,
+                    initializerTypeRef,
+                    field.Name.Line,
+                    field.Name.Column,
+                    "Static field initializer type mismatch",
+                    field.Initializer);
+            }
+        }
+        finally
+        {
+            _currentObjectSymbol = previousObjectSymbol;
+            _currentObjectTypeRef = previousObjectTypeRef;
+            _currentAccessPackageName = previousAccessPackageName;
+            _currentModulePath = previousModulePath;
+            _allowImplicitThisLookup = previousAllowImplicitThisLookup;
+        }
+    }
+
     private void ValidateRecordHashFieldRoles(ObjectDecl obj, ObjectSymbol symbol)
     {
         bool hasKeyFields = obj.Fields.Any(field => field.HashRole == FieldHashRole.Key);
@@ -970,6 +1042,25 @@ sealed class TypeChecker
         return _currentObjectSymbol.Fields.TryGetValue(name.Lexeme, out field!);
     }
 
+    private bool TryResolveImplicitStaticField(Token name, TypeEnvironment env, out FieldSignature field, out ObjectSymbol owner)
+    {
+        field = null!;
+        owner = null!;
+
+        if (_currentObjectSymbol is null)
+            return false;
+
+        if (env.Contains(name.Lexeme))
+            return false;
+
+        if (!_currentObjectSymbol.StaticFields.TryGetValue(name.Lexeme, out field!))
+            return false;
+
+        owner = _currentObjectSymbol;
+        RequireMemberAccessible(owner, field.Visibility, name, "static field", field.Name.Lexeme);
+        return true;
+    }
+
     private bool TryResolveSameModuleGlobal(Token name, out GlobalSymbol global)
     {
         global = default!;
@@ -1027,6 +1118,9 @@ sealed class TypeChecker
     private static string GlobalKey(string moduleKey, string name) =>
         $"{moduleKey}\u001F{name}";
 
+    private static string StaticFieldGlobalKey(ObjectSymbol owner, string name) =>
+        GlobalKey(ModuleKey(owner.ModulePath), $"{owner.Name.Lexeme}.{name}");
+
     private void EnsureCanAssignField(FieldSignature field, Token name)
     {
         if (field.HashRole == FieldHashRole.Key && !_checkingConstructorBody)
@@ -1034,6 +1128,9 @@ sealed class TypeChecker
 
         if (!field.IsConstant)
             return;
+
+        if (field.IsStatic)
+            throw new CompilerException($"Cannot assign to constant '{name.Lexeme}'", name.Line, name.Column);
 
         if (_checkingConstructorBody)
             return;
@@ -1045,6 +1142,58 @@ sealed class TypeChecker
     {
         return _currentObjectSymbol is not null &&
                _currentObjectSymbol.Methods.Values.Any(method => string.Equals(method.Name.Lexeme, methodName, StringComparison.Ordinal));
+    }
+
+    private bool CurrentObjectHasStaticMethodNamed(string methodName)
+    {
+        return _currentObjectSymbol is not null &&
+               _currentObjectSymbol.StaticMethods.Values.Any(method => string.Equals(method.Name.Lexeme, methodName, StringComparison.Ordinal));
+    }
+
+    private bool TryResolveImplicitStaticMethodCall(
+        Call call,
+        IReadOnlyList<(TypeSymbol Symbol, TypeRef? Ref)> argTypes,
+        out TypeSymbol type)
+    {
+        type = TypeSymbol.Unknown;
+
+        if (_currentObjectSymbol is null || !CurrentObjectHasStaticMethodNamed(call.Callee.Lexeme))
+            return false;
+
+        var owner = _currentObjectSymbol;
+        if (!TryResolveBestStaticMethod(owner, call.Callee.Lexeme, argTypes, requireAccessible: true, out var method, out bool ambiguousMethod))
+        {
+            if (ambiguousMethod)
+                throw new CompilerException($"Ambiguous static method call '{owner.Name.Lexeme}.{call.Callee.Lexeme}'", call.Callee.Line, call.Callee.Column);
+            if (TryResolveBestStaticMethod(owner, call.Callee.Lexeme, argTypes, requireAccessible: false, out _, out _))
+                throw new CompilerException($"Static method '{owner.Name.Lexeme}.{call.Callee.Lexeme}' is not accessible", call.Callee.Line, call.Callee.Column);
+            throw new CompilerException($"Type '{owner.Name.Lexeme}' has no matching static method overload '{call.Callee.Lexeme}'", call.Callee.Line, call.Callee.Column);
+        }
+
+        call.ResolvedImplicitMethodOwnerTypeName = null;
+        call.ResolvedImplicitMethodKey = null;
+        call.ResolvedImplicitMethodReturnTypeRef = null;
+        call.ResolvedImplicitStaticMethodOwnerTypeName = owner.Name.Lexeme;
+        call.ResolvedImplicitStaticMethodKey = method!.DispatchKey;
+        call.ResolvedImplicitStaticMethodReturnTypeRef = method.ReturnTypeRef;
+        call.ResolvedDefaultArguments = ResolveDefaultArguments(method.DefaultValues, call.Arguments.Count);
+        call.ResolvedConstructorTypeName = null;
+        call.ResolvedConstructorKey = null;
+        call.ResolvedConstructorTypeRef = null;
+        for (int i = 0; i < call.Arguments.Count; i++)
+        {
+            RequireAssignable(
+                method.ParamTypes[i],
+                method.ParamTypeRefs[i],
+                argTypes[i].Symbol,
+                argTypes[i].Ref,
+                call.Callee.Line,
+                call.Callee.Column,
+                $"Argument {i} type mismatch for '{call.Callee.Lexeme}'",
+                call.Arguments[i]);
+        }
+        type = method.ReturnType;
+        return true;
     }
 
     private bool CheckStmt(Stmt stmt, TypeEnvironment env, TypeSymbol? currentReturn)
@@ -1517,6 +1666,12 @@ sealed class TypeChecker
                 fa.ResolvedFallibleErrorFieldTypeRef = null;
                 fa.ResolvedInterfaceFieldName = null;
                 fa.ResolvedInterfaceFieldTypeRef = null;
+                fa.ResolvedStaticFieldOwnerTypeName = null;
+                fa.ResolvedStaticFieldGlobalKey = null;
+                fa.ResolvedStaticFieldTypeRef = null;
+                if (TryResolveStaticFieldAccess(fa, env, out var staticFieldType))
+                    return staticFieldType;
+
                 var targetType = CheckExpr(fa.Target, env, currentReturn);
                 TryMarkImplicitOptionalUnwrapForPredicate(
                     fa.Target,
@@ -1606,6 +1761,16 @@ sealed class TypeChecker
                 if (TryResolveEnumMember(fset.Target, env, out _, out _))
                     throw new CompilerException("Enum members are constants and cannot be assigned", fset.Target.Name.Line, fset.Target.Name.Column);
 
+                if (TryResolveStaticFieldAccess(fset.Target, env, out var staticTargetType))
+                {
+                    var staticRhsType = CheckExpr(fset.Value, env, currentReturn);
+                    var staticRhsTypeRef = ResolveExprTypeRef(fset.Value, env);
+                    var explicitStaticField = ResolveFieldSignature(fset.Target, env, out _);
+                    EnsureCanAssignField(explicitStaticField, fset.Target.Name);
+                    RequireAssignable(staticTargetType, explicitStaticField.TypeRef, staticRhsType, staticRhsTypeRef, fset.Target.Name.Line, fset.Target.Name.Column, "Static field assignment type mismatch", fset.Value);
+                    return staticTargetType;
+                }
+
                 var targetType = CheckExpr(fset.Target.Target, env, currentReturn);
                 TryMarkImplicitOptionalUnwrapForPredicate(
                     fset.Target.Target,
@@ -1630,6 +1795,18 @@ sealed class TypeChecker
             }
             case MethodCallExpr mc:
             {
+                var argTypes = new List<(TypeSymbol Symbol, TypeRef? Ref)>(mc.Arguments.Count);
+                for (int i = 0; i < mc.Arguments.Count; i++)
+                {
+                    var argExpr = mc.Arguments[i];
+                    var argType = CheckExpr(argExpr, env, currentReturn);
+                    var argTypeRef = ResolveExprTypeRef(argExpr, env);
+                    argTypes.Add((argType, argTypeRef));
+                }
+
+                if (TryResolveStaticMethodCall(mc, env, argTypes, out var staticMethodType))
+                    return staticMethodType;
+
                 var targetType = CheckExpr(mc.Target, env, currentReturn);
                 TryMarkImplicitOptionalUnwrapForPredicate(
                     mc.Target,
@@ -1641,15 +1818,6 @@ sealed class TypeChecker
                 var targetTypeRef = unwrappedMethodTargetTypeRef ?? ResolveExprTypeRef(mc.Target, env);
                 if (targetTypeRef is null)
                     throw new CompilerException("Could not resolve method target type", mc.MethodName.Line, mc.MethodName.Column);
-
-                var argTypes = new List<(TypeSymbol Symbol, TypeRef? Ref)>(mc.Arguments.Count);
-                for (int i = 0; i < mc.Arguments.Count; i++)
-                {
-                    var argExpr = mc.Arguments[i];
-                    var argType = CheckExpr(argExpr, env, currentReturn);
-                    var argTypeRef = ResolveExprTypeRef(argExpr, env);
-                    argTypes.Add((argType, argTypeRef));
-                }
 
                 if (IsBuiltInCollection(targetType))
                     return CheckBuiltInCollectionMethodCall(mc, targetType, targetTypeRef, argTypes);
@@ -1696,6 +1864,8 @@ sealed class TypeChecker
                         throw new CompilerException($"Ambiguous method call '{targetTypeRef.Name}.{mc.MethodName.Lexeme}'", mc.MethodName.Line, mc.MethodName.Column);
                     if (TryResolveBestMethod(obj, mc.MethodName.Lexeme, argTypes, requireAccessible: false, out _, out _))
                         throw new CompilerException($"Method '{targetTypeRef.Name}.{mc.MethodName.Lexeme}' is not accessible", mc.MethodName.Line, mc.MethodName.Column);
+                    if (obj.StaticMethods.Values.Any(method => string.Equals(method.Name.Lexeme, mc.MethodName.Lexeme, StringComparison.Ordinal)))
+                        throw new CompilerException($"Static method '{targetTypeRef.Name}.{mc.MethodName.Lexeme}' must be accessed through the type", mc.MethodName.Line, mc.MethodName.Column);
                     throw new CompilerException($"Object '{targetTypeRef.Name}' has no matching method overload '{mc.MethodName.Lexeme}'", mc.MethodName.Line, mc.MethodName.Column);
                 }
 
@@ -1722,6 +1892,9 @@ sealed class TypeChecker
                 if (env.TryLookupForRead(v.Name, out var localType))
                 {
                     v.ResolvedImplicitFieldTypeRef = null;
+                    v.ResolvedImplicitStaticFieldOwnerTypeName = null;
+                    v.ResolvedImplicitStaticFieldGlobalKey = null;
+                    v.ResolvedImplicitStaticFieldTypeRef = null;
                     v.ResolvedGlobalTypeRef = null;
                     v.ResolvedGlobalKey = null;
                     v.ResolvedBuiltInConstant = false;
@@ -1730,14 +1903,31 @@ sealed class TypeChecker
                 if (TryResolveImplicitField(v.Name, env, out var fieldType, out var fieldTypeRef))
                 {
                     v.ResolvedImplicitFieldTypeRef = fieldTypeRef;
+                    v.ResolvedImplicitStaticFieldOwnerTypeName = null;
+                    v.ResolvedImplicitStaticFieldGlobalKey = null;
+                    v.ResolvedImplicitStaticFieldTypeRef = null;
                     v.ResolvedGlobalTypeRef = null;
                     v.ResolvedGlobalKey = null;
                     v.ResolvedBuiltInConstant = false;
                     return fieldType;
                 }
+                if (TryResolveImplicitStaticField(v.Name, env, out var readStaticField, out var readStaticOwner))
+                {
+                    v.ResolvedImplicitFieldTypeRef = null;
+                    v.ResolvedImplicitStaticFieldOwnerTypeName = readStaticOwner.Name.Lexeme;
+                    v.ResolvedImplicitStaticFieldGlobalKey = StaticFieldGlobalKey(readStaticOwner, readStaticField.Name.Lexeme);
+                    v.ResolvedImplicitStaticFieldTypeRef = readStaticField.TypeRef;
+                    v.ResolvedGlobalTypeRef = null;
+                    v.ResolvedGlobalKey = null;
+                    v.ResolvedBuiltInConstant = false;
+                    return MapType(readStaticField.TypeRef);
+                }
                 if (TryResolveSameModuleGlobal(v.Name, out var global))
                 {
                     v.ResolvedImplicitFieldTypeRef = null;
+                    v.ResolvedImplicitStaticFieldOwnerTypeName = null;
+                    v.ResolvedImplicitStaticFieldGlobalKey = null;
+                    v.ResolvedImplicitStaticFieldTypeRef = null;
                     v.ResolvedGlobalTypeRef = global.TypeRef;
                     v.ResolvedGlobalKey = GlobalKey(global.ModuleKey, global.Name.Lexeme);
                     v.ResolvedBuiltInConstant = false;
@@ -1746,13 +1936,16 @@ sealed class TypeChecker
                 if (TryResolveBuiltInConstant(v.Name, out var builtInTypeRef))
                 {
                     v.ResolvedImplicitFieldTypeRef = null;
+                    v.ResolvedImplicitStaticFieldOwnerTypeName = null;
+                    v.ResolvedImplicitStaticFieldGlobalKey = null;
+                    v.ResolvedImplicitStaticFieldTypeRef = null;
                     v.ResolvedGlobalTypeRef = builtInTypeRef;
                     v.ResolvedGlobalKey = null;
                     v.ResolvedBuiltInConstant = true;
                     return TypeSymbol.Real;
                 }
                 if (_objects.ContainsKey(v.Name.Lexeme))
-                    throw new CompilerException($"Type '{v.Name.Lexeme}' cannot be used as a value. Use '{v.Name.Lexeme}(...)' to construct a value, or '{v.Name.Lexeme}().method(...)' for zero-argument builder chaining.", v.Name.Line, v.Name.Column);
+                    throw new CompilerException($"Type '{v.Name.Lexeme}' cannot be used as a value. Use '{v.Name.Lexeme}(...)' to construct a value, '{v.Name.Lexeme}.member' for static members, or an instance for instance members.", v.Name.Line, v.Name.Column);
                 throw new CompilerException($"Undefined variable '{v.Name.Lexeme}'", v.Name.Line, v.Name.Column);
             case Assign a:
             {
@@ -1762,6 +1955,9 @@ sealed class TypeChecker
                 if (env.TryLookupForReadOrWrite(a.Name, out var lhsType, requireAssigned: false))
                 {
                     a.ResolvedImplicitFieldTypeRef = null;
+                    a.ResolvedImplicitStaticFieldOwnerTypeName = null;
+                    a.ResolvedImplicitStaticFieldGlobalKey = null;
+                    a.ResolvedImplicitStaticFieldTypeRef = null;
                     a.ResolvedGlobalTypeRef = null;
                     a.ResolvedGlobalKey = null;
                     env.EnsureCanAssign(a.Name);
@@ -1776,16 +1972,35 @@ sealed class TypeChecker
                     if (TryResolveImplicitFieldSignature(a.Name, env, out var implicitField))
                         EnsureCanAssignField(implicitField, a.Name);
                     a.ResolvedImplicitFieldTypeRef = implicitFieldTypeRef;
+                    a.ResolvedImplicitStaticFieldOwnerTypeName = null;
+                    a.ResolvedImplicitStaticFieldGlobalKey = null;
+                    a.ResolvedImplicitStaticFieldTypeRef = null;
                     a.ResolvedGlobalTypeRef = null;
                     a.ResolvedGlobalKey = null;
                     RequireAssignable(implicitFieldType, implicitFieldTypeRef, rhs, rhsTypeRef, a.Name.Line, a.Name.Column, "Assignment type mismatch", a.Value);
                     return implicitFieldType;
                 }
 
+                if (TryResolveImplicitStaticField(a.Name, env, out var assignStaticField, out var assignStaticOwner))
+                {
+                    EnsureCanAssignField(assignStaticField, a.Name);
+                    a.ResolvedImplicitFieldTypeRef = null;
+                    a.ResolvedImplicitStaticFieldOwnerTypeName = assignStaticOwner.Name.Lexeme;
+                    a.ResolvedImplicitStaticFieldGlobalKey = StaticFieldGlobalKey(assignStaticOwner, assignStaticField.Name.Lexeme);
+                    a.ResolvedImplicitStaticFieldTypeRef = assignStaticField.TypeRef;
+                    a.ResolvedGlobalTypeRef = null;
+                    a.ResolvedGlobalKey = null;
+                    RequireAssignable(MapType(assignStaticField.TypeRef), assignStaticField.TypeRef, rhs, rhsTypeRef, a.Name.Line, a.Name.Column, "Assignment type mismatch", a.Value);
+                    return MapType(assignStaticField.TypeRef);
+                }
+
                 if (TryResolveSameModuleGlobal(a.Name, out var globalSymbol))
                 {
                     EnsureCanAssignGlobal(globalSymbol, a.Name);
                     a.ResolvedImplicitFieldTypeRef = null;
+                    a.ResolvedImplicitStaticFieldOwnerTypeName = null;
+                    a.ResolvedImplicitStaticFieldGlobalKey = null;
+                    a.ResolvedImplicitStaticFieldTypeRef = null;
                     a.ResolvedGlobalTypeRef = globalSymbol.TypeRef;
                     a.ResolvedGlobalKey = GlobalKey(globalSymbol.ModuleKey, globalSymbol.Name.Lexeme);
                     RequireAssignable(globalSymbol.Type, globalSymbol.TypeRef, rhs, rhsTypeRef, a.Name.Line, a.Name.Column, "Assignment type mismatch", a.Value);
@@ -1844,6 +2059,9 @@ sealed class TypeChecker
                     c.ResolvedImplicitMethodOwnerTypeName = _currentObjectTypeRef.Name;
                     c.ResolvedImplicitMethodKey = method!.DispatchKey;
                     c.ResolvedImplicitMethodReturnTypeRef = method.ReturnTypeRef;
+                    c.ResolvedImplicitStaticMethodOwnerTypeName = null;
+                    c.ResolvedImplicitStaticMethodKey = null;
+                    c.ResolvedImplicitStaticMethodReturnTypeRef = null;
                     c.ResolvedDefaultArguments = ResolveDefaultArguments(method.DefaultValues, c.Arguments.Count);
                     c.ResolvedConstructorTypeName = null;
                     c.ResolvedConstructorKey = null;
@@ -1863,6 +2081,9 @@ sealed class TypeChecker
                     return method.ReturnType;
                 }
 
+                if (TryResolveImplicitStaticMethodCall(c, argTypes, out var implicitStaticMethodType))
+                    return implicitStaticMethodType;
+
                 if (!TryGetFunctionSignature(c.Callee.Lexeme, out var sig))
                 {
                     if (_objects.TryGetValue(c.Callee.Lexeme, out var constructorType))
@@ -1874,6 +2095,9 @@ sealed class TypeChecker
                                 c.ResolvedImplicitMethodOwnerTypeName = null;
                                 c.ResolvedImplicitMethodKey = null;
                                 c.ResolvedImplicitMethodReturnTypeRef = null;
+                                c.ResolvedImplicitStaticMethodOwnerTypeName = null;
+                                c.ResolvedImplicitStaticMethodKey = null;
+                                c.ResolvedImplicitStaticMethodReturnTypeRef = null;
                                 c.ResolvedDefaultArguments = [];
                                 c.ResolvedConstructorTypeName = constructorType.Name.Lexeme;
                                 c.ResolvedConstructorKey = null;
@@ -1890,6 +2114,9 @@ sealed class TypeChecker
                         c.ResolvedImplicitMethodOwnerTypeName = null;
                         c.ResolvedImplicitMethodKey = null;
                         c.ResolvedImplicitMethodReturnTypeRef = null;
+                        c.ResolvedImplicitStaticMethodOwnerTypeName = null;
+                        c.ResolvedImplicitStaticMethodKey = null;
+                        c.ResolvedImplicitStaticMethodReturnTypeRef = null;
                         c.ResolvedDefaultArguments = ResolveDefaultArguments(ctor!.DefaultValues, c.Arguments.Count);
                         c.ResolvedConstructorTypeName = constructorType.Name.Lexeme;
                         c.ResolvedConstructorKey = ctor.DispatchKey;
@@ -1930,6 +2157,9 @@ sealed class TypeChecker
                 c.ResolvedImplicitMethodOwnerTypeName = null;
                 c.ResolvedImplicitMethodKey = null;
                 c.ResolvedImplicitMethodReturnTypeRef = null;
+                c.ResolvedImplicitStaticMethodOwnerTypeName = null;
+                c.ResolvedImplicitStaticMethodKey = null;
+                c.ResolvedImplicitStaticMethodReturnTypeRef = null;
                 c.ResolvedDefaultArguments = ResolveDefaultArguments(sig.DefaultValues, c.Arguments.Count);
                 c.ResolvedConstructorTypeName = null;
                 c.ResolvedConstructorKey = null;
@@ -2550,12 +2780,31 @@ sealed class TypeChecker
         bool requireAccessible,
         out MethodSignature? best,
         out bool ambiguous)
+        => TryResolveBestMethod(obj, obj.Methods, methodName, args, requireAccessible, out best, out ambiguous);
+
+    private bool TryResolveBestStaticMethod(
+        ObjectSymbol obj,
+        string methodName,
+        IReadOnlyList<(TypeSymbol Symbol, TypeRef? Ref)> args,
+        bool requireAccessible,
+        out MethodSignature? best,
+        out bool ambiguous)
+        => TryResolveBestMethod(obj, obj.StaticMethods, methodName, args, requireAccessible, out best, out ambiguous);
+
+    private bool TryResolveBestMethod(
+        ObjectSymbol obj,
+        IReadOnlyDictionary<string, MethodSignature> methods,
+        string methodName,
+        IReadOnlyList<(TypeSymbol Symbol, TypeRef? Ref)> args,
+        bool requireAccessible,
+        out MethodSignature? best,
+        out bool ambiguous)
     {
         best = null;
         ambiguous = false;
         int bestCost = int.MaxValue;
 
-        foreach (var method in obj.Methods.Values.Where(m => string.Equals(m.Name.Lexeme, methodName, StringComparison.Ordinal)))
+        foreach (var method in methods.Values.Where(m => string.Equals(m.Name.Lexeme, methodName, StringComparison.Ordinal)))
         {
             if (requireAccessible && !IsMemberAccessible(obj, method.Visibility))
                 continue;
@@ -2902,6 +3151,18 @@ sealed class TypeChecker
 
     private FieldSignature ResolveFieldSignature(FieldAccessExpr fieldAccess, TypeEnvironment env, out ObjectSymbol ownerSymbol)
     {
+        if (fieldAccess.ResolvesToStaticField)
+        {
+            if (fieldAccess.ResolvedStaticFieldOwnerTypeName is null ||
+                !_objects.TryGetValue(fieldAccess.ResolvedStaticFieldOwnerTypeName, out ownerSymbol!) ||
+                !ownerSymbol.StaticFields.TryGetValue(fieldAccess.Name.Lexeme, out var staticField))
+            {
+                throw new CompilerException("Could not resolve static field", fieldAccess.Name.Line, fieldAccess.Name.Column);
+            }
+
+            return staticField;
+        }
+
         var targetType = fieldAccess.Target.ResolvedImplicitOptionalUnwrapTypeRef ?? ResolveExprTypeRef(fieldAccess.Target, env);
         if (targetType is null)
             throw new CompilerException("Could not resolve field target type", fieldAccess.Name.Line, fieldAccess.Name.Column);
@@ -2922,10 +3183,104 @@ sealed class TypeChecker
             throw new CompilerException($"Object '{targetType.Name}' has no field '{fieldAccess.Name.Lexeme}'", fieldAccess.Name.Line, fieldAccess.Name.Column);
 
         if (!ownerSymbol.Fields.TryGetValue(fieldAccess.Name.Lexeme, out var field))
+        {
+            if (ownerSymbol.StaticFields.ContainsKey(fieldAccess.Name.Lexeme))
+                throw new CompilerException($"Static field '{targetType.Name}.{fieldAccess.Name.Lexeme}' must be accessed through the type", fieldAccess.Name.Line, fieldAccess.Name.Column);
             throw new CompilerException($"Object '{targetType.Name}' has no field '{fieldAccess.Name.Lexeme}'", fieldAccess.Name.Line, fieldAccess.Name.Column);
+        }
 
         RequireMemberAccessible(ownerSymbol, field.Visibility, fieldAccess.Name, "field", field.Name.Lexeme);
         return field;
+    }
+
+    private bool TryResolveStaticFieldAccess(FieldAccessExpr fieldAccess, TypeEnvironment env, out TypeSymbol type)
+    {
+        type = TypeSymbol.Unknown;
+        if (fieldAccess.Target is not Variable variableTarget)
+            return false;
+        if (env.Contains(variableTarget.Name.Lexeme))
+            return false;
+
+        if (!_objects.TryGetValue(variableTarget.Name.Lexeme, out var owner))
+            return false;
+
+        if (owner.StaticFields.TryGetValue(fieldAccess.Name.Lexeme, out var field))
+        {
+            RequireMemberAccessible(owner, field.Visibility, fieldAccess.Name, "static field", field.Name.Lexeme);
+            fieldAccess.ResolvedStaticFieldOwnerTypeName = owner.Name.Lexeme;
+            fieldAccess.ResolvedStaticFieldGlobalKey = StaticFieldGlobalKey(owner, field.Name.Lexeme);
+            fieldAccess.ResolvedStaticFieldTypeRef = field.TypeRef;
+            type = MapType(field.TypeRef);
+            return true;
+        }
+
+        if (owner.Fields.ContainsKey(fieldAccess.Name.Lexeme))
+            throw new CompilerException($"Instance field '{owner.Name.Lexeme}.{fieldAccess.Name.Lexeme}' requires an instance", fieldAccess.Name.Line, fieldAccess.Name.Column);
+        if (owner.StaticMethods.Values.Any(method => string.Equals(method.Name.Lexeme, fieldAccess.Name.Lexeme, StringComparison.Ordinal)))
+            throw new CompilerException($"Static method '{owner.Name.Lexeme}.{fieldAccess.Name.Lexeme}' must be called", fieldAccess.Name.Line, fieldAccess.Name.Column);
+
+        throw new CompilerException($"Type '{owner.Name.Lexeme}' has no static field '{fieldAccess.Name.Lexeme}'", fieldAccess.Name.Line, fieldAccess.Name.Column);
+    }
+
+    private bool TryResolveStaticMethodCall(
+        MethodCallExpr methodCall,
+        TypeEnvironment env,
+        IReadOnlyList<(TypeSymbol Symbol, TypeRef? Ref)> argTypes,
+        out TypeSymbol type)
+    {
+        type = TypeSymbol.Unknown;
+        methodCall.ResolvedStaticMethodOwnerTypeName = null;
+        methodCall.ResolvedStaticMethodKey = null;
+
+        if (methodCall.Target is not Variable variableTarget)
+            return false;
+        if (env.Contains(variableTarget.Name.Lexeme))
+            return false;
+        if (!_objects.TryGetValue(variableTarget.Name.Lexeme, out var owner))
+            return false;
+
+        if (!owner.StaticMethods.Values.Any(method => string.Equals(method.Name.Lexeme, methodCall.MethodName.Lexeme, StringComparison.Ordinal)))
+        {
+            if (owner.Methods.Values.Any(method => string.Equals(method.Name.Lexeme, methodCall.MethodName.Lexeme, StringComparison.Ordinal)))
+                throw new CompilerException($"Instance method '{owner.Name.Lexeme}.{methodCall.MethodName.Lexeme}' requires an instance", methodCall.MethodName.Line, methodCall.MethodName.Column);
+            if (owner.StaticFields.ContainsKey(methodCall.MethodName.Lexeme))
+                throw new CompilerException($"Static field '{owner.Name.Lexeme}.{methodCall.MethodName.Lexeme}' is not callable", methodCall.MethodName.Line, methodCall.MethodName.Column);
+
+            throw new CompilerException($"Type '{owner.Name.Lexeme}' has no static method '{methodCall.MethodName.Lexeme}'", methodCall.MethodName.Line, methodCall.MethodName.Column);
+        }
+
+        if (!TryResolveBestStaticMethod(owner, methodCall.MethodName.Lexeme, argTypes, requireAccessible: true, out var method, out bool ambiguous))
+        {
+            if (ambiguous)
+                throw new CompilerException($"Ambiguous static method call '{owner.Name.Lexeme}.{methodCall.MethodName.Lexeme}'", methodCall.MethodName.Line, methodCall.MethodName.Column);
+            if (TryResolveBestStaticMethod(owner, methodCall.MethodName.Lexeme, argTypes, requireAccessible: false, out _, out _))
+                throw new CompilerException($"Static method '{owner.Name.Lexeme}.{methodCall.MethodName.Lexeme}' is not accessible", methodCall.MethodName.Line, methodCall.MethodName.Column);
+            throw new CompilerException($"Type '{owner.Name.Lexeme}' has no matching static method overload '{methodCall.MethodName.Lexeme}'", methodCall.MethodName.Line, methodCall.MethodName.Column);
+        }
+
+        methodCall.ResolvedBuiltInCollectionMethodName = null;
+        methodCall.ResolvedMethodKey = null;
+        methodCall.ResolvedInterfaceName = null;
+        methodCall.ResolvedInterfaceMethodKey = null;
+        methodCall.ResolvedStaticMethodOwnerTypeName = owner.Name.Lexeme;
+        methodCall.ResolvedStaticMethodKey = method!.DispatchKey;
+        methodCall.ResolvedReturnTypeRef = method.ReturnTypeRef;
+        methodCall.ResolvedDefaultArguments = ResolveDefaultArguments(method.DefaultValues, methodCall.Arguments.Count);
+        for (int i = 0; i < methodCall.Arguments.Count; i++)
+        {
+            RequireAssignable(
+                method.ParamTypes[i],
+                method.ParamTypeRefs[i],
+                argTypes[i].Symbol,
+                argTypes[i].Ref,
+                methodCall.MethodName.Line,
+                methodCall.MethodName.Column,
+                $"Argument {i} type mismatch for '{methodCall.MethodName.Lexeme}'",
+                methodCall.Arguments[i]);
+        }
+
+        type = method.ReturnType;
+        return true;
     }
 
     private static Dictionary<string, string> BuildImpliedEngineFunctionNamespaces()
@@ -3070,6 +3425,8 @@ sealed class TypeChecker
             case Variable v:
                 if (v.ResolvedImplicitFieldTypeRef is not null)
                     return v.ResolvedImplicitFieldTypeRef;
+                if (v.ResolvedImplicitStaticFieldTypeRef is not null)
+                    return v.ResolvedImplicitStaticFieldTypeRef;
                 if (v.ResolvedGlobalTypeRef is not null)
                     return v.ResolvedGlobalTypeRef;
                 if (v.ResolvedBuiltInConstant)
@@ -3088,6 +3445,8 @@ sealed class TypeChecker
                     return c.ResolvedConstructorTypeRef;
                 if (c.ResolvedImplicitMethodReturnTypeRef is not null)
                     return c.ResolvedImplicitMethodReturnTypeRef;
+                if (c.ResolvedImplicitStaticMethodReturnTypeRef is not null)
+                    return c.ResolvedImplicitStaticMethodReturnTypeRef;
                 if (TryGetFunctionSignature(c.Callee.Lexeme, out var sig))
                     return sig.ReturnTypeRef;
                 return null;
@@ -3096,6 +3455,8 @@ sealed class TypeChecker
                     return fa.ResolvedFallibleErrorFieldTypeRef;
                 if (fa.ResolvedEnumTypeRef is not null)
                     return fa.ResolvedEnumTypeRef;
+                if (fa.ResolvedStaticFieldTypeRef is not null)
+                    return fa.ResolvedStaticFieldTypeRef;
                 return ResolveFieldSignature(fa, env, out _).TypeRef;
             case MethodCallExpr mc:
                 return mc.ResolvedReturnTypeRef;
@@ -3108,6 +3469,8 @@ sealed class TypeChecker
             case Assign assignment:
                 if (assignment.ResolvedImplicitFieldTypeRef is not null)
                     return assignment.ResolvedImplicitFieldTypeRef;
+                if (assignment.ResolvedImplicitStaticFieldTypeRef is not null)
+                    return assignment.ResolvedImplicitStaticFieldTypeRef;
                 if (assignment.ResolvedGlobalTypeRef is not null)
                     return assignment.ResolvedGlobalTypeRef;
                 if (env.TryGetDeclaredType(assignment.Name, out var assignedType))
@@ -3158,6 +3521,9 @@ sealed class TypeChecker
                 if (env.TryLookupForRead(variable.Name, out var variableType))
                 {
                     variable.ResolvedImplicitFieldTypeRef = null;
+                    variable.ResolvedImplicitStaticFieldOwnerTypeName = null;
+                    variable.ResolvedImplicitStaticFieldGlobalKey = null;
+                    variable.ResolvedImplicitStaticFieldTypeRef = null;
                     variable.ResolvedGlobalTypeRef = null;
                     variable.ResolvedGlobalKey = null;
                     variable.ResolvedBuiltInConstant = false;
@@ -3170,16 +3536,35 @@ sealed class TypeChecker
                     if (TryResolveImplicitFieldSignature(variable.Name, env, out var implicitField))
                         EnsureCanAssignField(implicitField, variable.Name);
                     variable.ResolvedImplicitFieldTypeRef = implicitFieldTypeRef;
+                    variable.ResolvedImplicitStaticFieldOwnerTypeName = null;
+                    variable.ResolvedImplicitStaticFieldGlobalKey = null;
+                    variable.ResolvedImplicitStaticFieldTypeRef = null;
                     variable.ResolvedGlobalTypeRef = null;
                     variable.ResolvedGlobalKey = null;
                     variable.ResolvedBuiltInConstant = false;
                     return (implicitFieldType, implicitFieldTypeRef, variable.Name);
                 }
 
+                if (TryResolveImplicitStaticField(variable.Name, env, out var compoundStaticField, out var compoundStaticOwner))
+                {
+                    EnsureCanAssignField(compoundStaticField, variable.Name);
+                    variable.ResolvedImplicitFieldTypeRef = null;
+                    variable.ResolvedImplicitStaticFieldOwnerTypeName = compoundStaticOwner.Name.Lexeme;
+                    variable.ResolvedImplicitStaticFieldGlobalKey = StaticFieldGlobalKey(compoundStaticOwner, compoundStaticField.Name.Lexeme);
+                    variable.ResolvedImplicitStaticFieldTypeRef = compoundStaticField.TypeRef;
+                    variable.ResolvedGlobalTypeRef = null;
+                    variable.ResolvedGlobalKey = null;
+                    variable.ResolvedBuiltInConstant = false;
+                    return (MapType(compoundStaticField.TypeRef), compoundStaticField.TypeRef, variable.Name);
+                }
+
                 if (TryResolveSameModuleGlobal(variable.Name, out var global))
                 {
                     EnsureCanAssignGlobal(global, variable.Name);
                     variable.ResolvedImplicitFieldTypeRef = null;
+                    variable.ResolvedImplicitStaticFieldOwnerTypeName = null;
+                    variable.ResolvedImplicitStaticFieldGlobalKey = null;
+                    variable.ResolvedImplicitStaticFieldTypeRef = null;
                     variable.ResolvedGlobalTypeRef = global.TypeRef;
                     variable.ResolvedGlobalKey = GlobalKey(global.ModuleKey, global.Name.Lexeme);
                     variable.ResolvedBuiltInConstant = false;
@@ -3194,6 +3579,14 @@ sealed class TypeChecker
             case FieldAccessExpr fieldAccess:
                 if (TryResolveEnumMember(fieldAccess, env, out _, out _))
                     throw new CompilerException("Enum members are constants and cannot be assigned", fieldAccess.Name.Line, fieldAccess.Name.Column);
+
+                if (TryResolveStaticFieldAccess(fieldAccess, env, out var staticFieldType))
+                {
+                    var explicitCompoundStaticField = ResolveFieldSignature(fieldAccess, env, out _);
+                    EnsureCanAssignField(explicitCompoundStaticField, fieldAccess.Name);
+                    _semanticModel.Record(fieldAccess, staticFieldType, explicitCompoundStaticField.TypeRef);
+                    return (staticFieldType, explicitCompoundStaticField.TypeRef, fieldAccess.Name);
+                }
 
             {
                 var targetType = CheckExpr(fieldAccess.Target, env, currentReturn);
@@ -3832,7 +4225,8 @@ sealed class TypeChecker
         TypeRef TypeRef,
         DeclarationVisibility Visibility,
         bool IsConstant,
-        FieldHashRole HashRole);
+        FieldHashRole HashRole,
+        bool IsStatic);
     private sealed record GlobalSymbol(
         Token Name,
         TypeSymbol Type,
@@ -3857,7 +4251,8 @@ sealed class TypeChecker
         string DispatchKey,
         Block Body,
         IReadOnlyList<Parameter> Parameters,
-        DeclarationVisibility Visibility);
+        DeclarationVisibility Visibility,
+        bool IsStatic);
     private sealed record InterfaceMethodSignature(
         Token Name,
         TypeRef ReturnTypeRef,
@@ -3878,8 +4273,10 @@ sealed class TypeChecker
         string? PackageName,
         string? ModulePath,
         Dictionary<string, FieldSignature> Fields,
+        Dictionary<string, FieldSignature> StaticFields,
         List<ConstructorSignature> Constructors,
-        Dictionary<string, MethodSignature> Methods);
+        Dictionary<string, MethodSignature> Methods,
+        Dictionary<string, MethodSignature> StaticMethods);
 
     private bool TryResolveEnumMember(FieldAccessExpr fieldAccess, TypeEnvironment env, out TypeRef? enumTypeRef, out int value)
     {

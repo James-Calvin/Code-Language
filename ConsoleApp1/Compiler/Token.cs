@@ -30,6 +30,7 @@ enum TokenType
     Return,
     Print,
     Function,
+    Static,
     Constructor,
     Implement, Via,
     Import, Export, From, As,

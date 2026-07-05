@@ -2557,6 +2557,7 @@ static class ModuleCompiler
                     f.Initializer is null ? null : RewriteExpr(f.Initializer, typeAliases, namespaceAliases),
                     f.Visibility,
                     f.IsConstant,
+                    f.IsStatic,
                     f.HashRole)).ToList(),
                 obj.Constructors.Select(c => new ConstructorDecl(
                     c.Keyword,
@@ -2568,7 +2569,8 @@ static class ModuleCompiler
                     m.ReturnType is null ? null : RewriteTypeRef(m.ReturnType, typeAliases),
                     m.Parameters.Select(p => RewriteParameter(p, typeAliases, namespaceAliases)).ToList(),
                     (Block)RewriteStmt(m.Body, typeAliases, namespaceAliases),
-                    m.Visibility)).ToList(),
+                    m.Visibility,
+                    m.IsStatic)).ToList(),
                 obj.InlineInterfaceMethods.Select(m => new InlineImplementMethodDecl(
                     RewriteTypeToken(m.InterfaceName, typeAliases),
                     m.MethodName,
@@ -2583,6 +2585,7 @@ static class ModuleCompiler
                     null,
                     f.Visibility,
                     f.IsConstant,
+                    f.IsStatic,
                     f.HashRole)).ToList(),
                 iface.Methods.Select(m => new InterfaceMethodDecl(
                     m.Name,
@@ -2655,15 +2658,36 @@ static class ModuleCompiler
             FieldSetExpr f => new FieldSetExpr((FieldAccessExpr)RewriteExpr(f.Target, typeAliases, namespaceAliases), RewriteExpr(f.Value, typeAliases, namespaceAliases)),
             NewObjectExpr no => new NewObjectExpr(RewriteTypeToken(no.TypeName, typeAliases), no.Arguments.Select(a => RewriteExpr(a, typeAliases, namespaceAliases)).ToList()),
             ArraySetExpr a => new ArraySetExpr((ArrayIndexExpr)RewriteExpr(a.Target, typeAliases, namespaceAliases), RewriteExpr(a.Value, typeAliases, namespaceAliases)),
-            Variable v => RewriteVariableExpr(v, namespaceAliases),
+            Variable v => RewriteVariableExpr(v, typeAliases, namespaceAliases),
             Assign a => RewriteAssignExpr(a, typeAliases, namespaceAliases),
             CompoundAssignExpr c => new CompoundAssignExpr(RewriteExpr(c.Target, typeAliases, namespaceAliases), c.Operator, RewriteExpr(c.Value, typeAliases, namespaceAliases)),
-            Call c => new Call(c.Callee, c.Arguments.Select(a => RewriteExpr(a, typeAliases, namespaceAliases)).ToList()),
+            Call c => new Call(c.Callee, c.Arguments.Select(a => RewriteExpr(a, typeAliases, namespaceAliases)).ToList())
+            {
+                ResolvedImplicitMethodOwnerTypeName = c.ResolvedImplicitMethodOwnerTypeName is null
+                    ? null
+                    : (typeAliases.TryGetValue(c.ResolvedImplicitMethodOwnerTypeName, out var implicitOwner) ? implicitOwner : c.ResolvedImplicitMethodOwnerTypeName),
+                ResolvedImplicitMethodKey = c.ResolvedImplicitMethodKey,
+                ResolvedImplicitMethodReturnTypeRef = c.ResolvedImplicitMethodReturnTypeRef is null ? null : RewriteTypeRef(c.ResolvedImplicitMethodReturnTypeRef, typeAliases),
+                ResolvedImplicitStaticMethodOwnerTypeName = c.ResolvedImplicitStaticMethodOwnerTypeName is null
+                    ? null
+                    : (typeAliases.TryGetValue(c.ResolvedImplicitStaticMethodOwnerTypeName, out var implicitStaticOwner) ? implicitStaticOwner : c.ResolvedImplicitStaticMethodOwnerTypeName),
+                ResolvedImplicitStaticMethodKey = c.ResolvedImplicitStaticMethodKey,
+                ResolvedImplicitStaticMethodReturnTypeRef = c.ResolvedImplicitStaticMethodReturnTypeRef is null ? null : RewriteTypeRef(c.ResolvedImplicitStaticMethodReturnTypeRef, typeAliases),
+                ResolvedDefaultArguments = c.ResolvedDefaultArguments.Select(a => RewriteExpr(a, typeAliases, namespaceAliases)).ToList(),
+                ResolvedConstructorTypeName = c.ResolvedConstructorTypeName is null
+                    ? null
+                    : (typeAliases.TryGetValue(c.ResolvedConstructorTypeName, out var ctorOwner) ? ctorOwner : c.ResolvedConstructorTypeName),
+                ResolvedConstructorKey = c.ResolvedConstructorKey,
+                ResolvedConstructorTypeRef = c.ResolvedConstructorTypeRef is null ? null : RewriteTypeRef(c.ResolvedConstructorTypeRef, typeAliases)
+            },
             MethodCallExpr m => RewriteMethodCallExpr(m, typeAliases, namespaceAliases),
             _ => expr
         };
 
-        private static Variable RewriteVariableExpr(Variable variable, IReadOnlyDictionary<string, Dictionary<string, string>> namespaceAliases)
+        private static Variable RewriteVariableExpr(
+            Variable variable,
+            IReadOnlyDictionary<string, string> typeAliases,
+            IReadOnlyDictionary<string, Dictionary<string, string>> namespaceAliases)
         {
             if (namespaceAliases.ContainsKey(variable.Name.Lexeme))
             {
@@ -2673,7 +2697,18 @@ static class ModuleCompiler
                     variable.Name.Column);
             }
 
-            return variable;
+            return new Variable(variable.Name)
+            {
+                ResolvedImplicitFieldTypeRef = variable.ResolvedImplicitFieldTypeRef is null ? null : RewriteTypeRef(variable.ResolvedImplicitFieldTypeRef, typeAliases),
+                ResolvedImplicitStaticFieldOwnerTypeName = variable.ResolvedImplicitStaticFieldOwnerTypeName is null
+                    ? null
+                    : (typeAliases.TryGetValue(variable.ResolvedImplicitStaticFieldOwnerTypeName, out var staticOwner) ? staticOwner : variable.ResolvedImplicitStaticFieldOwnerTypeName),
+                ResolvedImplicitStaticFieldGlobalKey = variable.ResolvedImplicitStaticFieldGlobalKey,
+                ResolvedImplicitStaticFieldTypeRef = variable.ResolvedImplicitStaticFieldTypeRef is null ? null : RewriteTypeRef(variable.ResolvedImplicitStaticFieldTypeRef, typeAliases),
+                ResolvedGlobalTypeRef = variable.ResolvedGlobalTypeRef is null ? null : RewriteTypeRef(variable.ResolvedGlobalTypeRef, typeAliases),
+                ResolvedGlobalKey = variable.ResolvedGlobalKey,
+                ResolvedBuiltInConstant = variable.ResolvedBuiltInConstant
+            };
         }
 
         private static Assign RewriteAssignExpr(
@@ -2689,7 +2724,17 @@ static class ModuleCompiler
                     assign.Name.Column);
             }
 
-            return new Assign(assign.Name, RewriteExpr(assign.Value, typeAliases, namespaceAliases));
+            return new Assign(assign.Name, RewriteExpr(assign.Value, typeAliases, namespaceAliases))
+            {
+                ResolvedImplicitFieldTypeRef = assign.ResolvedImplicitFieldTypeRef is null ? null : RewriteTypeRef(assign.ResolvedImplicitFieldTypeRef, typeAliases),
+                ResolvedImplicitStaticFieldOwnerTypeName = assign.ResolvedImplicitStaticFieldOwnerTypeName is null
+                    ? null
+                    : (typeAliases.TryGetValue(assign.ResolvedImplicitStaticFieldOwnerTypeName, out var staticOwner) ? staticOwner : assign.ResolvedImplicitStaticFieldOwnerTypeName),
+                ResolvedImplicitStaticFieldGlobalKey = assign.ResolvedImplicitStaticFieldGlobalKey,
+                ResolvedImplicitStaticFieldTypeRef = assign.ResolvedImplicitStaticFieldTypeRef is null ? null : RewriteTypeRef(assign.ResolvedImplicitStaticFieldTypeRef, typeAliases),
+                ResolvedGlobalTypeRef = assign.ResolvedGlobalTypeRef is null ? null : RewriteTypeRef(assign.ResolvedGlobalTypeRef, typeAliases),
+                ResolvedGlobalKey = assign.ResolvedGlobalKey
+            };
         }
 
         private static Expr RewriteFieldAccessExpr(
@@ -2720,7 +2765,12 @@ static class ModuleCompiler
                 ResolvedEnumValue = fieldAccess.ResolvedEnumValue,
                 ResolvedFallibleErrorFieldTypeRef = fieldAccess.ResolvedFallibleErrorFieldTypeRef is null ? null : RewriteTypeRef(fieldAccess.ResolvedFallibleErrorFieldTypeRef, typeAliases),
                 ResolvedInterfaceFieldName = fieldAccess.ResolvedInterfaceFieldName,
-                ResolvedInterfaceFieldTypeRef = fieldAccess.ResolvedInterfaceFieldTypeRef is null ? null : RewriteTypeRef(fieldAccess.ResolvedInterfaceFieldTypeRef, typeAliases)
+                ResolvedInterfaceFieldTypeRef = fieldAccess.ResolvedInterfaceFieldTypeRef is null ? null : RewriteTypeRef(fieldAccess.ResolvedInterfaceFieldTypeRef, typeAliases),
+                ResolvedStaticFieldOwnerTypeName = fieldAccess.ResolvedStaticFieldOwnerTypeName is null
+                    ? null
+                    : (typeAliases.TryGetValue(fieldAccess.ResolvedStaticFieldOwnerTypeName, out var staticOwner) ? staticOwner : fieldAccess.ResolvedStaticFieldOwnerTypeName),
+                ResolvedStaticFieldGlobalKey = fieldAccess.ResolvedStaticFieldGlobalKey,
+                ResolvedStaticFieldTypeRef = fieldAccess.ResolvedStaticFieldTypeRef is null ? null : RewriteTypeRef(fieldAccess.ResolvedStaticFieldTypeRef, typeAliases)
             };
         }
 
@@ -2744,8 +2794,16 @@ static class ModuleCompiler
                 return new Call(callee, methodCall.Arguments.Select(a => RewriteExpr(a, typeAliases, namespaceAliases)).ToList());
             }
 
+            Expr rewrittenTarget = RewriteExpr(methodCall.Target, typeAliases, namespaceAliases);
+            if (methodCall.Target is Variable typeAliasVariable &&
+                typeAliases.TryGetValue(typeAliasVariable.Name.Lexeme, out var mappedTypeName))
+            {
+                var mappedToken = new Token(TokenType.Identifier, mappedTypeName, null, typeAliasVariable.Name.Line, typeAliasVariable.Name.Column);
+                rewrittenTarget = new Variable(mappedToken);
+            }
+
             return new MethodCallExpr(
-                RewriteExpr(methodCall.Target, typeAliases, namespaceAliases),
+                rewrittenTarget,
                 methodCall.MethodName,
                 methodCall.Arguments.Select(a => RewriteExpr(a, typeAliases, namespaceAliases)).ToList())
             {
@@ -2753,6 +2811,10 @@ static class ModuleCompiler
                 ResolvedMethodKey = methodCall.ResolvedMethodKey,
                 ResolvedInterfaceName = methodCall.ResolvedInterfaceName,
                 ResolvedInterfaceMethodKey = methodCall.ResolvedInterfaceMethodKey,
+                ResolvedStaticMethodOwnerTypeName = methodCall.ResolvedStaticMethodOwnerTypeName is null
+                    ? null
+                    : (typeAliases.TryGetValue(methodCall.ResolvedStaticMethodOwnerTypeName, out var staticOwner) ? staticOwner : methodCall.ResolvedStaticMethodOwnerTypeName),
+                ResolvedStaticMethodKey = methodCall.ResolvedStaticMethodKey,
                 ResolvedReturnTypeRef = methodCall.ResolvedReturnTypeRef is null ? null : RewriteTypeRef(methodCall.ResolvedReturnTypeRef, typeAliases)
             };
         }

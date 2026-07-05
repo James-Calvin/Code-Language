@@ -12,6 +12,9 @@ The grammar is intentionally lexical. It highlights source structure, but it
 does not type-check, resolve imports, report diagnostics, format code, or
 provide completions.
 
+The keyword/modifier coverage includes current language syntax such as
+`static public function`, `static private` fields, and `static constant` fields.
+
 ## VS Code
 
 The VS Code wrapper lives in `vscode/`. Release builds produce:

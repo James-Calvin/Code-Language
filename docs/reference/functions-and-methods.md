@@ -148,11 +148,13 @@ Method behavior:
 - Inside an object or record method, unshadowed field names resolve to `this.field`.
 - Bare method calls try the current object before top-level functions.
 - If a local or parameter shadows a field, use `this.field`.
+- Static methods are called as `TypeName.method(...)` outside the declaring type, do not receive `this`, and may use bare same-type static fields/methods.
 
 Common mistakes:
 
 - A method call target must be an object, record, interface, or built-in collection.
 - Private or package members can fail access checks even when the type is visible.
+- Static methods cannot read instance fields through bare names; construct or receive an instance when instance state is needed.
 
 ## Constructors
 
@@ -178,7 +180,7 @@ Constructor rules:
 - Constructor overloads resolve by parameter types.
 - Constructors cannot return.
 - `TypeName(args...)` can be used as shorthand for `new TypeName(args...)` when a normal function call does not exist.
-- `TypeName.method(...)` is not implicit construction; use `TypeName().method(...)` for zero-argument builder chains.
+- `TypeName.method(...)` is static member access, not implicit construction; use `TypeName().method(...)` for zero-argument builder instance chains.
 - Object and record declarations may use primary constructor syntax, for example `object Builder(string name) { string name; }`.
 
 Common mistakes:

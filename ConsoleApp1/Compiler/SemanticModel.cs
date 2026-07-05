@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 
 namespace ConsoleApp1.Compiler;
 
@@ -52,9 +53,10 @@ sealed class TypedProgram
         {
             if (statement is not ObjectDecl type)
                 continue;
-            var fields = new List<TypedFieldLayout>(type.Fields.Count);
-            for (int index = 0; index < type.Fields.Count; index++)
-                fields.Add(new TypedFieldLayout(type.Fields[index].Name.Lexeme, type.Fields[index].Type, index, type.Fields[index].HashRole));
+            var instanceFields = type.Fields.Where(field => !field.IsStatic).ToList();
+            var fields = new List<TypedFieldLayout>(instanceFields.Count);
+            for (int index = 0; index < instanceFields.Count; index++)
+                fields.Add(new TypedFieldLayout(instanceFields[index].Name.Lexeme, instanceFields[index].Type, index, instanceFields[index].HashRole));
             types[type.Name.Lexeme] = new TypedTypeLayout(type.Name.Lexeme, type.IsRecord, fields);
         }
         return new TypedProgram(statements, semantics, types);

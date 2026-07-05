@@ -110,7 +110,7 @@ sealed class CodeGenerator
         foreach (var stmt in statements)
         {
             if (stmt is FunctionDecl fd) functionDecls.Add(fd);
-            else if (stmt is ObjectDecl od) objectDecls.Add(od);
+            else if (stmt is ObjectDecl od) { objectDecls.Add(od); topLevel.Add(stmt); }
             else if (stmt is InterfaceDecl iface) interfaceDecls.Add(iface);
             else if (stmt is ImplementDecl impl) implementDecls.Add(impl);
             else topLevel.Add(stmt);
@@ -135,18 +135,22 @@ sealed class CodeGenerator
             _builder.RegisterTypeLayout(
                 obj.Name.Lexeme,
                 obj.IsRecord,
-                obj.Fields.Select(field => field.Name.Lexeme).ToArray(),
+                obj.Fields.Where(field => !field.IsStatic).Select(field => field.Name.Lexeme).ToArray(),
                 GetRecordHashFieldNames(obj).ToArray());
             _objectNames.Add(obj.Name.Lexeme);
             if (obj.IsRecord)
                 _recordNames.Add(obj.Name.Lexeme);
             var fieldTypes = new Dictionary<string, TypeRef>(StringComparer.Ordinal);
-            foreach (var field in obj.Fields)
+            foreach (var field in obj.Fields.Where(field => !field.IsStatic))
             {
                 fieldTypes[field.Name.Lexeme] = field.Type;
             }
             _objectFieldTypes[obj.Name.Lexeme] = fieldTypes;
-            _objectFieldDefaults[obj.Name.Lexeme] = obj.Fields.Where(field => field.Initializer is not null).ToList();
+            _objectFieldDefaults[obj.Name.Lexeme] = obj.Fields.Where(field => !field.IsStatic && field.Initializer is not null).ToList();
+            foreach (var field in obj.Fields.Where(field => field.IsStatic))
+            {
+                RegisterStaticField(obj, field);
+            }
             foreach (var ctor in obj.Constructors)
             {
                 string key = ConstructorKey(obj.Name.Lexeme, ctor.Parameters);
@@ -159,7 +163,7 @@ sealed class CodeGenerator
             {
                 string key = MethodKey(obj.Name.Lexeme, method.Name.Lexeme, method.Parameters);
                 string label = $"m_{obj.Name.Lexeme}_{method.Name.Lexeme}_{_methods.Count}";
-                _methods[key] = (label, method.Parameters.Count + 1, 0); // +1 for implicit this
+                _methods[key] = (label, method.Parameters.Count + (method.IsStatic ? 0 : 1), 0);
                 _callableDisplayNamesByLabel[label] = $"{obj.Name.Lexeme}.{method.Name.Lexeme}";
                 _methodParamTypes[key] = method.Parameters.Select(p => p.Type!).ToList();
             }
@@ -322,8 +326,8 @@ sealed class CodeGenerator
         if (!obj.IsRecord)
             yield break;
 
-        bool hasKeyFields = obj.Fields.Any(field => field.HashRole == FieldHashRole.Key);
-        foreach (var field in obj.Fields)
+        bool hasKeyFields = obj.Fields.Any(field => !field.IsStatic && field.HashRole == FieldHashRole.Key);
+        foreach (var field in obj.Fields.Where(field => !field.IsStatic))
         {
             if (hasKeyFields)
             {
@@ -429,9 +433,12 @@ sealed class CodeGenerator
         _freeTempSet.Clear();
         PushScope();
 
-        _locals["this"] = _nextLocalIndex++;
-        _localDeclaredTypes["this"] = new TypeRef(obj.Name.Lexeme, null, obj.Name.Line, obj.Name.Column);
-        _functionLocalHighWater = Math.Max(_functionLocalHighWater, _nextLocalIndex);
+        if (!method.IsStatic)
+        {
+            _locals["this"] = _nextLocalIndex++;
+            _localDeclaredTypes["this"] = new TypeRef(obj.Name.Lexeme, null, obj.Name.Line, obj.Name.Column);
+            _functionLocalHighWater = Math.Max(_functionLocalHighWater, _nextLocalIndex);
+        }
 
         for (int i = 0; i < method.Parameters.Count; i++)
         {
@@ -452,7 +459,7 @@ sealed class CodeGenerator
             }
         }
 
-        if (obj.IsRecord)
+        if (!method.IsStatic && obj.IsRecord)
         {
             _builder.Load(_locals["this"]);
             EmitCloneRecordValue(_localDeclaredTypes["this"]);
@@ -642,7 +649,8 @@ sealed class CodeGenerator
                 // already handled in outer pass
                 break;
             case ObjectDecl:
-                // object declarations are type metadata only for now
+                foreach (var field in ((ObjectDecl)stmt).Fields.Where(field => field.IsStatic))
+                    EmitStaticFieldDeclaration((ObjectDecl)stmt, field);
                 break;
             case EnumDecl:
             case InterfaceDecl:
@@ -758,6 +766,12 @@ sealed class CodeGenerator
                     EmitFallibleErrorField(fa);
                     break;
                 }
+                if (fa.ResolvesToStaticField)
+                {
+                    SetLoc(fa.Name);
+                    _builder.LoadGlobal(GetGlobalSlot(fa.ResolvedStaticFieldGlobalKey!));
+                    break;
+                }
                 Emit(fa.Target);
                 _builder.GetField(fa.Name.Lexeme);
                 break;
@@ -767,6 +781,10 @@ sealed class CodeGenerator
                 {
                     EmitCurrentObject();
                     _builder.GetField(v.Name.Lexeme);
+                }
+                else if (v.ResolvesToImplicitStaticField)
+                {
+                    _builder.LoadGlobal(GetGlobalSlot(v.ResolvedImplicitStaticFieldGlobalKey!));
                 }
                 else if (v.ResolvesToGlobal)
                 {
@@ -792,6 +810,13 @@ sealed class CodeGenerator
                     EmitStorageBoundaryCheck(a.ResolvedImplicitFieldTypeRef);
                     _builder.SetField(a.Name.Lexeme);
                     _builder.Pop();
+                }
+                else if (a.ResolvesToImplicitStaticField)
+                {
+                    Emit(a.Value);
+                    EmitCloneForSourceExprIfNeeded(a.Value);
+                    EmitStorageBoundaryCheck(a.ResolvedImplicitStaticFieldTypeRef);
+                    _builder.StoreGlobal(GetGlobalSlot(a.ResolvedImplicitStaticFieldGlobalKey!));
                 }
                 else if (a.ResolvesToGlobal)
                 {
@@ -828,6 +853,15 @@ sealed class CodeGenerator
                 EmitIndexSet(aset.Target.Array);
                 break;
             case FieldSetExpr fset:
+                if (fset.Target.ResolvesToStaticField)
+                {
+                    Emit(fset.Value);
+                    EmitCloneForSourceExprIfNeeded(fset.Value);
+                    EmitStorageBoundaryCheck(fset.Target.ResolvedStaticFieldTypeRef);
+                    _builder.Dup();
+                    _builder.StoreGlobal(GetGlobalSlot(fset.Target.ResolvedStaticFieldGlobalKey!));
+                    break;
+                }
                 Emit(fset.Target.Target);
                 Emit(fset.Value);
                 EmitCloneForSourceExprIfNeeded(fset.Value);
@@ -838,6 +872,11 @@ sealed class CodeGenerator
             case MethodCallExpr mc:
             {
                 SetLoc(mc.MethodName);
+                if (mc.ResolvesToStaticMethod)
+                {
+                    EmitStaticMethodCall(mc);
+                    break;
+                }
                 var targetType = TryResolveTypeRef(mc.Target);
                 if (targetType is null)
                     throw new InvalidOperationException($"Unable to resolve method target type for '{mc.MethodName.Lexeme}'");
@@ -980,6 +1019,15 @@ sealed class CodeGenerator
         _globalDeclaredTypes[key] = variable.Type;
     }
 
+    private void RegisterStaticField(ObjectDecl obj, FieldDecl field)
+    {
+        string key = StaticFieldGlobalKey(obj, field);
+        if (_globalSlots.ContainsKey(key))
+            return;
+        _globalSlots[key] = _globalSlots.Count;
+        _globalDeclaredTypes[key] = field.Type;
+    }
+
     private bool TryGetGlobalSlot(VarDecl variable, out int slot) =>
         _globalSlots.TryGetValue(GlobalKey(variable.OriginModulePath, variable.Name.Lexeme), out slot);
 
@@ -998,6 +1046,25 @@ sealed class CodeGenerator
         {
             EmitDefaultValue(variable.Type);
             EmitStorageBoundaryCheck(variable.Type);
+        }
+        _builder.StoreGlobal(slot);
+    }
+
+    private void EmitStaticFieldDeclaration(ObjectDecl obj, FieldDecl field)
+    {
+        SetSource(obj.OriginModulePath);
+        SetLoc(field.Name);
+        int slot = _globalSlots[StaticFieldGlobalKey(obj, field)];
+        if (field.Initializer is not null)
+        {
+            Emit(field.Initializer);
+            EmitCloneForSourceExprIfNeeded(field.Initializer);
+            EmitStorageBoundaryCheck(field.Type);
+        }
+        else
+        {
+            EmitDefaultValue(field.Type);
+            EmitStorageBoundaryCheck(field.Type);
         }
         _builder.StoreGlobal(slot);
     }
@@ -1199,6 +1266,12 @@ sealed class CodeGenerator
     private static string GlobalKey(string? modulePath, string name) =>
         $"{(string.IsNullOrWhiteSpace(modulePath) ? "<source>" : modulePath)}\u001F{name}";
 
+    private static string StaticFieldGlobalKey(ObjectDecl obj, FieldDecl field) =>
+        GlobalKey(obj.OriginModulePath, $"{obj.Name.Lexeme}.{field.Name.Lexeme}");
+
+    private static string StaticFieldGlobalKey(string? modulePath, string ownerTypeName, string fieldName) =>
+        GlobalKey(modulePath, $"{ownerTypeName}.{fieldName}");
+
     private static string TypeRefKey(TypeRef t)
     {
         t = t.NormalizeBuiltInShorthands();
@@ -1308,6 +1381,8 @@ sealed class CodeGenerator
             case Variable v:
                 if (v.ResolvedImplicitFieldTypeRef is not null)
                     return v.ResolvedImplicitFieldTypeRef;
+                if (v.ResolvedImplicitStaticFieldTypeRef is not null)
+                    return v.ResolvedImplicitStaticFieldTypeRef;
                 if (v.ResolvedGlobalTypeRef is not null)
                     return v.ResolvedGlobalTypeRef;
                 if (v.ResolvedBuiltInConstant)
@@ -1324,6 +1399,8 @@ sealed class CodeGenerator
                     return c.ResolvedConstructorTypeRef;
                 if (c.ResolvedImplicitMethodReturnTypeRef is not null)
                     return c.ResolvedImplicitMethodReturnTypeRef;
+                if (c.ResolvedImplicitStaticMethodReturnTypeRef is not null)
+                    return c.ResolvedImplicitStaticMethodReturnTypeRef;
                 return _functionReturnTypes.TryGetValue(c.Callee.Lexeme, out var functionReturnType) ? functionReturnType : null;
             case ArrayIndexExpr ai:
                 return ai.ResolvedElementTypeRef;
@@ -1332,6 +1409,8 @@ sealed class CodeGenerator
                     return fa.ResolvedFallibleErrorFieldTypeRef;
                 if (fa.ResolvedEnumTypeRef is not null)
                     return fa.ResolvedEnumTypeRef;
+                if (fa.ResolvedStaticFieldTypeRef is not null)
+                    return fa.ResolvedStaticFieldTypeRef;
             {
                 var ownerType = TryResolveTypeRef(fa.Target);
                 if (ownerType is null) return null;
@@ -1453,6 +1532,16 @@ sealed class CodeGenerator
                     ReleaseTemp(valueSlot);
                     ReleaseTemp(objectSlot);
                 }
+                else if (variable.ResolvesToImplicitStaticField)
+                {
+                    int slot = GetGlobalSlot(variable.ResolvedImplicitStaticFieldGlobalKey!);
+                    _builder.LoadGlobal(slot);
+                    Emit(expr.Value);
+                    EmitBinaryOperator(expr.Operator, variable, expr.Value);
+                    EmitStorageBoundaryCheck(variable.ResolvedImplicitStaticFieldTypeRef);
+                    _builder.Dup();
+                    _builder.StoreGlobal(slot);
+                }
                 else if (variable.ResolvesToGlobal)
                 {
                     int slot = GetGlobalSlot(variable.ResolvedGlobalKey!);
@@ -1477,6 +1566,18 @@ sealed class CodeGenerator
             }
             case FieldAccessExpr fieldAccess:
             {
+                if (fieldAccess.ResolvesToStaticField)
+                {
+                    int slot = GetGlobalSlot(fieldAccess.ResolvedStaticFieldGlobalKey!);
+                    _builder.LoadGlobal(slot);
+                    Emit(expr.Value);
+                    EmitBinaryOperator(expr.Operator, fieldAccess, expr.Value);
+                    EmitStorageBoundaryCheck(fieldAccess.ResolvedStaticFieldTypeRef);
+                    _builder.Dup();
+                    _builder.StoreGlobal(slot);
+                    break;
+                }
+
                 int objectSlot = AllocateTemp();
                 int valueSlot = AllocateTemp();
                 Emit(fieldAccess.Target);
@@ -2040,6 +2141,50 @@ sealed class CodeGenerator
         _builder.Call(info.Label, info.ParamCount, frameSize);
     }
 
+    private void EmitStaticMethodCall(MethodCallExpr mc)
+    {
+        string key = mc.ResolvedStaticMethodKey
+            ?? throw new InvalidOperationException($"Missing static method resolution for '{mc.MethodName.Lexeme}'");
+        _methodParamTypes.TryGetValue(key, out var methodParamTypes);
+        var allArguments = CombineArguments(mc.Arguments, mc.ResolvedDefaultArguments);
+        for (int i = 0; i < allArguments.Count; i++)
+        {
+            var arg = allArguments[i];
+            Emit(arg);
+            EmitCloneForSourceExprIfNeeded(arg);
+            if (methodParamTypes is not null && i < methodParamTypes.Count)
+                EmitStorageBoundaryCheck(methodParamTypes[i]);
+        }
+
+        if (!_methods.TryGetValue(key, out var info))
+            throw new InvalidOperationException($"Undefined static method '{mc.ResolvedStaticMethodOwnerTypeName}.{mc.MethodName.Lexeme}' with {mc.Arguments.Count} args");
+
+        int frameSize = Math.Max(info.LocalCount, info.ParamCount);
+        _builder.Call(info.Label, info.ParamCount, frameSize);
+    }
+
+    private void EmitImplicitStaticMethodCall(Call call)
+    {
+        string key = call.ResolvedImplicitStaticMethodKey
+            ?? throw new InvalidOperationException($"Missing implicit static method resolution for '{call.Callee.Lexeme}'");
+        _methodParamTypes.TryGetValue(key, out var methodParamTypes);
+        var allArguments = CombineArguments(call.Arguments, call.ResolvedDefaultArguments);
+        for (int i = 0; i < allArguments.Count; i++)
+        {
+            var arg = allArguments[i];
+            Emit(arg);
+            EmitCloneForSourceExprIfNeeded(arg);
+            if (methodParamTypes is not null && i < methodParamTypes.Count)
+                EmitStorageBoundaryCheck(methodParamTypes[i]);
+        }
+
+        if (!_methods.TryGetValue(key, out var info))
+            throw new InvalidOperationException($"Undefined implicit static method '{call.ResolvedImplicitStaticMethodOwnerTypeName}.{call.Callee.Lexeme}' with {call.Arguments.Count} args");
+
+        int frameSize = Math.Max(info.LocalCount, info.ParamCount);
+        _builder.Call(info.Label, info.ParamCount, frameSize);
+    }
+
     private void EmitImplicitMethodCall(Call call)
     {
         if (call.ResolvedImplicitMethodOwnerTypeName is null || call.ResolvedImplicitMethodKey is null)
@@ -2298,6 +2443,12 @@ sealed class CodeGenerator
             return;
         }
 
+        if (call.ResolvesToImplicitStaticMethod)
+        {
+            EmitImplicitStaticMethodCall(call);
+            return;
+        }
+
         if (TryEmitIntrinsicCall(call))
             return;
 
@@ -2463,7 +2614,7 @@ sealed class CodeGenerator
         for (int i = 0; i < methods.Count; i++)
         {
             var method = methods[i];
-            if (string.Equals(method.Name.Lexeme, name, StringComparison.Ordinal) && method.Parameters.Count == 0)
+            if (!method.IsStatic && string.Equals(method.Name.Lexeme, name, StringComparison.Ordinal) && method.Parameters.Count == 0)
                 return method;
         }
 

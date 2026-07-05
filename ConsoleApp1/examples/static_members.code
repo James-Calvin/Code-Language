@@ -1,0 +1,43 @@
+// Runnable example: static fields and methods on objects and records.
+
+object Counter {
+  static private integer nextId = 0;
+  static public constant integer maxCount = 10;
+
+  integer id;
+
+  constructor() {
+    id = next();
+  }
+
+  static private function<integer> bump() {
+    nextId += 1;
+    return nextId;
+  }
+
+  static public function<integer> next() {
+    nextId = bump();
+    return nextId;
+  }
+}
+
+record Point {
+  integer x;
+  integer y;
+  static private integer originX = 0;
+  static private integer originY = originX;
+
+  static public function<Point> origin() {
+    return Point(originX, originY);
+  }
+}
+
+Counter first = Counter();
+Counter second = Counter();
+Point origin = Point.origin();
+
+print(first.id);
+print(second.id);
+print(Counter.maxCount);
+print(origin.x);
+print(origin.y);

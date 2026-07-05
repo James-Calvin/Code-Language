@@ -84,6 +84,7 @@ for (const scope of requiredScopes) {
 const fixture = read("editor/fixtures/syntax_smoke.code");
 for (const sample of [
   "package Examples.Editor;",
+  "static public constant integer maxSpeed",
   "interface Actor",
   "implement Updatable.update()",
   "Input.keyIsDown",

@@ -274,6 +274,35 @@ internal static class TestHarness
             }
             finally { try { Directory.Delete(root, recursive: true); } catch { } }
         });
+        Check("direct-wasm-implicit-static-members", () =>
+        {
+            string root = Path.Combine(Path.GetTempPath(), "code-direct-wasm-static-test-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(root);
+            try
+            {
+                string source = Path.Combine(root, "main.code");
+                File.WriteAllText(source,
+@"object Counter {
+  static integer nextId = 0;
+  static function<integer> bump() {
+    nextId += 1;
+    return nextId;
+  }
+  static function<integer> next() {
+    return bump();
+  }
+}
+print(Counter.next());");
+                var result = Compiler.ModuleCompiler.CompileFromFileWithMetadata(source, new Compiler.ModuleCompileOptions
+                {
+                    Target = Compiler.CompileTarget.VmWeb,
+                    EmitDirectWasm = true
+                });
+                if (result.DirectWasm is null || result.DirectWasm.Module.Length < 32)
+                    throw new Exception("direct module was not emitted");
+            }
+            finally { try { Directory.Delete(root, recursive: true); } catch { } }
+        });
         Check("direct-wasm-record-map-key-guard", () =>
         {
             string root = Path.Combine(Path.GetTempPath(), "code-direct-wasm-record-key-test-" + Guid.NewGuid().ToString("N"));
@@ -1302,6 +1331,102 @@ print(add(4));
 print(add(4, 6));
 print(first.plus());
 print(second.plus(1));", "7\n10\n7\n11\n"),
+            ("static-fields-and-methods",
+@"object Counter {
+  static private integer seed = 0;
+  static private integer initialNextId = seed;
+  static private integer nextId = 0;
+  static public constant integer maxCount = 10;
+
+  integer id;
+
+  constructor() {
+    id = next();
+  }
+
+  static private function<integer> bump() {
+    nextId += 1;
+    return nextId;
+  }
+
+  static public function<integer> next() {
+    nextId = bump();
+    return nextId;
+  }
+
+  static public function keepSame() {
+    nextId++;
+    nextId -= 1;
+  }
+
+  static public function<integer> localShadow() {
+    integer nextId = 100;
+    return nextId;
+  }
+
+  function<integer> readMax() {
+    return maxCount;
+  }
+}
+print(Counter.next());
+Counter.keepSame();
+print(Counter.next());
+print(Counter.maxCount);
+print(Counter.localShadow());
+Counter counter = Counter();
+print(counter.id);
+print(counter.readMax());", "1\n2\n10\n100\n3\n10\n"),
+            ("static-field-initialization-and-instance-separation",
+@"integer baseValue = 3;
+object Counter {
+  static public integer start = baseValue + 1;
+  integer amount;
+
+  constructor(integer startAmount) {
+    amount = startAmount;
+  }
+
+  function<integer> read() {
+    return amount + start;
+  }
+}
+Counter counter = Counter(6);
+print(Counter.start);
+print(counter.read());", "4\n10\n"),
+            ("instance-field-shadows-static-field",
+@"object Counter {
+  static public integer count = 10;
+  integer count;
+
+  constructor() {
+    count = 3;
+  }
+
+  function<integer> read() {
+    return count;
+  }
+
+  static public function<integer> readStatic() {
+    return count;
+  }
+}
+Counter counter = Counter();
+print(counter.read());
+print(Counter.readStatic());", "3\n10\n"),
+            ("record-static-factory",
+@"record Point {
+  integer x;
+  integer y;
+  static private integer originX = 0;
+  static private integer originY = originX;
+
+  static public function<Point> origin() {
+    return Point(originX, originY);
+  }
+}
+Point point = Point.origin();
+print(point.x);
+print(point.y);", "0\n0\n"),
             ("object-field-set",
 @"object Counter {
   integer count;
@@ -1891,6 +2016,24 @@ print(holder.item.quantity);", "4\n6\n"),
                 },
                 "main.code",
                 "9\n"
+            ),
+            (
+                "module-static-member-access-through-type-alias",
+                new Dictionary<string, string>
+                {
+                    ["main.code"] = "import Counter as Tally from \"counter.code\";\nprint(Tally.next());\nprint(Tally.next());",
+                    ["counter.code"] =
+@"export object Counter {
+  static private integer count = 0;
+
+  static public function<integer> next() {
+    Counter.count += 1;
+    return Counter.count;
+  }
+}",
+                },
+                "main.code",
+                "1\n2\n"
             ),
             (
                 "module-public-visibility-import",
@@ -2777,7 +2920,16 @@ print(value);", "RuntimeError"),
             ("function-default-parameter-type-mismatch", @"function<integer> add(integer value = ""bad"") { return value; } print(add());", "Default value type mismatch"),
             ("interface-default-parameter-rejected", @"interface Named { function<string> name(integer index = 0); }", "cannot declare default values"),
             ("implement-default-parameter-rejected", @"interface Named { function<string> name(integer index); } object Thing { function<string> name(integer index) { return ""x""; } } implement Named for Thing { name(integer index = 0) via Thing.name; }", "cannot declare default values"),
-            ("type-member-call-does-not-construct", @"object Builder { integer count = 1; function<integer> build() { return count; } } print(Builder.build());", "cannot be used as a value"),
+            ("type-member-call-does-not-construct", @"object Builder { integer count = 1; function<integer> build() { return count; } } print(Builder.build());", "Instance method 'Builder.build' requires an instance"),
+            ("static-modifier-order", @"object Counter { public static function read() { } }", "Static member modifier must come before visibility"),
+            ("static-constructor-rejected", @"object Counter { static constructor() { } }", "Static constructors are not supported"),
+            ("static-interface-member-rejected", @"interface Counter { static function<integer> read(); }", "Interfaces cannot declare static members"),
+            ("static-this-rejected", @"object Counter { static function<integer> read() { return this.count; } static integer count = 1; }", "Undefined variable 'this'"),
+            ("static-bare-instance-field-rejected", @"object Counter { integer count = 1; static function<integer> read() { return count; } }", "Undefined variable 'count'"),
+            ("static-field-instance-access-rejected", @"object Counter { static integer count = 1; } Counter counter = Counter(); print(counter.count);", "Static field 'Counter.count' must be accessed through the type"),
+            ("static-method-instance-access-rejected", @"object Counter { static function<integer> read() { return 1; } } Counter counter = Counter(); print(counter.read());", "Static method 'Counter.read' must be accessed through the type"),
+            ("static-constant-mutation-rejected", @"object Counter { static constant integer maxCount = 10; static function mutate() { maxCount += 1; } } Counter.mutate();", "Cannot assign to constant 'maxCount'"),
+            ("implicit-static-method-no-top-level-fallback", @"function<integer> pick(boolean value) { return 99; } object Counter { static function<integer> pick(integer value) { return value; } static function<integer> next() { return pick(true); } } print(Counter.next());", "no matching static method overload 'pick'"),
             ("object-method-no-compatible-overload",
 @"object A {
   integer x;
@@ -4826,7 +4978,7 @@ function draw() {
                 {
                     ["main.code"] =
 @"function main() {
-  Draw.clearScreen(Colors.rgb(0, 0, 0));
+  Draw.clearScreen();
 }"
                 },
                 "main.code",
@@ -4864,6 +5016,7 @@ function draw() {
             ("example-sized-numerics-runnable", @"ConsoleApp1/examples/sized_numerics.code", Compiler.CompileTarget.VmNative),
             ("example-collections-runnable", @"ConsoleApp1/examples/collections.code", Compiler.CompileTarget.VmNative),
             ("example-builder-runnable", @"ConsoleApp1/examples/builder.code", Compiler.CompileTarget.VmNative),
+            ("example-static-members-runnable", @"ConsoleApp1/examples/static_members.code", Compiler.CompileTarget.VmNative),
             ("example-object-runnable", @"ConsoleApp1/examples/object.code", Compiler.CompileTarget.VmNative),
             ("example-implicit-this-runnable", @"ConsoleApp1/examples/implicit_this.code", Compiler.CompileTarget.VmNative),
             ("example-interface-dispatch-runnable", @"ConsoleApp1/examples/interface_dispatch.code", Compiler.CompileTarget.VmNative),

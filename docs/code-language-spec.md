@@ -442,7 +442,7 @@ print(turns.dequeue());
 
 ## 9. Object Model and Interfaces
 - Current implementation status:
-  - Implemented: object declarations with fields/constructors/methods, record declarations with fields/constructors/methods, `new Type(...)`, implicit `Type(...)` construction, field read/write (`obj.field`, `obj.field = value`), method calls (`obj.method(args)`), interface field/method conformance checks via either inline interface methods or `implement Interface for Object/Record`, and interface-typed locals/parameters/returns/fields/arrays with runtime-dispatched interface method calls plus interface field access.
+  - Implemented: object declarations with fields/constructors/methods, record declarations with fields/constructors/methods, static fields/methods on objects and records, `new Type(...)`, implicit `Type(...)` construction, field read/write (`obj.field`, `obj.field = value`), method calls (`obj.method(args)`), interface field/method conformance checks via either inline interface methods or `implement Interface for Object/Record`, and interface-typed locals/parameters/returns/fields/arrays with runtime-dispatched interface method calls plus interface field access.
   - Implemented: top-level declaration visibility for modules (`public`, `package`, `private`) with package-aware import checks.
   - Implemented: member-level visibility for object/record fields, constructors, and methods.
 - No inheritance.
@@ -472,7 +472,7 @@ print(turns.dequeue());
 - Field default expressions may read same-module globals and built-in constants, but they do not have access to constructor parameters, `this`, sibling fields, or implicit field lookup; use a constructor for dependent field initialization.
 - Current constructor rules (implemented):
   - `TypeName(args...)` is shorthand for `new TypeName(args...)` when normal function resolution does not apply.
-  - `TypeName.method(...)` does not construct a value; use `TypeName().method(...)` for zero-argument builder chains.
+  - `TypeName.method(...)` is static member access, not construction; use `TypeName().method(...)` for zero-argument builder instance chains.
   - Object and record declarations may use primary constructor syntax, for example `object Builder(string name) { string name; }`; each primary constructor parameter assigns the same-named field.
   - Records with no explicit constructors receive an implicit field-order constructor for fields without declaration defaults.
   - Objects with fields without defaults must declare at least one constructor.
@@ -484,8 +484,17 @@ print(turns.dequeue());
   - Methods are lowered to hidden callable bodies with implicit `this` as the first argument.
   - Method resolution uses object type + method name + parameter-type signature with best-match conversion scoring.
   - Methods may use either `function<ReturnType> name(...)` or implicit-void `function name(...)`.
+- Current static member rules (implemented):
+  - Static members use `static` before optional visibility, for example `static private integer nextId = 0;`.
+  - Static fields initialize once during module initialization and are accessed as `TypeName.field` outside the declaring type.
+  - Static fields may be mutable or `constant`; static constants must have initializers and cannot be assigned.
+  - Static methods are called as `TypeName.method(...)` outside the declaring type and do not receive `this`.
+  - Inside the declaring object/record, unshadowed bare names may resolve to same-type static fields and same-type static methods after locals/parameters and implicit instance members.
+  - Accessing static members through an instance is rejected.
+  - Static members are not supported on interfaces or enums, and static constructors are not supported in V1.
+  - Static members do not participate in record equality, hashing, copying, or interface conformance.
 - Inside constructors and methods, unshadowed bare field names resolve to the current object (`field` -> `this.field`), and bare method calls resolve to the current object before top-level/intrinsic functions.
-- If a bare name inside a constructor or method is not local and does not match an implicit `this` field, same-module globals are considered next. This allows object and record code to read shared module constants such as `pi`, `tau`, or app-level configuration without passing them through every constructor.
+- If a bare name inside an object/record body is not local and does not match an implicit `this` field, same-type static fields are considered before same-module globals. This allows static methods to read `nextId` instead of `TypeName.nextId` and lets object/record code read shared module constants such as `pi`, `tau`, or app-level configuration without passing them through every constructor.
 - Reserved field names (currently disallowed): `length`, `hasValue`, `value`, `or`.
 - `object` instances are passed by reference.
 - `record` values are copied on assignment, parameter passing, returns, and insertion into arrays/collections.
@@ -600,7 +609,7 @@ Person instance = new Person("Ada");
   - `private` members are accessible only from code inside the declaring object/record type, including accesses through another instance of the same type.
   - `package` members are accessible only from modules with the same `package Name;`; package-visible members require the declaring type's module to have a package declaration.
   - Interface dispatch is treated as access through the interface contract; mapping to a non-public method does not make that method directly callable by name from outside its visibility boundary.
-- `constant` fields are supported through `constant` declarations.
+- Module constants use `constant Type name = expression;`; type-level constants use `static constant Type name = expression;` inside objects or records.
 - Field access allows both unqualified and `this.`-qualified forms.
 - If a local variable shadows a field, unqualified access resolves to the local variable.
 - Use `this.fieldName` to reference the shadowed member field.

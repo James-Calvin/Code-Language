@@ -17,6 +17,7 @@ interface Actor {
 }
 
 object Player {
+  static public constant integer maxSpeed = 6;
   public integer health = maxLives;
   private PlayerState state = PlayerState.Ready;
 

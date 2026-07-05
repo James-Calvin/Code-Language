@@ -183,9 +183,13 @@ sealed class FieldAccessExpr : Expr
     public TypeRef? ResolvedFallibleErrorFieldTypeRef { get; set; }
     public string? ResolvedInterfaceFieldName { get; set; }
     public TypeRef? ResolvedInterfaceFieldTypeRef { get; set; }
+    public string? ResolvedStaticFieldOwnerTypeName { get; set; }
+    public string? ResolvedStaticFieldGlobalKey { get; set; }
+    public TypeRef? ResolvedStaticFieldTypeRef { get; set; }
     public bool ResolvesToEnumMember => ResolvedEnumTypeRef is not null;
     public bool ResolvesToFallibleErrorField => ResolvedFallibleErrorFieldTypeRef is not null;
     public bool ResolvesToInterfaceField => ResolvedInterfaceFieldName is not null;
+    public bool ResolvesToStaticField => ResolvedStaticFieldGlobalKey is not null;
     public FieldAccessExpr(Expr target, Token name) { Target = target; Name = name; }
 }
 
@@ -216,10 +220,14 @@ sealed class Variable : Expr
 {
     public Token Name { get; }
     public TypeRef? ResolvedImplicitFieldTypeRef { get; set; }
+    public string? ResolvedImplicitStaticFieldOwnerTypeName { get; set; }
+    public string? ResolvedImplicitStaticFieldGlobalKey { get; set; }
+    public TypeRef? ResolvedImplicitStaticFieldTypeRef { get; set; }
     public TypeRef? ResolvedGlobalTypeRef { get; set; }
     public string? ResolvedGlobalKey { get; set; }
     public bool ResolvedBuiltInConstant { get; set; }
     public bool ResolvesToImplicitField => ResolvedImplicitFieldTypeRef is not null;
+    public bool ResolvesToImplicitStaticField => ResolvedImplicitStaticFieldGlobalKey is not null;
     public bool ResolvesToGlobal => ResolvedGlobalKey is not null;
     public Variable(Token name) { Name = name; }
 }
@@ -229,9 +237,13 @@ sealed class Assign : Expr
     public Token Name { get; }
     public Expr Value { get; }
     public TypeRef? ResolvedImplicitFieldTypeRef { get; set; }
+    public string? ResolvedImplicitStaticFieldOwnerTypeName { get; set; }
+    public string? ResolvedImplicitStaticFieldGlobalKey { get; set; }
+    public TypeRef? ResolvedImplicitStaticFieldTypeRef { get; set; }
     public TypeRef? ResolvedGlobalTypeRef { get; set; }
     public string? ResolvedGlobalKey { get; set; }
     public bool ResolvesToImplicitField => ResolvedImplicitFieldTypeRef is not null;
+    public bool ResolvesToImplicitStaticField => ResolvedImplicitStaticFieldGlobalKey is not null;
     public bool ResolvesToGlobal => ResolvedGlobalKey is not null;
     public Assign(Token name, Expr value) { Name = name; Value = value; }
 }
@@ -257,11 +269,15 @@ sealed class Call : Expr
     public string? ResolvedImplicitMethodOwnerTypeName { get; set; }
     public string? ResolvedImplicitMethodKey { get; set; }
     public TypeRef? ResolvedImplicitMethodReturnTypeRef { get; set; }
+    public string? ResolvedImplicitStaticMethodOwnerTypeName { get; set; }
+    public string? ResolvedImplicitStaticMethodKey { get; set; }
+    public TypeRef? ResolvedImplicitStaticMethodReturnTypeRef { get; set; }
     public IReadOnlyList<Expr> ResolvedDefaultArguments { get; set; } = [];
     public string? ResolvedConstructorTypeName { get; set; }
     public string? ResolvedConstructorKey { get; set; }
     public TypeRef? ResolvedConstructorTypeRef { get; set; }
     public bool ResolvesToImplicitMethod => ResolvedImplicitMethodKey is not null;
+    public bool ResolvesToImplicitStaticMethod => ResolvedImplicitStaticMethodKey is not null;
     public bool ResolvesToConstructor => ResolvedConstructorTypeName is not null;
     public Call(Token callee, IReadOnlyList<Expr> args) { Callee = callee; Arguments = args; }
 }
@@ -275,9 +291,12 @@ sealed class MethodCallExpr : Expr
     public string? ResolvedMethodKey { get; set; }
     public string? ResolvedInterfaceName { get; set; }
     public string? ResolvedInterfaceMethodKey { get; set; }
+    public string? ResolvedStaticMethodOwnerTypeName { get; set; }
+    public string? ResolvedStaticMethodKey { get; set; }
     public TypeRef? ResolvedReturnTypeRef { get; set; }
     public IReadOnlyList<Expr> ResolvedDefaultArguments { get; set; } = [];
     public bool ResolvesToBuiltInCollectionMethod => ResolvedBuiltInCollectionMethodName is not null;
+    public bool ResolvesToStaticMethod => ResolvedStaticMethodKey is not null;
     public MethodCallExpr(Expr target, Token methodName, IReadOnlyList<Expr> args)
     {
         Target = target; MethodName = methodName; Arguments = args;
@@ -326,6 +345,7 @@ sealed record FieldDecl(
     Expr? Initializer = null,
     DeclarationVisibility Visibility = DeclarationVisibility.Public,
     bool IsConstant = false,
+    bool IsStatic = false,
     FieldHashRole HashRole = FieldHashRole.Default);
 
 enum FieldHashRole
@@ -576,9 +596,10 @@ sealed class MethodDecl
     public IReadOnlyList<Parameter> Parameters { get; }
     public Block Body { get; }
     public DeclarationVisibility Visibility { get; }
-    public MethodDecl(Token name, TypeRef? returnType, IReadOnlyList<Parameter> parameters, Block body, DeclarationVisibility visibility = DeclarationVisibility.Public)
+    public bool IsStatic { get; }
+    public MethodDecl(Token name, TypeRef? returnType, IReadOnlyList<Parameter> parameters, Block body, DeclarationVisibility visibility = DeclarationVisibility.Public, bool isStatic = false)
     {
-        Name = name; ReturnType = returnType; Parameters = parameters; Body = body; Visibility = visibility;
+        Name = name; ReturnType = returnType; Parameters = parameters; Body = body; Visibility = visibility; IsStatic = isStatic;
     }
 }
 

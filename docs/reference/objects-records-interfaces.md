@@ -45,7 +45,39 @@ Common mistakes:
 - Field names `length`, `hasValue`, `value`, and `or` are reserved.
 - Field defaults cannot read constructor parameters, `this`, or other fields. Use a constructor when one field depends on another.
 - Objects with fields that lack defaults need constructors that assign every non-defaulted field.
-- `TypeName.method(...)` does not construct a value; write `TypeName().method(...)` when chaining from a zero-argument builder.
+- `TypeName.method(...)` is static member access, not construction. Write `TypeName().method(...)` when chaining from a zero-argument builder instance.
+
+## Static Members
+
+Objects and records may declare static fields and methods. Static members belong
+to the type, not to each runtime instance.
+
+```code
+object Counter {
+  static private integer nextId = 0;
+  static public constant integer maxCount = 10;
+
+  static public function<integer> next() {
+    nextId += 1;
+    return nextId;
+  }
+}
+
+print(Counter.next());
+print(Counter.maxCount);
+```
+
+Static member rules:
+
+- Write `static` before optional visibility, for example `static private integer nextId = 0;`.
+- Static fields initialize once during module initialization.
+- Static fields may be mutable or `constant`; static constants must have initializers.
+- Static methods do not receive `this`.
+- Inside the declaring object/record, unshadowed bare names may resolve to same-type static fields and same-type static methods.
+- From outside the declaring object/record, access static members through the type: `TypeName.member`.
+- Accessing a static member through an instance is a compile-time error.
+- Static members do not satisfy interface requirements.
+- Static fields on records are not part of record equality, hashing, copying, or value semantics.
 
 ## Records
 

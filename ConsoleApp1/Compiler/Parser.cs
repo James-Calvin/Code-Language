@@ -334,11 +334,11 @@ sealed class Parser
         throw Error(Peek(), $"Expect {kind} body block.");
     }
 
-    private MethodDecl ParseMethodDeclaration(DeclarationVisibility visibility = DeclarationVisibility.Public)
+    private MethodDecl ParseMethodDeclaration(DeclarationVisibility visibility = DeclarationVisibility.Public, bool isStatic = false)
     {
         var sig = ParseCallableSignature("method");
         Block body = ParseCallableBody("method");
-        return new MethodDecl(sig.Name, sig.ReturnType, sig.Parameters, body, visibility);
+        return new MethodDecl(sig.Name, sig.ReturnType, sig.Parameters, body, visibility, isStatic);
     }
 
     private ConstructorDecl ParseConstructor(Token ctorKeyword, DeclarationVisibility visibility = DeclarationVisibility.Public)
@@ -366,31 +366,50 @@ sealed class Parser
         var inlineInterfaceMethods = new List<InlineImplementMethodDecl>();
         while (!Check(TokenType.RightBrace) && !IsAtEnd())
         {
+            if ((Check(TokenType.Public) || Check(TokenType.Package) || Check(TokenType.Private)) && CheckNext(TokenType.Static))
+                throw Error(Peek(), "Static member modifier must come before visibility.");
+            bool isStatic = Match(TokenType.Static);
             var visibility = ParseMemberVisibility();
             if (Match(TokenType.Constructor))
             {
+                if (isStatic)
+                    throw Error(Previous(), "Static constructors are not supported in V1.");
                 constructors.Add(ParseConstructor(Previous(), visibility));
                 continue;
             }
             if (Match(TokenType.Function))
             {
-                methods.Add(ParseMethodDeclaration(visibility));
+                methods.Add(ParseMethodDeclaration(visibility, isStatic));
                 continue;
             }
             if (Match(TokenType.Implement))
             {
+                if (isStatic)
+                    throw Error(Previous(), "Static inline interface implementations are not supported in V1.");
                 inlineInterfaceMethods.Add(ParseInlineImplementMethod(visibility));
                 continue;
             }
 
+            bool isConstant = false;
+            if (Match(TokenType.Constant))
+            {
+                if (!isStatic)
+                    throw Error(Previous(), "Object and record field constants must be static in V1.");
+                isConstant = true;
+            }
+
             var hashRole = ParseRecordFieldHashRole(isRecord);
+            if (isStatic && hashRole != FieldHashRole.Default)
+                throw Error(Peek(), "Record hash field modifiers are only valid on instance record fields.");
             var fType = ParseTypeRef();
             Token fname = Consume(TokenType.Identifier, "Expect field name.");
             Expr? initializer = null;
             if (Match(TokenType.Equal))
                 initializer = Expression();
+            if (isStatic && isConstant && initializer is null)
+                throw Error(fname, $"Static constant field '{fname.Lexeme}' must be initialized.");
             Consume(TokenType.Semicolon, "Expect ';' after field.");
-            fields.Add(new FieldDecl(fType, fname, initializer, visibility, HashRole: hashRole));
+            fields.Add(new FieldDecl(fType, fname, initializer, visibility, isConstant, isStatic, hashRole));
         }
         Consume(TokenType.RightBrace, $"Expect '}}' after {(isRecord ? "record" : "object")} fields.");
         if (primaryConstructorParameters is not null)
@@ -398,6 +417,7 @@ sealed class Parser
         else if (isRecord && constructors.Count == 0)
         {
             var implicitRecordParameters = fields
+                .Where(field => !field.IsStatic)
                 .Where(field => field.Initializer is null)
                 .Select(field => new Parameter(field.Type, field.Name))
                 .ToList();
@@ -497,6 +517,8 @@ sealed class Parser
         {
             if (Check(TokenType.Public) || Check(TokenType.Package) || Check(TokenType.Private))
                 throw Error(Peek(), "Interface fields and methods do not declare visibility; interface members are public contract requirements.");
+            if (Check(TokenType.Static))
+                throw Error(Peek(), "Interfaces cannot declare static members in V1.");
             if (Check(TokenType.Constant))
                 throw Error(Peek(), "Interface fields cannot be constant.");
             if (LooksLikeIgnoreKeyFieldModifier() || LooksLikeKeyFieldModifier())

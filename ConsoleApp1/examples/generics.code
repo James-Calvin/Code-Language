@@ -1,0 +1,35 @@
+record Entity {
+  integer id;
+}
+
+interface ComponentRegistry<Data> {
+  function<void> register(Entity entity, Data data);
+  function<Data> get(Entity entity);
+}
+
+object Registry<Data> {
+  map<integer, Data> values;
+
+  constructor() {
+    values = new map<integer, Data>();
+  }
+
+  implement ComponentRegistry<Data>.register(Entity entity, Data data) {
+    values[entity.id] = data;
+  }
+
+  implement ComponentRegistry<Data>.get(Entity entity) {
+    return values[entity.id];
+  }
+}
+
+record Position {
+  integer x;
+  integer y;
+}
+
+Registry<Position> positions = new Registry<Position>();
+ComponentRegistry<Position> components = positions;
+components.register(Entity(1), Position(12, 34));
+Position position = components.get(Entity(1));
+print("position: {position.x}, {position.y}");

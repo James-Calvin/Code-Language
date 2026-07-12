@@ -1994,9 +1994,68 @@ print(items[0].quantity);
 Holder holder = new Holder(items[0]);
 holder.item.quantity += 2;
 print(holder.item.quantity);", "4\n6\n"),
+            ("generic-interface-object-ecs",
+@"record Entity { integer id; }
+record Position { integer x; }
+record Name { string text; }
+interface ComponentRegistry<Data> {
+  function<void> register(Entity entity, Data data);
+  function<Data> get(Entity entity);
+}
+object Registry<Data> {
+  map<Entity, Data> values;
+  constructor() { values = new map<Entity, Data>(); }
+  implement ComponentRegistry<Data>.register(Entity entity, Data data) { values[entity] = data; }
+  implement ComponentRegistry<Data>.get(Entity entity) { return values[entity]; }
+}
+Registry<Position> positions = new Registry<Position>();
+Registry<Name> names = new Registry<Name>();
+ComponentRegistry<Position> positionView = positions;
+ComponentRegistry<Name> nameView = names;
+positionView.register(Entity(1), Position(42));
+nameView.register(Entity(1), Name(""forge""));
+print(positionView.get(Entity(1)).x);
+print(nameView.get(Entity(1)).text);", "42\nforge\n"),
+            ("generic-record-nested-and-hashable",
+@"record Pair<Left, Right> { Left left; Right right; }
+Pair<integer, string> item = new Pair<integer, string>(7, ""iron"");
+map<Pair<integer, string>, integer> values = new map<Pair<integer, string>, integer>();
+values[item] = 3;
+print(item.left);
+print(item.right);
+print(values[new Pair<integer, string>(7, ""iron"")]);", "7\niron\n3\n"),
+            ("generic-open-external-implementation",
+@"interface Reader<Data> { function<Data> read(); }
+object Box<Data> {
+  Data item;
+  constructor(Data value) { item = value; }
+  function<Data> read() { return item; }
+}
+implement Reader<Data> for Box<Data> {
+  read() via Box.read;
+}
+Reader<integer> value = new Box<integer>(8);
+print(value.read());", "8\n"),
         };
         var moduleCases = new List<(string Name, IReadOnlyDictionary<string, string> Files, string Entry, string Expected)>
         {
+            (
+                "module-import-generic-types",
+                new Dictionary<string, string>
+                {
+                    ["main.code"] = @"import {Box, Readable} from ""box.code"";
+Box<integer> box = new Box<integer>(9);
+Readable<integer> view = box;
+print(view.read());",
+                    ["box.code"] = @"public interface Readable<Data> { function<Data> read(); }
+public object Box<Data> {
+  Data item;
+  constructor(Data value) { item = value; }
+  implement Readable<Data>.read() { return item; }
+}"
+                },
+                "main.code",
+                "9\n"),
             (
                 "module-import-export-function",
                 new Dictionary<string, string>
@@ -2902,6 +2961,11 @@ print(value);", "RuntimeError"),
         };
         var compileErrorCases = new List<(string Name, string Source, string ErrorContains)>
         {
+            ("generic-bare-type-rejected", @"object Box<Data> { Data item; constructor(Data value) { item = value; } } Box value;", "expects exactly 1 type argument"),
+            ("generic-wrong-arity-rejected", @"record Pair<Left, Right> { Left left; Right right; } Pair<integer> value;", "expects exactly 2 type arguments"),
+            ("nongeneric-type-arguments-rejected", @"record Point { integer x; } Point<integer> value;", "does not support type arguments"),
+            ("generic-specializations-invariant", @"object Box<Data> { Data item; constructor(Data value) { item = value; } } Box<integer> left = new Box<integer>(1); Box<string> right = left;", "Initializer type mismatch"),
+            ("generic-duplicate-parameter-rejected", @"record Pair<Data, Data> { Data item; }", "Duplicate generic type parameter"),
             ("object-duplicate-name", @"object Person { integer age; constructor(integer v){ this.age = v; } } object Person { integer score; constructor(integer v){ this.score = v; } }", "already defined"),
             ("object-duplicate-field", @"object Person { integer age; integer age; constructor(integer v){ this.age = v; } }", "already defined"),
             ("object-unknown-field-type", @"object Person { UnknownType data; }", "Unknown type"),
@@ -4087,7 +4151,7 @@ print(readMissing());",
                 "main.code");
             if (error.Line != 3 ||
                 error.SourcePath is null ||
-                !error.SourcePath.Replace('\\', '/').EndsWith("/lib.code", StringComparison.Ordinal) ||
+                !error.SourcePath.Replace('\\', '/').EndsWith("lib.code", StringComparison.Ordinal) ||
                 !error.Message.Contains("Map key not found", StringComparison.Ordinal))
             {
                 failures++;
@@ -5015,6 +5079,7 @@ function draw() {
             ("example-math-random-runnable", @"ConsoleApp1/examples/math_random.code", Compiler.CompileTarget.VmNative),
             ("example-sized-numerics-runnable", @"ConsoleApp1/examples/sized_numerics.code", Compiler.CompileTarget.VmNative),
             ("example-collections-runnable", @"ConsoleApp1/examples/collections.code", Compiler.CompileTarget.VmNative),
+            ("example-generics-runnable", @"ConsoleApp1/examples/generics.code", Compiler.CompileTarget.VmNative),
             ("example-builder-runnable", @"ConsoleApp1/examples/builder.code", Compiler.CompileTarget.VmNative),
             ("example-static-members-runnable", @"ConsoleApp1/examples/static_members.code", Compiler.CompileTarget.VmNative),
             ("example-object-runnable", @"ConsoleApp1/examples/object.code", Compiler.CompileTarget.VmNative),

@@ -61,6 +61,7 @@ This roadmap is implementation-truthful: items marked below are gaps from the cu
 | `[x]` | Type system | Sized numeric boundary types | Implemented source-level types `integer8`, `integer16`, `integer32`, `whole8`, `whole16`, `whole32`, `real32`, `real64`; `byte` aliases `whole8`, `real64` aliases `real`, dynamic narrowing and sized stores are range-checked |
 | `[~]` | Type system | Exact wide numerics, exponent real literals & literal suffixes (`i8/w8/r32` etc.) | `integer64` / `whole64`, exponent forms, and suffix literals remain deferred |
 | `[x]` | Type system | Optional/`optional<T>` semantics | Implemented V1 direct-value model; `optional<T>` unwraps where `T` is required and raises `Optional value is none` at runtime when empty |
+| `[x]` | Type system | User-defined generic types | Generic interfaces, objects, and records are compile-time specialized for each closed constructed type; nested arguments, imports, inline implementations, record values/hashing, and backend parity are supported; generic functions, methods, constraints, variance, and default type arguments remain deferred |
 | `[_]` | Type system | Overload resolution rules (spec’d) | Engine not implemented |
 | `[x]` | Error model | Runtime IP + call stack + snippets | Debug-map backed |
 | `[x]` | Error model | Typed errors / exception objects in VM | VmError objects, THROW opcode, panic statement, tests |

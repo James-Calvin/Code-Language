@@ -9,7 +9,7 @@ const compiler = join(root, "ConsoleApp1", "bin", "Release", "net9.0", "compiler
 const temporaryRoot = mkdtempSync(join(tmpdir(), "code-direct-wasm-conformance-"));
 const cases = [
   "arithmetic.code", "booleans.code", "strings.code", "loop.code", "branch.code", "function.code",
-  "optional.code", "arrayloop.code", "modulo.code", "enum.code", "object.code", "record.code",
+  "optional.code", "arrayloop.code", "modulo.code", "enum.code", "object.code", "record.code", "generics.code",
   "collections.code", "interface_dispatch.code", "interface_array_dispatch.code", "interface_field.code",
   "sized_numerics.code", "fallible.code",
   "benchmarks/runtime_conformance.code", "benchmarks/ball_regression.code", "benchmarks/ball_regression_tests.code"

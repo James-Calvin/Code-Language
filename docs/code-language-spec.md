@@ -394,6 +394,32 @@ if not isReady then {
 
 ## 8. Collections (Observed)
 - Generic array type syntax: `array<Type>`.
+
+### User-defined generic types
+
+Interfaces, objects, and records may declare one or more type parameters:
+
+```code
+interface Readable<Data> {
+  function<Data> read();
+}
+
+object Box<Data> {
+  Data item;
+  constructor(Data value) { item = value; }
+  implement Readable<Data>.read() { return item; }
+}
+
+Box<integer> box = new Box<integer>(3);
+Readable<integer> view = box;
+```
+
+- A generic type must be used as a closed constructed type with exactly the declared number of type arguments.
+- Constructed types are invariant: `Box<integer>` and `Box<string>` are distinct types.
+- Type parameters are available in fields, constructors, methods, and interface implementations, including nested types such as `map<Entity, Data>`.
+- Generic declarations may be exported, imported, and aliased like other type declarations.
+- The compiler specializes each reachable constructed type at compile time; no runtime generic type arguments or new bytecode opcodes are required.
+- Generic functions, generic methods, constraints, variance, and default type arguments are not implemented in V1.
 - Array literal syntax uses braces.
 - Arrays can be allocated with `new array<Type>(size)`.
 - Array element types are preserved through declarations, indexing, mutation, and `foreach`.

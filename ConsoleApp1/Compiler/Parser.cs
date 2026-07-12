@@ -353,6 +353,7 @@ sealed class Parser
     private Stmt ObjectDeclaration(bool isRecord)
     {
         Token name = Consume(TokenType.Identifier, "Expect object name.");
+        var typeParameters = ParseTypeParameterList();
         List<Parameter>? primaryConstructorParameters = null;
         if (Match(TokenType.LeftParen))
         {
@@ -424,7 +425,7 @@ sealed class Parser
             if (implicitRecordParameters.Count > 0)
                 constructors.Add(BuildSynthesizedConstructor(name, implicitRecordParameters));
         }
-        return new ObjectDecl(name, isRecord, fields, constructors, methods, inlineInterfaceMethods);
+        return new ObjectDecl(name, isRecord, fields, constructors, methods, inlineInterfaceMethods, typeParameters);
     }
 
     private static ConstructorDecl BuildSynthesizedConstructor(Token ownerName, IReadOnlyList<Parameter> parameters)
@@ -486,7 +487,7 @@ sealed class Parser
 
     private InlineImplementMethodDecl ParseInlineImplementMethod(DeclarationVisibility visibility = DeclarationVisibility.Public)
     {
-        Token interfaceName = Consume(TokenType.Identifier, "Expect interface name after 'implement'.");
+        TypeRef interfaceType = ParseTypeRef();
         Consume(TokenType.Dot, "Expect '.' after interface name in inline implement method.");
         Token methodName = Consume(TokenType.Identifier, "Expect interface method name after '.'.");
         Consume(TokenType.LeftParen, "Expect '(' after interface method name.");
@@ -504,12 +505,13 @@ sealed class Parser
         }
         Consume(TokenType.RightParen, "Expect ')' after inline implement parameters.");
         Block body = ParseCallableBody("inline implement method");
-        return new InlineImplementMethodDecl(interfaceName, methodName, parameters, body, visibility);
+        return new InlineImplementMethodDecl(interfaceType, methodName, parameters, body, visibility);
     }
 
     private Stmt InterfaceDeclaration()
     {
         Token name = Consume(TokenType.Identifier, "Expect interface name.");
+        var typeParameters = ParseTypeParameterList();
         Consume(TokenType.LeftBrace, "Expect '{' after interface name.");
         var fields = new List<FieldDecl>();
         var methods = new List<InterfaceMethodDecl>();
@@ -546,14 +548,14 @@ sealed class Parser
             methods.Add(new InterfaceMethodDecl(sig.Name, sig.ReturnType, sig.Parameters));
         }
         Consume(TokenType.RightBrace, "Expect '}' after interface body.");
-        return new InterfaceDecl(name, fields, methods);
+        return new InterfaceDecl(name, fields, methods, typeParameters);
     }
 
     private Stmt ImplementDeclaration()
     {
-        Token interfaceName = Consume(TokenType.Identifier, "Expect interface name after 'implement'.");
+        TypeRef interfaceType = ParseTypeRef();
         Consume(TokenType.For, "Expect 'for' after interface name in implement declaration.");
-        Token objectName = Consume(TokenType.Identifier, "Expect object name after 'for'.");
+        TypeRef objectType = ParseTypeRef();
         Consume(TokenType.LeftBrace, "Expect '{' after implement header.");
         var maps = new List<ImplementMethodMap>();
         while (!Check(TokenType.RightBrace) && !IsAtEnd())
@@ -561,7 +563,22 @@ sealed class Parser
             maps.Add(ParseImplementMethodMap());
         }
         Consume(TokenType.RightBrace, "Expect '}' after implement body.");
-        return new ImplementDecl(interfaceName, objectName, maps);
+        return new ImplementDecl(interfaceType, objectType, maps);
+    }
+
+    private List<Token> ParseTypeParameterList()
+    {
+        var parameters = new List<Token>();
+        if (!Match(TokenType.Less)) return parameters;
+        do
+        {
+            Token parameter = Consume(TokenType.Identifier, "Expect generic type parameter name.");
+            if (parameters.Any(existing => existing.Lexeme == parameter.Lexeme))
+                throw Error(parameter, $"Duplicate generic type parameter '{parameter.Lexeme}'.");
+            parameters.Add(parameter);
+        } while (Match(TokenType.Comma));
+        Consume(TokenType.Greater, "Expect '>' after generic type parameters.");
+        return parameters;
     }
 
     private ImplementMethodMap ParseImplementMethodMap()
@@ -1212,10 +1229,6 @@ sealed class Parser
             return new NewCollectionExpr(newType, newTok.Line, newTok.Column);
         }
 
-        if (newType.TypeArguments.Count > 0)
-            throw Error(Peek(), $"Type '{newType.Name}' does not support constructor type arguments.");
-
-        Token typeName = new Token(TokenType.Identifier, newType.Name, null, newType.Line, newType.Column);
         Consume(TokenType.LeftParen, "Expect '(' after type name.");
         var args = new List<Expr>();
         if (!Check(TokenType.RightParen))
@@ -1226,7 +1239,7 @@ sealed class Parser
             } while (Match(TokenType.Comma));
         }
         Consume(TokenType.RightParen, "Expect ')' after constructor arguments.");
-        return new NewObjectExpr(typeName, args);
+        return new NewObjectExpr(newType, args);
     }
 
     private Expr FinishPostfix(Expr expr)

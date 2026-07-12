@@ -106,7 +106,7 @@ Implemented today:
 
 - typed variables/functions; primitives: `integer`, `whole`, `real`, `boolean`, `string`, sized numeric boundary types, and `byte`
 - same-module global variables/constants plus built-in real constants `pi` and `tau`
-- objects, records, static fields/methods with same-type bare static lookup, record key selection (`key` / `ignore key`), field/method interfaces, arrays, maps, sets, queues, stacks, optionals as `T` or `none`, and typed recoverable `fallible` errors
+- objects, records, and interfaces with compile-time generic type parameters; static fields/methods with same-type bare static lookup; record key selection (`key` / `ignore key`); arrays, maps, sets, queues, stacks, optionals as `T` or `none`, and typed recoverable `fallible` errors
 - default parameters for functions, methods, and constructors, plus implicit `TypeName(...)` construction as readable builder-pattern sugar
 - `if`, `switch`, `while`, `for`, `foreach`, `break`, `continue`, functions, methods, modules, package manifests, lockfiles, and library artifacts
 - web app lifecycle entry through top-level `start()`, `update()`, `draw()`, and optional `drawHud()`

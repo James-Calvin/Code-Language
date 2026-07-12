@@ -249,6 +249,7 @@ static class ModuleCompiler
         var ast = parser.Parse();
         AnnotateModuleStatements(ast, InferPackageName(ast), "<source>");
         ast = LowerModuleSurfaceDeclarations(ast);
+        ast = GenericMonomorphizer.Lower(ast);
         ast = LowerInlineInterfaceImplementations(ast);
         var typeChecker = new TypeChecker();
         typeChecker.Check(ast);
@@ -285,7 +286,7 @@ static class ModuleCompiler
         };
         var linker = new ModuleLinker(projectRoot, fullEntryPath, compileOptions);
         var linkResult = linker.Link(fullEntryPath);
-        var loweredStatements = LowerInlineInterfaceImplementations(linkResult.Statements);
+        var loweredStatements = LowerInlineInterfaceImplementations(GenericMonomorphizer.Lower(linkResult.Statements));
         var typeChecker = new TypeChecker(enableImpliedEngineImports: compileOptions.EnableImpliedEngineImports);
         SemanticModel? semanticModel = null;
         if (compileOptions.EmitDirectWasm)
@@ -2572,11 +2573,12 @@ static class ModuleCompiler
                     m.Visibility,
                     m.IsStatic)).ToList(),
                 obj.InlineInterfaceMethods.Select(m => new InlineImplementMethodDecl(
-                    RewriteTypeToken(m.InterfaceName, typeAliases),
+                    RewriteTypeRef(m.InterfaceType, typeAliases),
                     m.MethodName,
                     m.Parameters.Select(p => RewriteParameter(p, typeAliases, namespaceAliases)).ToList(),
                     (Block)RewriteStmt(m.Body, typeAliases, namespaceAliases),
-                    m.Visibility)).ToList()),
+                    m.Visibility)).ToList(),
+                obj.TypeParameters),
             InterfaceDecl iface => new InterfaceDecl(
                 iface.Name,
                 iface.Fields.Select(f => new FieldDecl(
@@ -2590,10 +2592,11 @@ static class ModuleCompiler
                 iface.Methods.Select(m => new InterfaceMethodDecl(
                     m.Name,
                     RewriteTypeRef(m.ReturnType, typeAliases),
-                    m.Parameters.Select(p => RewriteParameter(p, typeAliases, namespaceAliases)).ToList())).ToList()),
+                    m.Parameters.Select(p => RewriteParameter(p, typeAliases, namespaceAliases)).ToList())).ToList(),
+                iface.TypeParameters),
             ImplementDecl impl => new ImplementDecl(
-                RewriteTypeToken(impl.InterfaceName, typeAliases),
-                RewriteTypeToken(impl.ObjectName, typeAliases),
+                RewriteTypeRef(impl.InterfaceType, typeAliases),
+                RewriteTypeRef(impl.ObjectType, typeAliases),
                 impl.Methods.Select(m => new ImplementMethodMap(
                     m.InterfaceMethodName,
                     m.Parameters.Select(p => RewriteParameter(p, typeAliases, namespaceAliases)).ToList(),
@@ -2656,7 +2659,7 @@ static class ModuleCompiler
             },
             FieldAccessExpr f => RewriteFieldAccessExpr(f, typeAliases, namespaceAliases),
             FieldSetExpr f => new FieldSetExpr((FieldAccessExpr)RewriteExpr(f.Target, typeAliases, namespaceAliases), RewriteExpr(f.Value, typeAliases, namespaceAliases)),
-            NewObjectExpr no => new NewObjectExpr(RewriteTypeToken(no.TypeName, typeAliases), no.Arguments.Select(a => RewriteExpr(a, typeAliases, namespaceAliases)).ToList()),
+            NewObjectExpr no => new NewObjectExpr(RewriteTypeRef(no.Type, typeAliases), no.Arguments.Select(a => RewriteExpr(a, typeAliases, namespaceAliases)).ToList()),
             ArraySetExpr a => new ArraySetExpr((ArrayIndexExpr)RewriteExpr(a.Target, typeAliases, namespaceAliases), RewriteExpr(a.Value, typeAliases, namespaceAliases)),
             Variable v => RewriteVariableExpr(v, typeAliases, namespaceAliases),
             Assign a => RewriteAssignExpr(a, typeAliases, namespaceAliases),

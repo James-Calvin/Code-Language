@@ -1,5 +1,11 @@
 # Objects, Records, and Interfaces
 
+## Generic Types
+
+Objects, records, and interfaces may declare type parameters after their names, for example `object Registry<Data>`, and are used through closed types such as `Registry<Position>`. Type parameters may appear recursively in fields, constructors, methods, and inline or external interface implementations. Construct explicitly with `new Registry<Position>()`.
+
+Each closed type is invariant and independently specialized at compile time. Static storage is separate per object or record specialization. Generic functions, methods, constraints, variance, inferred/default type arguments, and bare open-generic values are not supported in V1.
+
 ## Objects
 
 Objects are reference-like runtime instances.

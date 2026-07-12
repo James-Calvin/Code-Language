@@ -202,11 +202,13 @@ sealed class FieldSetExpr : Expr
 
 sealed class NewObjectExpr : Expr
 {
-    public Token TypeName { get; }
+    public TypeRef Type { get; }
+    public Token TypeName => new(TokenType.Identifier, Type.Name, null, Type.Line, Type.Column);
     public IReadOnlyList<Expr> Arguments { get; }
     public string? ResolvedConstructorKey { get; set; }
     public IReadOnlyList<Expr> ResolvedDefaultArguments { get; set; } = [];
-    public NewObjectExpr(Token typeName, IReadOnlyList<Expr> args) { TypeName = typeName; Arguments = args; }
+    public NewObjectExpr(TypeRef type, IReadOnlyList<Expr> args) { Type = type; Arguments = args; }
+    public NewObjectExpr(Token typeName, IReadOnlyList<Expr> args) : this(new TypeRef(typeName.Lexeme, null, typeName.Line, typeName.Column), args) { }
 }
 
 sealed class ArraySetExpr : Expr
@@ -543,6 +545,7 @@ sealed class FunctionDecl : Stmt
 sealed class ObjectDecl : Stmt
 {
     public Token Name { get; }
+    public IReadOnlyList<Token> TypeParameters { get; }
     public bool IsRecord { get; }
     public IReadOnlyList<FieldDecl> Fields { get; }
     public IReadOnlyList<ConstructorDecl> Constructors { get; }
@@ -554,9 +557,11 @@ sealed class ObjectDecl : Stmt
         IReadOnlyList<FieldDecl> fields,
         IReadOnlyList<ConstructorDecl> constructors,
         IReadOnlyList<MethodDecl> methods,
-        IReadOnlyList<InlineImplementMethodDecl>? inlineInterfaceMethods = null)
+        IReadOnlyList<InlineImplementMethodDecl>? inlineInterfaceMethods = null,
+        IReadOnlyList<Token>? typeParameters = null)
     {
         Name = name;
+        TypeParameters = typeParameters ?? [];
         IsRecord = isRecord;
         Fields = fields;
         Constructors = constructors;
@@ -605,29 +610,33 @@ sealed class MethodDecl
 
 sealed class InlineImplementMethodDecl
 {
-    public Token InterfaceName { get; }
+    public TypeRef InterfaceType { get; }
+    public Token InterfaceName => new(TokenType.Identifier, InterfaceType.Name, null, InterfaceType.Line, InterfaceType.Column);
     public Token MethodName { get; }
     public IReadOnlyList<Parameter> Parameters { get; }
     public Block Body { get; }
     public DeclarationVisibility Visibility { get; }
-    public InlineImplementMethodDecl(Token interfaceName, Token methodName, IReadOnlyList<Parameter> parameters, Block body, DeclarationVisibility visibility = DeclarationVisibility.Public)
+    public InlineImplementMethodDecl(TypeRef interfaceType, Token methodName, IReadOnlyList<Parameter> parameters, Block body, DeclarationVisibility visibility = DeclarationVisibility.Public)
     {
-        InterfaceName = interfaceName;
+        InterfaceType = interfaceType;
         MethodName = methodName;
         Parameters = parameters;
         Body = body;
         Visibility = visibility;
     }
+    public InlineImplementMethodDecl(Token interfaceName, Token methodName, IReadOnlyList<Parameter> parameters, Block body, DeclarationVisibility visibility = DeclarationVisibility.Public)
+        : this(new TypeRef(interfaceName.Lexeme, null, interfaceName.Line, interfaceName.Column), methodName, parameters, body, visibility) { }
 }
 
 sealed class InterfaceDecl : Stmt
 {
     public Token Name { get; }
+    public IReadOnlyList<Token> TypeParameters { get; }
     public IReadOnlyList<FieldDecl> Fields { get; }
     public IReadOnlyList<InterfaceMethodDecl> Methods { get; }
-    public InterfaceDecl(Token name, IReadOnlyList<FieldDecl> fields, IReadOnlyList<InterfaceMethodDecl> methods)
+    public InterfaceDecl(Token name, IReadOnlyList<FieldDecl> fields, IReadOnlyList<InterfaceMethodDecl> methods, IReadOnlyList<Token>? typeParameters = null)
     {
-        Name = name; Fields = fields; Methods = methods;
+        Name = name; Fields = fields; Methods = methods; TypeParameters = typeParameters ?? [];
     }
 }
 
@@ -644,13 +653,17 @@ sealed class InterfaceMethodDecl
 
 sealed class ImplementDecl : Stmt
 {
-    public Token InterfaceName { get; }
-    public Token ObjectName { get; }
+    public TypeRef InterfaceType { get; }
+    public TypeRef ObjectType { get; }
+    public Token InterfaceName => new(TokenType.Identifier, InterfaceType.Name, null, InterfaceType.Line, InterfaceType.Column);
+    public Token ObjectName => new(TokenType.Identifier, ObjectType.Name, null, ObjectType.Line, ObjectType.Column);
     public IReadOnlyList<ImplementMethodMap> Methods { get; }
-    public ImplementDecl(Token interfaceName, Token objectName, IReadOnlyList<ImplementMethodMap> methods)
+    public ImplementDecl(TypeRef interfaceType, TypeRef objectType, IReadOnlyList<ImplementMethodMap> methods)
     {
-        InterfaceName = interfaceName; ObjectName = objectName; Methods = methods;
+        InterfaceType = interfaceType; ObjectType = objectType; Methods = methods;
     }
+    public ImplementDecl(Token interfaceName, Token objectName, IReadOnlyList<ImplementMethodMap> methods)
+        : this(new TypeRef(interfaceName.Lexeme, null, interfaceName.Line, interfaceName.Column), new TypeRef(objectName.Lexeme, null, objectName.Line, objectName.Column), methods) { }
 }
 
 sealed class ImplementMethodMap

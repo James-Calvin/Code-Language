@@ -486,7 +486,13 @@ print(turns.dequeue());
 - External interface fulfillment maps interface signatures to object methods via `interfaceMethod(parameterTypes...) via ObjectName.methodName;`.
 - Mapping includes parameter types/signature to support overload resolution.
 - The mapped object method must have a compatible signature.
-- Inline interface methods use `implement InterfaceName.methodName(parameterTypes...) { ... }`.
+- Individual inline interface methods use `implement InterfaceName.methodName(parameterTypes...) { ... }` and inherit the interface return type.
+- Complete grouped inline implementations use `implement InterfaceName { function<Return> method(parameterTypes...) { ... } }`.
+  - Every interface method and overload must be defined exactly once with explicit return and parameter types.
+  - Parameters must match the interface signature; returns follow the normal interface return-compatibility rules.
+  - Interface field requirements continue to be satisfied by ordinary object/record fields.
+  - Grouped implementations cannot be partial or combined with individual inline/external implementations for the same type/interface pair.
+  - Group methods cannot be static, declare their own visibility, or use default/untyped parameters.
 - Inline interface methods define the object method body directly and inherit the return type from the matched interface method signature.
 - Constructor overloading is supported by typed signatures.
 - Method overloading is supported by typed signatures.

@@ -365,6 +365,7 @@ sealed class Parser
         var constructors = new List<ConstructorDecl>();
         var methods = new List<MethodDecl>();
         var inlineInterfaceMethods = new List<InlineImplementMethodDecl>();
+        var inlineInterfaceGroups = new List<InlineImplementGroupDecl>();
         while (!Check(TokenType.RightBrace) && !IsAtEnd())
         {
             if ((Check(TokenType.Public) || Check(TokenType.Package) || Check(TokenType.Private)) && CheckNext(TokenType.Static))
@@ -387,7 +388,13 @@ sealed class Parser
             {
                 if (isStatic)
                     throw Error(Previous(), "Static inline interface implementations are not supported in V1.");
-                inlineInterfaceMethods.Add(ParseInlineImplementMethod(visibility));
+                TypeRef interfaceType = ParseTypeRef();
+                if (Match(TokenType.Dot))
+                    inlineInterfaceMethods.Add(ParseInlineImplementMethod(interfaceType, visibility));
+                else if (Match(TokenType.LeftBrace))
+                    inlineInterfaceGroups.Add(ParseInlineImplementGroup(interfaceType, visibility));
+                else
+                    throw Error(Peek(), "Expect '.' or '{' after interface type in inline implementation.");
                 continue;
             }
 
@@ -425,7 +432,7 @@ sealed class Parser
             if (implicitRecordParameters.Count > 0)
                 constructors.Add(BuildSynthesizedConstructor(name, implicitRecordParameters));
         }
-        return new ObjectDecl(name, isRecord, fields, constructors, methods, inlineInterfaceMethods, typeParameters);
+        return new ObjectDecl(name, isRecord, fields, constructors, methods, inlineInterfaceMethods, typeParameters, inlineInterfaceGroups);
     }
 
     private static ConstructorDecl BuildSynthesizedConstructor(Token ownerName, IReadOnlyList<Parameter> parameters)
@@ -485,10 +492,8 @@ sealed class Parser
         CheckIdentifierLexeme(0, "key") &&
         LooksLikeTypeThenIdentifier(_current + 1);
 
-    private InlineImplementMethodDecl ParseInlineImplementMethod(DeclarationVisibility visibility = DeclarationVisibility.Public)
+    private InlineImplementMethodDecl ParseInlineImplementMethod(TypeRef interfaceType, DeclarationVisibility visibility = DeclarationVisibility.Public)
     {
-        TypeRef interfaceType = ParseTypeRef();
-        Consume(TokenType.Dot, "Expect '.' after interface name in inline implement method.");
         Token methodName = Consume(TokenType.Identifier, "Expect interface method name after '.'.");
         Consume(TokenType.LeftParen, "Expect '(' after interface method name.");
         var parameters = new List<Parameter>();
@@ -506,6 +511,33 @@ sealed class Parser
         Consume(TokenType.RightParen, "Expect ')' after inline implement parameters.");
         Block body = ParseCallableBody("inline implement method");
         return new InlineImplementMethodDecl(interfaceType, methodName, parameters, body, visibility);
+    }
+
+    private InlineImplementGroupDecl ParseInlineImplementGroup(TypeRef interfaceType, DeclarationVisibility visibility)
+    {
+        var methods = new List<InlineImplementGroupMethodDecl>();
+        while (!Check(TokenType.RightBrace) && !IsAtEnd())
+        {
+            if (Check(TokenType.Public) || Check(TokenType.Package) || Check(TokenType.Private))
+                throw Error(Peek(), "Grouped interface implementation methods do not declare visibility.");
+            if (Check(TokenType.Static))
+                throw Error(Peek(), "Grouped interface implementation methods cannot be static.");
+            Consume(TokenType.Function, "Expect 'function' in grouped interface implementation.");
+            var signature = ParseCallableSignature("grouped interface implementation method", allowDefaults: false);
+            if (signature.ReturnType is null)
+                throw Error(signature.Name, $"Grouped interface implementation method '{signature.Name.Lexeme}' must declare a return type.");
+            for (int i = 0; i < signature.Parameters.Count; i++)
+            {
+                if (signature.Parameters[i].Type is null)
+                    throw Error(signature.Parameters[i].Name, $"Grouped interface implementation method '{signature.Name.Lexeme}' has an untyped parameter.");
+            }
+            Block body = ParseCallableBody("grouped interface implementation method");
+            methods.Add(new InlineImplementGroupMethodDecl(signature.Name, signature.ReturnType, signature.Parameters, body));
+        }
+        Consume(TokenType.RightBrace, "Expect '}' after grouped interface implementation.");
+        if (methods.Count == 0)
+            throw Error(Previous(), "Grouped interface implementation must define every interface method and cannot be empty.");
+        return new InlineImplementGroupDecl(interfaceType, methods, visibility);
     }
 
     private Stmt InterfaceDeclaration()

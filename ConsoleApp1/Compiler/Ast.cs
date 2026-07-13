@@ -551,6 +551,7 @@ sealed class ObjectDecl : Stmt
     public IReadOnlyList<ConstructorDecl> Constructors { get; }
     public IReadOnlyList<MethodDecl> Methods { get; }
     public IReadOnlyList<InlineImplementMethodDecl> InlineInterfaceMethods { get; }
+    public IReadOnlyList<InlineImplementGroupDecl> InlineInterfaceGroups { get; }
     public ObjectDecl(
         Token name,
         bool isRecord,
@@ -558,7 +559,8 @@ sealed class ObjectDecl : Stmt
         IReadOnlyList<ConstructorDecl> constructors,
         IReadOnlyList<MethodDecl> methods,
         IReadOnlyList<InlineImplementMethodDecl>? inlineInterfaceMethods = null,
-        IReadOnlyList<Token>? typeParameters = null)
+        IReadOnlyList<Token>? typeParameters = null,
+        IReadOnlyList<InlineImplementGroupDecl>? inlineInterfaceGroups = null)
     {
         Name = name;
         TypeParameters = typeParameters ?? [];
@@ -567,6 +569,7 @@ sealed class ObjectDecl : Stmt
         Constructors = constructors;
         Methods = methods;
         InlineInterfaceMethods = inlineInterfaceMethods ?? [];
+        InlineInterfaceGroups = inlineInterfaceGroups ?? [];
     }
 }
 
@@ -605,6 +608,36 @@ sealed class MethodDecl
     public MethodDecl(Token name, TypeRef? returnType, IReadOnlyList<Parameter> parameters, Block body, DeclarationVisibility visibility = DeclarationVisibility.Public, bool isStatic = false)
     {
         Name = name; ReturnType = returnType; Parameters = parameters; Body = body; Visibility = visibility; IsStatic = isStatic;
+    }
+}
+
+sealed class InlineImplementGroupDecl
+{
+    public TypeRef InterfaceType { get; }
+    public IReadOnlyList<InlineImplementGroupMethodDecl> Methods { get; }
+    public DeclarationVisibility Visibility { get; }
+
+    public InlineImplementGroupDecl(TypeRef interfaceType, IReadOnlyList<InlineImplementGroupMethodDecl> methods, DeclarationVisibility visibility = DeclarationVisibility.Public)
+    {
+        InterfaceType = interfaceType;
+        Methods = methods;
+        Visibility = visibility;
+    }
+}
+
+sealed class InlineImplementGroupMethodDecl
+{
+    public Token Name { get; }
+    public TypeRef ReturnType { get; }
+    public IReadOnlyList<Parameter> Parameters { get; }
+    public Block Body { get; }
+
+    public InlineImplementGroupMethodDecl(Token name, TypeRef returnType, IReadOnlyList<Parameter> parameters, Block body)
+    {
+        Name = name;
+        ReturnType = returnType;
+        Parameters = parameters;
+        Body = body;
     }
 }
 

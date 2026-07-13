@@ -14,12 +14,14 @@ object Registry<Data> {
     values = new map<integer, Data>();
   }
 
-  implement ComponentRegistry<Data>.register(Entity entity, Data data) {
-    values[entity.id] = data;
-  }
+  implement ComponentRegistry<Data> {
+    function<void> register(Entity entity, Data data) {
+      values[entity.id] = data;
+    }
 
-  implement ComponentRegistry<Data>.get(Entity entity) {
-    return values[entity.id];
+    function<Data> get(Entity entity) {
+      return values[entity.id];
+    }
   }
 }
 

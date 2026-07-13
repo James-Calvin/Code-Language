@@ -133,7 +133,9 @@ static class GenericMonomorphizer
                 obj.Fields.Select(f => RewriteField(f, env)).ToList(),
                 obj.Constructors.Select(c => new ConstructorDecl(c.Keyword, RewriteParameters(c.Parameters, env), (Block)RewriteStmt(c.Body, env), c.Visibility)).ToList(),
                 obj.Methods.Select(m => new MethodDecl(m.Name, m.ReturnType is null ? null : RewriteType(m.ReturnType, env), RewriteParameters(m.Parameters, env), (Block)RewriteStmt(m.Body, env), m.Visibility, m.IsStatic)).ToList(),
-                obj.InlineInterfaceMethods.Select(m => new InlineImplementMethodDecl(RewriteType(m.InterfaceType, env), m.MethodName, RewriteParameters(m.Parameters, env), (Block)RewriteStmt(m.Body, env), m.Visibility)).ToList());
+                obj.InlineInterfaceMethods.Select(m => new InlineImplementMethodDecl(RewriteType(m.InterfaceType, env), m.MethodName, RewriteParameters(m.Parameters, env), (Block)RewriteStmt(m.Body, env), m.Visibility)).ToList(),
+                typeParameters: null,
+                inlineInterfaceGroups: obj.InlineInterfaceGroups.Select(g => RewriteGroup(g, env)).ToList());
             return Origin(obj, clone);
         }
 
@@ -182,7 +184,18 @@ static class GenericMonomorphizer
             new(obj.Name, obj.IsRecord, obj.Fields.Select(f => RewriteField(f, env)).ToList(),
                 obj.Constructors.Select(c => new ConstructorDecl(c.Keyword, RewriteParameters(c.Parameters, env), (Block)RewriteStmt(c.Body, env), c.Visibility)).ToList(),
                 obj.Methods.Select(m => new MethodDecl(m.Name, m.ReturnType is null ? null : RewriteType(m.ReturnType, env), RewriteParameters(m.Parameters, env), (Block)RewriteStmt(m.Body, env), m.Visibility, m.IsStatic)).ToList(),
-                obj.InlineInterfaceMethods.Select(m => new InlineImplementMethodDecl(RewriteType(m.InterfaceType, env), m.MethodName, RewriteParameters(m.Parameters, env), (Block)RewriteStmt(m.Body, env), m.Visibility)).ToList());
+                obj.InlineInterfaceMethods.Select(m => new InlineImplementMethodDecl(RewriteType(m.InterfaceType, env), m.MethodName, RewriteParameters(m.Parameters, env), (Block)RewriteStmt(m.Body, env), m.Visibility)).ToList(),
+                obj.TypeParameters,
+                obj.InlineInterfaceGroups.Select(g => RewriteGroup(g, env)).ToList());
+
+        private InlineImplementGroupDecl RewriteGroup(InlineImplementGroupDecl group, IReadOnlyDictionary<string, TypeRef> env) =>
+            new(RewriteType(group.InterfaceType, env),
+                group.Methods.Select(m => new InlineImplementGroupMethodDecl(
+                    m.Name,
+                    RewriteType(m.ReturnType, env),
+                    RewriteParameters(m.Parameters, env),
+                    (Block)RewriteStmt(m.Body, env))).ToList(),
+                group.Visibility);
 
         private InterfaceDecl RewriteConcreteInterface(InterfaceDecl iface, IReadOnlyDictionary<string, TypeRef> env) =>
             new(iface.Name, iface.Fields.Select(f => RewriteField(f, env)).ToList(), iface.Methods.Select(m => new InterfaceMethodDecl(m.Name, RewriteType(m.ReturnType, env), RewriteParameters(m.Parameters, env))).ToList());

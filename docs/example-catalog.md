@@ -41,7 +41,7 @@ Use this document as the primary answer to "does this exist yet?"
 | Status | Path | Use | Notes |
 | --- | --- | --- | --- |
 | `runnable` | `ConsoleApp1/examples/builder.code` | `run` | Builder pattern with primary constructors, implicit record construction, implicit `new`, default parameters, and map compound accumulation |
-| `runnable` | `ConsoleApp1/examples/generics.code` | `run` | Generic interfaces, objects, and records through a typed ECS component registry |
+| `runnable` | `ConsoleApp1/examples/generics.code` | `run` | Generic interfaces, objects, and records through a typed ECS component registry using a complete grouped inline implementation |
 | `runnable` | `ConsoleApp1/examples/static_members.code` | `run` | Static fields, static constants, static methods, same-type bare static lookup, and record static factories |
 | `runnable` | `ConsoleApp1/examples/object.code` | `run` | Object fields, field defaults, constructors, and methods |
 | `runnable` | `ConsoleApp1/examples/implicit_this.code` | `run` | Implicit field access and bare method calls inside object bodies |

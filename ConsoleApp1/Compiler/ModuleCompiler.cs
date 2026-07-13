@@ -388,7 +388,7 @@ static class ModuleCompiler
 
     private static IList<Stmt> LowerInlineInterfaceImplementations(IList<Stmt> statements)
     {
-        bool hasInlineImplementations = statements.Any(stmt => stmt is ObjectDecl obj && obj.InlineInterfaceMethods.Count > 0);
+        bool hasInlineImplementations = statements.Any(stmt => stmt is ObjectDecl obj && (obj.InlineInterfaceMethods.Count > 0 || obj.InlineInterfaceGroups.Count > 0));
         if (!hasInlineImplementations)
             return statements;
 
@@ -401,16 +401,21 @@ static class ModuleCompiler
 
         var lowered = new List<Stmt>(statements.Count);
         var generatedImplements = new Dictionary<string, GeneratedImplementGroup>(StringComparer.Ordinal);
+        var externalImplementPairs = statements
+            .OfType<ImplementDecl>()
+            .Select(impl => $"{impl.InterfaceName.Lexeme}->{impl.ObjectName.Lexeme}")
+            .ToHashSet(StringComparer.Ordinal);
 
         for (int i = 0; i < statements.Count; i++)
         {
-            if (statements[i] is not ObjectDecl obj || obj.InlineInterfaceMethods.Count == 0)
+            if (statements[i] is not ObjectDecl obj || (obj.InlineInterfaceMethods.Count == 0 && obj.InlineInterfaceGroups.Count == 0))
             {
                 lowered.Add(statements[i]);
                 continue;
             }
 
             var methods = new List<MethodDecl>(obj.Methods);
+            var inlinePairs = new HashSet<string>(StringComparer.Ordinal);
             for (int m = 0; m < obj.InlineInterfaceMethods.Count; m++)
             {
                 var inline = obj.InlineInterfaceMethods[m];
@@ -439,6 +444,11 @@ static class ModuleCompiler
                     inline.Visibility));
 
                 string pairKey = $"{iface.Name.Lexeme}->{obj.Name.Lexeme}";
+                if (obj.InlineInterfaceGroups.Any(group => group.InterfaceType.Name == iface.Name.Lexeme))
+                    throw new CompilerException($"Cannot combine grouped and single-method implementations of interface '{iface.Name.Lexeme}' for '{obj.Name.Lexeme}'", inline.InterfaceName.Line, inline.InterfaceName.Column);
+                if (externalImplementPairs.Contains(pairKey))
+                    throw new CompilerException($"Cannot combine inline and external implementations of interface '{iface.Name.Lexeme}' for '{obj.Name.Lexeme}'", inline.InterfaceName.Line, inline.InterfaceName.Column);
+                inlinePairs.Add(pairKey);
                 if (!generatedImplements.TryGetValue(pairKey, out var group))
                 {
                     group = new GeneratedImplementGroup(inline.InterfaceName, obj.Name, new List<ImplementMethodMap>());
@@ -450,6 +460,45 @@ static class ModuleCompiler
                     inline.Parameters,
                     obj.Name,
                     inline.MethodName));
+            }
+
+            for (int g = 0; g < obj.InlineInterfaceGroups.Count; g++)
+            {
+                var implementation = obj.InlineInterfaceGroups[g];
+                if (!interfaces.TryGetValue(implementation.InterfaceType.Name, out var iface))
+                    throw new CompilerException($"Unknown interface '{implementation.InterfaceType}'", implementation.InterfaceType.Line, implementation.InterfaceType.Column);
+
+                string pairKey = $"{iface.Name.Lexeme}->{obj.Name.Lexeme}";
+                if (!inlinePairs.Add(pairKey))
+                    throw new CompilerException($"Interface '{iface.Name.Lexeme}' already has an inline implementation for '{obj.Name.Lexeme}'", implementation.InterfaceType.Line, implementation.InterfaceType.Column);
+                if (externalImplementPairs.Contains(pairKey))
+                    throw new CompilerException($"Cannot combine grouped and external implementations of interface '{iface.Name.Lexeme}' for '{obj.Name.Lexeme}'", implementation.InterfaceType.Line, implementation.InterfaceType.Column);
+
+                var matched = new bool[iface.Methods.Count];
+                var maps = new List<ImplementMethodMap>();
+                for (int m = 0; m < implementation.Methods.Count; m++)
+                {
+                    var candidate = implementation.Methods[m];
+                    int match = FindMatchingInterfaceMethodIndex(iface, candidate);
+                    if (match < 0)
+                        throw new CompilerException($"Interface '{iface.Name.Lexeme}' has no method '{candidate.Name.Lexeme}' with this signature", candidate.Name.Line, candidate.Name.Column);
+                    if (matched[match])
+                        throw new CompilerException($"Grouped implementation defines interface method '{candidate.Name.Lexeme}' with this signature more than once", candidate.Name.Line, candidate.Name.Column);
+                    matched[match] = true;
+                    methods.Add(new MethodDecl(candidate.Name, candidate.ReturnType, candidate.Parameters, candidate.Body, implementation.Visibility));
+                    maps.Add(new ImplementMethodMap(candidate.Name, candidate.Parameters, obj.Name, candidate.Name));
+                }
+
+                for (int m = 0; m < matched.Length; m++)
+                {
+                    if (!matched[m])
+                        throw new CompilerException($"Grouped implementation of interface '{iface.Name.Lexeme}' for '{obj.Name.Lexeme}' is missing method '{iface.Methods[m].Name.Lexeme}'", implementation.InterfaceType.Line, implementation.InterfaceType.Column);
+                }
+
+                generatedImplements[pairKey] = new GeneratedImplementGroup(
+                    new Token(TokenType.Identifier, iface.Name.Lexeme, null, implementation.InterfaceType.Line, implementation.InterfaceType.Column),
+                    obj.Name,
+                    maps);
             }
 
             lowered.Add(CopyOrigin(obj, new ObjectDecl(obj.Name, obj.IsRecord, obj.Fields, obj.Constructors, methods)));
@@ -517,6 +566,27 @@ static class ModuleCompiler
         }
 
         return null;
+    }
+
+    private static int FindMatchingInterfaceMethodIndex(InterfaceDecl iface, InlineImplementGroupMethodDecl candidate)
+    {
+        for (int i = 0; i < iface.Methods.Count; i++)
+        {
+            var method = iface.Methods[i];
+            if (!string.Equals(method.Name.Lexeme, candidate.Name.Lexeme, StringComparison.Ordinal) || method.Parameters.Count != candidate.Parameters.Count)
+                continue;
+            bool matches = true;
+            for (int p = 0; p < method.Parameters.Count; p++)
+            {
+                if (!TypeRefEquals(method.Parameters[p].Type!, candidate.Parameters[p].Type!))
+                {
+                    matches = false;
+                    break;
+                }
+            }
+            if (matches) return i;
+        }
+        return -1;
     }
 
     private static bool TypeRefEquals(TypeRef left, TypeRef right)
@@ -1122,6 +1192,17 @@ static class ModuleCompiler
                             ValidateImpliedEngineReservedName(obj.InlineInterfaceMethods[i].Parameters[p].Name, reservedName);
                         ValidateImpliedEngineReservedNameInStmt(obj.InlineInterfaceMethods[i].Body, reservedName);
                     }
+                    for (int i = 0; i < obj.InlineInterfaceGroups.Count; i++)
+                    {
+                        for (int m = 0; m < obj.InlineInterfaceGroups[i].Methods.Count; m++)
+                        {
+                            var method = obj.InlineInterfaceGroups[i].Methods[m];
+                            ValidateImpliedEngineReservedName(method.Name, reservedName);
+                            for (int p = 0; p < method.Parameters.Count; p++)
+                                ValidateImpliedEngineReservedName(method.Parameters[p].Name, reservedName);
+                            ValidateImpliedEngineReservedNameInStmt(method.Body, reservedName);
+                        }
+                    }
                     break;
                 case InterfaceDecl iface:
                     for (int i = 0; i < iface.Fields.Count; i++)
@@ -1382,6 +1463,18 @@ static class ModuleCompiler
                                 CollectImpliedEngineUsage(obj.InlineInterfaceMethods[i].Parameters[p].Type!, directNames);
                         }
                         CollectImpliedEngineUsage(obj.InlineInterfaceMethods[i].Body, namespaceAliases, directNames);
+                    }
+                    for (int i = 0; i < obj.InlineInterfaceGroups.Count; i++)
+                    {
+                        CollectImpliedEngineUsage(obj.InlineInterfaceGroups[i].InterfaceType, directNames);
+                        for (int m = 0; m < obj.InlineInterfaceGroups[i].Methods.Count; m++)
+                        {
+                            var method = obj.InlineInterfaceGroups[i].Methods[m];
+                            CollectImpliedEngineUsage(method.ReturnType, directNames);
+                            for (int p = 0; p < method.Parameters.Count; p++)
+                                CollectImpliedEngineUsage(method.Parameters[p].Type!, directNames);
+                            CollectImpliedEngineUsage(method.Body, namespaceAliases, directNames);
+                        }
                     }
                     break;
                 case InterfaceDecl iface:
@@ -1973,6 +2066,9 @@ static class ModuleCompiler
                         ScanStmtForCapabilities(obj.Methods[i].Body, modulePath);
                     for (int i = 0; i < obj.InlineInterfaceMethods.Count; i++)
                         ScanStmtForCapabilities(obj.InlineInterfaceMethods[i].Body, modulePath);
+                    for (int i = 0; i < obj.InlineInterfaceGroups.Count; i++)
+                        for (int m = 0; m < obj.InlineInterfaceGroups[i].Methods.Count; m++)
+                            ScanStmtForCapabilities(obj.InlineInterfaceGroups[i].Methods[m].Body, modulePath);
                     break;
 
                 case ExportDecl ex:
@@ -2578,7 +2674,15 @@ static class ModuleCompiler
                     m.Parameters.Select(p => RewriteParameter(p, typeAliases, namespaceAliases)).ToList(),
                     (Block)RewriteStmt(m.Body, typeAliases, namespaceAliases),
                     m.Visibility)).ToList(),
-                obj.TypeParameters),
+                obj.TypeParameters,
+                obj.InlineInterfaceGroups.Select(g => new InlineImplementGroupDecl(
+                    RewriteTypeRef(g.InterfaceType, typeAliases),
+                    g.Methods.Select(m => new InlineImplementGroupMethodDecl(
+                        m.Name,
+                        RewriteTypeRef(m.ReturnType, typeAliases),
+                        m.Parameters.Select(p => RewriteParameter(p, typeAliases, namespaceAliases)).ToList(),
+                        (Block)RewriteStmt(m.Body, typeAliases, namespaceAliases))).ToList(),
+                    g.Visibility)).ToList()),
             InterfaceDecl iface => new InterfaceDecl(
                 iface.Name,
                 iface.Fields.Select(f => new FieldDecl(

@@ -2005,8 +2005,10 @@ interface ComponentRegistry<Data> {
 object Registry<Data> {
   map<Entity, Data> values;
   constructor() { values = new map<Entity, Data>(); }
-  implement ComponentRegistry<Data>.register(Entity entity, Data data) { values[entity] = data; }
-  implement ComponentRegistry<Data>.get(Entity entity) { return values[entity]; }
+  implement ComponentRegistry<Data> {
+    function<void> register(Entity entity, Data data) { values[entity] = data; }
+    function<Data> get(Entity entity) { return values[entity]; }
+  }
 }
 Registry<Position> positions = new Registry<Position>();
 Registry<Name> names = new Registry<Name>();
@@ -2036,6 +2038,45 @@ implement Reader<Data> for Box<Data> {
 }
 Reader<integer> value = new Box<integer>(8);
 print(value.read());", "8\n"),
+            ("grouped-closed-generic-material-registry",
+@"record Entity { integer id; }
+record Material { string name; }
+interface ComponentRegistry<Data> {
+  function<void> register(Entity entity, Data data);
+  function<void> remove(Entity entity);
+  function<Data> get(Entity entity);
+}
+object MaterialRegistry {
+  map<integer, Material> values = new map<integer, Material>();
+  constructor() { }
+  implement ComponentRegistry<Material> {
+    function<void> register(Entity entity, Material data) { values[entity.id] = data; }
+    function<void> remove(Entity entity) { if values.contains(entity.id) then values.remove(entity.id); }
+    function<Material> get(Entity entity) { return values[entity.id]; }
+  }
+}
+MaterialRegistry concrete = new MaterialRegistry();
+ComponentRegistry<Material> registry = concrete;
+registry.register(Entity(1), Material(""iron""));
+print(registry.get(Entity(1)).name);", "iron\n"),
+            ("grouped-interface-fields-and-overloads",
+@"interface Converter {
+  integer count;
+  function<integer> convert(integer value);
+  function<string> convert(string value);
+}
+object Both {
+  integer count;
+  constructor() { count = 0; }
+  implement Converter {
+    function<integer> convert(integer value) { count += 1; return value + 1; }
+    function<string> convert(string value) { count += 1; return value + ""!""; }
+  }
+}
+Converter converter = new Both();
+print(converter.convert(4));
+print(converter.convert(""forge""));
+print(converter.count);", "5\nforge!\n2\n"),
         };
         var moduleCases = new List<(string Name, IReadOnlyDictionary<string, string> Files, string Entry, string Expected)>
         {
@@ -2051,7 +2092,9 @@ print(view.read());",
 public object Box<Data> {
   Data item;
   constructor(Data value) { item = value; }
-  implement Readable<Data>.read() { return item; }
+  implement Readable<Data> {
+    function<Data> read() { return item; }
+  }
 }"
                 },
                 "main.code",
@@ -2966,6 +3009,19 @@ print(value);", "RuntimeError"),
             ("nongeneric-type-arguments-rejected", @"record Point { integer x; } Point<integer> value;", "does not support type arguments"),
             ("generic-specializations-invariant", @"object Box<Data> { Data item; constructor(Data value) { item = value; } } Box<integer> left = new Box<integer>(1); Box<string> right = left;", "Initializer type mismatch"),
             ("generic-duplicate-parameter-rejected", @"record Pair<Data, Data> { Data item; }", "Duplicate generic type parameter"),
+            ("grouped-implementation-missing-method", @"interface Pair { function<integer> left(); function<integer> right(); } object Value { constructor() {} implement Pair { function<integer> left() { return 1; } } }", "is missing method 'right'"),
+            ("grouped-implementation-extra-method", @"interface Value { function<integer> read(); } object Item { constructor() {} implement Value { function<integer> read() { return 1; } function<integer> extra() { return 2; } } }", "has no method 'extra'"),
+            ("grouped-implementation-duplicate-method", @"interface Value { function<integer> read(); } object Item { constructor() {} implement Value { function<integer> read() { return 1; } function<integer> read() { return 2; } } }", "more than once"),
+            ("grouped-implementation-parameter-mismatch", @"interface Value { function<integer> read(integer value); } object Item { constructor() {} implement Value { function<integer> read(string value) { return 1; } } }", "has no method 'read' with this signature"),
+            ("grouped-implementation-return-mismatch", @"interface Value { function<integer> read(); } object Item { constructor() {} implement Value { function<string> read() { return ""bad""; } } }", "return type does not satisfy interface"),
+            ("grouped-implementation-unknown-interface", @"object Item { constructor() {} implement Missing { function<integer> read() { return 1; } } }", "Unknown interface 'Missing'"),
+            ("grouped-implementation-wrong-generic-arity", @"interface Value<Data> { function<Data> read(); } object Item { constructor() {} implement Value { function<integer> read() { return 1; } } }", "expects exactly 1 type argument"),
+            ("grouped-implementation-default-rejected", @"interface Value { function<integer> read(integer value); } object Item { constructor() {} implement Value { function<integer> read(integer value = 1) { return value; } } }", "cannot declare default values"),
+            ("grouped-implementation-static-rejected", @"interface Value { function<integer> read(); } object Item { constructor() {} implement Value { static function<integer> read() { return 1; } } }", "cannot be static"),
+            ("grouped-implementation-untyped-rejected", @"interface Value { function<integer> read(integer value); } object Item { constructor() {} implement Value { function<integer> read(value) { return 1; } } }", "has an untyped parameter"),
+            ("grouped-and-single-implementation-rejected", @"interface Value { function<integer> read(); } object Item { constructor() {} implement Value.read() { return 1; } implement Value { function<integer> read() { return 2; } } }", "Cannot combine grouped and single-method implementations"),
+            ("grouped-and-external-implementation-rejected", @"interface Value { function<integer> read(); } object Item { constructor() {} implement Value { function<integer> read() { return 1; } } } implement Value for Item { read() via Item.read; }", "Cannot combine grouped and external implementations"),
+            ("duplicate-grouped-implementation-rejected", @"interface Value { function<integer> read(); } object Item { constructor() {} implement Value { function<integer> read() { return 1; } } implement Value { function<integer> read() { return 2; } } }", "already has an inline implementation"),
             ("object-duplicate-name", @"object Person { integer age; constructor(integer v){ this.age = v; } } object Person { integer score; constructor(integer v){ this.score = v; } }", "already defined"),
             ("object-duplicate-field", @"object Person { integer age; integer age; constructor(integer v){ this.age = v; } }", "already defined"),
             ("object-unknown-field-type", @"object Person { UnknownType data; }", "Unknown type"),
@@ -3260,7 +3316,7 @@ object Thing {
 }
 implement IThing for Thing {
   id() via Thing.id;
-}", "mapped more than once"),
+}", "Cannot combine inline and external implementations"),
             ("interface-assign-non-implementer",
 @"interface IThing {
   function<integer> id();
@@ -4242,6 +4298,36 @@ print(readMissing());",
                 failures++;
                 Console.WriteLine($"[FAIL] {testName}: threw {ex.GetType().Name} - {ex.Message}");
             }
+        }
+
+        try
+        {
+            var outputs = BuildWebApp(
+                new Dictionary<string, string>
+                {
+                    ["main.code"] = @"interface Reader<Data> { function<Data> read(); }
+object Box<Data> {
+  Data item;
+  constructor(Data value) { item = value; }
+  implement Reader<Data> { function<Data> read() { return item; } }
+}
+Box<integer> box = new Box<integer>(7);
+function start() { print(box.read()); }
+function update() { }
+function draw() { }"
+                },
+                "main.code");
+            if (!outputs.IndexHtmlExists)
+            {
+                failures++;
+                Console.WriteLine("[FAIL] web-build-grouped-generic-interface: no index.html");
+            }
+            else Console.WriteLine("[PASS] web-build-grouped-generic-interface");
+        }
+        catch (Exception ex)
+        {
+            failures++;
+            Console.WriteLine($"[FAIL] web-build-grouped-generic-interface: threw {ex.GetType().Name} - {ex.Message}");
         }
 
         try

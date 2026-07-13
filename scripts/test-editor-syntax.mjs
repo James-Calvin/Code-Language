@@ -86,7 +86,7 @@ for (const sample of [
   "package Examples.Editor;",
   "static public constant integer maxSpeed",
   "interface Actor",
-  "implement Updatable.update()",
+  "implement Updatable {",
   "Input.keyIsDown",
   "Draw.clearScreen",
   "Colors.rgb",

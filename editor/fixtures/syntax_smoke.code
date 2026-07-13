@@ -24,12 +24,14 @@ object Player {
   constructor() {
   }
 
-  implement Updatable.update() {
-    if Input.keyIsDown(39) then {
-      x += 2;
-      state = PlayerState.Moving;
-    } else {
-      state = PlayerState.Ready;
+  implement Updatable {
+    function<void> update() {
+      if Input.keyIsDown(39) then {
+        x += 2;
+        state = PlayerState.Moving;
+      } else {
+        state = PlayerState.Ready;
+      }
     }
   }
 }

@@ -252,8 +252,10 @@ Interface behavior:
 - Interface field reads and writes use the interface contract and mutate the concrete object's field.
 - Interface method calls dispatch at runtime.
 - Inline `implement Interface.method(...)` inherits the return type from the interface method.
+- Grouped `implement Interface { function<Return> method(...) { ... } }` defines a complete interface implementation in one block. Signatures are explicit, every method/overload is required exactly once, and field requirements are still provided by normal fields.
 - External `implement Interface for Type` maps interface signatures to concrete methods with `via`.
 - Empty `implement Interface for Type {}` blocks are valid when all requirements are fields.
+- A grouped implementation cannot be mixed with individual inline or external implementations for the same interface/type pair. Group members cannot be static, partial, defaulted, or untyped.
 
 Common mistakes:
 

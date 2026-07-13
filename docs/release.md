@@ -1,6 +1,6 @@
 # Release Process
 
-Current release target: `0.1.0-alpha.26`.
+Current release target: `0.1.0-alpha.27`.
 
 This is a maintainer-facing document. User install and quickstart instructions live in the README.
 
@@ -186,7 +186,7 @@ Checks:
 4. Run `./scripts/install-local.ps1 -SkipTests` as the final local pass gate; it auto-increments the prerelease version if needed.
 5. Run `./scripts/release.ps1` for all release runtimes.
 6. Smoke test at least the Windows zip locally.
-7. Commit and tag, for example `v0.1.0-alpha.26`.
+7. Commit and tag, for example `v0.1.0-alpha.27`.
 8. Create a GitHub prerelease.
 9. Upload all `code-compiler-*.zip` files, `code-language-vscode-<version>.vsix`, and `SHA256SUMS.txt`.
 10. Test `install.ps1` from the GitHub release before announcing.
